@@ -12,8 +12,10 @@ extends RefCounted
 # 바뀌어도 그림은 그대로고 몹 구성과 배수만 바뀐다 — 배경 5장으로 50단계를 굴린다.
 
 const STAGES_PER_ACT := 10       # 한 막당 단계 수
+const MIDBOSS_STEP := 5          # 막의 중간은 승격 잡몹 한 마리
 const BOSS_EVERY := 10           # 막의 마지막 단계는 보스
 const KILLS_PER_STAGE := 20      # 일반 단계 통과에 필요한 처치 수
+const MIDBOSS_PREFIXES := ["타락한", "굶주린", "피에 젖은"]
 
 # 막 5개. roster는 그 막에 나오는 몹 키.
 # bg는 가로로 긴 도트 한 장(768x160)이고 화면에는 2배(1536x320)로 그린다.
@@ -28,19 +30,19 @@ const KILLS_PER_STAGE := 20      # 일반 단계 통과에 필요한 처치 수
 const ACTS := [
 	{"name": "깨어난 무덤", "bg": "res://assets/bg/wide_graveyard.png", "ground": 141,
 		"roster": ["slime", "goblin", "bat", "zombie", "skeleton"],
-		"boss": "wraith_knight"},
+		"boss": "wraith_knight", "boss_name": "망령 기사", "boss_anim": "boss_1"},
 	{"name": "화형의 언덕", "bg": "res://assets/bg/wide_hell.png", "ground": 140,
 		"roster": ["fire_imp", "lava_toad", "hellhound", "orc", "demon"],
-		"boss": "gargoyle"},
+		"boss": "gargoyle", "boss_name": "가고일 군주", "boss_anim": "boss_2"},
 	{"name": "서리 봉인지", "bg": "res://assets/bg/wide_glacier.png", "ground": 153,
 		"roster": ["frost_spider", "ice_wisp", "frost_golem", "bat", "ghoul"],
-		"boss": "frost_golem"},
+		"boss": "frost_golem", "boss_name": "프로스트 골렘", "boss_anim": "boss_3"},
 	{"name": "핏빛 성소", "bg": "res://assets/bg/wide_sanctum.png", "ground": 145,
 		"roster": ["void_wraith", "eye_mass", "spider", "cultist", "mushroom"],
-		"boss": "eye_mass"},
+		"boss": "eye_mass", "boss_name": "눈알 덩어리", "boss_anim": "boss_4"},
 	{"name": "빼앗긴 본성", "bg": "res://assets/bg/wide_castle.png", "ground": 147,
 		"roster": ["dark_knight", "wraith_knight", "cultist", "demon", "orc"],
-		"boss": "dark_knight"},
+		"boss": "dark_knight", "boss_name": "다크 나이트", "boss_anim": "boss_5"},
 ]
 
 
@@ -70,6 +72,14 @@ static func is_boss_stage(stage: int) -> bool:
 	return step_in_act(stage) == BOSS_EVERY
 
 
+static func is_midboss_stage(stage: int) -> bool:
+	return step_in_act(stage) == MIDBOSS_STEP
+
+
+static func midboss_prefix(stage: int) -> String:
+	return MIDBOSS_PREFIXES[act_of(stage) % MIDBOSS_PREFIXES.size()]
+
+
 # 단계별 적 강화 배수. 방치형은 "숫자가 오르는 게 보상"이라 곡선이 완만하고 끝이 없다.
 # 지수(1.14^n)면 20단계에서 15배가 돼 방치 시간이 급격히 늘어난다 — 선형+완만한 지수 혼합.
 static func enemy_power(stage: int) -> float:
@@ -83,4 +93,4 @@ static func gold_per_kill(stage: int) -> float:
 
 # 이 단계를 넘는 데 필요한 처치 수. 보스 단계는 보스 1마리.
 static func kills_needed(stage: int) -> int:
-	return 1 if is_boss_stage(stage) else KILLS_PER_STAGE
+	return 1 if is_boss_stage(stage) or is_midboss_stage(stage) else KILLS_PER_STAGE

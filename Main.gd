@@ -85,6 +85,22 @@ var _hero_flash_t := 0.0
 var _death_tween: Tween
 const REVIVE_TIME := 3.0
 const DEATH_FADE_TIME := 0.55
+const BOSS_TIME := 60.0
+const SKILL_DUR := 0.70
+const SKILLS := [
+	{"key": "drain", "cooldown": 8.0, "motion": "heavy"},
+	{"key": "wave", "cooldown": 14.0, "motion": "heavy"},
+	{"key": "summon", "cooldown": 20.0, "motion": "cast"},
+]
+var _boss_time := -1.0
+var _skill_cd := {"drain": 0.0, "wave": 0.0, "summon": 0.0}
+var _skill_action := ""
+var _skill_action_t := 0.0
+var _skill_hit_t := 0.0
+var _skill_impact_sent := false
+var _skill_target: Foe
+var _summon_t := 0.0
+var _defer_stage_advance := false
 var _hud: CanvasLayer
 var _hud_root: Control   # 테마가 걸린 실제 부모
 var _lbl_stage: Label
@@ -140,8 +156,12 @@ func gold_mult() -> float:
 
 
 func dps() -> float:
-	return damage() / attack_interval() \
+	return _combat_damage() / attack_interval() \
 		* Balance.crit_mult(stat_lv("crit"), stat_lv("critdmg"))
+
+
+func _combat_damage() -> float:
+	return damage() * (1.3 if _summon_t > 0.0 else 1.0)
 
 
 func max_hp() -> float:
@@ -286,6 +306,8 @@ func _play(motion: String, hold := 0.0) -> void:
 func _motion_fps() -> float:
 	if _motion == "attack":
 		return float(_hero_frames.size()) / maxf(0.08, attack_interval())
+	if _motion == "heavy" or _motion == "cast":
+		return float(_hero_frames.size()) / SKILL_DUR
 	return float(MOTION_FPS.get(_motion, 6.0))
 
 
@@ -779,10 +801,14 @@ func _process(delta: float) -> void:
 			_offline_banner.visible = false
 
 	var foes := get_tree().get_nodes_in_group("foes")
+	if _tick_boss_timer(delta):
+		_refresh_hud()
+		return
 	_tick_advance(delta, foes)
 	for f in foes:
 		if is_instance_valid(f):
 			f.set_combat_active(_phase == "fight" and not _hero_dead)
+	_tick_skills(delta, foes)
 	_tick_hero_attack(delta, foes)
 	_refresh_hud()
 
@@ -795,10 +821,10 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 		if _hero_hit_t <= 0.0:
 			_hero_hit_t = -1.0
 			if is_instance_valid(_pending_target) and not _pending_target.dying:
-				_pending_target.take_damage(damage())
+				_pending_target.take_damage(_combat_damage())
 				_anim_fx("fx_cleave", _pending_target.position + Vector2(0, -28), 18.0, 2.0)
 			_pending_target = null
-	if _hero_dead or _phase != "fight":
+	if _hero_dead or _phase != "fight" or _skill_action != "":
 		return
 	_attack_t -= delta
 	if _attack_t > 0.0:
@@ -826,7 +852,72 @@ func _tick_hero_state(delta: float) -> void:
 		_hero_flash_t -= delta
 		if _hero_flash_t <= 0.0:
 			_hero.self_modulate = Color.WHITE
+	_summon_t = maxf(0.0, _summon_t - delta)
 	hero_hp = minf(max_hp(), hero_hp + regen_per_sec() * delta)
+
+
+# 먼저 적힌 스킬이 우선이다. 별도 스킬 시스템 없이 세 개의 쿨다운만 돈다.
+func _next_ready_skill() -> Dictionary:
+	for skill in SKILLS:
+		if float(_skill_cd[skill["key"]]) <= 0.0:
+			return skill
+	return {}
+
+
+func _tick_skills(delta: float, foes: Array) -> void:
+	if not _hero_dead:
+		for key in _skill_cd:
+			_skill_cd[key] = maxf(0.0, float(_skill_cd[key]) - delta)
+	if _skill_action != "":
+		_skill_action_t -= delta
+		_skill_hit_t -= delta
+		if not _skill_impact_sent and _skill_hit_t <= 0.0:
+			_skill_impact_sent = true
+			_resolve_skill(_skill_action)
+		if _skill_action_t <= 0.0:
+			_skill_action = ""
+			_skill_target = null
+		return
+	if _hero_dead or _phase != "fight" or _hero_hit_t >= 0.0 or foes.is_empty():
+		return
+	var skill := _next_ready_skill()
+	if skill.is_empty():
+		return
+	_skill_action = str(skill["key"])
+	_skill_action_t = SKILL_DUR
+	_skill_hit_t = SKILL_DUR * 3.0 / 7.0
+	_skill_impact_sent = false
+	_skill_cd[_skill_action] = float(skill["cooldown"])
+	_skill_target = foes[0]
+	for f in foes:
+		if is_instance_valid(f) and not f.dying and f.position.x < _skill_target.position.x:
+			_skill_target = f
+	_play(str(skill["motion"]), SKILL_DUR)
+
+
+func _resolve_skill(key: String) -> void:
+	if _hero_dead:
+		return
+	var hit := _combat_damage()
+	match key:
+		"drain":
+			if is_instance_valid(_skill_target) and not _skill_target.dying:
+				var dealt := minf(_skill_target.hp, hit)
+				_skill_target.take_damage(hit)
+				gold += dealt * 0.20
+				_anim_fx("fx_cleave", _skill_target.position + Vector2(0, -28), 18.0, 2.4)
+		"wave":
+			_defer_stage_advance = true
+			for f in get_tree().get_nodes_in_group("foes"):
+				if is_instance_valid(f) and not f.dying:
+					f.take_damage(hit)
+			_defer_stage_advance = false
+			_anim_fx("fx_explosion", Vector2(FRONT_X + 48.0, ground_y - 38.0), 18.0, 2.6)
+			if kills >= StageDefs.kills_needed(stage):
+				_advance_stage()
+		"summon":
+			_summon_t = 6.0
+			_anim_fx("fx_death_soul", Vector2(HERO_X + 32.0, ground_y - 46.0), 16.0, 2.2)
 
 
 # Foe가 자기 attack 애니의 네 번째 프레임에 호출한다.
@@ -852,6 +943,8 @@ func _kill_hero() -> void:
 	_attack_t = 0.0
 	_hero_hit_t = -1.0
 	_pending_target = null
+	_skill_action = ""
+	_skill_target = null
 	_hero_flash_t = 0.0
 	_hero.self_modulate = Color.WHITE
 	_anim_fx("fx_death_blood", Vector2(HERO_X, ground_y - 42.0), 18.0, 2.0)
@@ -920,6 +1013,11 @@ func _spawn_wave() -> void:
 	if _walk_only:
 		return
 	if StageDefs.is_boss_stage(stage):
+		_boss_time = BOSS_TIME
+		_spawn_foe()
+		return
+	_boss_time = -1.0
+	if StageDefs.is_midboss_stage(stage):
 		_spawn_foe()
 		return
 	# 단계가 오를수록 한 무리가 두꺼워진다. 화면 폭 때문에 MAX_FOES 가 상한이다.
@@ -931,16 +1029,37 @@ func _spawn_wave() -> void:
 func _spawn_foe() -> void:
 	var act: Dictionary = StageDefs.act_data(stage)
 	var boss := StageDefs.is_boss_stage(stage)
+	var midboss := StageDefs.is_midboss_stage(stage)
 	var key: String = str(act["boss"]) if boss else \
 		str((act["roster"] as Array)[randi() % (act["roster"] as Array).size()])
+	var tier := FoeTiers.get_tier(key)
+	if boss:
+		tier["name"] = str(act["boss_name"])
+		tier["anim_key"] = str(act["boss_anim"])
+	elif midboss:
+		tier["midboss"] = true
+		tier["name_prefix"] = StageDefs.midboss_prefix(stage) + " "
 	var f := Foe.new()
-	f.setup(FoeTiers.get_tier(key), StageDefs.enemy_power(stage),
+	f.setup(tier, StageDefs.enemy_power(stage),
 		StageDefs.gold_per_kill(stage) * gold_mult(), boss)
 	var n := get_tree().get_nodes_in_group("foes").size()
 	# 같은 프레임에 여러 마리가 나가므로 등장 위치도 벌린다. 안 그러면 겹쳐서 걸어온다.
 	f.position = Vector2(SPAWN_X + float(n) * Grid.u(3), ground_y)
 	f.stop_x = FRONT_X + float(n) * Grid.u(3)
 	add_child(f)
+	if boss or midboss:
+		_announce_elite(f.display_name)
+
+
+func _announce_elite(name: String) -> void:
+	_offline_banner.text = name
+	_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.55, 0.4))
+	_offline_banner.visible = true
+	_offline_t = 1.2
+	var shake := create_tween()
+	shake.tween_property(self, "position:x", -4.0, 0.05)
+	shake.tween_property(self, "position:x", 4.0, 0.08)
+	shake.tween_property(self, "position:x", 0.0, 0.05)
 
 
 func on_foe_killed(f: Foe) -> void:
@@ -953,7 +1072,7 @@ func on_foe_killed(f: Foe) -> void:
 	# 보스는 확정, 잡몹은 낮은 확률. 방치형이라 "가끔 좋은 게 뜬다"가 접속 이유가 된다.
 	if f.is_boss or randf() < 0.04:
 		_drop_gear(f.is_boss)
-	if kills >= StageDefs.kills_needed(stage):
+	if not _defer_stage_advance and kills >= StageDefs.kills_needed(stage):
 		_advance_stage()
 	_save_game()
 
@@ -994,13 +1113,32 @@ func _event_gear(item: Dictionary) -> void:
 
 
 func _advance_stage() -> void:
+	for f in get_tree().get_nodes_in_group("foes"):
+		if is_instance_valid(f):
+			f.remove_from_group("foes")
+			f.queue_free()
 	kills = 0
 	stage += 1
 	_start_advance()
+	_apply_stage_bg()
+
+
+func _tick_boss_timer(delta: float) -> bool:
+	if not StageDefs.is_boss_stage(stage) or _phase != "fight":
+		return false
+	_boss_time -= delta
+	if _boss_time > 0.0:
+		return false
+	kills = 0
+	_skill_action = ""
+	_skill_target = null
 	for f in get_tree().get_nodes_in_group("foes"):
 		if is_instance_valid(f):
+			f.remove_from_group("foes")
 			f.queue_free()
-	_apply_stage_bg()
+	_phase = "advance"
+	call_deferred("_start_advance")
+	return true
 
 
 func _apply_stage_bg() -> void:
@@ -1050,8 +1188,9 @@ func _refresh_hud() -> void:
 	_lbl_stage.text = "%s  %d-%d" % [act["name"], StageDefs.act_of(stage) + 1,
 		StageDefs.step_in_act(stage)]
 	var need := StageDefs.kills_needed(stage)
-	_lbl_prog.text = ("보스" if StageDefs.is_boss_stage(stage)
-		else "처치 %d / %d" % [kills, need])
+	_lbl_prog.text = ("보스 %.1f초" % maxf(0.0, _boss_time) if StageDefs.is_boss_stage(stage)
+		else ("중간보스" if StageDefs.is_midboss_stage(stage)
+		else "처치 %d / %d" % [kills, need]))
 	if _stage_bar:
 		_stage_bar.value = clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
 	_lbl_hero.text = "Lv.%d" % hero_lv
@@ -1110,6 +1249,7 @@ func _load_game() -> void:
 func _offline_profile(at_stage: int) -> Dictionary:
 	var act := StageDefs.act_data(at_stage)
 	var boss := StageDefs.is_boss_stage(at_stage)
+	var midboss := StageDefs.is_midboss_stage(at_stage)
 	var hp_mult := 0.0
 	if boss:
 		hp_mult = float(FoeTiers.get_tier(str(act["boss"]))["hp_mult"])
@@ -1118,9 +1258,10 @@ func _offline_profile(at_stage: int) -> Dictionary:
 		for key in roster:
 			hp_mult += float(FoeTiers.get_tier(str(key))["hp_mult"])
 		hp_mult /= maxf(1.0, float(roster.size()))
-	var count := 1 if boss else clampi(2 + at_stage / 8, 2, MAX_FOES)
+	var count := 1 if boss or midboss else clampi(2 + at_stage / 8, 2, MAX_FOES)
 	return {
-		"hp": 10.0 * hp_mult * StageDefs.enemy_power(at_stage) * (12.0 if boss else 1.0),
+		"hp": 10.0 * hp_mult * StageDefs.enemy_power(at_stage) \
+			* (12.0 if boss else (3.5 if midboss else 1.0)),
 		"count": count,
 		"damage": StageDefs.enemy_power(at_stage) * 4.0,
 		"interval": Balance.foe_attack_interval(hp_mult),

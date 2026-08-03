@@ -14,6 +14,8 @@ var hp := 10.0
 var max_hp := 10.0
 var gold := 1.0
 var is_boss := false
+var is_midboss := false
+var display_name := ""
 var stop_x := 0.0          # 이 x까지 걸어와서 멈춘다 (전열)
 var hp_mult := 1.0
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
@@ -36,14 +38,17 @@ const IMPACT_FRAME := 3     # 0부터 세므로 7프레임 중 네 번째
 func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false) -> void:
 	key = str(tier.get("key", "slime"))
 	is_boss = boss
+	is_midboss = bool(tier.get("midboss", false))
+	display_name = "%s%s" % [str(tier.get("name_prefix", "")), str(tier.get("name", key))]
 	hp_mult = float(tier.get("hp_mult", 1.0))
-	# 보스는 한 마리로 단계를 막으므로 체력을 크게, 대신 보상도 크게.
-	var boss_mult := 12.0 if boss else 1.0
+	# 보스·중간보스는 한 마리로 단계를 막는다.
+	var boss_mult := 12.0 if boss else (3.5 if is_midboss else 1.0)
 	max_hp = 10.0 * hp_mult * power * boss_mult
 	hp = max_hp
 	gold = stage_gold * (10.0 if boss else 1.0)
 	_sprite = Assets.tex(str(tier.get("sprite", "")))
-	_walk_frames = Assets.frames("res://assets/anim/%s_walk" % key)
+	_walk_frames = Assets.frames("res://assets/anim/%s_walk" % str(tier.get("anim_key", key)))
+	# 보스 전용 attack 자산은 아직 없어서 원본 몹 attack을 임시 사용한다.
 	_attack_frames = Assets.frames("res://assets/anim/%s_attack" % key)
 	_attack_cd = attack_interval()
 	z_index = 2 if boss else 1
@@ -132,7 +137,7 @@ func shadow_r() -> float:
 
 
 func _size() -> float:
-	return float(Grid.SPRITE) * (2.2 if is_boss else 1.4)
+	return float(Grid.SPRITE) * (2.2 if is_boss else (1.4 * 1.3 if is_midboss else 1.4))
 
 
 func _draw() -> void:
