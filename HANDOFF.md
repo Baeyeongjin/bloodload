@@ -38,6 +38,8 @@ $GODOT = "C:/Users/kpo02/Downloads/Godot_v4.7-stable_win64.exe/Godot_v4.7-stable
 & $GODOT --headless --path . --quit-after 600
 ```
 
+보스 확인용 개발 플래그: `--stage=5|10|20|30|40|50`, `--autoshot`, `--wait=N`.
+
 2026-08-03 결과: 세 테스트 OK, 메인 씬 600프레임 오류 없음, 576×896 캡처 정상.
 격리 검증은 `APPDATA`/`LOCALAPPDATA`를 테스트 전용 폴더로 지정한다.
 
@@ -52,6 +54,10 @@ $GODOT = "C:/Users/kpo02/Downloads/Godot_v4.7-stable_win64.exe/Godot_v4.7-stable
 5. 기존 저장본 마이그레이션(키가 없으면 0)
 
 보석·인장·하수인 조각은 아직 만들지 않는다. 단계별 재화 도입 원칙상 M2는 정수까지다.
+
+그다음 M3에서는 장비 뽑기와 스킬 뽑기를 같은 마일스톤에 구현한다. 공용 규칙은
+5등급 공개 확률(50/30/14/5/1), 10연 희귀+, 100연 전설 천장, 중복 조각, 마일리지다.
+현재 자동 스킬 3종은 기본 지급으로 유지하고 뽑은 스킬 자동 장착 3칸으로 확장한다.
 
 ## 5. 환경·주의
 

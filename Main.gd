@@ -185,13 +185,22 @@ func upgrade_cost(key: String, level: int) -> float:
 
 func _ready() -> void:
 	randomize()
+	var args := OS.get_cmdline_user_args()
+	var preview_stage := 0
+	for arg in args:
+		if arg.begins_with("--stage="):
+			preview_stage = clampi(int(arg.trim_prefix("--stage=")), 1, StageDefs.total_stages())
 	_build_scene()
 	_load_game()
+	if preview_stage > 0:
+		stage = preview_stage
+		kills = 0
+		hero_hp = max_hp()
 	_apply_stage_bg()
 	_start_advance()
 	_refresh_gear_slots()
 	_refresh_hud()
-	for arg in OS.get_cmdline_user_args():
+	for arg in args:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
 		if arg.begins_with("--tab="):
 			_select_tab(arg.trim_prefix("--tab="))
@@ -204,7 +213,7 @@ func _ready() -> void:
 			_walk_only = true
 			for f in get_tree().get_nodes_in_group("foes"):
 				f.queue_free()
-	if "--autoshot" in OS.get_cmdline_user_args():
+	if "--autoshot" in args:
 		_autoshot()
 
 
@@ -541,8 +550,8 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 		Color(0.62, 0.62, 0.68), 120.0, ROW_H * 0.5)
 	var nm := _panel_label(row, Vector2(64.0, ROW_H * 0.5), Type.SIZE_BODY,
 		Color(0.95, 0.90, 0.88), 150.0, ROW_H * 0.5)
-	var eff := _panel_label(row, Vector2(202.0, ROW_H * 0.5), Type.SIZE_SMALL,
-		Color(0.98, 0.72, 0.45), 120.0, ROW_H * 0.5)
+	var eff := _panel_label(row, Vector2(224.0, ROW_H * 0.5), Type.SIZE_SMALL,
+		Color(0.98, 0.72, 0.45), 124.0, ROW_H * 0.5)
 	var btn_w := 160.0
 	var b := Ui.button("", Vector2(w - btn_w, (ROW_H - 48.0) * 0.5),
 		Vector2(btn_w, 48.0), Type.SIZE_MID)
@@ -598,7 +607,7 @@ func _stat_effect(key: String) -> String:
 		"damage": return "+%s 피해" % _n(damage())
 		"speed": return "%.2f초 간격" % attack_interval()
 		"gold": return "x%.2f 흡혈" % gold_mult()
-		"crit": return "%d%% 확률" % int(minf(1.0, 0.01 * float(stat_lv("crit") - 1)) * 100.0)
+		"crit": return "%d%%" % int(minf(1.0, 0.01 * float(stat_lv("crit") - 1)) * 100.0)
 		"critdmg": return "x%.2f 피해" % (1.5 + 0.05 * float(stat_lv("critdmg") - 1))
 	return ""
 

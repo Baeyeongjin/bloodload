@@ -37,6 +37,8 @@ func _init() -> void:
 	boss.free()
 
 	var game = load("res://Main.gd").new()
+	game.lv["crit"] = 11
+	assert(game._stat_effect("crit") == "10%", "치명타 확률 표기는 숫자+%만 쓴다")
 	assert(str(game._next_ready_skill()["key"]) == "drain")
 	game._skill_cd["drain"] = 1.0
 	assert(str(game._next_ready_skill()["key"]) == "wave")
