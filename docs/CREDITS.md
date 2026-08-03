@@ -1,5 +1,7 @@
 # Credits
 
+> 마지막 업데이트: 2026-08-03
+
 ## 폰트
 
 **Fantasy Warrior Font** — Douglas Vautour (Burpy Fresh)

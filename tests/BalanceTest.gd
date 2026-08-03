@@ -94,7 +94,7 @@ func _init() -> void:
 	var both := Balance.crit_mult(50, 50)
 	assert(both > only_chance and both > only_dmg, "치명타 두 축이 안 곱해진다")
 	assert(is_equal_approx(only_dmg, 1.0), "확률 0인데 피해만으로 배수가 올랐다")
-	# 확률은 100%에서 멈춘다 — 그 위로는 슈퍼 치명타로 승계한다(STATS.md 3장).
+	# 확률은 100%에서 멈춘다 — 그 위로는 슈퍼 치명타로 승계한다(docs/STATS.md 3장).
 	assert(is_equal_approx(Balance.crit_mult(101, 1), Balance.crit_mult(500, 1)))
 
 	# 11) 스탯마다 비용 곡선이 다르다. 같으면 표를 안 읽고 있는 것이다.
@@ -119,7 +119,47 @@ func _init() -> void:
 		20, 10.0, 5, 40.0, 1.5)
 	assert(survives and not fails, "오프라인 생존 판정이 공격/생존 차이를 못 가른다")
 
+	# 14) 대표 성장값별 처치시간. 장비·영웅 레벨을 빼 보수적으로 잡는다.
+	var starter_ttk := _foe_hp(10, "boss") / _build_dps(1, 1, 1, 1)
+	var first_upgrade_ttk := _foe_hp(10, "boss") / _build_dps(2, 1, 1, 1)
+	assert(starter_ttk > 60.0 and first_upgrade_ttk < 60.0,
+		"첫 보스가 성장 전에는 막고 첫 공격력 훈련 뒤에는 열리지 않는다")
+	var checkpoints := [
+		{"name": "첫날", "stage": 50, "build": [60, 40, 10, 10]},
+		{"name": "1주", "stage": 500, "build": [200, 150, 35, 40]},
+		{"name": "1개월", "stage": 1000, "build": [600, 450, 80, 120]},
+	]
+	for point in checkpoints:
+		var build: Array = point["build"]
+		var build_dps := _build_dps(build[0], build[1], build[2], build[3])
+		var normal_ttk := _foe_hp(point["stage"], "normal") / build_dps
+		var mid_ttk := _foe_hp(point["stage"], "midboss") / build_dps
+		var boss_ttk := _foe_hp(point["stage"], "boss") / build_dps
+		assert(boss_ttk < 60.0, "%s 대표 성장값으로 보스를 못 잡는다" % point["name"])
+		print("TTK %-4s %s  일반 %.2fs / 중간 %.2fs / 보스 %.2fs  DPS %.1f"
+			% [point["name"], StageDefs.label(point["stage"]), normal_ttk,
+			mid_ttk, boss_ttk, build_dps])
+
 	print("Crit: 확률만 x%.2f / 피해만 x%.2f / 둘다 x%.2f"
 		% [only_chance, only_dmg, both])
 	print("BalanceTest OK  (10억으로 Lv%d 까지, 잔액 %.0f)" % [lv2, gold])
 	quit()
+
+
+func _build_dps(damage_lv: int, speed_lv: int, crit_lv: int, critdmg_lv: int) -> float:
+	var hit := Balance.hero_damage(damage_lv, 0.0, 1) \
+		* Balance.crit_mult(crit_lv, critdmg_lv)
+	return Balance.auto_dps(hit, Balance.attack_interval(speed_lv), 0.70, 20.0, 6.0, 0.30)
+
+
+func _foe_hp(at_stage: int, role: String) -> float:
+	var act: Dictionary = StageDefs.act_data(at_stage)
+	var hp_mult := 0.0
+	if role == "boss":
+		hp_mult = float(FoeTiers.get_tier(str(act["boss"]))["hp_mult"])
+	else:
+		for key in act["roster"]:
+			hp_mult += float(FoeTiers.get_tier(str(key))["hp_mult"])
+		hp_mult /= float((act["roster"] as Array).size())
+	var role_mult := 12.0 if role == "boss" else (3.5 if role == "midboss" else 1.0)
+	return 10.0 * hp_mult * StageDefs.enemy_power(at_stage) * role_mult

@@ -1,7 +1,7 @@
 class_name Balance
 extends RefCounted
 
-# 수치가 코드로 들어오는 유일한 자리. 설계 근거는 STATS.md 에 있다.
+# 수치가 코드로 들어오는 유일한 자리. 설계 근거는 docs/STATS.md 에 있다.
 #
 # 여기 모으는 이유: 스탯 계산이 Main 안에 흩어져 있으면 테스트하려고 씬을 통째로
 # 띄워야 한다. 순수 함수로 빼 두면 headless 로 수치만 검증할 수 있다.
@@ -13,7 +13,7 @@ const UP_EXP := 1.15
 # 한 단계 올리는 비용. level 은 "지금 레벨"이고, 그 다음 단계를 사는 값이다.
 # base/exp 는 스탯마다 다르다(StatDefs). 안 주면 무한 스탯 기본값을 쓴다.
 #
-# **조정은 지수로 한다, 레벨당 효과로 하지 않는다**(STATS.md 6장) —
+# **조정은 지수로 한다, 레벨당 효과로 하지 않는다**(docs/STATS.md 6장) —
 # 효과를 만지면 이미 올린 플레이어의 수치가 바뀌어 체감이 어긋난다.
 static func upgrade_cost(level: int, base := UP_BASE, e := UP_EXP) -> float:
 	return base * pow(e, float(level - 1))
@@ -39,6 +39,31 @@ static func crit_mult(chance_lv: int, dmg_lv: int) -> float:
 	var chance := minf(1.0, 0.01 * float(chance_lv - 1))
 	var dmg := 1.5 + 0.05 * float(dmg_lv - 1)
 	return 1.0 + chance * (dmg - 1.0)
+
+
+static func hero_damage(damage_level: int, gear_damage: float, hero_level: int) -> float:
+	return (4.0 * float(maxi(1, damage_level)) + maxf(0.0, gear_damage)) \
+		* hero_mult(hero_level)
+
+
+static func attack_interval(speed_level: int) -> float:
+	return maxf(0.10, 0.60 * pow(0.9982, float(maxi(1, speed_level) - 1)))
+
+
+# 피해 스킬은 모션 동안 놓친 기본공격 수만큼 최소 피해를 보장한다.
+static func skill_hit_mult(interval: float, action_duration: float) -> float:
+	return maxf(1.0, maxf(0.0, action_duration) / maxf(0.001, interval))
+
+
+# 단일 대상 장기 DPS. 피해 스킬은 위 보정으로 기본공격을 대체하므로 여기서는
+# 소환 시전 중 손실과 지속 버프만 평균낸다.
+static func auto_dps(hit_damage: float, interval: float, action_duration: float,
+		summon_cooldown: float, summon_duration: float, summon_bonus: float) -> float:
+	var cooldown := maxf(0.001, summon_cooldown)
+	var cast_uptime := clampf(maxf(0.0, action_duration) / cooldown, 0.0, 1.0)
+	var buff_uptime := clampf(maxf(0.0, summon_duration) / cooldown, 0.0, 1.0)
+	return maxf(0.0, hit_damage) / maxf(0.001, interval) \
+		* (1.0 - cast_uptime) * (1.0 + maxf(0.0, summon_bonus) * buff_uptime)
 
 
 # 전투력 — 성장 전체를 숫자 하나로 압축한 값.

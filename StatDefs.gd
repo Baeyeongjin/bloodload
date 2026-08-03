@@ -1,9 +1,9 @@
 class_name StatDefs
 extends RefCounted
 
-# 성장 스탯 표. 설계 근거는 STATS.md 에 있고, 여기가 그 표의 코드판이다.
+# 성장 스탯 표. 설계 근거는 docs/STATS.md 에 있고, 여기가 그 표의 코드판이다.
 #
-# 해금을 스테이지에 묶는 이유(STATS.md 4b): 방치형의 핵심은 성장에 따른 콘텐츠
+# 해금을 스테이지에 묶는 이유(docs/STATS.md 4b): 방치형의 핵심은 성장에 따른 콘텐츠
 # 해금이다. 그래서 잠긴 칸도 **감추지 않고 회색으로 보여 준다** — 감추면 있는 줄도
 # 몰라 목표가 안 되고, 보이면 "저기까지 가면 저게 열린다"가 스테이지를 미는 이유가 된다.
 #
@@ -51,7 +51,7 @@ static func is_open(key: String, stage: int) -> bool:
 	return lock_reason(key, stage) == ""
 
 
-# 상한이 있는 스탯은 만렙에서 멈춘다(STATS.md 1장 — 곱연산은 반드시 유한).
+# 상한이 있는 스탯은 만렙에서 멈춘다(docs/STATS.md 1장 — 곱연산은 반드시 유한).
 static func at_cap(key: String, level: int) -> bool:
 	var s := of(key)
 	return s.has("cap") and level >= int(s["cap"])

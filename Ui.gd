@@ -41,6 +41,19 @@ static func icon(path: String, pos: Vector2, box := 0.0) -> TextureRect:
 	return t
 
 
+# 직사각형 UI 원화를 정확한 크기로 표시한다. 카드 프레임처럼 정사각형이 아닌 자산용.
+static func image(path: String, pos: Vector2, size: Vector2) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = Assets.tex(path)
+	t.position = Grid.pxv(pos)
+	t.size = Grid.pxv(size)
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_SCALE
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return t
+
+
 # 도트 버튼. 9-slice라 가로 길이를 마음대로 바꿔도 테두리가 안 뭉개진다.
 static func button(text: String, pos: Vector2, size: Vector2,
 		font_size := Type.SIZE_BODY) -> Button:

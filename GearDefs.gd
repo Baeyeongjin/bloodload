@@ -11,14 +11,10 @@ extends RefCounted
 const SLOTS := ["weapon", "armor", "trinket"]
 const SLOT_NAME := {"weapon": "무기", "armor": "방어구", "trinket": "장신구"}
 const SLOT_PREFIX := {"weapon": "gw_", "armor": "ga_", "trinket": "gt_"}
+const STAT_NAME := {"damage": "공격력", "tough": "최대 체력", "gold": "피 획득"}
 
 # 등급. power는 스탯 배수이자 드랍 가중치의 역수 역할을 한다.
-const RARITY := [
-	{"key": "common", "name": "평범한", "power": 1.0, "weight": 60.0, "col": Color(0.72, 0.72, 0.76)},
-	{"key": "rare", "name": "핏빛", "power": 1.8, "weight": 26.0, "col": Color(0.62, 0.45, 0.95)},
-	{"key": "epic", "name": "고대의", "power": 3.2, "weight": 11.0, "col": Color(1.0, 0.78, 0.34)},
-	{"key": "legend", "name": "군주의", "power": 5.5, "weight": 3.0, "col": Color(1.0, 0.32, 0.30)},
-]
+const RARITY := GachaDefs.RARITIES
 
 # 슬롯이 올리는 스탯. 무기=피해, 방어구=체력(=생존 대신 방치 안정성), 장신구=흡혈량.
 const SLOT_STAT := {"weapon": "damage", "armor": "tough", "trinket": "gold"}
@@ -83,11 +79,14 @@ static func roll_rarity(luck: float = 0.0) -> Dictionary:
 
 # 장비 하나를 굴린다. stage 가 높을수록 기본 수치가 커진다.
 static func roll(slot: String, stage: int, luck: float = 0.0) -> Dictionary:
+	return make(slot, stage, roll_rarity(luck))
+
+
+static func make(slot: String, stage: int, rarity: Dictionary) -> Dictionary:
 	var pool := icon_pool(slot)
 	if pool.is_empty():
 		return {}
 	var icon: String = pool[randi() % pool.size()]
-	var rarity := roll_rarity(luck)
 	var base := 1.0 + float(stage) * 0.4
 	return {
 		"slot": slot,
@@ -116,12 +115,38 @@ static func upgrade_cost(item: Dictionary) -> float:
 	return 25.0 * mult * pow(1.45, float(item.get("lv", 0)))
 
 
+# 자동 장착에서 밀린 장비는 버리지 않고 전투력의 두 배만큼 정수로 바꾼다.
+static func salvage_value(item: Dictionary) -> float:
+	return maxf(1.0, ceilf(power(item) * 2.0))
+
+
+# 수집 효과는 장착과 무관하다. 최고 등급 한 벌만 남기므로 중복 수에는 곱하지 않는다.
+static func collection_rate(item: Dictionary) -> float:
+	return [0.005, 0.01, 0.02, 0.04, 0.08][GachaDefs.rarity_index(
+		str(item.get("rarity", "common")))]
+
+
+static func promote(item: Dictionary) -> bool:
+	var index := GachaDefs.rarity_index(str(item.get("rarity", "common")))
+	if index >= GachaDefs.RARITIES.size() - 1:
+		return false
+	var old_rarity: Dictionary = GachaDefs.RARITIES[index]
+	var next_rarity: Dictionary = GachaDefs.RARITIES[index + 1]
+	item["base"] = float(item.get("base", 0.0)) / float(old_rarity["power"]) \
+		* float(next_rarity["power"])
+	item["rarity"] = next_rarity["key"]
+	item["name"] = "%s %s" % [next_rarity["name"], _noun_of(str(item["icon"]))]
+	item["col"] = next_rarity["col"]
+	return true
+
+
 static func icon_path(item: Dictionary) -> String:
 	return "res://assets/items/%s.png" % str(item.get("icon", ""))
 
 
 static func slot_frame(item: Dictionary) -> String:
-	return "res://assets/ui/slot_%s.png" % str(item.get("rarity", "common"))
+	var rarity := str(item.get("rarity", "common"))
+	return "res://assets/ui/slot_%s.png" % ("common" if rarity == "uncommon" else rarity)
 
 
 # 파일명 gw_sword_azure -> "검". 접두어와 색 수식어를 떼고 명사만 찾는다.

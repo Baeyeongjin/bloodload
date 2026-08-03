@@ -5,6 +5,20 @@ extends SceneTree
 #   godot --headless --script tests/GearTest.gd
 
 func _init() -> void:
+	assert(GachaDefs.RARITIES.size() == 5)
+	var total_weight := 0.0
+	for rarity in GachaDefs.RARITIES:
+		total_weight += float(rarity["weight"])
+	assert(is_equal_approx(total_weight, 100.0), "공개 확률 합이 100%가 아니다")
+	var ten := GachaDefs.pull(10, 0)
+	var guaranteed := false
+	for rarity_key in ten["rarities"]:
+		guaranteed = guaranteed or GachaDefs.rarity_index(str(rarity_key)) >= GachaDefs.RARE_INDEX
+	assert(guaranteed, "10연 희귀 이상 보장이 작동하지 않는다")
+	var pity := GachaDefs.pull(1, 99)
+	assert(pity["rarities"][0] == "legend" and pity["pity"] == 0,
+		"100연 전설 천장이 작동하지 않는다")
+
 	for slot in GearDefs.SLOTS:
 		var pool := GearDefs.icon_pool(slot)
 		assert(pool.size() > 0, "아이콘 풀이 비었다: " + slot)
@@ -15,6 +29,9 @@ func _init() -> void:
 		assert(not str(item["name"]).is_empty())
 		assert(FileAccess.file_exists(GearDefs.icon_path(item)), GearDefs.icon_path(item))
 		assert(FileAccess.file_exists(GearDefs.slot_frame(item)), GearDefs.slot_frame(item))
+		var uncommon := GearDefs.make(slot, 1, GachaDefs.rarity("uncommon"))
+		assert(uncommon["rarity"] == "uncommon")
+		assert(FileAccess.file_exists(GearDefs.slot_frame(uncommon)))
 
 	# 단계가 오르면 같은 등급이라도 수치가 커져야 한다 — 안 그러면 진행할 이유가 없다.
 	var low := 0.0
@@ -34,9 +51,18 @@ func _init() -> void:
 	var it := GearDefs.roll("weapon", 5)
 	var p0 := GearDefs.power(it)
 	var c0 := GearDefs.upgrade_cost(it)
+	var salvage0 := GearDefs.salvage_value(it)
 	it["lv"] = 1
 	assert(GearDefs.power(it) > p0, "강화가 수치를 안 올린다")
 	assert(GearDefs.upgrade_cost(it) > c0, "강화 비용이 안 오른다")
+	assert(GearDefs.salvage_value(it) > salvage0, "강한 장비의 분해 정수가 늘지 않는다")
+	var promoted := GearDefs.make("weapon", 1, GachaDefs.rarity("common"))
+	var promoted_power := GearDefs.power(promoted)
+	var collection_rate := GearDefs.collection_rate(promoted)
+	assert(GearDefs.promote(promoted), "일반 장비를 고급으로 합성하지 못한다")
+	assert(promoted["rarity"] == "uncommon" and GearDefs.power(promoted) > promoted_power)
+	assert(GearDefs.collection_rate(promoted) > collection_rate,
+		"합성 후 보유 효과가 오르지 않는다")
 
 	# 도감은 몹 표 전체를 덮어야 한다. 스프라이트가 빠지면 빈 칸으로 남는다.
 	var keys := FoeTiers.all_keys()

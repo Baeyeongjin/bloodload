@@ -8,6 +8,7 @@ extends RefCounted
 
 static var _cache := {}
 static var _fcache := {}
+static var _reach_cache := {}
 
 static func tex(path: String) -> Texture2D:
 	if path == "":
@@ -36,3 +37,24 @@ static func frames(dir_path: String) -> Array:
 			break
 	_fcache[dir_path] = arr
 	return arr
+
+
+# 중심 정렬 스프라이트가 오른쪽을 볼 때, 중심부터 불투명 픽셀 끝까지의 실제 거리.
+static func frame_reach(dir_path: String, frame: int, draw_scale: float = 1.0,
+		flipped: bool = false) -> float:
+	var key := "%s:%d:%f:%s" % [dir_path, frame, draw_scale, str(flipped)]
+	if _reach_cache.has(key):
+		return float(_reach_cache[key])
+	var all_frames := frames(dir_path)
+	if all_frames.is_empty():
+		return 0.0
+	var texture: Texture2D = all_frames[clampi(frame, 0, all_frames.size() - 1)]
+	var image := texture.get_image()
+	var used := image.get_used_rect()
+	if used.size.x <= 0:
+		return 0.0
+	var edge := float(image.get_width() - used.position.x) if flipped \
+		else float(used.end.x)
+	var reach := maxf(0.0, (edge - float(image.get_width()) * 0.5) * draw_scale)
+	_reach_cache[key] = reach
+	return reach

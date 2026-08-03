@@ -2,7 +2,7 @@ class_name Foe
 extends Node2D
 
 # 방치형 몹. arrow-rpg의 Enemy(600줄)에서 방치형에 필요한 것만 남겼다 —
-# 추격 AI·행동 타입·특수공격·넉백이 전부 빠진다. 몹은 왼쪽으로 걸어오다 멈춰 서서
+# 추격 AI·행동 타입·특수공격·실제 좌표 넉백이 전부 빠진다. 몹은 왼쪽으로 걸어오다 멈춰 서서
 # 맞는 게 전부다. 플레이어가 조작하지 않으므로 회피할 수단도, 피할 이유도 없다.
 
 # 배경 스크롤과 공유하는 속도. 640에서 전열 300까지 약 2.8초 — 이보다 느리면
@@ -25,6 +25,8 @@ var _attack_frames: Array = []
 var _sprite: Texture2D = null
 var _anim_t := 0.0
 var _flash_t := 0.0
+var _hit_t := 0.0
+var _visual_frozen := false
 var _attack_cd := 0.0
 var _attack_anim := -1.0
 var _impact_sent := false
@@ -33,6 +35,8 @@ var dying_t := 0.0
 const DIE_DUR := 0.26
 const ATTACK_DUR := 0.42
 const IMPACT_FRAME := 3     # 0부터 세므로 7프레임 중 네 번째
+const HIT_REACT_DUR := 0.14
+const HIT_KNOCKBACK := 7.0
 
 
 func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false) -> void:
@@ -64,7 +68,11 @@ func take_damage(d: float) -> void:
 		return
 	hp -= d
 	_flash_t = 0.10
+	_hit_t = HIT_REACT_DUR
 	self_modulate = Color(7, 7, 8)
+	var main := get_parent()
+	if main and main.has_method("on_foe_hit"):
+		main.on_foe_hit(self, d)
 	if hp <= 0.0:
 		_die()
 
@@ -82,6 +90,10 @@ func set_combat_active(active: bool) -> void:
 		_impact_sent = false
 
 
+func set_visual_frozen(frozen: bool) -> void:
+	_visual_frozen = frozen
+
+
 func _die() -> void:
 	dying = true
 	remove_from_group("foes")
@@ -91,11 +103,13 @@ func _die() -> void:
 
 
 func _process(delta: float) -> void:
-	_anim_t += delta
-	if _flash_t > 0.0:
-		_flash_t -= delta
-		if _flash_t <= 0.0:
-			self_modulate = Color(1, 1, 1)
+	if not _visual_frozen:
+		_anim_t += delta
+		_hit_t = maxf(0.0, _hit_t - delta)
+		if _flash_t > 0.0:
+			_flash_t -= delta
+			if _flash_t <= 0.0:
+				self_modulate = Color(1, 1, 1)
 	if dying:
 		dying_t += delta
 		if dying_t >= DIE_DUR:
@@ -137,7 +151,11 @@ func shadow_r() -> float:
 
 
 func _size() -> float:
-	return float(Grid.SPRITE) * (2.2 if is_boss else (1.4 * 1.3 if is_midboss else 1.4))
+	return float(Grid.SPRITE) * (2.8 if is_boss else (2.1 if is_midboss else 1.4))
+
+
+func hit_offset() -> float:
+	return HIT_KNOCKBACK * clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
 
 
 func _draw() -> void:
@@ -147,6 +165,10 @@ func _draw() -> void:
 	var wsc := 1.0
 	var hsc := 1.0
 	var alpha := 1.0
+	var hit_f := clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
+	wsc *= 1.0 + 0.12 * hit_f
+	hsc *= 1.0 - 0.10 * hit_f
+	draw_set_transform(Vector2(hit_offset(), 0.0))
 	if dying:
 		# 죽음: 발은 붙인 채로 가로로 퍼지고 세로로 눌린다. 파티클 없이 스쿼시만.
 		var f := dying_t / DIE_DUR
@@ -168,6 +190,7 @@ func _draw() -> void:
 	else:
 		draw_circle(Vector2(0, -w * 0.4), w * 0.4, Color(0.8, 0.35, 0.35, alpha))
 	if dying or max_hp <= 0.0:
+		draw_set_transform(Vector2.ZERO)
 		return
 	# 체력 바: 보스만 크게, 잡몹은 얇게. 난전에서 남은 체력이 읽혀야 한다.
 	var bw := w * 0.8
@@ -176,3 +199,4 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2(-bw * 0.5, by), Vector2(bw, bh)), Color(0, 0, 0, 0.7))
 	draw_rect(Rect2(Vector2(-bw * 0.5, by), Vector2(bw * clampf(hp / max_hp, 0.0, 1.0), bh)),
 		Color(0.9, 0.25, 0.25) if is_boss else Color(0.85, 0.45, 0.35))
+	draw_set_transform(Vector2.ZERO)

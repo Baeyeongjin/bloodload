@@ -2,7 +2,7 @@
 # 바닥 띠(돌벽)의 윗면이 원본 몇 번째 행인지 잰다.
 # 방법: 아래에서 위로 올라가며 행 밝기가 급격히 밝아지는 지점 = 벽 위쪽 경계.
 import zlib, struct, os
-os.chdir(r"C:\Users\kpo02\OneDrive\바탕 화면\개인폴더\claude ai Team\AI 팀(개발 , 디자인)\output\bloodlord\assets\bg")
+os.chdir(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "bg")))
 
 
 def load(p):
