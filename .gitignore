@@ -1,0 +1,18 @@
+# Godot generated cache
+.godot/
+
+# Godot editor user directories accidentally created beside the project
+export_templates/
+feature_profiles/
+script_templates/
+text_editor_themes/
+
+# Local captures and logs
+autoshot.png
+*.log
+*.tmp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
