@@ -127,7 +127,7 @@ var _hud_root: Control   # 테마가 걸린 실제 부모
 var _lbl_stage: Label
 var _lbl_gold: Label
 var _lbl_essence: Label
-var _lbl_dps: Label
+var _lbl_gem: Label
 var _lbl_prog: Label
 var _lbl_power: Label
 var _lbl_hero: Label
@@ -150,12 +150,12 @@ var _panels := {}           # 탭 이름 -> 창 (한 번에 하나만 보인다)
 var _tab_btns := {}
 var _tab := "growth"
 var _codex_cells := {}
-var gacha_pity := {"gear": 0, "skill": 0}
-var gacha_pulls := {"gear": 0, "skill": 0}
+var gacha_pity := {"weapon": 0, "armor": 0, "trinket": 0, "skill": 0}
+var gacha_pulls := {"weapon": 0, "armor": 0, "trinket": 0, "skill": 0}
 var gacha_owned := {}
 var gacha_shards := {}
 var free_pull_date := ""
-var _gacha_kind := "gear"
+var _gacha_kind := "weapon"
 var _gacha_labels := {}
 var _gacha_buttons := {}
 var _gacha_reveal: Control
@@ -263,6 +263,9 @@ func _ready() -> void:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
 		if arg.begins_with("--tab="):
 			_select_tab(arg.trim_prefix("--tab="))
+		# [개발 도구] --gacha=armor : 해금된 소환 종류를 선택해 캡처한다.
+		if arg.begins_with("--gacha="):
+			_set_gacha_kind(arg.trim_prefix("--gacha="))
 		# [개발 도구] --wait=8 : 캡처 전 대기 시간. 진행바처럼 값이 차야 보이는 것을
 		# 확인할 때 쓴다.
 		if arg.begins_with("--wait="):
@@ -271,6 +274,8 @@ func _ready() -> void:
 		if arg.begins_with("--pull="):
 			var pull_args := arg.trim_prefix("--pull=").split(":")
 			var pull_kind := str(pull_args[0])
+			if pull_kind == "gear":
+				pull_kind = "weapon"
 			var pull_count := int(pull_args[1]) if pull_args.size() > 1 else 1
 			_set_gacha_kind(pull_kind)
 			free_pull_date = Time.get_date_string_from_system()
@@ -495,20 +500,24 @@ func _build_topbar() -> void:
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_stage_bar = Ui.bar(Vector2(TOP_PAD, 86.0), right - TOP_PAD, Color(0.78, 0.18, 0.22))
 	_hud_root.add_child(_stage_bar)
-	# 3줄: 피 / 초당 피해
-	# 마지막 줄은 172 에서 끝낸다 — 패널 테두리(12px)가 180 부터라 8px 을 남긴다.
-	_hud_root.add_child(Ui.icon("res://assets/ui/res_blood.png",
-		Vector2(TOP_PAD, 141.0), TOP_ICON))
-	_lbl_gold = _mk_label(Vector2(TOP_PAD + TOP_ICON + 8.0, 140.0),
-		Type.SIZE_BODY, Color(1.0, 0.4, 0.4))
-	_lbl_gold.size.y = 32.0
-	_lbl_gold.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_hud_root.add_child(Ui.icon("res://assets/ui/stat_damage.png",
-		Vector2(w * 0.55, 141.0), TOP_ICON))
-	_lbl_dps = _mk_label(Vector2(w * 0.55 + TOP_ICON + 8.0, 140.0),
-		Type.SIZE_SMALL, Color(0.9, 0.75, 0.75))
-	_lbl_dps.size.y = 32.0
-	_lbl_dps.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 3줄: 성장에 쓰는 재화는 어디서든 한 번에 읽히도록 한 줄에 모은다.
+	_hud_root.add_child(Ui.panel(Vector2(18.0, 132.0), Vector2(540.0, 48.0)))
+	var currencies := [
+		["res://assets/ui/res_blood.png", Color(1.0, 0.4, 0.4)],
+		["res://assets/items/gem.png", Color(0.72, 0.82, 1.0)],
+		["res://assets/ui/res_gem.png", Color(0.86, 0.72, 1.0)],
+	]
+	var labels: Array[Label] = []
+	for i in currencies.size():
+		var x := 34.0 + float(i) * 176.0
+		_hud_root.add_child(Ui.icon(currencies[i][0], Vector2(x, 143.0), 24.0))
+		var label := _mk_label(Vector2(x + 32.0, 140.0), Type.SIZE_SMALL, currencies[i][1])
+		label.size = Vector2(132.0, 30.0)
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		labels.append(label)
+	_lbl_gold = labels[0]
+	_lbl_essence = labels[1]
+	_lbl_gem = labels[2]
 
 
 func _mk_label(pos: Vector2, size: int, col: Color) -> Label:
@@ -629,6 +638,7 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 	var btn_w := 160.0
 	var b := Ui.button("", Vector2(w - btn_w, (ROW_H - 48.0) * 0.5),
 		Vector2(btn_w, 48.0), Type.SIZE_MID)
+	Ui.cost_icon(b, "res://assets/ui/res_blood.png")
 	b.pressed.connect(func() -> void: _buy(key))
 	row.add_child(b)
 	# 잠긴 행은 버튼 대신 조건을 보여 준다 — 감추면 목표가 안 되고, 보이면 이유가 된다.
@@ -653,7 +663,7 @@ func _refresh_growth() -> void:
 		var row: Dictionary = _stat_rows[key]
 		var reason := StatDefs.lock_reason(key, StageDefs.major_stage(stage))
 		var open := reason == ""
-		row["lv"].text = "Lv.%d" % stat_lv(key)
+		row["lv"].text = "레벨 %d" % stat_lv(key)
 		row["name"].text = str(s["name"])
 		row["eff"].text = _stat_effect(key) if open else ""
 		row["btn"].visible = open
@@ -668,6 +678,7 @@ func _refresh_growth() -> void:
 			continue
 		if StatDefs.at_cap(key, stat_lv(key)):
 			row["btn"].text = "만렙"
+			row["btn"].icon = null
 			row["btn"].disabled = true
 			continue
 		var cost := _buy_cost(key, buy_step)
@@ -699,41 +710,24 @@ const SLOT_GAP := 168.0   # 칸 사이 간격
 const SLOT_X0 := (576.0 - (SLOT_GAP * 2.0 + SLOT_BOX)) * 0.5
 
 
-# 소환 결과에서만 희귀 이상 등급색과 반짝임을 보여 준다.
+# 소환 결과에서만 희귀 이상 등급색을 강하게 맥동시킨다.
 func _add_summon_rarity_fx(parent: Control, rarity: Dictionary, frame_path: String,
 		pos: Vector2, size: Vector2) -> void:
 	var rarity_index := GachaDefs.rarity_index(str(rarity["key"]))
 	if rarity_index < GachaDefs.RARE_INDEX:
 		return
 	var aura := Ui.image(frame_path, pos, size)
-	aura.modulate = Color(Color(rarity["col"]), 0.46)
+	var strength := 0.46 + float(rarity_index - GachaDefs.RARE_INDEX) * 0.14
+	var scale_peak := 1.02 + float(rarity_index - GachaDefs.RARE_INDEX) * 0.02
+	aura.modulate = Color(Color(rarity["col"]), strength)
+	aura.pivot_offset = size * 0.5
 	parent.add_child(aura)
 	if aura.is_inside_tree():
 		var aura_tween := aura.create_tween().set_loops()
-		aura_tween.tween_property(aura, "modulate:a", 0.16, 0.55)
-		aura_tween.tween_property(aura, "modulate:a", 0.46, 0.55)
-	var corners := [
-		pos - Vector2(8.0, 8.0),
-		pos + Vector2(size.x - 24.0, -8.0),
-		pos + Vector2(-8.0, size.y - 24.0),
-		pos + size - Vector2(24.0, 24.0),
-	]
-	var count := 4 if rarity_index >= GachaDefs.LEGEND_INDEX else (2 if rarity_index >= 3 else 1)
-	for i in count:
-		var sparkle := Ui.icon("res://assets/ui/rarity_sparkle.png", corners[i], 32.0)
-		sparkle.modulate = Color(rarity["col"])
-		sparkle.modulate.a = 0.0
-		sparkle.pivot_offset = sparkle.size * 0.5
-		sparkle.scale = Vector2(0.25, 0.25)
-		parent.add_child(sparkle)
-		if sparkle.is_inside_tree():
-			var sparkle_tween := sparkle.create_tween().set_loops()
-			sparkle_tween.tween_interval(0.18 + float(i) * 0.14)
-			sparkle_tween.tween_property(sparkle, "modulate:a", 1.0, 0.18)
-			sparkle_tween.parallel().tween_property(sparkle, "scale", Vector2(1.3, 1.3), 0.18)
-			sparkle_tween.tween_property(sparkle, "modulate:a", 0.0, 0.28)
-			sparkle_tween.parallel().tween_property(sparkle, "scale", Vector2(0.25, 0.25), 0.28)
-			sparkle_tween.tween_interval(0.62)
+		aura_tween.tween_property(aura, "modulate:a", strength * 0.35, 0.55)
+		aura_tween.parallel().tween_property(aura, "scale", Vector2.ONE, 0.55)
+		aura_tween.tween_property(aura, "modulate:a", strength, 0.55)
+		aura_tween.parallel().tween_property(aura, "scale", Vector2.ONE * scale_peak, 0.55)
 
 
 # 장착 슬롯 3칸. 등급 테두리 색으로 지금 뭘 끼고 있는지 곁눈질에도 읽히게 한다.
@@ -771,22 +765,21 @@ func _build_gear(root: Control) -> void:
 		# 이 폰트는 한글 글자 폭이 크기보다 넓다 — 칸이 좁으면 크기부터 내린다.
 		var b := Ui.button("", Vector2(at.x + SLOT_BOX * 0.5 - 76.0, 186.0),
 			Vector2(152.0, 48.0), Type.SIZE_SMALL)
+		Ui.cost_icon(b, "res://assets/items/gem.png")
 		b.pressed.connect(func() -> void: _enhance(slot))
 		_gear_equipped_view.add_child(b)
 		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl, "btn": b}
-	_lbl_essence = _panel_label(_gear_equipped_view, Vector2(PAD, CONTENT_BOTTOM - 52.0), Type.SIZE_BODY,
-		Color(0.72, 0.82, 1.0), CONTENT_W, 24.0)
 	_panel_label(_gear_equipped_view, Vector2(PAD, CONTENT_BOTTOM - 20.0), Type.SIZE_SMALL,
 		Color(0.6, 0.6, 0.66), CONTENT_W, 20.0).text = "드랍은 자동 장착. 소환 장비는 보관함에서 선택."
 	_gear_inventory_view = Control.new()
 	_gear_inventory_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_inventory_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_gear_inventory_view)
-	var filter_names := ["전체", "일반", "고급", "희귀", "영웅", "전설"]
-	var filter_keys := ["all", "common", "uncommon", "rare", "epic", "legend"]
+	var filter_names := ["전체", "커먼", "언커먼", "레어", "에픽", "레전더리", "신화"]
+	var filter_keys := ["all", "common", "uncommon", "rare", "epic", "legend", "mythic"]
 	for i in filter_keys.size():
-		var filter_button := Ui.button(filter_names[i], Vector2(PAD + i * 86.0, 62.0),
-			Vector2(80.0, 32.0), Type.SIZE_SMALL)
+		var filter_button := Ui.button(filter_names[i], Vector2(PAD + i * 76.0, 62.0),
+			Vector2(70.0, 32.0), Type.SIZE_SMALL)
 		filter_button.toggle_mode = true
 		var filter_key: String = filter_keys[i]
 		filter_button.pressed.connect(func() -> void: _set_gear_filter(filter_key))
@@ -859,11 +852,14 @@ func _refresh_gear_inventory() -> void:
 		cell.add_child(glow)
 		var frame := Ui.image("res://assets/ui/gear_card.png", Vector2(2.0, 0.0),
 			Vector2(112.0, 128.0))
+		frame.modulate = Color(rarity["col"])
 		cell.add_child(frame)
+		_add_summon_rarity_fx(cell, rarity, "res://assets/ui/gear_card.png",
+			Vector2(2.0, 0.0), Vector2(112.0, 128.0))
 		cell.add_child(Ui.icon(GearDefs.icon_path(item), Vector2(30.0, 36.0), 56.0))
 		var level := _panel_label(cell, Vector2(8.0, 4.0), Type.SIZE_SMALL,
 			Color.WHITE, 100.0, 20.0)
-		level.text = "%sLv.%d" % ["E  " if equipped_now else "", int(item.get("lv", 0))]
+		level.text = "%s레벨 %d" % ["장착  " if equipped_now else "", int(item.get("lv", 0))]
 		level.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var detail := _panel_label(cell, Vector2(6.0, 102.0), Type.SIZE_SMALL,
 			Color(rarity["col"]), 104.0, 20.0)
@@ -908,50 +904,60 @@ func _refresh_gear_detail() -> void:
 	shade.size = Vector2(PANEL_W, PANEL_H)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_gear_detail.add_child(shade)
-	_gear_detail.add_child(Ui.image("res://assets/ui/gear_detail_panel.png", Vector2.ZERO,
-		Vector2(PANEL_W, PANEL_H)))
+	_gear_detail.add_child(Ui.panel(Vector2.ZERO, Vector2(PANEL_W, PANEL_H)))
+	_gear_detail.add_child(Ui.panel(Vector2(18.0, 18.0), Vector2(190.0, 210.0)))
+	_gear_detail.add_child(Ui.panel(Vector2(216.0, 18.0), Vector2(342.0, 210.0)))
 	var rarity := GachaDefs.rarity(str(item.get("rarity", "common")))
-	var frame := Ui.icon(GearDefs.slot_frame(item), Vector2(58.0, 54.0), 128.0)
+	var frame_path := GearDefs.slot_frame(item)
+	var frame := Ui.icon(frame_path, Vector2(49.0, 40.0), 128.0)
+	frame.modulate = Color(rarity["col"])
 	_gear_detail.add_child(frame)
-	_gear_detail.add_child(Ui.icon(GearDefs.icon_path(item), Vector2(84.0, 80.0), 76.0))
-	var name := _panel_label(_gear_detail, Vector2(236.0, 26.0), Type.SIZE_MID,
-		Color(rarity["col"]), 304.0, 28.0)
+	_add_summon_rarity_fx(_gear_detail, rarity, frame_path, Vector2(49.0, 40.0),
+		Vector2(128.0, 128.0))
+	_gear_detail.add_child(Ui.icon(GearDefs.icon_path(item), Vector2(75.0, 66.0), 76.0))
+	var preview := _panel_label(_gear_detail, Vector2(30.0, 178.0), Type.SIZE_SMALL,
+		Color(rarity["col"]), 166.0, 24.0)
+	preview.text = "%s · 레벨 %d" % [rarity["name"], int(item.get("lv", 0))]
+	preview.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var name := _panel_label(_gear_detail, Vector2(234.0, 28.0), Type.SIZE_MID,
+		Color(rarity["col"]), 306.0, 28.0)
 	name.text = str(item["name"])
-	var info := _panel_label(_gear_detail, Vector2(236.0, 56.0), Type.SIZE_SMALL,
-		Color(0.82, 0.80, 0.86), 304.0, 20.0)
-	info.text = "%s · Lv.%d · 보유 %d개" % [rarity["name"], int(item.get("lv", 0)),
+	var info := _panel_label(_gear_detail, Vector2(234.0, 58.0), Type.SIZE_SMALL,
+		Color(0.82, 0.80, 0.86), 306.0, 20.0)
+	info.text = "%s · 레벨 %d · 보유 %d개" % [rarity["name"], int(item.get("lv", 0)),
 		int(item.get("copies", 1))]
 	var stat := str(item.get("stat", "damage"))
-	var effect := _panel_label(_gear_detail, Vector2(236.0, 84.0), Type.SIZE_MID,
-		Color(0.96, 0.82, 0.56), 304.0, 24.0)
+	var effect := _panel_label(_gear_detail, Vector2(234.0, 86.0), Type.SIZE_MID,
+		Color(0.96, 0.82, 0.56), 306.0, 24.0)
 	effect.text = "장착  %s +%s" % [GearDefs.STAT_NAME[stat], _n(GearDefs.power(item))]
-	var owned := _panel_label(_gear_detail, Vector2(236.0, 116.0), Type.SIZE_MID,
-		Color(0.62, 0.88, 0.70), 304.0, 24.0)
+	var owned := _panel_label(_gear_detail, Vector2(234.0, 114.0), Type.SIZE_MID,
+		Color(0.62, 0.88, 0.70), 306.0, 24.0)
 	owned.text = "보유  %s +%.1f%%" % [GearDefs.STAT_NAME[stat],
 		GearDefs.collection_rate(item) * 100.0]
 	var owned_key := "gear:" + _gear_selected_key
 	var shards := int(gacha_shards.get(owned_key, 0))
 	var level_cost := GearDefs.upgrade_cost(item)
 	var salvage := GearDefs.salvage_value(item)
+	var highest := GachaDefs.rarity_index(str(item["rarity"])) >= GachaDefs.RARITIES.size() - 1
 	var resource_values := [
 		["정수 %s" % _n(essence), Color(0.68, 0.82, 1.0)],
-		["Lv업 %s" % _n(level_cost), Color(0.82, 0.80, 0.86)],
+		["레벨업 %s" % _n(level_cost), Color(0.82, 0.80, 0.86)],
 		["분해 +%s" % _n(salvage), Color(0.82, 0.80, 0.86)],
 		["조각 %d/5" % shards, Color(0.72, 0.72, 0.78)],
-		["최고 등급" if str(item["rarity"]) == "legend" else "합성 가능" if shards >= 5 \
+		["최고 등급" if highest else "합성 가능" if shards >= 5 \
 			else "합성 대기", Color(rarity["col"])],
 		["보유 %d개" % int(item.get("copies", 1)), Color(0.72, 0.72, 0.78)],
 	]
 	for i in resource_values.size():
-		var row := i / 3
-		var col := i % 3
+		var row := i / 2
+		var col := i % 2
 		var resource := _panel_label(_gear_detail,
-			Vector2(228.0 + float(col) * 108.0, 154.0 + float(row) * 32.0),
-			Type.SIZE_SMALL, resource_values[i][1], 96.0, 24.0)
+			Vector2(230.0 + float(col) * 158.0, 146.0 + float(row) * 26.0),
+			Type.SIZE_SMALL, resource_values[i][1], 148.0, 22.0)
 		resource.text = resource_values[i][0]
 		resource.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var material := _panel_label(_gear_detail, Vector2(28.0, 222.0), Type.SIZE_SMALL,
-		Color(0.72, 0.72, 0.78), CONTENT_W, 42.0)
+	var material := _panel_label(_gear_detail, Vector2(22.0, 232.0), Type.SIZE_SMALL,
+		Color(0.72, 0.72, 0.78), 532.0, 24.0)
 	material.text = "다시 누르면 영구 분해 · 보유 효과도 사라짐" \
 		if _gear_dismantle_confirm_key == _gear_selected_key \
 		else "장착은 전투 효과 · 보관만 해도 보유 효과 적용"
@@ -961,27 +967,31 @@ func _refresh_gear_detail() -> void:
 	var equipped_now := str(equipped.get(str(item["slot"]), {}).get("inventory_key", "")) \
 		== _gear_selected_key
 	var equip_button := Ui.button("장착 중" if equipped_now else "장착",
-		Vector2(34.0, 274.0), Vector2(76.0, 40.0), Type.SIZE_SMALL)
+		Vector2(22.0, 264.0), Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	equip_button.disabled = equipped_now
 	equip_button.pressed.connect(func() -> void: _equip_inventory_item(_gear_selected_key))
 	_gear_detail.add_child(equip_button)
-	var level_button := Ui.button("Lv업", Vector2(142.0, 274.0),
-		Vector2(76.0, 40.0), Type.SIZE_SMALL)
+	var level_button := Ui.button("레벨업 %s" % _n(level_cost), Vector2(130.0, 264.0),
+		Vector2(100.0, 44.0), Type.SIZE_SMALL)
+	Ui.cost_icon(level_button, "res://assets/items/gem.png", 16)
 	level_button.disabled = essence < level_cost
 	level_button.pressed.connect(_level_up_selected)
 	_gear_detail.add_child(level_button)
-	var synth_button := Ui.button("최고" if str(item["rarity"]) == "legend" else "합성",
-		Vector2(250.0, 274.0), Vector2(76.0, 40.0), Type.SIZE_SMALL)
-	synth_button.disabled = shards < 5 or str(item["rarity"]) == "legend"
+	var synth_button := Ui.button("최고" if highest else "합성",
+		Vector2(238.0, 264.0), Vector2(100.0, 44.0), Type.SIZE_SMALL)
+	if not highest:
+		synth_button.text = "합성 5"
+		Ui.cost_icon(synth_button, GearDefs.icon_path(item), 16)
+	synth_button.disabled = shards < 5 or highest
 	synth_button.pressed.connect(_synthesize_selected)
 	_gear_detail.add_child(synth_button)
 	var dismantle := Ui.button("확인" if _gear_dismantle_confirm_key == _gear_selected_key \
-		else "분해", Vector2(358.0, 274.0), Vector2(76.0, 40.0), Type.SIZE_SMALL)
+		else "분해", Vector2(346.0, 264.0), Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	dismantle.disabled = equipped_now
 	dismantle.pressed.connect(_dismantle_selected)
 	_gear_detail.add_child(dismantle)
-	var close := Ui.button("닫기", Vector2(466.0, 274.0),
-		Vector2(76.0, 40.0), Type.SIZE_SMALL)
+	var close := Ui.button("닫기", Vector2(454.0, 264.0),
+		Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void:
 		_gear_dismantle_confirm_key = ""
 		_gear_detail.visible = false)
@@ -1036,15 +1046,36 @@ func _dismantle_selected() -> void:
 
 func _synthesize_selected() -> void:
 	var item: Dictionary = gear_inventory.get(_gear_selected_key, {})
-	var owned_key := "gear:" + _gear_selected_key
+	var old_key := _gear_selected_key
+	var owned_key := "gear:" + old_key
 	if item.is_empty() or int(gacha_shards.get(owned_key, 0)) < 5:
 		return
 	var old_max := max_hp()
+	var slot := str(item["slot"])
+	var was_equipped := str(equipped.get(slot, {}).get("inventory_key", "")) == old_key
 	if not GearDefs.promote(item):
 		return
-	gacha_shards[owned_key] = int(gacha_shards[owned_key]) - 5
-	var slot := str(item["slot"])
-	if str(equipped.get(slot, {}).get("inventory_key", "")) == _gear_selected_key:
+	var remaining_shards := int(gacha_shards[owned_key]) - 5
+	var new_key := str(item["icon"])
+	if new_key != old_key:
+		gear_inventory.erase(old_key)
+		gacha_owned.erase(owned_key)
+		gacha_shards.erase(owned_key)
+		var new_owned_key := "gear:" + new_key
+		if gear_inventory.has(new_key):
+			var existing: Dictionary = gear_inventory[new_key]
+			existing["copies"] = int(existing.get("copies", 1)) + int(item.get("copies", 1))
+			gacha_shards[new_owned_key] = int(gacha_shards.get(new_owned_key, 0)) \
+				+ remaining_shards + 1
+			item = existing
+		else:
+			gear_inventory[new_key] = item
+			gacha_shards[new_owned_key] = int(gacha_shards.get(new_owned_key, 0)) + remaining_shards
+		gacha_owned[new_owned_key] = true
+		_gear_selected_key = new_key
+	else:
+		gacha_shards[owned_key] = remaining_shards
+	if was_equipped:
 		var equipped_item := item.duplicate(true)
 		equipped_item["inventory_key"] = _gear_selected_key
 		equipped[slot] = equipped_item
@@ -1069,6 +1100,7 @@ func _refresh_gear_slots() -> void:
 			nodes["label"].text = GearDefs.SLOT_NAME[slot]
 			nodes["label"].add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 			btn.text = "비었음"
+			btn.icon = null
 			btn.disabled = true
 			continue
 		nodes["icon"].texture = Assets.tex(GearDefs.icon_path(item))
@@ -1079,8 +1111,9 @@ func _refresh_gear_slots() -> void:
 		nodes["label"].text = "%s +%s" % [str(item["name"]), _n(GearDefs.power(item))]
 		nodes["label"].add_theme_color_override("font_color", Color(item["col"]))
 		var cost := GearDefs.upgrade_cost(item)
+		Ui.cost_icon(btn, "res://assets/items/gem.png")
 		# 한 줄로 둔다 — 두 줄이면 아랫줄이 버튼 테두리를 넘는다.
-		btn.text = "강화 정수 %s" % _n(cost)
+		btn.text = "정수 %s" % _n(cost)
 		btn.disabled = essence < cost
 
 
@@ -1103,41 +1136,31 @@ func _enhance(slot: String) -> void:
 
 
 func _build_gacha(root: Control) -> void:
-	for i in 2:
-		var kind := "gear" if i == 0 else "skill"
-		var button := Ui.button("장비 소환" if kind == "gear" else "스킬 소환",
-			Vector2(PAD + i * 268.0, PAD), Vector2(252.0, 40.0), Type.SIZE_SMALL)
+	var kinds := ["weapon", "armor", "trinket", "skill"]
+	var names := ["무기 소환", "방어구 소환", "장신구 소환", "스킬 소환"]
+	for i in kinds.size():
+		var kind: String = kinds[i]
+		var button := Ui.button(names[i], Vector2(22.0 + i * 134.0, 18.0),
+			Vector2(128.0, 40.0), Type.SIZE_SMALL)
 		button.toggle_mode = true
 		button.pressed.connect(func() -> void: _set_gacha_kind(kind))
 		root.add_child(button)
 		_gacha_buttons[kind] = button
-	_gacha_labels["wallet"] = _panel_label(root, Vector2(PAD, 76.0), Type.SIZE_SMALL,
-		Color(0.86, 0.72, 1.0), 386.0, 24.0)
-	if OS.is_debug_build():
-		var test_gem := Ui.button("테스트 +3천", Vector2(420.0, 72.0),
-			Vector2(128.0, 32.0), Type.SIZE_SMALL)
-		test_gem.pressed.connect(_grant_test_gems)
-		root.add_child(test_gem)
-	root.add_child(Ui.icon("res://assets/ui/summon_altar.png", Vector2(44.0, 94.0), 128.0))
-	var altar_name := _panel_label(root, Vector2(26.0, 210.0), Type.SIZE_SMALL,
-		Color(0.68, 0.62, 0.76), 164.0, 20.0)
-	altar_name.text = "밤의 소환 제단"
-	altar_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_gacha_labels["pity"] = _panel_label(root, Vector2(196.0, 104.0), Type.SIZE_SMALL,
-		Color(0.72, 0.72, 0.78), 352.0, 20.0)
-	_gacha_labels["rates"] = _panel_label(root, Vector2(196.0, 132.0), Type.SIZE_SMALL,
-		Color(0.62, 0.82, 0.68), 352.0, 20.0)
-	_gacha_labels["active"] = _panel_label(root, Vector2(196.0, 160.0), Type.SIZE_SMALL,
-		Color(0.78, 0.72, 0.86), 352.0, 20.0)
-	_gacha_labels["result"] = _panel_label(root, Vector2(196.0, 182.0), Type.SIZE_SMALL,
-		Color(0.96, 0.82, 0.48), 352.0, 40.0)
-	_gacha_labels["result"].text = "하루 한 번 무료 소환"
-	var one := Ui.button("", Vector2(PAD, 238.0), Vector2(252.0, 48.0), Type.SIZE_SMALL)
+	root.add_child(Ui.panel(Vector2(18.0, 68.0), Vector2(540.0, 178.0)))
+	_gacha_labels["pity"] = _panel_label(root, Vector2(34.0, 112.0), Type.SIZE_MID,
+		Color(0.82, 0.80, 0.86), 508.0, 28.0)
+	_gacha_labels["pity"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_gacha_labels["rates"] = _panel_label(root, Vector2(34.0, 150.0), Type.SIZE_SMALL,
+		Color(0.62, 0.82, 0.68), 508.0, 48.0)
+	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var one := Ui.button("", Vector2(22.0, 258.0), Vector2(260.0, 50.0), Type.SIZE_SMALL)
 	one.pressed.connect(func() -> void: _pull_gacha(1))
 	root.add_child(one)
 	_gacha_buttons["one"] = one
-	var ten := Ui.button("10연  보석 300", Vector2(PAD + 268.0, 238.0),
-		Vector2(252.0, 48.0), Type.SIZE_SMALL)
+	var ten := Ui.button("10연  보석 300", Vector2(294.0, 258.0),
+		Vector2(260.0, 50.0), Type.SIZE_SMALL)
+	Ui.cost_icon(ten, "res://assets/ui/res_gem.png")
 	ten.pressed.connect(func() -> void: _pull_gacha(10))
 	root.add_child(ten)
 	_gacha_buttons["ten"] = ten
@@ -1149,6 +1172,9 @@ func _build_gacha(root: Control) -> void:
 
 
 func _set_gacha_kind(kind: String) -> void:
+	if kind in GearDefs.SLOTS and not GearDefs.lock_reason(
+			kind, StageDefs.major_stage(stage)).is_empty():
+		return
 	_gacha_kind = kind
 	_refresh_gacha()
 
@@ -1171,27 +1197,11 @@ func _pull_gacha(count: int) -> void:
 	gacha_pity[_gacha_kind] = int(result["pity"])
 	gacha_pulls[_gacha_kind] = int(gacha_pulls.get(_gacha_kind, 0)) + count
 	mileage += count
-	var counts := {}
-	var last_name := ""
 	var received_items: Array[Dictionary] = []
 	for rarity_key in result["rarities"]:
-		counts[rarity_key] = int(counts.get(rarity_key, 0)) + 1
-		var received: Dictionary = _receive_gacha_gear(str(rarity_key)) if _gacha_kind == "gear" \
+		var received: Dictionary = _receive_gacha_gear(str(rarity_key)) if _gacha_kind in GearDefs.SLOTS \
 			else _receive_gacha_skill(str(rarity_key))
-		last_name = str(received.get("name", ""))
 		received_items.append(received)
-	if count == 1:
-		var rarity := GachaDefs.rarity(str(result["rarities"][0]))
-		_gacha_labels["result"].text = "%s  %s" % [str(rarity["name"]), last_name]
-		_gacha_labels["result"].add_theme_color_override("font_color", Color(rarity["col"]))
-	else:
-		var summary := PackedStringArray()
-		for rarity in GachaDefs.RARITIES:
-			var n := int(counts.get(rarity["key"], 0))
-			if n > 0:
-				summary.append("%s %d" % [rarity["name"], n])
-		_gacha_labels["result"].text = "10연  " + " · ".join(summary)
-		_gacha_labels["result"].add_theme_color_override("font_color", Color(0.96, 0.82, 0.48))
 	_refresh_gear_slots()
 	_refresh_gear_inventory()
 	_refresh_gacha()
@@ -1200,7 +1210,7 @@ func _pull_gacha(count: int) -> void:
 
 
 func _receive_gacha_gear(rarity_key: String) -> Dictionary:
-	var slot: String = GearDefs.SLOTS[randi() % GearDefs.SLOTS.size()]
+	var slot := _gacha_kind
 	var item := GearDefs.make(slot, StageDefs.major_stage(stage), GachaDefs.rarity(rarity_key))
 	if item.is_empty():
 		return {}
@@ -1255,10 +1265,11 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	shade.size = Vector2(PANEL_W, PANEL_H)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_gacha_reveal.add_child(shade)
-	_gacha_reveal.add_child(Ui.panel(Vector2.ZERO, Vector2(36.0, 20.0)))
+	_gacha_reveal.add_child(Ui.panel(Vector2.ZERO, Vector2(PANEL_W, PANEL_H)))
 	var title := _panel_label(_gacha_reveal, Vector2(PAD, 16.0), Type.SIZE_MID,
 		Color(0.96, 0.84, 0.58), CONTENT_W, 28.0)
-	title.text = "%s 소환 결과" % ("장비" if _gacha_kind == "gear" else "스킬")
+	title.text = "%s 소환 결과" % (GearDefs.SLOT_NAME[_gacha_kind] \
+		if _gacha_kind in GearDefs.SLOTS else "스킬")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var cards: Array[Control] = []
 	for i in items.size():
@@ -1311,12 +1322,12 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 			label.text = str(rarity["name"])
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cards.append(card)
-	var close := Ui.button("보관함 확인" if _gacha_kind == "gear" else "확인",
-		Vector2(202.0, 266.0),
-		Vector2(172.0, 42.0), Type.SIZE_SMALL)
+	var close := Ui.button("보관함 확인" if _gacha_kind in GearDefs.SLOTS else "확인",
+		Vector2(158.0, 258.0),
+		Vector2(260.0, 50.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void:
 		_gacha_reveal.visible = false
-		if _gacha_kind == "gear":
+		if _gacha_kind in GearDefs.SLOTS:
 			_select_tab("gear")
 			_set_gear_mode("inventory"))
 	_gacha_reveal.add_child(close)
@@ -1331,33 +1342,28 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-func _gacha_shard_total() -> int:
-	var total := 0
-	for value in gacha_shards.values():
-		total += int(value)
-	return total
-
-
 func _refresh_gacha() -> void:
 	if _gacha_labels.is_empty():
 		return
-	_gacha_labels["wallet"].text = "보석 %s  ·  마일 %d  ·  조각 %d" % [
-		_n(gem), mileage, _gacha_shard_total()]
-	_gacha_labels["pity"].text = "%s 천장  %d / 100     누적 %d회" % [
-		"장비" if _gacha_kind == "gear" else "스킬",
-		int(gacha_pity.get(_gacha_kind, 0)), int(gacha_pulls.get(_gacha_kind, 0))]
-	_gacha_labels["rates"].text = "일반 50%  고급 30%  희귀 14%  영웅 5%  전설 1%"
-	var active := PackedStringArray()
-	for skill in _active_skills():
-		active.append(str(skill["name"]))
-	_gacha_labels["active"].text = "보관 장비  %d종 · 보유 효과 적용" % gear_inventory.size() \
-		if _gacha_kind == "gear" else "자동 스킬  " + " · ".join(active)
-	for kind in ["gear", "skill"]:
+	_gacha_labels["pity"].text = "%s 천장  %d / 100" % [
+		GearDefs.SLOT_NAME[_gacha_kind] if _gacha_kind in GearDefs.SLOTS else "스킬",
+		int(gacha_pity.get(_gacha_kind, 0))]
+	_gacha_labels["rates"].text = "커먼 50% · 언커먼 30% · 레어 14%\n" \
+		+ "에픽 5% · 레전더리 0.9% · 신화 0.1%"
+	for kind in ["weapon", "armor", "trinket", "skill"]:
 		_gacha_buttons[kind].set_pressed_no_signal(_gacha_kind == kind)
+		if kind in GearDefs.SLOTS:
+			var reason := GearDefs.lock_reason(kind, StageDefs.major_stage(stage))
+			_gacha_buttons[kind].disabled = not reason.is_empty()
+			_gacha_buttons[kind].text = reason if not reason.is_empty() \
+				else "%s 소환" % GearDefs.SLOT_NAME[kind]
 	var free := free_pull_date != Time.get_date_string_from_system()
-	if not free and _gacha_labels["result"].text == "하루 한 번 무료 소환":
-		_gacha_labels["result"].text = "오늘 무료 소환 사용 완료"
-	_gacha_buttons["one"].text = "오늘 무료 1회" if free else "1회  보석 30"
+	_gacha_buttons["one"].text = "오늘 무료 1회" if free else "1회  30"
+	if free:
+		_gacha_buttons["one"].icon = null
+	else:
+		Ui.cost_icon(_gacha_buttons["one"], "res://assets/ui/res_gem.png")
+	_gacha_buttons["ten"].text = "10연  300"
 	_gacha_buttons["one"].disabled = not free and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = gem < GachaDefs.COST * 10.0
 
@@ -1975,10 +1981,12 @@ func _refresh_hud() -> void:
 		else "처치 %d / %d" % [kills, need]))
 	if _stage_bar:
 		_stage_bar.value = clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
-	_lbl_hero.text = "Lv.%d" % hero_lv
-	_lbl_gold.text = _n(gold)
-	_lbl_dps.text = "초당 %s" % _n(dps())
-	_lbl_power.text = "전투력 %s" % _n(Balance.combat_power(dps(), _gear_stat("tough")))
+	_lbl_hero.text = "레벨 %d" % hero_lv
+	_lbl_gold.text = "혈액 %s" % _n(gold)
+	_lbl_essence.text = "정수 %s" % _n(essence)
+	_lbl_gem.text = "보석 %s" % _n(gem)
+	_lbl_power.text = "전투력 %s · 초당 %s" % [
+		_n(Balance.combat_power(dps(), _gear_stat("tough"))), _n(dps())]
 	if _hero_dead:
 		_lbl_life.text = "부활 %.1f초" % maxf(0.0, _revive_t)
 		_lbl_life.add_theme_color_override("font_color", Color(0.95, 0.48, 0.48))
@@ -2046,10 +2054,54 @@ func _load_game() -> void:
 				inventory_item["copies"] = 1
 				inventory_item.erase("inventory_key")
 				gear_inventory[str(inventory_item["icon"])] = inventory_item
-	gacha_pity = cfg.get_value("gacha", "pity", {"gear": 0, "skill": 0})
-	gacha_pulls = cfg.get_value("gacha", "pulls", {"gear": 0, "skill": 0})
+	var gear_key_map := {}
+	var normalized_inventory := {}
+	for old_key in gear_inventory.keys():
+		var normalized: Dictionary = gear_inventory[old_key].duplicate(true)
+		GearDefs.normalize_catalog_item(normalized)
+		var new_key := str(normalized["icon"])
+		gear_key_map[str(old_key)] = new_key
+		if normalized_inventory.has(new_key):
+			var existing: Dictionary = normalized_inventory[new_key]
+			var copies := int(existing.get("copies", 1)) + int(normalized.get("copies", 1))
+			if GearDefs.power(normalized) > GearDefs.power(existing):
+				normalized["copies"] = copies
+				normalized_inventory[new_key] = normalized
+			else:
+				existing["copies"] = copies
+		else:
+			normalized_inventory[new_key] = normalized
+	gear_inventory = normalized_inventory
+	for slot in equipped.keys():
+		var equipped_item: Dictionary = equipped[slot]
+		var old_inventory_key := str(equipped_item.get("inventory_key", equipped_item.get("icon", "")))
+		GearDefs.normalize_catalog_item(equipped_item)
+		equipped_item["inventory_key"] = str(gear_key_map.get(old_inventory_key,
+			equipped_item.get("icon", "")))
+	gacha_pity = cfg.get_value("gacha", "pity", {})
+	gacha_pulls = cfg.get_value("gacha", "pulls", {})
+	for kind in ["weapon", "armor", "trinket", "skill"]:
+		if not gacha_pity.has(kind):
+			gacha_pity[kind] = int(gacha_pity.get("gear", 0)) if kind == "weapon" else 0
+		if not gacha_pulls.has(kind):
+			gacha_pulls[kind] = int(gacha_pulls.get("gear", 0)) if kind == "weapon" else 0
+	gacha_pity.erase("gear")
+	gacha_pulls.erase("gear")
 	gacha_owned = cfg.get_value("gacha", "owned", {})
 	gacha_shards = cfg.get_value("gacha", "shards", {})
+	for old_key in gear_key_map:
+		var new_key: String = str(gear_key_map[old_key])
+		if new_key == old_key:
+			continue
+		var old_owned_key := "gear:" + str(old_key)
+		var new_owned_key := "gear:" + new_key
+		if gacha_owned.has(old_owned_key):
+			gacha_owned[new_owned_key] = true
+			gacha_owned.erase(old_owned_key)
+		if gacha_shards.has(old_owned_key):
+			gacha_shards[new_owned_key] = int(gacha_shards.get(new_owned_key, 0)) \
+				+ int(gacha_shards[old_owned_key])
+			gacha_shards.erase(old_owned_key)
 	free_pull_date = str(cfg.get_value("gacha", "free_date", ""))
 	skill_quality = cfg.get_value("skill", "quality", {})
 	skill_equipped = cfg.get_value("skill", "equipped", BASE_SKILL.duplicate())

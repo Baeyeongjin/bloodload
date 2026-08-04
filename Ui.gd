@@ -8,6 +8,7 @@ extends RefCounted
 # 한 장으로 모든 창을 덮는다.
 
 const PANEL := "res://assets/ui/panel.png"
+const PANEL_ART := Rect2(6, 6, 148, 84)
 # 생성된 패널(160x96)의 테두리 두께. 이 값보다 크게 잡으면 모서리 무늬가 겹치고
 # 작게 잡으면 테두리가 늘어나 뭉개진다 — 실측해서 정한다.
 const PANEL_MARGIN := 12
@@ -17,6 +18,7 @@ const PANEL_MARGIN := 12
 static func panel(pos: Vector2, size: Vector2) -> NinePatchRect:
 	var n := NinePatchRect.new()
 	n.texture = Assets.tex(PANEL)
+	n.region_rect = PANEL_ART
 	n.position = Grid.pxv(pos)
 	n.size = Grid.pxv(size)
 	n.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -79,6 +81,13 @@ static func button(text: String, pos: Vector2, size: Vector2,
 		b.add_theme_stylebox_override(state,
 			_nine("res://assets/ui/btn_hover.png", BTN_ART, 10, 5))
 	return b
+
+
+static func cost_icon(button: Button, path: String, width := 20) -> void:
+	button.icon = Assets.tex(path)
+	button.expand_icon = true
+	button.add_theme_constant_override("icon_max_width", width)
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 
 # 생성된 버튼(96x32)에서 **실제 알약은 y 0~23 뿐**이고 아래 8px은 별개의 어두운

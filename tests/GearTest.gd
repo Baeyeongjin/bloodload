@@ -5,7 +5,7 @@ extends SceneTree
 #   godot --headless --script tests/GearTest.gd
 
 func _init() -> void:
-	assert(GachaDefs.RARITIES.size() == 5)
+	assert(GachaDefs.RARITIES.size() == 6)
 	var total_weight := 0.0
 	for rarity in GachaDefs.RARITIES:
 		total_weight += float(rarity["weight"])
@@ -21,7 +21,13 @@ func _init() -> void:
 
 	for slot in GearDefs.SLOTS:
 		var pool := GearDefs.icon_pool(slot)
-		assert(pool.size() > 0, "아이콘 풀이 비었다: " + slot)
+		assert(pool.size() == 24, "슬롯별 아이콘이 24개가 아니다: " + slot)
+		for rarity in GachaDefs.RARITIES:
+			var variants := GearDefs.items_of(slot, str(rarity["key"]))
+			assert(variants.size() == 4, "%s %s 장비가 4개가 아니다" % [slot, rarity["key"]])
+			for spec in variants:
+				assert(FileAccess.file_exists("res://assets/items/%s.png" % str(spec[0])),
+					"카탈로그 아이콘 없음: " + str(spec[0]))
 
 		var item := GearDefs.roll(slot, 10)
 		assert(item["slot"] == slot)
@@ -57,12 +63,18 @@ func _init() -> void:
 	assert(GearDefs.upgrade_cost(it) > c0, "강화 비용이 안 오른다")
 	assert(GearDefs.salvage_value(it) > salvage0, "강한 장비의 분해 정수가 늘지 않는다")
 	var promoted := GearDefs.make("weapon", 1, GachaDefs.rarity("common"))
+	var promoted_icon := str(promoted["icon"])
 	var promoted_power := GearDefs.power(promoted)
 	var collection_rate := GearDefs.collection_rate(promoted)
 	assert(GearDefs.promote(promoted), "일반 장비를 고급으로 합성하지 못한다")
 	assert(promoted["rarity"] == "uncommon" and GearDefs.power(promoted) > promoted_power)
+	assert(str(promoted["icon"]) != promoted_icon, "합성 후 다음 등급 아이콘으로 바뀌지 않는다")
 	assert(GearDefs.collection_rate(promoted) > collection_rate,
 		"합성 후 보유 효과가 오르지 않는다")
+	var legacy := {"slot": "armor", "rarity": "rare", "icon": "ga_claw_jade", "name": "희귀 발톱"}
+	GearDefs.normalize_catalog_item(legacy)
+	assert(str(legacy["icon"]) != "ga_claw_jade" and str(legacy["name"]) != "희귀 발톱",
+		"기존의 잘못된 장비 아이콘·이름이 카탈로그로 교정되지 않는다")
 
 	# 도감은 몹 표 전체를 덮어야 한다. 스프라이트가 빠지면 빈 칸으로 남는다.
 	var keys := FoeTiers.all_keys()

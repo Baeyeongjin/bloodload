@@ -38,7 +38,7 @@ func _init() -> void:
 	var elite := Foe.new()
 	elite.setup(elite_tier, 1.0, 1.0)
 	assert(is_equal_approx(elite.max_hp, normal.max_hp * 3.5))
-	assert(is_equal_approx(elite._size(), normal._size() * 1.5))
+	assert(is_equal_approx(elite._size(), float(Grid.SPRITE) * 4.0))
 	assert(elite.display_name.begins_with("타락한 "))
 	var boss_tier := FoeTiers.get_tier("wraith_knight")
 	boss_tier["anim_key"] = "boss_1"
@@ -46,7 +46,7 @@ func _init() -> void:
 	boss.setup(boss_tier, 1.0, 1.0, true)
 	assert(boss._walk_frames.size() == 5, "boss_1_walk이 보스에 연결되지 않았다")
 	assert(not boss._attack_frames.is_empty(), "임시 원본 몹 attack이 연결되지 않았다")
-	assert(is_equal_approx(boss._size(), normal._size() * 2.0))
+	assert(is_equal_approx(boss._size(), float(Grid.SPRITE) * 2.0 * 1.25 * 2.0))
 	var reaction := Foe.new()
 	reaction.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
 	reaction.position = Vector2(200.0, 0.0)
@@ -139,6 +139,11 @@ func _init() -> void:
 	assert(not game._tick_boss_timer(1.0) and is_equal_approx(game._boss_time, 59.0))
 	var gacha_ui := Control.new()
 	game._build_gacha(gacha_ui)
+	assert(GearDefs.lock_reason("weapon", 1).is_empty())
+	assert(not GearDefs.lock_reason("armor", 4).is_empty() \
+		and GearDefs.lock_reason("armor", 5).is_empty())
+	assert(not GearDefs.lock_reason("trinket", 9).is_empty() \
+		and GearDefs.lock_reason("trinket", 10).is_empty())
 	var gear_ui := Control.new()
 	game._build_gear(gear_ui)
 	assert(game._gear_equipped_view.mouse_filter == Control.MOUSE_FILTER_IGNORE)
@@ -157,11 +162,11 @@ func _init() -> void:
 	assert(not game.skill_quality.is_empty(), "뽑은 스킬이 자동 장착 후보에 들어오지 않는다")
 	game._pull_gacha(1)
 	assert(game.mileage == 1, "하루 무료 소환을 두 번 사용했다")
-	game._set_gacha_kind("gear")
+	game._set_gacha_kind("weapon")
 	game.gem = GachaDefs.COST * 10.0
 	game._pull_gacha(10)
-	assert(game.gear_inventory.size() > 0 and int(game.gacha_pulls["gear"]) == 10,
-		"10연 장비가 보관함에 저장되지 않는다")
+	assert(game.gear_inventory.size() > 0 and int(game.gacha_pulls["weapon"]) == 10,
+		"10연 무기가 보관함에 저장되지 않는다")
 	assert(game._gacha_reveal.visible, "장비 소환 결과 연출이 열리지 않는다")
 	var inventory_key := str(game.gear_inventory.keys()[0])
 	var stored_item: Dictionary = game.gear_inventory[inventory_key]
@@ -172,10 +177,10 @@ func _init() -> void:
 		"보관 장비를 수동 장착하지 못한다")
 	var synth_key := ""
 	for candidate in game.gear_inventory:
-		if game.gear_inventory[candidate]["rarity"] != "legend":
+		if game.gear_inventory[candidate]["rarity"] != "mythic":
 			synth_key = str(candidate)
 			break
-	assert(not synth_key.is_empty(), "합성할 비전설 장비가 없다")
+	assert(not synth_key.is_empty(), "합성할 비신화 장비가 없다")
 	game._gear_selected_key = synth_key
 	var level_before := int(game.gear_inventory[synth_key].get("lv", 0))
 	var level_cost := GearDefs.upgrade_cost(game.gear_inventory[synth_key])
@@ -187,8 +192,10 @@ func _init() -> void:
 	game.gacha_shards[synth_owned_key] = 5
 	var rarity_before := GachaDefs.rarity_index(str(game.gear_inventory[synth_key]["rarity"]))
 	game._synthesize_selected()
-	assert(GachaDefs.rarity_index(str(game.gear_inventory[synth_key]["rarity"])) \
-		== rarity_before + 1 and int(game.gacha_shards[synth_owned_key]) == 0,
+	var promoted_key: String = str(game._gear_selected_key)
+	assert(promoted_key != synth_key \
+		and GachaDefs.rarity_index(str(game.gear_inventory[promoted_key]["rarity"])) \
+		== rarity_before + 1 and int(game.gacha_shards.get("gear:" + promoted_key, 0)) == 0,
 		"조각 5개 합성이 등급을 올리지 못한다")
 	var dismantle_item := GearDefs.make("trinket", 1, GachaDefs.rarity("common"))
 	var dismantle_key := ""

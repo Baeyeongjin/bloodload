@@ -18,6 +18,7 @@ var is_midboss := false
 var display_name := ""
 var stop_x := 0.0          # 이 x까지 걸어와서 멈춘다 (전열)
 var hp_mult := 1.0
+var body_scale := 1.0      # 영웅 표시 크기 대비 종별 크기
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
 
 var _walk_frames: Array = []
@@ -45,6 +46,7 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	is_midboss = bool(tier.get("midboss", false))
 	display_name = "%s%s" % [str(tier.get("name_prefix", "")), str(tier.get("name", key))]
 	hp_mult = float(tier.get("hp_mult", 1.0))
+	body_scale = float(tier.get("size", 1.0))
 	# 보스·중간보스는 한 마리로 단계를 막는다.
 	var boss_mult := 12.0 if boss else (3.5 if is_midboss else 1.0)
 	max_hp = 10.0 * hp_mult * power * boss_mult
@@ -151,7 +153,8 @@ func shadow_r() -> float:
 
 
 func _size() -> float:
-	return float(Grid.SPRITE) * (2.8 if is_boss else (2.1 if is_midboss else 1.4))
+	var hero_scale := maxf(2.0, body_scale * 2.0) if is_boss or is_midboss else body_scale
+	return float(Grid.SPRITE) * 2.0 * hero_scale
 
 
 func hit_offset() -> float:
