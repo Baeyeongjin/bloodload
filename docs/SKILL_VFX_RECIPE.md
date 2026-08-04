@@ -1,0 +1,426 @@
+# 스킬 VFX 생성 레시피
+
+**스킬 이펙트를 뽑을 때 이 파일만 보고 그대로 따라 한다.** 규격·톤·수명이 어긋나면
+코드를 고쳐야 하므로, 새 이펙트도 반드시 이 규격으로 뽑는다.
+`BG_RECIPE.md` · `PIXELLAB_ARMOR_IDS.md` 와 같은 자리의 문서다.
+
+---
+
+## 0. 제1원칙 — **이펙트는 그 스킬 아이콘이 움직이는 것이다**
+
+지금 20종이 어긋난 이유가 이것 하나다. 아이콘과 무관하게 이펙트를 따로 뽑아서,
+`처형자의 아가리`(악마 턱 아이콘)가 화면에서는 그냥 붉은 별 폭발로 터진다.
+이름도 아이콘도 이펙트도 서로 다른 것을 말하면 **뽑은 보람이 사라진다.**
+
+아이콘은 `assets/skills/sk_{등급}_{형태}.png` (32×32) 에 이미 20종이 있다.
+**이펙트 프롬프트는 그 아이콘의 설명에서 출발한다.**
+
+### 0-1. 예외 — **가호(ward)는 아이콘을 따라가면 안 된다**
+
+가호는 `self` 대상이라 **영웅 몸 위에 그대로 뜬다.** 아이콘대로 방패·성배·심장 같은
+꽉 찬 물건을 그리면 영웅을 통째로 가려서, 화면에서는 "버프가 걸렸다"가 아니라
+**"캐릭터가 사라졌다"** 로 보인다. 2026-08-04에 실제로 그렇게 나왔다.
+
+`DESIGN.md` 2-2c 가 처음부터 **"가호는 가운데가 빈 고리"** 라고 적어 둔 이유가 이것이다.
+아이콘 일치를 우선하다 그 조건을 깼고, 다시 되돌렸다.
+
+| | 격·파·진 | 가호 |
+|---|---|---|
+| 뜨는 자리 | 몹 위 · 바닥 | **영웅 몸 위** |
+| 그림 | 꽉 차도 된다 | **가운데가 비어야 한다** |
+| 프롬프트 | 아이콘 설명 그대로 | 아이콘의 **정체만** 빌리고 고리·후광으로 바꾼다 |
+
+> 코드에서도 `pulse`·`orbit`(몸에 두르는 스타일)은 **영웅 뒤에**(z=2, 영웅은 z=3)
+> 깔아 둔다. 그림이 비어 있고 뒤에도 깔리면 후광으로 읽힌다.
+
+---
+
+## 1. 규격 (바꾸면 코드도 바꿔야 함)
+
+| 항목 | 값 | 왜 |
+|---|---|---|
+| 크기 | **64 × 64** | 게임이 원본 1배로 그린다. 캐릭터(32×2배)와 같은 도트 크기 |
+| 프레임 | **9** (입력 1 + 생성 8) | `animate_image(frame_count=8)` 의 결과가 정확히 9장 |
+| 폴더 | `assets/anim/fx_sk_{등급}_{형태}/0.png ~ 8.png` | `SkillDefs.fx_of()` 가 만드는 이름. 여기서 다시 적지 않는다 |
+| 배경 | `no_background: true` | 전투 띠 위에 얹힌다 |
+| 팔레트 | **피(붉은색) 계열 하나** | 원소가 없다(DESIGN 2-2c). 파랑·노랑·보라가 섞이면 톤이 깨진다 |
+
+> `Assets.frames()` 는 `0.png` 부터 끊길 때까지 읽는다. 프레임 수가 달라도 동작하지만
+> `tests/SkillTest.gd` 가 8장 존재를 검사하므로 9장을 유지한다.
+
+---
+
+## 2. **끝 프레임을 고정한다** — 이걸 안 해서 깨졌다
+
+1차 생성은 첫 프레임만 주고 나머지 8장을 모델이 자유롭게 외삽하게 뒀다.
+그 결과 뒤쪽 프레임이 형체를 잃었다:
+
+| 자산 | 증상 |
+|---|---|
+| `fx_sk_legend_ward` | `f0~f3` 꼬임 → **`f4`부터 파편·점으로 산산조각** |
+| `fx_sk_epic_ward` | `f4` 이후 뭉개짐 |
+| `fx_sk_rare_wave` | `f5` 에 검은 얼룩으로 붕괴 |
+| `fx_sk_rare_strike` | **`f7` 이 빈 프레임** |
+| `fx_sk_uncommon_strike` | `f8` 이 빈 사각형 |
+
+`animate_image` 는 `last_frame` 을 받는다. 끝을 고정하면 보간이 두 지점 사이에
+갇혀서 이 실패 모드가 **구조적으로** 막힌다. 2026-08-04 파일럿에서 확인했다.
+
+| 형태 | 끝 프레임 | 이유 |
+|---|---|---|
+| `ward`(가호) | **첫 프레임과 동일** | 6초 지속 버프라 루프여야 한다. 끊기면 버프가 꺼진 줄 안다 |
+| `strike`·`wave`·`field` | **흩어진 잔재** | 한 방짜리라 사라지며 끝나야 한다 |
+
+---
+
+## 3. 등급은 크기가 아니라 **밀도**로 올린다
+
+`SkillDefs.FX_TIER` 의 크기 배수(커먼 1.00 → 레전더리 1.60)만으로는 등급이 안 읽힌다.
+
+> 2026-08-04 파일럿에서 확인: 레전더리 고리를 1.60배로 키워도 **레어의 꽉 찬 소용돌이보다
+> 약해 보였다.** 고리는 가운데가 비어서 같은 크기라도 화면을 덜 덮는다.
+
+**모양 자체가 상위 등급일수록 조밀해야 한다.**
+
+| 등급 | 밀도 | 화면 배수(FX_TIER) | 잔상 |
+|---|---|---|---|
+| 커먼 | 요소 1개, 가늘게 | 1.00 | 0 |
+| 언커먼 | 요소 1개, 굵게 | 1.12 | 1 |
+| 레어 | 요소 2겹 | 1.26 | 2 |
+| 에픽 | 2겹 + 바깥 코로나 | 1.42 | 3 |
+| 레전더리 | 3겹 + 코로나 + 중심 광원 | 1.60 | 4 |
+
+---
+
+## 4. 표출 방식 — 코드가 정하는 것 (`SkillDefs.SHAPES`)
+
+이펙트가 **어디에 뜨고 어떻게 움직이는지**는 자산이 아니라 코드가 정한다.
+그림은 그 움직임을 전제로 그려야 한다.
+
+### 4-1. 형태가 정하는 것 — 대상과 자리
+
+| 형태 | 대상 | 뜨는 자리 | fps | 수명 |
+|---|---|---|---|---|
+| 격 strike | `melee` 단일 | **맞은 몹 위** | 16 | 0.56초 |
+| 파 wave | `area` 전체 | 영웅 앞 사거리+48 | 16 | 0.56초 |
+| 진 field | `area` 전체 | 영웅 앞 사거리+48 | 10 | 0.90초 |
+| 가호 ward | `self` | **영웅 자신** | 12 | 0.75초 |
+
+### 4-2. 스타일은 **스킬마다 다르다** (2026-08-04 개편)
+
+형태 하나에 스타일 하나를 묶었더니 대부분이 어긋났다. 그림이 구체적이기 때문이다:
+
+| 묶어서 생긴 문제 | 실제 |
+|---|---|
+| `hold` 가 55° 회전 | `비명의 흔적`(얼굴)·`감시의 눈`이 **기울어진다** |
+| `orbit` 이 1.5바퀴 회전 | `진홍 방패`·`붉은 성배`·`불멸의 심장`이 **뒤집힌다** |
+| `sweep` 이 가로로 비행 | `혈우`(비)는 **떨어져야** 한다 |
+| 진이 전부 평면 | `피의 제단`·`왕좌`는 **솟아야** 한다 |
+
+**서 있는 물건은 안 돌린다. 회전은 대칭인 것에만 건다.**
+
+| 스타일 | 움직임 | 쓰는 곳 |
+|---|---|---|
+| `burst` | 작게→크게 넘겼다가 제자리 | 터지는 것 |
+| `sweep` | 앞으로 날아가며 늘어남 | 가로로 쓸리는 것 |
+| `hold` | 납작→퍼짐 (**회전 없음**) | 바닥에 깔리는 문양 |
+| `rise` | 눌린 채 솟아오름 | 땅에서 올라오는 물건 |
+| `orbit` | 제자리 1.5바퀴 회전 | 대칭이라 돌려도 되는 것 |
+| `pulse` | 제자리에서 커졌다 작아짐 (**회전 없음**) | 서 있는 물건 · 지속 버프 |
+
+`fall`(위에서 아래로) · `pulse` 는 이번에 추가한다. `rise` 는 코드에 있었으나 안 쓰였다.
+
+### 4-3. 20종 표출 확정표
+
+| 스킬 | 스타일 | `fx_y` | 왜 |
+|---|---|---|---|
+| 피의 송곳니 | `burst` | −36 | 물어뜯고 피가 튄다 |
+| 핏빛 창 | `burst` | −36 | 꽂히며 터진다 |
+| 사혈 발톱 | `burst` | −36 | 베기 자국이 확 나타난다 |
+| 처형자의 아가리 | `burst` | −36 | 아가리가 닫힌다 |
+| 심연의 손 | `burst` | −36 | 구멍에서 튀어나온다 |
+| 피의 손길 | `sweep` | −36 | 손자국이 옆으로 훑는다 |
+| 튀는 피 | `sweep` | −36 | 옆으로 뿌려진다 |
+| **혈우** | **`fall`** | **−78** | **비다. 위에서 내려와야 한다** |
+| 뱀의 무리 | `sweep` | −36 | 앞으로 쏟아진다 |
+| 붉은 소용돌이 | `sweep` | −36 | 휩쓸고 지나간다 |
+| 비명의 흔적 | `hold` | −14 | 바닥에 떠오른다. **얼굴이라 안 돌린다** |
+| 갈라진 대지 | `hold` | −14 | 바닥이 갈라진다 |
+| 감시의 눈 | `hold` | −14 | 바닥에 눈이 열린다. **안 돌린다** |
+| **피의 제단** | **`rise`** | **−14** | **솟아오른다** |
+| **피의 왕좌** | **`rise`** | **−14** | **솟아오른다** |
+| **피의 결계** | **`pulse`** | −40 | 막이 감싼다. 돔은 안 돈다 |
+| **진홍 방패** | **`pulse`** | −40 | **방패는 세워져 있어야 한다** |
+| **붉은 성배** | **`pulse`** | −40 | **성배는 세워져 있어야 한다** |
+| 혈월 | `orbit` | −40 | 달은 대칭이라 돌아도 된다 |
+| **불멸의 심장** | **`pulse`** | −40 | **심장은 뛰지, 돌지 않는다** |
+
+> `진` 의 `fx_y` 를 `0` → `−14` 로 올린다. `0` 은 지면 정중앙이라 **원래부터 절반이
+> 땅 밑**이었다. 타원으로 그렸으므로 조금만 올리면 바닥에 놓인 것으로 읽힌다.
+
+### 4-4. 광역 이펙트를 **몇 개 띄우는가**
+
+광역(`area`)은 도착한 몹 전부에게 피해가 들어간다. 그런데 이펙트를 한 자리에만 띄우면
+"저기만 비가 온다"로 보인다. **스타일에 따라 개수가 다르다.**
+
+| 스타일 | 개수 | 자리 | 왜 |
+|---|---|---|---|
+| `fall` | **맞은 몹마다 하나씩** | 그 몹 머리 위 | 비는 넓게 내린다. 한 자리면 광역이 아니다 |
+| `sweep` | 하나 | 영웅 앞 사거리+48 | 쓸고 지나가는 것이라 하나여야 맞다 |
+| `hold` · `rise` | 하나 | 영웅 앞 사거리+48 | 바닥에 깔린 문양은 하나다 |
+
+**나눠 뜰 때는 잔상(echo)을 끈다.** 잔상은 *하나짜리 이펙트를 크게 보이게* 하는
+장치라, 이미 여러 개가 떠 있으면 화면만 두꺼워진다. 등급은 크기로 읽힌다.
+
+### 4-5. `fall` 의 낙하 거리
+
+`fx_y` 는 **떨어져 도착하는 자리**이고, 거기서 `FALL_DROP`(54px) 만큼 위에서 시작한다.
+
+> 처음에 `y = −78` · 낙하 86px 로 뒀더니 시작점이 `ground_y − 164` 라 **전투 띠
+> 꼭대기(나무 높이)** 에서 떨어졌다. 몹과 무관한 데서 오는 비로 보인다.
+> 낙하 거리는 **몹 몸통 높이 안**이어야 한다.
+
+**그림을 그릴 때의 함의:**
+
+- `burst` 는 **가운데에서 바깥으로** 터진다 → 중심이 비면 안 된다
+- `sweep` 는 **가로로 날아간다** → 세로로 긴 그림은 쓸린 느낌이 안 난다
+- `hold`·`rise` 는 **바닥에 놓인다** → 타원으로 눕혀 그린다(원근)
+- `pulse`·`orbit` 는 **영웅을 감싼다** → 가운데가 비어야 영웅이 안 가려진다
+
+> **잘림 주의**: 전투 띠는 `VIEW_TOP 192 ~ VIEW_BOTTOM 480`, 지면은 `ground_y ≈ 442`.
+> 회전이 걸리면 대각선 길이가 1.41배가 되어 `hold`·`orbit` 은 하단 패널을 넘는다.
+> `진` 의 `fx_y = 0.0` 은 원래부터 절반이 땅 밑이다. **자산을 위쪽으로 치우쳐 그리거나
+> 코드에서 중심을 올려야 한다** — 미해결.
+
+---
+
+## 5. 프롬프트 고정 틀
+
+### 5-1. 첫 프레임 — `create_image_pixen`
+
+```
+width: 64, height: 64
+detail: low detail
+outline: lineless
+view: side
+no_background: true
+description: {아래 표의 first-frame 프롬프트}, {등급 밀도 어구},
+             crimson blood, flat muted colors, plain retro game pixel art
+```
+
+`outline: lineless` 인 이유: 이펙트에 검은 외곽선이 들어가면 도장 찍은 것처럼 보이고
+뒤 몹이 가려진다. 배경 규격(`BG_RECIPE.md`)과 같은 이유다.
+
+등급 밀도 어구:
+
+| 등급 | 붙이는 말 |
+|---|---|
+| 커먼 | `thin single element, small` |
+| 언커먼 | `thick single element` |
+| 레어 | `two layered elements` |
+| 에픽 | `two layered elements with dark crimson outer glow` |
+| 레전더리 | `three layered elements, dark crimson outer glow, bright white hot core` |
+
+### 5-3. **쓰면 안 되는 말** (2026-08-04 실측)
+
+1차 재생성 3건이 전부 이 함정에 걸렸다. `BG_RECIPE.md` 의 "글자가 적힐 수 있는 물건을
+넣지 말 것"과 같은 종류의 목록이다.
+
+| 쓰면 안 되는 말 | 무슨 일이 생기나 | 대신 |
+|---|---|---|
+| `blazing`, `flame`, `corona`, `fire` | **주황·노랑**을 끌어온다. 피 계열이 깨진다 | `dark crimson outer glow`, `white hot core` |
+| `curtain of`, `wall of`, `veil of` | 커튼·벽을 **물건으로 그린다**. 실제로 극장 무대가 나왔다 | `many falling ...`, `scattered ...` |
+| `beating heart`, `living ...` | 눈·이빨을 붙여 **마스코트 캐릭터**로 그린다 | `anatomical heart shape, no face, no eyes` |
+| `scene`, `background`, 장소 이름 | 배경을 그려서 `no_background` 가 무력해진다 | 물건 하나만 적는다 |
+
+### 5-4. **색은 말로 지정하지 말고 이미지로 물린다** (2026-08-04 실측)
+
+`deep crimson and dark maroon only, no orange, no yellow` 를 붙여서 3건을 다시 뽑았는데
+**2건이 여전히 주황으로 나왔다.** 부정문은 안 먹힌다(PLAN 4장에 이미 적혀 있다).
+
+`create_image_pixen` 에는 색을 물릴 인자가 없다. **색이 틀어지는 대상은
+`create_image_pixflux` 의 `color_image_url` 로 팔레트를 강제한다.** 응답에
+`forced_palette: yes` 가 찍히면 걸린 것이다.
+
+| | 도구 | 색 통제 |
+|---|---|---|
+| 작은 스프라이트 품질 | `create_image_pixen` | ❌ 말로만 |
+| **팔레트 강제** | `create_image_pixflux` | ✅ `color_image_url` |
+
+`PIXELLAB_ARMOR_IDS.md` 의 교훈("스타일은 글로 설명해서 못 맞춘다 — `style_images`
+로 물려야 한다")과 **같은 구조**다. 색도 글로는 안 되고 이미지로 물려야 한다.
+
+**색 기준 이미지를 고르는 법**: 중간톤이 있는 것을 쓴다. 짙은 마룬 위주인 그림을
+기준으로 주면 결과가 배경과 구분이 안 될 만큼 어두워진다(실제로 초승달이 그랬다).
+
+> **`color_image` 는 색만 옮기지 않는다.** 명암 분포와 구조까지 따라온다.
+> 초승달에 파일럿 고리(검은 몸통 + 붉은 가시)를 물렸더니 **검은 초승달에 붉은 가시가
+> 박힌 그림**이 나왔다. 기준 이미지는 **원하는 결과와 구조가 비슷한 것**을 골라야 한다.
+
+### 5-5. 지금까지 확인된 결론 — **아이콘이 이미 정답이다**
+
+초승달을 네 번 뽑았는데 **원본 아이콘(`sk_epic_ward.png`)이 제일 낫다.**
+
+| 시도 | 결과 |
+|---|---|
+| 아이콘 (기존) | ✅ 붉은 초승달, 밝은 하이라이트 |
+| pixen + 부정문 | 주황 |
+| pixflux + 심장 팔레트 | 너무 어둡고 너덜너덜 |
+| pixflux + 고리 팔레트 | 검은 초승달 + 붉은 가시 (구조 전이) |
+
+이유가 있다. **아이콘 20종은 `create_1_direction_object` + `style_images` 로 한 배치에
+뽑았다**(`PIXELLAB_ARMOR_IDS.md` 와 같은 방식). 그래서 서로 결이 맞고 톤이 안 튄다.
+반면 VFX 는 `create_image_pixen` 으로 **한 장씩 따로** 뽑아서 매번 다른 데로 갔다.
+
+> **아이콘과 같은 방식으로 간다**: `create_1_direction_object` +
+> `style_images`(기존 아이콘) 으로 **첫 프레임을 한 배치에** 뽑고,
+> 그 다음 각각을 `animate_image` 로 끝 프레임 고정해 움직인다.
+> 한 배치 안에서는 서로 결이 안 갈린다 — 방어구 20종이 그걸로 성공했다.
+
+### 5-6. 배치 생성의 실무 제약 (2026-08-04 실측)
+
+| 제약 | 값 | 대응 |
+|---|---|---|
+| 한 배치 최대 | **16개** (size 64 → 그리드 16칸) | 20종을 두 배치로 쪼갠다 |
+| `style_images` base64 | **624자는 통과, 1080자는 깨짐** | 아래 준비 절차 참고 |
+| 결과 크기 | 레퍼런스가 정한다 | 레퍼런스를 **64×64로 올려서** 넣는다 |
+| 비용 | 배치당 **20 generations** | 두 배치 = 40 |
+| **동시 작업** | **8개** | 5종을 한 번에 걸면 마지막이 튕긴다. 4개씩 끊는다 |
+
+> 동시 작업 제한은 `animate_image` 에도 똑같이 걸린다. 애니메이션 5종을 연달아
+> 걸다가 마지막이 `rate limit exceeded (8/8 jobs)` 로 튕겼다
+> (`PIXELLAB_ARMOR_IDS.md` 에 같은 사고 기록이 있다).
+
+**배치를 쪼개는 기준은 형태다.** 등급 사다리(커먼→레전더리)가 한 배치 안에 있어야
+계열이 맞는다. 등급으로 쪼개면 정확히 그게 깨진다.
+
+- 배치 1: 격 5 + 파 5 + 진 5 = **15**
+- 배치 2: 가호 5
+
+**`style_images` 준비 절차** (`scratchpad/styleprep.ps1` 과 같은 처리):
+
+1. 32×32 아이콘을 **64×64로 정수 배율 확대**(NearestNeighbor)
+2. 채널당 색 단계를 **3~4단계로 포스터화**, 알파는 0/255 로만
+3. base64 가 **620자 이하**인지 확인. 넘으면 그 아이콘은 레퍼런스로 쓰지 않는다
+
+> 실측: 20종 중 620자 이하로 줄어든 건 `sk_epic_ward.png`(572자) 하나뿐이었다.
+> PNG 부가 청크가 용량 대부분이라 색을 더 줄여도 잘 안 줄어든다.
+
+**`item_descriptions` 의 첫 단어를 전부 다르게 쓴다.** 공통 접두어가 있으면 내려받은
+폴더 이름이 뭉쳐서 어느 게 어느 스킬인지 못 가린다(`PIXELLAB_ARMOR_IDS.md` 에 같은 사고 기록).
+
+> **`color_image_base64` 는 쓰지 않는다.** 809바이트짜리 32×32 아이콘조차 전송 중
+> 잘려서 `broken data stream` 이 났다. **반드시 `_url` 변형을 쓴다** — 앞서 생성한
+> 자산의 다운로드 URL 이 가장 확실하다.
+
+앞서 성공한 파일럿 고리의 프롬프트가 기준이다. `crimson` · `dark crimson` ·
+`white hot` 만 썼고 `blazing`·`flame` 이 없었다:
+
+```
+glowing crimson blood magic ward ring, thick luminous ring with hollow empty center,
+bright white hot inner edge, dark crimson outer glow, gothic vampire blood magic,
+flat muted colors, plain retro game pixel art
+```
+
+### 5-2. 애니메이션 — `animate_image`
+
+```
+first_frame_url: {5-1 결과}
+last_frame_url:  {가호 = 첫 프레임 그대로 / 나머지 = 흩어진 잔재}
+frame_count: 8
+no_background: true
+action: {아래 표의 action}
+```
+
+**`action` 은 움직임만 적는다.** 생김새를 다시 적으면 모델이 그림을 바꾼다
+(도구 설명에 명시돼 있다: *"Describe movement, not appearance"*).
+
+---
+
+## 6. 20종 표 — 아이콘 · 공격 방식 · 프롬프트
+
+아이콘 대조표: `docs/` 밖 스크래치에 생성했다. `assets/skills/sk_{등급}_{형태}.png` 참조.
+
+### 격 (strike) — 단일 대상, 맞은 몹 위에서 터진다
+
+| 등급 | 이름 | 아이콘 | 화면에서 일어나는 일 | first-frame 프롬프트 | action |
+|---|---|---|---|---|---|
+| 커먼 | 피의 송곳니 | 붉은 입 + 송곳니 | 몹을 물어뜯고 피가 튄다 | `pair of sharp vampire fangs biting, blood splatter` | `fangs snapping shut, blood spraying outward, then fading` |
+| 언커먼 | 핏빛 창 | 붉은 창 | 창이 꽂히고 피가 솟는다 | `crimson blood spear impaling, sharp point` | `spear driving in and blood bursting from the wound` |
+| 레어 | 사혈 발톱 | 세 갈래 발톱 | 세 줄기 발톱 자국 | `three curved blood claw slashes crossing` | `claws raking across, slash marks tearing open then fading` |
+| 에픽 | 처형자의 아가리 | 악마 턱 | 아가리가 물고 닫힌다 | `demonic executioner maw with jagged teeth, jaws open` | `jaws snapping shut and biting down, then dissolving` |
+| 레전더리 | 심연의 손 | 심연 구멍 + 손 | 구멍에서 손이 튀어나와 움켜쥔다 | `pale hand bursting out of a dark abyss portal, grasping` | `hand lunging out and clenching, portal collapsing after` |
+
+### 파 (wave) — 광역, 영웅 앞에서 가로로 날아간다
+
+| 등급 | 이름 | 아이콘 | 화면에서 일어나는 일 | first-frame 프롬프트 | action |
+|---|---|---|---|---|---|
+| 커먼 | 피의 손길 | 피 묻은 손 | 손자국이 옆으로 훑는다 | `bloody handprint smear sweeping sideways` | `smear sweeping across and thinning out` |
+| 언커먼 | 튀는 피 | 피 웅덩이 튀김 | 피가 옆으로 뿌려진다 | `splash of blood flung sideways, droplets trailing` | `blood flinging outward, droplets scattering and fading` |
+| 레어 | 혈우 | 여섯 방울 | 핏방울이 쏟아진다 | `many falling blood droplets scattered apart` | `droplets raining down and splashing at the bottom` |
+| 에픽 | 뱀의 무리 | 붉은 뱀 두 마리 | 뱀들이 앞으로 쏟아진다 | `mass of crimson serpents lunging forward` | `serpents surging forward then recoiling and dispersing` |
+| 레전더리 | 붉은 소용돌이 | 나선 | 소용돌이가 휩쓴다 | `spiral vortex of blood, swirling arms` | `vortex spinning outward and tearing apart at the edges` |
+
+> 레전더리 `붉은 소용돌이` 는 **현재 자산이 이미 아이콘과 맞는다**(나선). 재생성 대상이 아니다.
+
+### 진 (field) — 광역, 바닥에 깔린다. **타원으로 눕혀 그린다**
+
+| 등급 | 이름 | 아이콘 | 화면에서 일어나는 일 | first-frame 프롬프트 | action |
+|---|---|---|---|---|---|
+| 커먼 | 비명의 흔적 | 돌에 새긴 절규 | 바닥에 얼굴이 떠오른다 | `screaming face sigil carved into the ground, flat ellipse, top-down on floor` | `sigil surfacing and sinking back into the ground` |
+| 언커먼 | 갈라진 대지 | 갈라진 땅 | 바닥이 갈라지며 피가 샌다 | `cracked ground fissure leaking blood, flat ellipse on floor` | `cracks spreading open and blood welling up` |
+| 레어 | 감시의 눈 | 붉은 눈 | 바닥에 눈이 열린다 | `crimson eye opening inside a circular ground sigil, flat ellipse` | `eye opening wide then blinking shut` |
+| 에픽 | 피의 제단 | 제단 | 제단이 솟고 피가 흐른다 | `low blood altar rising from a circular sigil, flat ellipse base` | `altar rising up and blood spilling over the sigil` |
+| 레전더리 | 피의 왕좌 | 왕관 + 왕좌 | 왕좌가 솟아오른다 | `blood throne with crown rising from a glowing ground sigil, flat ellipse base` | `throne rising and the sigil blazing outward` |
+
+### 가호 (ward) — 자기 버프, 영웅을 감싸고 **돈다. 루프여야 한다**
+
+| 등급 | 이름 | 아이콘 | 화면에서 일어나는 일 | first-frame 프롬프트 | action |
+|---|---|---|---|---|---|
+| 커먼 | 피의 결계 | 반구 결계 | 얇은 막이 감싼다 | `thin dome barrier of blood, hollow center` | `barrier shimmering and pulsing, seamless loop` |
+| 언커먼 | 진홍 방패 | 방패 | 방패가 앞에 선다 | `crimson kite shield with blood emblem` | `shield glinting and pulsing, seamless loop` |
+| 레어 | 붉은 성배 | 성배 | 성배에서 피가 넘친다 | `blood chalice overflowing, ring of droplets around it` | `chalice brimming and droplets circling, seamless loop` |
+| 에픽 | 혈월 | 초승달 | 핏빛 달이 뜬다 | `crimson crescent moon shape with dark red haze around it` | `crescent glowing brighter and dimmer, haze drifting, seamless loop` |
+| 레전더리 | 불멸의 심장 | 심장 | 심장이 뛴다 | `anatomical heart shape, no face, no eyes, wrapped in three thin blood rings` | `heart pulsing and rings rotating around it, seamless loop` |
+
+> **가호는 `last_frame` 을 첫 프레임과 같게 준다.** 그래야 6초 내내 끊김 없이 돈다.
+
+---
+
+## 7. 생성 절차
+
+1. **파일럿 먼저.** 한 등급 한 형태만 뽑아 톤을 확정하고 화면에 얹어 본다.
+   `PLAN.md` 4장 원칙 — 한 번에 다 뽑았다가 방향이 틀리면 전부 버린다.
+2. `create_image_pixen` 으로 첫 프레임 (1 generation)
+3. 마음에 들면 `animate_image` 로 8프레임 (1 generation)
+4. `?index=0` ~ `?index=8` 로 9장을 내려받아
+   `assets/anim/fx_sk_{등급}_{형태}/` 에 `0.png`~`8.png` 로 넣는다
+5. `--import` 후 화면 확인:
+   ```
+   godot --path . --rendering-method gl_compatibility --resolution 576x896 --
+         --autoshot --wait=1.2 --stage=1-1 --skillfx={형태}
+   ```
+   `--skillfx` 는 그 형태의 **5등급을 나란히** 띄운다. 등급 사다리는 나란히 놓고만
+   판단할 수 있다.
+6. `godot --headless --path . --script tests/SkillTest.gd`
+
+**1종당 2 generations.** 20종 전부 다시 뽑아도 40이다.
+
+> 캡처는 반드시 `$env:APPDATA` 를 임시 폴더로 바꿔 격리해서 돌린다.
+> 사장님 저장본으로 돌리면 창이 떠 있는 동안 버튼이 눌린다.
+
+---
+
+## 8. 재생성 우선순위 (2026-08-04 실측)
+
+| 순위 | 대상 | 이유 |
+|---|---|---|
+| 1 | 가호 에픽·레전더리 | 애니메이션 붕괴 + 고리 계열 아님 |
+| 1 | 파 레어 | `f5` 붕괴 |
+| 2 | 격 레어·언커먼 | 마지막 프레임이 빔 |
+| 3 | 진 5종 전부 | 바닥 문양이 아니고 계열이 통째로 안 맞음 |
+| 3 | 파 커먼·언커먼·에픽 | 아이콘과 무관한 그림 |
+| — | 파 레전더리 | 아이콘(나선)과 이미 맞음. **손대지 않는다** |
+
+`가호 레전더리` 는 2026-08-04에 이 레시피로 재생성해 붕괴가 사라진 것을 확인했다.
+다만 밀도가 낮아 레어보다 약해 보였다 — 3장의 밀도 사다리는 그 실측에서 나왔다.

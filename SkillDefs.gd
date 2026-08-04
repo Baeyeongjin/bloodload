@@ -16,27 +16,29 @@ extends RefCounted
 const SHAPES := {
 	"strike": {
 		"name": "격", "role": "단일", "cooldown": 7.0, "power": 2.2,
-		"motion": "heavy", "fx": "fx_sk_strike", "fx_y": -36.0, "fx_fps": 16.0,
+		"motion": "heavy", "fx_y": -36.0, "fx_fps": 16.0,
 		"fx_style": "burst",
 	},
 	"wave": {
 		# heavy(내려치기)를 격과 나눠 쓰다가 sweep(횡베기)을 따로 뽑았다 —
 		# 같은 모션이면 격이 나갔는지 파가 나갔는지 캐릭터 몸으로는 구분이 안 된다.
 		"name": "파", "role": "광역", "cooldown": 13.0, "power": 1.4,
-		"motion": "sweep", "fx": "fx_sk_wave", "fx_y": -36.0, "fx_fps": 16.0,
+		"motion": "sweep", "fx_y": -36.0, "fx_fps": 16.0,
 		"fx_style": "sweep",
 	},
 	"field": {
 		# 바닥에 깔리는 문양이라 기준 높이가 발밑(0)이다. 다른 것과 같은 높이에 두면
 		# 공중에 뜬 표지판으로 보인다 — 실제로 그렇게 보였다.
+		# fx_y 가 0 이면 지면 정중앙이라 **원래부터 절반이 땅 밑**이었다. 타원으로
+		# 눕혀 그리므로 조금만 올리면 바닥에 놓인 것으로 읽힌다.
 		"name": "진", "role": "광역", "cooldown": 19.0, "power": 0.9,
-		"motion": "cast", "fx": "fx_sk_field", "fx_y": 0.0, "fx_fps": 10.0,
+		"motion": "cast", "fx_y": -14.0, "fx_fps": 10.0,
 		"fx_style": "hold",
 	},
 	"ward": {
 		# ward 는 자기한테 거는 동작이라 앞으로 뻗는 cast 와 자세가 다르다.
 		"name": "가호", "role": "버프", "cooldown": 23.0, "power": 0.0,
-		"motion": "ward", "fx": "fx_sk_ward", "fx_y": -40.0, "fx_fps": 12.0,
+		"motion": "ward", "fx_y": -40.0, "fx_fps": 12.0,
 		"fx_style": "orbit", "duration": 6.0, "bonus": 0.30,
 	},
 }
@@ -132,15 +134,43 @@ const FX_TIER := [
 ]
 
 
+# 형태 기본값을 그대로 쓰면 어긋나는 스킬만 적는다.
+#
+# **서 있는 물건은 돌리지 않는다.** 형태 하나에 스타일 하나를 묶었더니 방패·성배·심장이
+# 뒤집히고, 얼굴과 눈이 기울고, 비가 옆으로 날아갔다. 그림이 구체적이라 형태로는 못 묶는다.
+# 근거와 전체 표는 docs/SKILL_VFX_RECIPE.md 4-3.
+const FX_OVERRIDE := {
+	# 혈우 — 비는 위에서 내려온다. y 는 **떨어져 도착하는 자리**이고 거기서
+	# FALL_DROP 만큼 위에서 시작한다. -78 은 너무 높아 나무 높이에서 떨어졌다.
+	"wave_rare": {"style": "fall", "y": -48.0},
+	# skew 0 = 안 기울인다. **정면 대칭인 그림은 기울이면 깊이감이 아니라
+	# 찌그러진 그림이 된다.** 비스듬히 그려진 것(송곳니·창)만 기울여야 산다.
+	"strike_rare": {"skew": 0.0},       # 사혈 발톱 — 교차 베기라 정면이 맞다
+	"strike_epic": {"skew": 0.0},       # 처형자의 아가리 — 정면으로 벌린 입
+	# 심연의 손 — **바닥에서 손이 올라와 몹을 끌고 내려간다.** 격인데도 rise 를 쓰는
+	# 유일한 스킬이다. 몹 발밑에서 시작해야 "끌려간다"가 읽히므로 y 도 지면 가까이 둔다.
+	"strike_legend": {"style": "rise", "y": -16.0, "skew": 0.0},
+	"field_epic": {"style": "rise"},                   # 피의 제단 — 솟아오른다
+	"field_legend": {"style": "rise"},                 # 피의 왕좌 — 솟아오른다
+	"ward_common": {"style": "pulse"},                 # 피의 결계 — 돔은 안 돈다
+	"ward_uncommon": {"style": "pulse"},               # 진홍 방패 — 세워져 있어야 한다
+	"ward_rare": {"style": "pulse"},                   # 붉은 성배 — 세워져 있어야 한다
+	"ward_legend": {"style": "pulse"},                 # 불멸의 심장 — 뛰지, 돌지 않는다
+}
+
+
 # 이펙트 재생에 필요한 값을 한 사전으로. Main 이 형태·등급을 따로 캐지 않게 한다.
 static func fx_profile(key: String) -> Dictionary:
 	var shape := shape_of(key)
 	var tier: Dictionary = FX_TIER[clampi(
 		GachaDefs.rarity_index(str(split(key)[1])), 0, FX_TIER.size() - 1)]
+	var over: Dictionary = FX_OVERRIDE.get(key, {})
 	return {
 		"fx": fx_of(key),
-		"style": str(shape.get("fx_style", "burst")),
-		"y": float(shape["fx_y"]),
+		"style": str(over.get("style", shape.get("fx_style", "burst"))),
+		"y": float(over.get("y", shape["fx_y"])),
+		# 1.0 = 스타일 기본 기울기, 0.0 = 안 기울인다
+		"skew": float(over.get("skew", 1.0)),
 		"fps": float(shape["fx_fps"]),
 		"scale": float(tier["scale"]),
 		"echo": int(tier["echo"]),

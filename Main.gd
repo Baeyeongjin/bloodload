@@ -377,16 +377,35 @@ func _ready() -> void:
 				_auto_equip_skills()
 			_select_tab("growth")
 			_set_growth_mode("skill")
-		# [개발 도구] --skillfx : 스킬 이펙트 4종을 실제 전투 띠에 동시에 얹어 캡처한다.
-		# 크기와 가림 정도는 288px 띠에 올려 봐야만 판단할 수 있다.
+		# [개발 도구] --skillfx[=strike|wave|field|ward] : 그 형태의 **5등급을 나란히**
+		# 실제 프로필(스타일·잔상·크기)로 얹는다. 크기와 가림 정도는 288px 띠에
+		# 올려 봐야만 판단할 수 있다.
+		#
+		# 예전엔 `fx_sk_strike` 같은 **없는 폴더**를 참조해서 아무것도 안 그려졌다
+		# (`_anim_fx` 는 프레임이 없으면 조용히 빠진다). 이펙트 이름은 등급까지 붙은
+		# `SkillDefs.fx_of()` 가 단일 출처다 — 여기서 다시 적지 않는다.
 		if arg.begins_with("--skillfx"):
-			# 네 개를 가로로 벌려 놓는다 — 실제로는 쿨다운이 달라 이렇게 동시에
-			# 뜨지 않지만, 크기 비교는 나란히 놓고 해야 한다.
-			var sc := float(arg.trim_prefix("--skillfx=")) if "=" in arg else 2.0
-			for i in 4:
-				var nm: String = ["fx_sk_strike", "fx_sk_wave", "fx_sk_field",
-					"fx_sk_ward"][i]
-				_anim_fx(nm, Vector2(88.0 + float(i) * 132.0, ground_y - 40.0), 12.0, sc)
+			var fx_shape := arg.trim_prefix("--skillfx=") if "=" in arg else "strike"
+			if not SkillDefs.SHAPES.has(fx_shape):
+				fx_shape = "strike"
+			# 이펙트는 0.6초면 끝나고 스스로 지워진다. 한 번만 띄우면 `--wait` 기본값
+			# 2.5초 뒤의 캡처에는 이미 아무것도 없다 — 그래서 계속 다시 띄운다.
+			#
+			# 주기는 **가장 짧은 수명(격 0.56초)보다 짧아야** 한다. 0.8초로 뒀더니
+			# 사이에 빈 구간이 생겨 캡처가 자꾸 아무것도 없는 순간에 걸렸다.
+			var fx_timer := Timer.new()
+			fx_timer.wait_time = 0.45
+			fx_timer.autostart = true
+			fx_timer.timeout.connect(func() -> void:
+				for i in 5:
+					var fx_key := SkillDefs.key_of(fx_shape,
+						str(GachaDefs.RARITIES[i]["key"]))
+					var fp := SkillDefs.fx_profile(fx_key)
+					_anim_fx(str(fp["fx"]),
+						Vector2(64.0 + float(i) * 112.0, ground_y + float(fp["y"])),
+						float(fp["fps"]), float(fp["scale"]), str(fp["style"]),
+						int(fp["echo"])))
+			add_child(fx_timer)
 		# [개발 도구] --equip=first : 첫 보관 장비를 장착해 "장착 중" 표시를 캡처한다.
 		if arg == "--equip=first" and not gear_inventory.is_empty():
 			_equip_inventory_item(str(gear_inventory.keys()[0]))
@@ -3105,6 +3124,7 @@ func _resolve_skill(key: String) -> void:
 	var fx_style := str(p["style"])
 	var fx_scale := float(p["scale"])
 	var fx_echo := int(p["echo"])
+	var fx_skew := float(p["skew"])
 	# 등급이 높을수록 화면이 더 흔들린다. 레전더리가 커먼과 같은 무게로 터지면 안 된다.
 	if float(p["shake"]) > 0.0:
 		_shake_combat(float(p["shake"]))
@@ -3116,24 +3136,39 @@ func _resolve_skill(key: String) -> void:
 				var dealt := minf(_skill_target.hp, hit)
 				_skill_target.take_damage(hit)
 				gold += dealt * 0.20
-				_anim_fx(fx, _skill_target.position + Vector2(0, fx_y), fx_fps, fx_scale, fx_style, fx_echo)
+				_anim_fx(fx, _skill_target.position + Vector2(0, fx_y),
+					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
 				_skill_hit_fx(skill, _skill_target)
 		"wave", "field":
 			_defer_stage_advance = true
+			var struck: Array[Foe] = []
 			for f in get_tree().get_nodes_in_group("foes"):
 				if _foe_arrived(f):
 					f.take_damage(hit)
 					_skill_hit_fx(skill, f)
+					struck.append(f)
 			_defer_stage_advance = false
-			_anim_fx(fx, Vector2(hero_x + float(hero_face) * (_motion_reach("attack") + 48.0),
-				ground_y + fx_y),
-				fx_fps, fx_scale, fx_style, fx_echo)
+			# **떨어지는 것은 맞는 놈들 머리 위마다 뜬다.** 광역인데 영웅 앞 한 자리에서만
+			# 쏟아지면 "저기만 비가 온다"로 보인다. 쓸고 지나가는 것(sweep)과 바닥에
+			# 깔리는 것(hold·rise)은 하나여야 맞으므로 fall 만 나눈다.
+			#
+			# 나눠 뜰 때는 잔상을 끈다 — 잔상은 **하나짜리 이펙트를 크게 보이게** 하는
+			# 장치라, 이미 여러 개가 떠 있으면 화면만 두꺼워지고 등급은 크기로 읽힌다.
+			if fx_style == "fall" and not struck.is_empty():
+				for f in struck:
+					_anim_fx(fx, Vector2(f.position.x, ground_y + fx_y),
+						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew)
+			else:
+				_anim_fx(fx, Vector2(hero_x + float(hero_face) * (_motion_reach("attack") + 48.0),
+					ground_y + fx_y),
+					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
 			if kills >= StageDefs.kills_needed(stage):
 				_advance_stage()
 		"ward":
 			_summon_t = float(skill["duration"])
 			_summon_bonus = float(skill.get("bonus", 0.0))
-			_anim_fx(fx, Vector2(hero_x, ground_y + fx_y), fx_fps, fx_scale, fx_style, fx_echo)
+			_anim_fx(fx, Vector2(hero_x, ground_y + fx_y),
+				fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
 
 
 # 맞은 쪽 표시. 때린 이펙트만 있고 이게 없으면 피해가 들어갔는지 화면에서 안 읽힌다.
@@ -3550,8 +3585,24 @@ func _apply_stage_bg() -> void:
 # **프레임만 넘기면 "떴다 없어졌다"로 보인다.** PixelLab 이 만든 8프레임은 서로
 # 비슷한 변주라 그 안에 커졌다 작아지는 흐름이 없다. 크기·투명도 곡선을 코드로
 # 씌우면 자산을 다시 뽑지 않고 20종 전부가 한 번에 살아난다.
+# 때리는 이펙트는 **살짝 기울인다.** 수평·수직으로 딱 서 있으면 도장을 찍은 것처럼
+# 보이고, 비스듬하면 휘두른 궤적으로 읽힌다(피의 송곳니·핏빛 창이 그림부터 대각선이다).
+#
+# **회전(rotation)이 아니라 전단(skew)이다.** 회전은 그림을 통째로 돌려서 그냥 비뚤어진
+# 그림이 되고, 전단은 위아래를 서로 어긋나게 밀어 **깊이로 누운 것처럼** 보인다.
+# 세로를 조금 눌러 주면(원근 단축) 3차원으로 기운 느낌이 더 산다.
+#
+# **기울이는 건 때리는 것뿐이다.** 떨어지는 비(fall)는 수직이어야 비이고, 바닥 문양
+# (hold·rise)과 몸에 두르는 것(pulse·orbit)은 기울면 어긋난 것으로 보인다.
+const SKEW_BURST := 20.0    # 격 — 내려치는 각
+const SKEW_SWEEP := 15.0    # 파 — 쓸고 가는 각
+const SQUASH_TILT := 0.88   # 기운 만큼 세로를 눌러 원근을 만든다
+
+
+# face: +1 오른쪽, -1 왼쪽. **영웅이 보는 쪽으로 나간다.** 좌우 양쪽에서 몹이 나오므로
+# 고정해 두면 절반은 등 뒤로 날아간다 — 창이 반대를 겨누고 파가 뒤로 쓸린다.
 func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
-		style := "burst", echo := 0, alpha := 1.0) -> void:
+		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0) -> void:
 	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
 	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
 	for i in echo:
@@ -3560,7 +3611,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		get_tree().create_timer(delay).timeout.connect(func() -> void:
 			if is_inside_tree():
 				_anim_fx(name, at, fps, draw_scale * shrink, style, 0,
-					alpha * (0.55 - 0.1 * float(i))))
+					alpha * (0.55 - 0.1 * float(i)), face, skew_mul))
 	# 정지 아이콘이 아니라 보유한 프레임 전체를 재생한다. 기본공격과 사망 모두
 	# 같은 작은 도우미를 써서 프레임 수가 달라도 마지막에 정확히 정리된다.
 	var textures := Assets.frames("res://assets/anim/%s" % name)
@@ -3576,17 +3627,27 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	fx.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	fx.sprite_frames = sprite_frames
 	fx.position = at
-	fx.scale = Vector2.ONE * draw_scale
+	# **좌우 반전은 scale.x 부호 하나로 끝낸다.** 아래 스타일들이 전부 `full` 에서
+	# 크기를 뽑으므로, 여기서 부호를 넣어 두면 모든 연출이 저절로 따라 뒤집힌다.
+	fx.scale = Vector2(draw_scale * float(signi(face)), draw_scale)
 	fx.modulate.a = alpha
 	# 잔상은 본체 뒤에 깔린다. 위에 오면 본체가 흐려 보인다.
-	fx.z_index = 5 if alpha >= 1.0 else 4
+	#
+	# **몸에 두르는 것(pulse·orbit)은 영웅 뒤에 깔린다.** 앞에 오면 방패·성배·심장처럼
+	# 꽉 찬 그림이 영웅을 통째로 가려서 "버프가 걸렸다"가 아니라 "캐릭터가 사라졌다"로
+	# 보인다. 뒤에 두면 영웅이 그 앞에 선 것이 되어 후광으로 읽힌다. (영웅은 z=3)
+	var wraps_hero := style == "pulse" or style == "orbit"
+	if wraps_hero:
+		fx.z_index = 2 if alpha >= 1.0 else 1
+	else:
+		fx.z_index = 5 if alpha >= 1.0 else 4
 	add_child(fx)
 	fx.animation_finished.connect(fx.queue_free)
 	fx.play("play")
 	if style.is_empty() or not fx.is_inside_tree():
 		return
 	var life := float(textures.size()) / maxf(1.0, fps)
-	var full := Vector2.ONE * draw_scale
+	var full := Vector2(draw_scale * float(signi(face)), draw_scale)
 	# 사라지는 꼬리는 어느 방식이든 공통이다. 마지막 프레임에서 뚝 끊기면
 	# "끝났다"가 아니라 "버그"로 보인다.
 	var fade := fx.create_tween()
@@ -3598,6 +3659,8 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		"burst":
 			# 아주 작게 시작해 **크게 넘겼다가** 제자리로. 넘기는 폭이 작으면
 			# 곡선이 있어도 그냥 뜬 것처럼 보인다 — 과할 만큼 키워야 타격으로 읽힌다.
+			fx.skew = deg_to_rad(SKEW_BURST * skew_mul * float(signi(face)))
+			full.y *= lerpf(1.0, SQUASH_TILT, clampf(skew_mul, 0.0, 1.0))
 			fx.scale = full * 0.30
 			t.tween_property(fx, "scale", full * 1.55, life * 0.20) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -3605,22 +3668,30 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 				.set_trans(Tween.TRANS_QUAD)
 		"sweep":
 			# 앞으로 날아가며 늘어난다. 제자리에서 터지면 "쓸었다"가 안 읽힌다.
+			# **나아가는 쪽도 영웅이 보는 쪽이다.** 예전엔 +190 고정이라 왼쪽을 볼 때
+			# 등 뒤로 쓸고 갔다.
+			var dir := float(signi(face))
+			fx.skew = deg_to_rad(SKEW_SWEEP * skew_mul * dir)
+			full.y *= lerpf(1.0, SQUASH_TILT, clampf(skew_mul, 0.0, 1.0))
 			fx.scale = Vector2(full.x * 0.45, full.y * 0.85)
-			fx.position.x -= 66.0
-			t.tween_property(fx, "position:x", fx.position.x + 190.0, life * 0.7) \
+			fx.position.x -= 66.0 * dir
+			t.tween_property(fx, "position:x", fx.position.x + 190.0 * dir, life * 0.7) \
 				.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 			t.parallel().tween_property(fx, "scale",
 				Vector2(full.x * 1.6, full.y * 1.15), life * 0.45) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		"hold":
-			# 바닥 문양은 튀면 안 되지만 **퍼지는 폭은 커야** 진이 깔린 게 보인다.
-			fx.scale = Vector2(full.x * 0.35, full.y * 0.5)
+			# **바닥에서 열린다.** 지면에 눌린 한 줄에서 시작해 타원으로 벌어진다 —
+			# 처음부터 세로가 반쯤 서 있으면 "바닥이 갈라졌다"가 아니라 "그림이 떴다"로
+			# 보인다. 그래서 y 를 거의 0에서 시작한다.
+			#
+			# **안 돌린다.** 예전엔 55° 회전을 걸었는데, 얼굴(비명의 흔적)과
+			# 눈(감시의 눈)이 기울어 보였다. 바닥 문양은 정면으로 읽혀야 한다.
+			fx.scale = Vector2(full.x * 0.45, full.y * 0.10)
 			fx.modulate.a = 0.0
-			t.tween_property(fx, "scale", full * 1.15, life * 0.35) \
+			t.tween_property(fx, "scale", full * 1.12, life * 0.38) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			t.parallel().tween_property(fx, "modulate:a", keep_a, life * 0.25)
-			t.parallel().tween_property(fx, "rotation", deg_to_rad(55.0), life) \
-				.set_trans(Tween.TRANS_SINE)
+			t.parallel().tween_property(fx, "modulate:a", keep_a, life * 0.22)
 			t.tween_property(fx, "scale", full, life * 0.3)
 		"orbit":
 			# 가호는 감싸는 것이라 돈다. 한 바퀴로는 느려 보여서 한 바퀴 반.
@@ -3631,12 +3702,40 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 				.set_trans(Tween.TRANS_LINEAR)
 			t.tween_property(fx, "scale", full, life * 0.3)
 		"rise":
-			# 솟아오름. 땅에서 올라오는 것에 쓴다.
-			fx.scale = Vector2(full.x * 0.7, full.y * 0.2)
-			t.tween_property(fx, "scale", full * 1.2, life * 0.35) \
+			# **땅에서 밀고 올라온다**(제단·왕좌). 원점이 가운데라 그냥 키우면 아래로도
+			# 같이 자라서 바닥을 뚫고 내려간다 — **커지는 만큼 위치를 올려** 아래끝을
+			# 지면에 붙여 둔다. 그래야 "솟았다"로 읽힌다.
+			var half := 32.0 * absf(draw_scale)      # 64px 스프라이트의 절반
+			fx.position.y += half * 0.8
+			fx.scale = Vector2(full.x * 0.75, full.y * 0.2)
+			t.tween_property(fx, "scale", full, life * 0.42) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			t.parallel().tween_property(fx, "position:y", fx.position.y - 62.0, life) \
-				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			t.parallel().tween_property(fx, "position:y",
+				fx.position.y - half * 0.8 - 16.0, life * 0.42) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		"fall":
+			# 위에서 내려온다. 비(혈우)처럼 **하늘에서 떨어지는** 것에 쓴다.
+			# 시작 위치를 위로 올려 두고 내린다 — 제자리에서 커지면 비가 아니다.
+			#
+			# 낙하 거리는 **몹 몸통 높이 안**이어야 한다. 86px 로 뒀더니 전투 띠
+			# 꼭대기(나무 높이)에서 시작해 몹과 무관한 데서 떨어지는 것으로 보였다.
+			const FALL_DROP := 54.0
+			fx.position.y -= FALL_DROP
+			fx.scale = Vector2(full.x * 0.9, full.y * 0.6)
+			t.tween_property(fx, "position:y", fx.position.y + FALL_DROP, life * 0.75) \
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			t.parallel().tween_property(fx, "scale", full, life * 0.4) \
+				.set_trans(Tween.TRANS_QUAD)
+		"pulse":
+			# 제자리에서 커졌다 작아진다. **안 돌린다** — 방패·성배·심장처럼
+			# 서 있는 물건은 돌리면 뒤집혀서 무엇인지 안 읽힌다.
+			fx.scale = full * 0.55
+			t.tween_property(fx, "scale", full * 1.18, life * 0.32) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			t.tween_property(fx, "scale", full * 0.98, life * 0.34) \
+				.set_trans(Tween.TRANS_SINE)
+			t.tween_property(fx, "scale", full, life * 0.3) \
+				.set_trans(Tween.TRANS_SINE)
 
 
 # 전투력이 오른 순간을 띄운다. 스탯 훈련·장비 장착·강화·레벨업이 전부 이 한 곳을

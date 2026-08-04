@@ -14,6 +14,7 @@
 
 - [BG_RECIPE.md](BG_RECIPE.md) — 배경 768×160, 이음매 숨기는 법, job id
 - [PIXELLAB_ARMOR_IDS.md](PIXELLAB_ARMOR_IDS.md) — `style_images` 배치 생성법, 방어구 24종 매핑
+- [SKILL_VFX_RECIPE.md](SKILL_VFX_RECIPE.md) — 스킬 이펙트 20종. 아이콘·이름·프롬프트 대응표
 - [CREDITS.md](CREDITS.md) — 배포 시 포함할 저작자 표시
 
 ## 날짜별 기록
