@@ -16,7 +16,10 @@ var gold := 1.0
 var is_boss := false
 var is_midboss := false
 var display_name := ""
-var stop_x := 0.0          # 이 x까지 걸어와서 멈춘다 (전열)
+var stop_x := 0.0          # 이 x까지 걸어와서 멈춘다 (자리)
+# 진행 방향. -1 = 오른쪽에서 나와 왼쪽으로, +1 = 왼쪽에서 나와 오른쪽으로.
+# 그림 원본이 왼쪽을 보므로 +1 일 때만 뒤집는다.
+var face := -1
 var hp_mult := 1.0
 var body_scale := 1.0      # 영웅 표시 크기 대비 종별 크기
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
@@ -54,8 +57,12 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	gold = stage_gold * (10.0 if boss else 1.0)
 	_sprite = Assets.tex(str(tier.get("sprite", "")))
 	_walk_frames = Assets.frames("res://assets/anim/%s_walk" % str(tier.get("anim_key", key)))
-	# 보스 전용 attack 자산은 아직 없어서 원본 몹 attack을 임시 사용한다.
-	_attack_frames = Assets.frames("res://assets/anim/%s_attack" % key)
+	# walk 과 **같은 키**를 쓴다. 보스는 anim_key(boss_1~5)로 전용 자산이 따로 있고,
+	# 없으면 Assets.frames 가 빈 배열을 주므로 원본 몹 attack 으로 떨어진다.
+	var anim_key := str(tier.get("anim_key", key))
+	_attack_frames = Assets.frames("res://assets/anim/%s_attack" % anim_key)
+	if _attack_frames.is_empty():
+		_attack_frames = Assets.frames("res://assets/anim/%s_attack" % key)
 	_attack_cd = attack_interval()
 	z_index = 2 if boss else 1
 
@@ -118,9 +125,11 @@ func _process(delta: float) -> void:
 			queue_free()
 		queue_redraw()
 		return
-	# 전열까지 걸어와 멈춘다. 방치형이라 그 뒤로는 자리를 지킨다.
-	if position.x > stop_x:
-		position.x = maxf(stop_x, position.x - WALK_SPEED * delta)
+	# 제 자리까지 걸어와 멈춘다. 방치형이라 그 뒤로는 자리를 지킨다 —
+	# 움직이는 건 영웅 쪽이다. 좌우 어느 쪽에서 나와도 같은 식이 되도록
+	# 부호를 따지지 않고 move_toward 로 민다.
+	if absf(position.x - stop_x) > 0.5:
+		position.x = move_toward(position.x, stop_x, WALK_SPEED * delta)
 	else:
 		_tick_attack(delta)
 	queue_redraw()
@@ -157,8 +166,16 @@ func _size() -> float:
 	return float(Grid.SPRITE) * 2.0 * hero_scale
 
 
+# 맞으면 **온 길 쪽으로** 밀린다. 부호를 고정하면 왼쪽에서 온 몹이 맞을 때
+# 영웅 쪽으로 파고들어 때린 게 아니라 달려든 것처럼 보인다.
 func hit_offset() -> float:
-	return HIT_KNOCKBACK * clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
+	return HIT_KNOCKBACK * clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0) * float(-face)
+
+
+# 이 몹의 공격이 닿는 거리. 영웅이 이 밖으로 나가면 헛친다 — 대시로 피할 여지가
+# 생겨야 "달려가서 팬다"가 전투가 된다.
+func reach() -> float:
+	return _size() * 0.5 + 44.0
 
 
 func _draw() -> void:
@@ -171,7 +188,9 @@ func _draw() -> void:
 	var hit_f := clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
 	wsc *= 1.0 + 0.12 * hit_f
 	hsc *= 1.0 - 0.10 * hit_f
-	draw_set_transform(Vector2(hit_offset(), 0.0))
+	# 왼쪽에서 나온 몹은 오른쪽을 보므로 통째로 뒤집는다. 그림을 따로 뽑지 않고
+	# 좌우 반전으로 끝낸다 — 도트라 반전해도 어색한 곳이 없다.
+	draw_set_transform(Vector2(hit_offset(), 0.0), 0.0, Vector2(float(-face), 1.0))
 	if dying:
 		# 죽음: 발은 붙인 채로 가로로 퍼지고 세로로 눌린다. 파티클 없이 스쿼시만.
 		var f := dying_t / DIE_DUR
@@ -192,10 +211,12 @@ func _draw() -> void:
 			false, Color(1, 1, 1, alpha))
 	else:
 		draw_circle(Vector2(0, -w * 0.4), w * 0.4, Color(0.8, 0.35, 0.35, alpha))
+	draw_set_transform(Vector2.ZERO)
 	if dying or max_hp <= 0.0:
-		draw_set_transform(Vector2.ZERO)
 		return
 	# 체력 바: 보스만 크게, 잡몹은 얇게. 난전에서 남은 체력이 읽혀야 한다.
+	# **반전 밖에서** 그린다 — 안에서 그리면 왼쪽 몹만 체력이 오른쪽부터 준다.
+	draw_set_transform(Vector2(hit_offset(), 0.0))
 	var bw := w * 0.8
 	var bh := 4.0 if is_boss else 2.0
 	var by := -w - 8.0

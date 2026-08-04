@@ -12,7 +12,11 @@ const MAJOR_STAGE_COUNT := 100   # 표시되는 큰 단계: 1..100
 const STEPS_PER_STAGE := 10      # 각 큰 단계의 세부 구간: 1..10
 const MIDBOSS_STEP := 5          # 5번째 구간은 승격 잡몹 한 마리
 const BOSS_EVERY := 10           # 10번째 구간은 보스
-const KILLS_PER_STAGE := 20      # 일반 단계 통과에 필요한 처치 수
+# 일반 구간 통과에 필요한 처치 수. 60마리 / 60초 = 초당 1마리가 기준이다 —
+# 20마리였을 때는 제한 시간이 붙어도 구간이 순식간에 끝나 시계를 볼 일이 없었다.
+# 이 숫자는 "칸이 비면 바로 채운다"(Main._refill_lanes)와 한 몸이다. 무리 단위로
+# 끊어 보내면 걸어 들어오는 시간만 60마리 x 2.3초라 애초에 못 넘는다.
+const KILLS_PER_STAGE := 60
 const MIDBOSS_PREFIXES := ["타락한", "굶주린", "피에 젖은"]
 
 # 막 5개. roster는 그 막에 나오는 몹 키.
@@ -117,3 +121,22 @@ static func boss_essence(stage: int) -> float:
 # 이 단계를 넘는 데 필요한 처치 수. 보스 단계는 보스 1마리.
 static func kills_needed(stage: int) -> int:
 	return 1 if is_boss_stage(stage) or is_midboss_stage(stage) else KILLS_PER_STAGE
+
+
+# 구간 제한 시간. **모든 구간에 건다** — 예전엔 보스에만 있어서, 일반 구간은
+# 아무리 약해도 언젠가는 넘어갔다. 그러면 성장이 "빨리 가나 늦게 가나"의 문제일 뿐
+# 벽이 아니다. 시간이 걸리면 못 넘는 구간이 생기고, 그게 곧 성장할 이유가 된다.
+#
+# 시계는 전진(걸어가는 구간)에도 돈다 — 멈추면 화면의 숫자가 얼어붙어 고장으로 보이고,
+# 무리를 잘게 쪼개 시간을 버는 구멍도 생긴다. 대신 **처음** 걸어 들어오는 시간만
+# 예산에서 빼 준다: 그 뒤로는 죽은 칸을 바로 채우므로 걷기와 싸움이 겹친다.
+const TIME_NORMAL := 60.0
+const TIME_MIDBOSS := 45.0
+const TIME_BOSS := 60.0
+const WAVE_WALK_SECONDS := 2.3   # 첫 무리가 화면 밖에서 제 자리까지 걸어오는 시간
+
+
+static func time_limit(stage: int) -> float:
+	if is_boss_stage(stage):
+		return TIME_BOSS
+	return TIME_MIDBOSS if is_midboss_stage(stage) else TIME_NORMAL

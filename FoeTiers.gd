@@ -45,3 +45,84 @@ static func sprite_of(key: String) -> String:
 # 표에 적힌 순서 = 도감 순서 = 대략 약한 순. 따로 정렬표를 두지 않는다.
 static func all_keys() -> Array:
 	return TIERS.keys()
+
+
+# 도감 보상 (DESIGN 13-4). 처치 수만 세고 보상이 없으면 모을 이유가 없다.
+# **영구 능력치**만 준다 — 소모품은 받는 순간 끝나서 장기 목표가 안 된다.
+#
+# 기준은 **발견 종 수가 아니라 지식 합계**다. 종 수로 하면 한 마리씩 22번 만나면
+# 끝이라 목표가 며칠 만에 닫힌다. 지식 합계(= 몹별 지식 레벨의 총합, 최대 110)는
+# 방치로 계속 오르므로 오래 간다.
+# 마지막 칸은 전 몹 만렙(= TIERS.size() x CODEX_KILL_STEPS.size())이어야 한다.
+# 그 검사는 tests/GearTest.gd 에 있다.
+const CODEX_REWARDS := [
+	{"need": 3,   "stat": "damage", "rate": 0.02},
+	{"need": 10,  "stat": "gold",   "rate": 0.03},
+	{"need": 22,  "stat": "damage", "rate": 0.05},   # 모든 몹 지식 1레벨
+	{"need": 44,  "stat": "tough",  "rate": 0.08},   # 모든 몹 2레벨
+	{"need": 66,  "stat": "gold",   "rate": 0.10},
+	{"need": 88,  "stat": "damage", "rate": 0.12},
+	{"need": 110, "stat": "damage", "rate": 0.15, "gem": 300.0},
+]
+
+
+static func codex_max_knowledge() -> int:
+	return TIERS.size() * CODEX_KILL_STEPS.size()
+
+
+# 지식 합계에 해당하는 누적 배율. 단계별로 곱하지 않고 **더한다** —
+# 곱하면 마지막 한 칸이 앞의 보상까지 전부 배로 튀긴다.
+static func codex_bonus(knowledge: int, stat: String) -> float:
+	var sum := 0.0
+	for r in CODEX_REWARDS:
+		if knowledge >= int(r["need"]) and str(r["stat"]) == stat:
+			sum += float(r["rate"])
+	return sum
+
+
+# 지금 합계에서 **막 넘긴** 보상. 없으면 빈 사전.
+# 합계는 한 번에 1씩만 오르므로 같은 칸을 두 번 밟을 수 없다.
+static func codex_reward_at(knowledge: int) -> Dictionary:
+	for r in CODEX_REWARDS:
+		if int(r["need"]) == knowledge:
+			return r
+	return {}
+
+
+static func codex_stat_name(stat: String) -> String:
+	return {"damage": "공격력", "gold": "흡혈량", "tough": "체력"}.get(stat, stat)
+
+
+# ── 몬스터별 지식 ──────────────────────────────────────────────────────────
+# 같은 몹을 계속 잡으면 그 몹을 더 잘 잡게 된다. 방치형에서 반복 처치는 어차피
+# 일어나므로 **이미 일어나는 행동에 보상을 붙이는** 가장 싼 장기 목표다.
+#
+# 전체 스탯이 아니라 **그 몹 상대 피해**인 이유: 전체 스탯이면 그냥 숫자가 하나 더
+# 늘 뿐이고, 상대별이면 "이 막이 안 밀리네" 할 때 어디를 파야 하는지가 보인다.
+const CODEX_KILL_STEPS := [10, 100, 500, 2000, 10000]
+const CODEX_KILL_RATE := 0.04     # 지식 레벨당 그 몹 상대 피해 +4% (만렙 +20%)
+
+
+static func codex_level(kills: int) -> int:
+	var lv := 0
+	for need in CODEX_KILL_STEPS:
+		if kills >= int(need):
+			lv += 1
+	return lv
+
+
+static func codex_kill_bonus(kills: int) -> float:
+	return float(codex_level(kills)) * CODEX_KILL_RATE
+
+
+# 다음 단계까지 필요한 처치 수. 만렙이면 0.
+static func codex_next_need(kills: int) -> int:
+	for need in CODEX_KILL_STEPS:
+		if kills < int(need):
+			return int(need) - kills
+	return 0
+
+
+static func codex_step_of(kills: int) -> int:
+	var lv := codex_level(kills)
+	return int(CODEX_KILL_STEPS[mini(lv, CODEX_KILL_STEPS.size() - 1)])

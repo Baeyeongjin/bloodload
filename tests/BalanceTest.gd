@@ -118,6 +118,17 @@ func _init() -> void:
 	var fails := Balance.can_clear_stage(100.0, 0.0, 2.0,
 		20, 10.0, 5, 40.0, 1.5)
 	assert(survives and not fails, "오프라인 생존 판정이 공격/생존 차이를 못 가른다")
+	# 제한 시간이 생긴 뒤로는 **버티기만으로는 못 넘는다.** 같은 입력이라도 시간이
+	# 모자라면 오프라인도 멈춰야 실시간과 결과가 갈리지 않는다.
+	# 위 survives 는 20마리 x 10 / dps 100 = 2초가 걸린다.
+	assert(Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, 3.0),
+		"시간이 남는데 제한에 걸린다")
+	assert(not Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, 1.0),
+		"제한 시간을 넘겼는데 통과한다")
+	# 구간 종류마다 시간이 다르고, 보스가 가장 길어야 한다.
+	assert(StageDefs.time_limit(10) >= StageDefs.time_limit(1), "보스 제한이 더 짧다")
+	for st in [1, 5, 10, 37, 100]:
+		assert(StageDefs.time_limit(st) > 0.0, "제한 시간이 0 이하다: %d" % st)
 
 	# 14) 대표 성장값별 처치시간. 장비·영웅 레벨을 빼 보수적으로 잡는다.
 	var starter_ttk := _foe_hp(10, "boss") / _build_dps(1, 1, 1, 1)
@@ -139,6 +150,24 @@ func _init() -> void:
 		print("TTK %-4s %s  일반 %.2fs / 중간 %.2fs / 보스 %.2fs  DPS %.1f"
 			% [point["name"], StageDefs.label(point["stage"]), normal_ttk,
 			mid_ttk, boss_ttk, build_dps])
+
+	# 15) 축약 표기. 자릿수를 한 칸 잘못 세면 조 단위가 천 단위로 보여서
+	#     "얼마나 부자인지"가 통째로 거짓말이 된다.
+	var main := load("res://Main.gd")
+	assert(main._n(999.0) == "999", "네 자리 미만은 그대로 찍어야 한다")
+	assert(main._n(1000.0) == "1k")
+	assert(main._n(1400.0) == "1.4k")
+	assert(main._n(1_100_000.0) == "1.1m")
+	assert(main._n(2_700_000_000.0) == "2.7b")
+	# 표 밖으로 나가도 마지막 단위에서 멈춘다 — 없는 단위를 지어내면 인덱스가 터진다.
+	assert(main._n(5.0e15) == "5000t")
+
+	# 16) 전투력 알림 — 오른 만큼이 있을 때만 뜬다.
+	assert(main.power_toast(500.0, 0.0) == "", "안 올랐는데 알림이 뜬다")
+	assert(main.power_toast(500.0, -100.0) == "", "내렸는데 알림이 뜬다")
+	assert(main.power_toast(1400.0, 400.0) == "전투력 1.4k  ▲400")
+	# 표시 중에 또 오르면 **합산**해서 보여 준다 — 연속 상승이 한 번으로 보이면 안 된다.
+	assert(main.power_toast(1800.0, 800.0) == "전투력 1.8k  ▲800")
 
 	print("Crit: 확률만 x%.2f / 피해만 x%.2f / 둘다 x%.2f"
 		% [only_chance, only_dmg, both])

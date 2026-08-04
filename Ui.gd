@@ -106,9 +106,29 @@ const TEXT_PAD := 4
 const TEXT_NUDGE := 0
 
 
-static func _nine(path: String, region := Rect2(), side := 14, cap := 8) -> StyleBoxTexture:
+# 스크롤바 원화는 세로용(무늬가 위아래 끝에만 있다)이다. 가로 바에 그대로 쓰면
+# 가운데를 옆으로 늘여서 무늬가 뭉개진다 — 그림을 90도 돌려 쓴다.
+# 한 번 돌린 건 들고 있는다(스크롤바는 창마다 새로 만든다).
+static var _rot_cache := {}
+
+
+static func _rot90(path: String) -> Texture2D:
+	if _rot_cache.has(path):
+		return _rot_cache[path]
+	var src := Assets.tex(path)
+	if src == null:
+		return null
+	var img := src.get_image()
+	img.rotate_90(CLOCKWISE)
+	var t := ImageTexture.create_from_image(img)
+	_rot_cache[path] = t
+	return t
+
+
+static func _nine(path: String, region := Rect2(), side := 14, cap := 8,
+		rotate := false) -> StyleBoxTexture:
 	var s := StyleBoxTexture.new()
-	s.texture = Assets.tex(path)
+	s.texture = _rot90(path) if rotate else Assets.tex(path)
 	if region.size.x > 0.0:
 		s.region_rect = region
 	# 좌우/상하 테두리 두께. 이보다 크면 모서리 무늬가 겹치고 작으면 늘어나 뭉개진다.
@@ -216,18 +236,27 @@ const GRAB_CAP := 14
 const TRACK_CAP := 10
 
 
-static func scroll(pos: Vector2, size: Vector2) -> ScrollContainer:
+static func scroll(pos: Vector2, size: Vector2, horizontal := false) -> ScrollContainer:
 	var s := ScrollContainer.new()
 	s.position = Grid.pxv(pos)
 	s.size = Grid.pxv(size)
-	s.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	s.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if horizontal \
+		else ScrollContainer.SCROLL_MODE_DISABLED
+	s.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if horizontal \
+		else ScrollContainer.SCROLL_MODE_AUTO
 	s.follow_focus = false
-	var bar := s.get_v_scroll_bar()
-	bar.custom_minimum_size.x = SCROLL_W
+	var bar: ScrollBar = s.get_h_scroll_bar() if horizontal else s.get_v_scroll_bar()
+	if horizontal:
+		bar.custom_minimum_size.y = SCROLL_W
+	else:
+		bar.custom_minimum_size.x = SCROLL_W
+	# 가로 바는 돌린 그림 + 두께도 뒤바꾼 값(무늬가 위아래 → 좌우로 옮겨간다).
 	bar.add_theme_stylebox_override("scroll",
-		_nine("res://assets/ui/scroll_track.png", Rect2(), 6, TRACK_CAP))
+		_nine("res://assets/ui/scroll_track.png", Rect2(),
+			TRACK_CAP if horizontal else 6, 6 if horizontal else TRACK_CAP, horizontal))
 	for state in ["grabber", "grabber_highlight", "grabber_pressed"]:
 		bar.add_theme_stylebox_override(state,
-			_nine("res://assets/ui/scroll_grab.png", Rect2(), 6, GRAB_CAP))
+			_nine("res://assets/ui/scroll_grab.png", Rect2(),
+				GRAB_CAP if horizontal else 6, 6 if horizontal else GRAB_CAP, horizontal))
 	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	return s

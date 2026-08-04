@@ -90,6 +90,18 @@ python tools/measure_text.py
 
 **여백과 글자는 같은 폭을 나눠 쓴다.** 둘 다 넉넉할 수는 없다.
 
+### 큰 수는 `Main._n()` 하나로만 줄인다
+
+`1.4k` · `1.1m` · `2.7b` · `9.9t` (1000 단위). 직접 `%d` 로 찍지 말 것 —
+방치형 재화는 금방 열 자리를 넘어 패널을 뚫는다.
+
+**단위는 소문자다.** 이 폰트가 블랙레터라 대문자 `K` 가 `Ж` 처럼 읽힌다.
+단위 글자를 바꿀 땐 **폰트를 직접 렌더해서 눈으로 확인한다**:
+
+```bash
+python -c "from PIL import Image,ImageDraw,ImageFont; f=ImageFont.truetype('assets/fonts/fantasy_warrior.ttf',22); i=Image.new('RGB',(560,44),(20,18,24)); ImageDraw.Draw(i).text((6,8),'1.4k 1.1m 2.7b',font=f,fill=(240,220,200)); i.resize((1120,88),Image.NEAREST).save('check.png')"
+```
+
 ---
 
 ## 4. 정렬

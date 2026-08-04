@@ -162,10 +162,18 @@ static func salvage_value(item: Dictionary) -> float:
 	return maxf(1.0, ceilf(power(item) * 2.0))
 
 
-# 수집 효과는 장착과 무관하다. 최고 등급 한 벌만 남기므로 중복 수에는 곱하지 않는다.
+# 수집(보유) 효과는 장착과 무관하다. 최고 등급 한 벌만 남기므로 중복 수에는 곱하지 않는다.
+#
+# **레벨을 올리면 보유 효과도 같이 오른다.** 안 그러면 "장착 안 할 장비는 올릴 이유가
+# 없다"가 되고, 그 순간 보관함에 쌓인 나머지는 전부 분해 대상일 뿐이다.
+# 장착(레벨당 +25%)보다 완만한 +10%로 둬서 장착이 여전히 주력이게 한다.
+const COLLECTION_LV_RATE := 0.10
+
+
 static func collection_rate(item: Dictionary) -> float:
 	return [0.005, 0.01, 0.02, 0.04, 0.08, 0.16][GachaDefs.rarity_index(
-		str(item.get("rarity", "common")))]
+		str(item.get("rarity", "common")))] \
+		* (1.0 + COLLECTION_LV_RATE * float(item.get("lv", 0)))
 
 
 static func promote(item: Dictionary) -> bool:
