@@ -5,6 +5,10 @@ extends SceneTree
 #   godot --headless --script tests/GearTest.gd
 
 func _init() -> void:
+	# 굴림 검사를 **결정론으로** 만든다. 만렙 신화는 0.192%(0.25/130)라 2000연에
+	# 한 번도 안 나올 확률이 2.1% 다 — 시드를 안 고정하면 50번에 한 번씩 그냥 깨지고,
+	# 그때마다 없는 버그를 코드에서 찾게 된다. 굴림 경로는 그대로 지난다.
+	seed(20260804)
 	assert(GachaDefs.RARITIES.size() == 6)
 	var total_weight := 0.0
 	for rarity in GachaDefs.RARITIES:

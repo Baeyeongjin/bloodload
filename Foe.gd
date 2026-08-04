@@ -38,7 +38,11 @@ var dying := false
 var dying_t := 0.0
 const DIE_DUR := 0.26
 const ATTACK_DUR := 0.42
-const IMPACT_FRAME := 3     # 0부터 세므로 7프레임 중 네 번째
+# 타격 지점을 **프레임 번호가 아니라 모션 길이의 비율**로 잡는다.
+# 고정 번호(3)로 두면 프레임 수가 다른 모션에서 지점이 밀린다 — 실제로 새로 들어온
+# boss_1~5_attack 이 9프레임이라 타격이 43%가 아니라 33% 지점에서 나가고 있었다.
+# 비율로 두면 7·8·9프레임 어디에 붙여도 그린 자세와 타격이 계속 맞는다.
+const IMPACT_RATIO := 3.0 / 7.0   # 원래 기준: 7프레임 중 네 번째
 const HIT_REACT_DUR := 0.14
 const HIT_KNOCKBACK := 7.0
 
@@ -140,8 +144,7 @@ func _tick_attack(delta: float) -> void:
 		return
 	if _attack_anim >= 0.0:
 		_attack_anim += delta
-		var frame := int(_attack_anim * float(maxi(1, _attack_frames.size())) / ATTACK_DUR)
-		if not _impact_sent and frame >= IMPACT_FRAME:
+		if not _impact_sent and _attack_anim >= ATTACK_DUR * IMPACT_RATIO:
 			_impact_sent = true
 			var main := get_parent()
 			if main and main.has_method("on_foe_attack"):

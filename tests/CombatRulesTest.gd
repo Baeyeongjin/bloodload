@@ -4,6 +4,10 @@ extends SceneTree
 #   godot --headless --path . --script tests/CombatRulesTest.gd
 
 func _init() -> void:
+	# 아래 소환·장비 검사가 굴림 결과에 걸린다. 시드를 안 고정하면 10연이 무엇을
+	# 뽑았느냐에 따라 통과 여부가 갈리고, 깨질 때마다 없는 버그를 찾게 된다.
+	# (GearTest 와 같은 이유·같은 방식)
+	seed(20260804)
 	assert(StageDefs.is_midboss_stage(5) and not StageDefs.is_midboss_stage(4))
 	assert(StageDefs.is_boss_stage(10) and not StageDefs.is_boss_stage(9))
 	assert(StageDefs.kills_needed(5) == 1 and StageDefs.kills_needed(10) == 1)
@@ -45,7 +49,11 @@ func _init() -> void:
 	var boss := Foe.new()
 	boss.setup(boss_tier, 1.0, 1.0, true)
 	assert(boss._walk_frames.size() == 5, "boss_1_walk이 보스에 연결되지 않았다")
-	assert(not boss._attack_frames.is_empty(), "임시 원본 몹 attack이 연결되지 않았다")
+	# 보스 전용 attack 은 자산이 없으면 원본 몹 것으로 **조용히** 떨어진다 — 화면상
+	# 티가 안 나므로 프레임 수로 구분한다(보스 9장 vs 원본 몹 7장).
+	assert(boss._attack_frames.size()
+		> Assets.frames("res://assets/anim/wraith_knight_attack").size(),
+		"boss_1_attack 전용 자산이 안 붙고 원본 몹 attack 으로 떨어졌다")
 	assert(is_equal_approx(boss._size(), float(Grid.SPRITE) * 2.0 * 1.25 * 2.0))
 	var reaction := Foe.new()
 	reaction.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
@@ -77,13 +85,19 @@ func _init() -> void:
 	game.on_foe_hit(null, 1.0)
 	assert(is_equal_approx(game._visual_hitstop_t, game.HITSTOP_DUR),
 		"전투 시각 히트스톱이 시작되지 않았다")
-	var attack_reach := Assets.frame_reach(
-		"res://assets/anim/valentino_1_attack", 3, 2.0, true)
-	var heavy_reach := Assets.frame_reach(
-		"res://assets/anim/valentino_1_heavy", 3, 2.0, true)
+	# 사거리는 **실제 경로**(_motion_reach)로 잰다. 예전엔 frame_reach 를 직접 부르며
+	# 프레임 번호 3 을 적어 뒀는데, 그러면 타격 지점이 비율로 바뀐 걸 이 검사가 못 본다.
+	var attack_reach: float = game._motion_reach("attack")
+	var heavy_reach: float = game._motion_reach("heavy")
 	assert(is_equal_approx(attack_reach, 30.0), "attack 불투명 픽셀 사거리 측정 실패")
 	assert(is_equal_approx(heavy_reach, 24.0), "heavy 불투명 픽셀 사거리 측정 실패")
 	assert(not is_equal_approx(attack_reach, heavy_reach), "모션별 사거리가 구분되지 않는다")
+	# 타격 지점은 프레임 번호가 아니라 **모션 길이의 비율**이다. 영웅과 몹이 같은 값을
+	# 써야 8프레임으로 다시 뽑아도 둘의 타격 규칙이 갈리지 않는다.
+	assert(is_equal_approx(game.IMPACT_RATIO, Foe.IMPACT_RATIO),
+		"영웅과 몹의 타격 비율이 갈렸다")
+	assert(game.IMPACT_RATIO > 0.0 and game.IMPACT_RATIO < 1.0,
+		"타격 비율이 모션 밖에 있다")
 	game.lv["speed"] = 1
 	assert(is_equal_approx(game.attack_interval(), 0.60))
 	game.lv["speed"] = 500
@@ -93,50 +107,116 @@ func _init() -> void:
 	game.lv["crit"] = 11
 	assert(game._stat_effect("crit") == "10%", "치명타 확률 표기는 숫자+%만 쓴다")
 	assert(game._base_hit_damage() > game.damage(), "실시간 타격에 치명타 기대값이 빠졌다")
-	assert(str(game._next_ready_skill()["key"]) == "drain")
-	game._skill_cd["drain"] = 1.0
-	assert(str(game._next_ready_skill()["key"]) == "wave")
-	game._skill_cd["wave"] = 1.0
-	assert(str(game._next_ready_skill()["key"]) == "summon")
-	game._skill_cd["summon"] = 1.0
+	# 스킬은 **장착 순서가 곧 우선순위**다. 예전 하드코딩 3종(drain/wave/summon)은
+	# M3 에서 SkillDefs 표(형태_등급)로 바뀌었다.
+	var equipped: Array[String] = ["strike_common", "wave_common", "ward_common"]
+	game.skill_equipped = equipped
+	assert(str(game._next_ready_skill()["key"]) == "strike_common")
+	game._skill_cd["strike_common"] = 1.0
+	assert(str(game._next_ready_skill()["key"]) == "wave_common")
+	game._skill_cd["wave_common"] = 1.0
+	assert(str(game._next_ready_skill()["key"]) == "ward_common")
+	game._skill_cd["ward_common"] = 1.0
 	assert(game._next_ready_skill().is_empty())
+
+	# ── 근접 접촉 ────────────────────────────────────────────────────────────
+	# 2026-08-04 개편으로 **몹이 영웅 앞에 줄 서지 않는다.** 몹은 화면 기준 고정 칸에
+	# 서고 영웅이 달려가 때린다. 그래서 예전 _foe_stop_x/_front_reach_x 는 없어졌다.
 	game.lv["speed"] = 1
 	var target := Foe.new()
 	target.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
-	target.stop_x = game._foe_stop_x(target, 0)
+	target.stop_x = game._lane_x(1, 0)
 	target.position.x = target.stop_x
-	assert(is_equal_approx(target.position.x - target._size() * 0.5, game._front_reach_x()),
-		"영웅 칼끝과 적 외곽이 맞닿지 않는다")
 	game._phase = "fight"
+	game.hero_x = game._strike_spot(target)
 	assert(game._can_hit_foe(target, "attack") and game._can_hit_foe(target, "heavy"),
-		"실제 모션 사거리에서 근접 공격이 닿지 않는다")
+		"칼끝 자리에 섰는데 근접 공격이 닿지 않는다")
+
+	# **대시는 가장 짧은 근접 모션까지 닿게 붙는다.** 기본공격(30)만 보고 멈추면
+	# 격 스킬의 heavy(24)가 안 닿아 스킬이 영영 안 나간다 — 실제로 그 버그가 있었다.
+	assert(game._front_reach() <= game._motion_reach("attack"),
+		"대시 정지 기준이 기본공격 사거리보다 느슨하다")
+	game.hero_x = target.position.x \
+		- (target._size() * 0.5 + game._motion_reach("attack"))
+	assert(game._can_hit_foe(target, "attack"), "기본공격 사거리 계산이 틀렸다")
+	assert(not game._in_front_reach(target),
+		"기본공격만 닿는 거리인데 대시가 멈춘다 — 그 자리에선 스킬 모션이 안 닿는다")
+	game.hero_x = game._strike_spot(target)
+
+	# **도착 전에는 절대 안 맞는다** (HANDOFF 4-5 검증 1번이 보증한다는 규칙).
+	# 거리는 닿는 자리로 다시 맞춰 두고 **도착 여부만** 어긋나게 한다 — 안 그러면
+	# 거리 검사에 가려서 도착 검사가 통째로 빠져도 이 검사가 통과한다.
+	target.position.x = target.stop_x + 40.0
+	game.hero_x = game._strike_spot(target)
+	assert(not game._can_hit_foe(target, "attack"), "전열 도착 전 몬스터를 공격할 수 있다")
+	target.position.x = target.stop_x
+	game.hero_x = game._strike_spot(target)
+	assert(game._can_hit_foe(target, "attack"), "도착했는데 공격이 안 닿는다")
+	# 전진 구간에는 아무도 못 때린다 — 걸어가는 중에 피해가 들어가면 안 된다.
+	game._phase = "advance"
+	assert(not game._can_hit_foe(target, "attack"), "전진 중에 공격이 들어간다")
+	game._phase = "fight"
+
+	# 칸은 서로 겹치지 않는다. 겹치면 두 마리가 같은 자리에 서서 한 마리로 보인다.
+	assert(not is_equal_approx(game._lane_x(1, 0), game._lane_x(1, 1)), "오른쪽 칸이 겹친다")
+	assert(not is_equal_approx(game._lane_x(1, 0), game._lane_x(-1, 0)), "좌우 칸이 겹친다")
+
+	# 1순위 스킬의 대상이 없으면 **다음 스킬을 본다.** 예전엔 통째로 포기했다 —
+	# 격이 안 나가면 그 쿨다운도 안 돌아서 파·진·가호까지 영영 막혔다(스킬 미발동 버그).
+	game._skill_action = ""
+	game._skill_target = null
+	game._hero_hit_t = -1.0
+	game._skill_cd.clear()
+	game.hero_x = target.position.x - 400.0   # 격(heavy)이 절대 안 닿는 거리
+	game._tick_skills(0.0, [target])
+	assert(game._skill_action == "wave_common",
+		"1순위(격)가 사거리 밖인데 다음 스킬(파)로 안 넘어간다: '%s'" % game._skill_action)
+	game._skill_action = ""
+	game._skill_target = null
+	game._skill_cd.clear()
+	game.hero_x = game._strike_spot(target)
+
+	# 격(strike) — 피해 + 20% 피 회수. 모션 동안 놓친 기본공격만큼 최소 피해를 보장한다.
 	game._skill_target = target
 	var hp_before := target.hp
-	var drain_hit: float = game._combat_damage() \
-		* Balance.skill_hit_mult(game.attack_interval(), game.SKILL_DUR)
-	game._skill_cd["drain"] = 0.0
-	game._resolve_skill("drain")
-	assert(target.hp < hp_before and game.gold > 0.0, "흡혈 강타가 피해/피 회수를 못 한다")
-	assert(is_equal_approx(hp_before - target.hp, drain_hit),
+	var strike_hit: float = game._combat_damage() \
+		* Balance.skill_hit_mult(game.attack_interval(), game.SKILL_DUR) \
+		* SkillDefs.power("strike_common", 0) / 2.2
+	game._skill_cd["strike_common"] = 0.0
+	game._resolve_skill("strike_common")
+	assert(target.hp < hp_before and game.gold > 0.0, "격이 피해/피 회수를 못 한다")
+	assert(is_equal_approx(hp_before - target.hp, strike_hit),
 		"스킬 모션 동안 놓친 기본공격 피해가 보정되지 않았다")
+
+	# 뒷칸 몹은 앞칸 사거리 밖이다. **움직이는 건 영웅 쪽**이라 옮겨 가면 닿는다.
 	var far_target := Foe.new()
 	far_target.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
-	far_target.stop_x = game._foe_stop_x(far_target, 1)
-	far_target.position.x = far_target.stop_x + 20.0
-	assert(not game._can_hit_foe(far_target), "전열 도착 전 몬스터를 공격할 수 있다")
-	game._compact_foe_line([target, far_target])
-	assert(far_target.stop_x > target.stop_x, "후열 간격이 사라졌다")
-	game._compact_foe_line([far_target])
-	assert(is_equal_approx(far_target.stop_x, game._foe_stop_x(far_target, 0)),
-		"앞 몬스터 사망 뒤 후열이 전진하지 않는다")
+	far_target.stop_x = game._lane_x(1, 1)
+	far_target.position.x = far_target.stop_x
+	game.hero_x = game._strike_spot(target)
+	assert(not game._can_hit_foe(far_target), "뒷칸 몹이 앞칸 사거리 안에 들어와 있다")
+	game.hero_x = game._strike_spot(far_target)
+	assert(game._can_hit_foe(far_target), "뒷칸으로 옮겨 갔는데 공격이 안 닿는다")
+
+	# 가호(ward) — 지속 버프. 배수는 **표에서 온다.** 예전엔 _combat_damage 가 1.3 을
+	# 따로 적어 둬서 화면 DPS(dps())와 실제 피해가 갈릴 수 있었다.
 	var damage_before: float = game._combat_damage()
-	game._resolve_skill("summon")
-	assert(game._summon_t == 6.0 and game._combat_damage() > damage_before,
-		"망령 소환이 6초 피해 +30%를 못 건다")
+	game._skill_cd["ward_common"] = 0.0
+	game._resolve_skill("ward_common")
+	assert(is_equal_approx(game._summon_t, float(SkillDefs.SHAPES["ward"]["duration"]))
+		and game._combat_damage() > damage_before, "가호가 지속 버프를 못 건다")
+	assert(is_equal_approx(game._summon_bonus, float(SkillDefs.SHAPES["ward"]["bonus"])),
+		"가호 배수가 표와 다르다")
 	game.stage = 10
 	game._phase = "fight"
 	game._boss_time = 60.0
 	assert(not game._tick_boss_timer(1.0) and is_equal_approx(game._boss_time, 59.0))
+	# 분해 확인창(_ask)과 보상창(_show_reward)은 _hud_root 아래 대화상자 노드를 쓴다.
+	# 씬을 통째로 띄우지 않으므로 부모만 만들어 주고 대화상자만 짓는다 —
+	# 이게 없으면 _confirm_body 가 nil 이라 "분해 확인" 검사 자체를 못 한다.
+	game._hud_root = Control.new()
+	game.add_child(game._hud_root)
+	game._build_dialogs()
 	var gacha_ui := Control.new()
 	game._build_gacha(gacha_ui)
 	assert(GearDefs.lock_reason("weapon", 1).is_empty())
@@ -159,7 +239,12 @@ func _init() -> void:
 	game._pull_gacha(1)
 	assert(game.mileage == 1 and int(game.gacha_pulls["skill"]) == 1,
 		"하루 무료 스킬 소환이 실행되지 않는다")
-	assert(not game.skill_quality.is_empty(), "뽑은 스킬이 자동 장착 후보에 들어오지 않는다")
+	# M3 에서 skill_quality 는 없어졌다. 보유는 skill_owned(키 -> 레벨)이고,
+	# 자동 장착이 켜져 있으면 뽑은 순간 skill_equipped 에 들어간다 —
+	# "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
+	assert(game.skill_owned.size() == 1, "뽑은 스킬이 보유 목록에 안 들어온다")
+	assert(game.skill_equipped.has(str(game.skill_owned.keys()[0])),
+		"뽑은 스킬이 자동 장착되지 않는다")
 	game._pull_gacha(1)
 	assert(game.mileage == 1, "하루 무료 소환을 두 번 사용했다")
 	game._set_gacha_kind("weapon")
@@ -190,13 +275,18 @@ func _init() -> void:
 		and is_zero_approx(game.essence), "보관 장비 레벨업이 정수를 소모하지 않는다")
 	var synth_owned_key := "gear:" + synth_key
 	game.gacha_shards[synth_owned_key] = 5
+	var shards_before := int(game.gacha_shards[synth_owned_key])
 	var rarity_before := GachaDefs.rarity_index(str(game.gear_inventory[synth_key]["rarity"]))
 	game._synthesize_selected()
 	var promoted_key: String = str(game._gear_selected_key)
-	assert(promoted_key != synth_key \
-		and GachaDefs.rarity_index(str(game.gear_inventory[promoted_key]["rarity"])) \
-		== rarity_before + 1 and int(game.gacha_shards.get("gear:" + promoted_key, 0)) == 0,
-		"조각 5개 합성이 등급을 올리지 못한다")
+	assert(promoted_key != synth_key, "합성 후 다음 등급 아이콘으로 바뀌지 않는다")
+	assert(GachaDefs.rarity_index(str(game.gear_inventory[promoted_key]["rarity"]))
+		== rarity_before + 1, "합성이 등급을 한 칸 올리지 않는다")
+	# **재료 쪽 조각만 센다.** 승급 결과 키는 10연에서 이미 조각이 붙어 있을 수 있고,
+	# 병합 분기면 중복분 1개가 더 들어온다 — 두 키의 수량을 비교하면 굴림 결과에 따라
+	# 통과 여부가 갈린다(실제로 5 -> 3 으로 나와 이 검사가 한 번 틀렸다).
+	assert(int(game.gacha_shards.get(synth_owned_key, 0)) < shards_before,
+		"합성이 재료 조각을 소모하지 않는다")
 	var dismantle_item := GearDefs.make("trinket", 1, GachaDefs.rarity("common"))
 	var dismantle_key := ""
 	for icon in GearDefs.icon_pool("trinket"):
@@ -209,12 +299,16 @@ func _init() -> void:
 	game._gear_selected_key = dismantle_key
 	var essence_before_dismantle: float = game.essence
 	var salvage := GearDefs.salvage_value(dismantle_item)
+	# 낱개 분해도 **확인창을 지난다**(2026-08-04). 예전 "버튼을 두 번 누르기"는
+	# 없어졌으므로 한 번 더 불러도 창만 다시 뜨지 실행되지 않는다 — 확인을 눌러야 한다.
 	game._dismantle_selected()
-	assert(game.gear_inventory.has(dismantle_key), "분해 확인 없이 장비가 사라졌다")
-	game._dismantle_selected()
+	assert(game.gear_inventory.has(dismantle_key), "확인 없이 장비가 사라졌다")
+	assert(game._confirm_view.visible and game._confirm_action.is_valid(),
+		"되돌릴 수 없는 분해가 확인창 없이 실행된다")
+	game._confirm_action.call()
 	assert(not game.gear_inventory.has(dismantle_key) \
 		and is_equal_approx(game.essence, essence_before_dismantle + salvage),
-		"장비 분해가 장비를 지우고 정수를 지급하지 않는다")
+		"확인을 눌러도 분해가 장비를 지우고 정수를 지급하지 않는다")
 	var gems_before: float = game.gem
 	game._grant_test_gems()
 	assert(is_equal_approx(game.gem, gems_before + 3000.0), "테스트 보석 충전이 작동하지 않는다")

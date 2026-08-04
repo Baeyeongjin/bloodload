@@ -110,14 +110,29 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> f
 	return float(maxi(0, kills_needed)) * maxf(0.0, foe_hp) / maxf(0.001, hero_dps)
 
 
+# 구간을 미는 데 실제로 걸리는 시간. **DPS만으로는 모자란다** — 몹은 화면 밖에서
+# 제 칸까지 걸어오므로, 동시에 lanes 마리씩 들어오는 구조에서는 아무리 세게 때려도
+# `걷는 시간 / lanes` 보다 빨리 잡을 수 없다. 둘 중 느린 쪽이 실제 시간이다.
+#
+# 이걸 빼면 오프라인이 DPS만 보고 "넘을 수 있다"고 판정해서, 실시간으로는 영원히
+# 못 넘는 구간을 껐다 켜면 넘어가 있다.
+static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float,
+		lanes := 0, walk_seconds := 0.0) -> float:
+	var push := push_seconds(kills_needed, foe_hp, hero_dps)
+	if lanes <= 0 or walk_seconds <= 0.0:
+		return push
+	return maxf(push, float(maxi(0, kills_needed)) * walk_seconds / float(lanes))
+
+
 # time_limit: 구간 제한 시간. 0 이하면 제한 없음.
 # **살아남는 것만으로는 부족하다** — 제한 시간이 생긴 뒤로는 버티기만 하면 재시작이라
 # 오프라인도 같은 벽 앞에서 멈춰야 한다. 안 그러면 실시간으로는 못 넘는 구간을
 # 껐다 켜면 넘어가 있다.
 static func can_clear_stage(hp: float, regen_per_sec: float, hero_dps: float,
 		kills_needed: int, foe_hp: float, foe_count: int, foe_damage: float,
-		foe_interval: float, time_limit := 0.0) -> bool:
-	var push := push_seconds(kills_needed, foe_hp, hero_dps)
+		foe_interval: float, time_limit := 0.0, lanes := 0,
+		walk_seconds := 0.0) -> bool:
+	var push := stage_seconds(kills_needed, foe_hp, hero_dps, lanes, walk_seconds)
 	if time_limit > 0.0 and push >= time_limit:
 		return false
 	return push < survival_seconds(hp, regen_per_sec, foe_count, foe_damage, foe_interval)

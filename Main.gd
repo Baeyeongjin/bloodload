@@ -33,7 +33,10 @@ var ground_y := 442.0
 # 좌우 양쪽에서 몹이 나오므로 한쪽에 치우쳐 두면 반대쪽으로 갈 때만 오래 뛴다.
 const HERO_X := 288.0
 const HERO_DRAW_SCALE := 2.0
-const IMPACT_FRAME := 3       # 0부터 세므로 7프레임 중 네 번째
+# 타격 지점은 **프레임 번호가 아니라 모션 길이의 비율**이다. 고정 번호로 두면
+# 프레임 수를 바꾸는 순간(8프레임 통일 예정) 타격이 그린 자세와 어긋난다.
+# Foe.IMPACT_RATIO 와 같은 값을 쓴다 — 영웅과 몹의 타격 규칙이 갈리면 안 된다.
+const IMPACT_RATIO := Foe.IMPACT_RATIO   # 원래 기준: 7프레임 중 네 번째
 const SPAWN_X := 660.0        # 화면 밖 오른쪽에서 등장
 const SPAWN_X_LEFT := -84.0   # 화면 밖 왼쪽에서 등장
 const MAX_FOES := 5           # 세로 화면은 가로가 좁아 5마리가 한계
@@ -128,6 +131,7 @@ var _skill_hit_t := 0.0
 var _skill_impact_sent := false
 var _skill_target: Foe
 var _summon_t := 0.0
+var _summon_bonus := 0.0   # 시전 순간의 가호 배수. 버프 도중 장비를 바꿔도 유지된다
 var _defer_stage_advance := false
 var _hud: CanvasLayer
 var _hud_root: Control   # 테마가 걸린 실제 부모
@@ -295,7 +299,11 @@ func _base_hit_damage() -> float:
 func _combat_damage(target: Foe = null) -> float:
 	var known := _codex_act_bonus() if target == null \
 		else FoeTiers.codex_kill_bonus(int(codex.get(target.key, 0)))
-	return _base_hit_damage() * (1.3 if _summon_t > 0.0 else 1.0) * (1.0 + known)
+	# 버프 배수는 **시전할 때 잡아 둔 값**을 쓴다. 여기서 1.3 을 다시 적으면
+	# SHAPES["ward"]["bonus"] 와 두 군데가 되어 한쪽만 고쳤을 때 화면 DPS(dps())와
+	# 실제 피해가 갈린다. 들고 있으면 버프 도중에 장비를 바꿔도 안 사라진다.
+	return _base_hit_damage() * (1.0 + _summon_bonus if _summon_t > 0.0 else 1.0) \
+		* (1.0 + known)
 
 
 # 지금 막 로스터의 지식 보너스 평균. 전투력 표시와 오프라인 판정이 쓴다 —
@@ -2868,7 +2876,7 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	hero_face = 1 if target.position.x >= hero_x else -1
 	# 사거리 밖이면 먼저 달려간다. 이게 "대시해서 달려가 팬다"의 전부다 —
 	# 붙는 동안 공격 쿨다운은 계속 돌아서 도착하면 바로 첫 대를 친다.
-	if not _can_hit_foe(target):
+	if not _in_front_reach(target):
 		_dash_to = _strike_spot(target)
 		_play("dash")
 		return
@@ -2877,7 +2885,7 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 		return
 	var interval := attack_interval()
 	_attack_t = interval
-	_hero_hit_t = interval * 3.0 / 7.0
+	_hero_hit_t = interval * IMPACT_RATIO
 	_pending_target = target
 	_play("attack")
 
@@ -2897,9 +2905,14 @@ func _tick_dash(delta: float) -> void:
 
 # 모션의 실제 임팩트 프레임에서 불투명 픽셀 끝을 읽는다. **길이**만 돌려준다 —
 # 영웅이 좌우로 움직이므로 절대 좌표로 두면 뒤돌아섰을 때 값이 틀린다.
+#
+# 프레임 번호는 실제 프레임 수에서 비율로 뽑는다. 7프레임이면 3(지금과 동일),
+# 8프레임이면 3, 9프레임이면 4 — 모션을 다시 뽑아도 사거리 측정이 따라간다.
 func _motion_reach(motion: String) -> float:
-	return Assets.frame_reach(
-		"res://assets/anim/%s_%s" % [skin, motion], IMPACT_FRAME, HERO_DRAW_SCALE, true)
+	var dir := "res://assets/anim/%s_%s" % [skin, motion]
+	var n := maxi(1, Assets.frames(dir).size())
+	return Assets.frame_reach(dir, int(round(float(n) * IMPACT_RATIO)),
+		HERO_DRAW_SCALE, true)
 
 
 # 근접 사거리는 **쓰는 근접 모션 중 가장 짧은 것**에 맞춘다. 긴 쪽에 맞추면
@@ -2913,10 +2926,21 @@ func _foe_arrived(foe: Foe) -> bool:
 	return _phase == "fight" and is_instance_valid(foe) and not foe.dying 		and absf(foe.position.x - foe.stop_x) <= 1.0
 
 
+# 칼끝과 적 외곽 사이의 빈 거리. 좌우 어느 쪽에 있든 같은 식이 되도록 **거리**로만 잰다.
+func _foe_gap(foe: Foe) -> float:
+	return absf(foe.position.x - hero_x) - foe._size() * 0.5
+
+
 # 피해 순간에 해당 모션의 실제 픽셀 사거리와 적 외곽을 다시 비교한다.
-# 좌우 어느 쪽에 있든 같은 식이 되도록 **거리**로만 잰다.
 func _can_hit_foe(foe: Foe, motion: String = "attack") -> bool:
-	return _foe_arrived(foe) 		and absf(foe.position.x - hero_x) - foe._size() * 0.5 <= _motion_reach(motion) + 1.0
+	return _foe_arrived(foe) and _foe_gap(foe) <= _motion_reach(motion) + 1.0
+
+
+# **쓰는 근접 모션이 전부 닿는가.** 대시는 이 기준으로 붙어야 한다 —
+# 기본공격(30)만 보고 멈추면 더 짧은 스킬 모션(heavy 24)이 안 닿아서
+# 격 스킬이 영영 사거리 밖이 되고, 그러면 쿨다운도 안 돌아 뒤 스킬까지 막힌다.
+func _in_front_reach(foe: Foe) -> bool:
+	return _foe_arrived(foe) and _foe_gap(foe) <= _front_reach() + 1.0
 
 
 # 그 몹을 치려면 서야 할 자리 — 몹 몸통 바로 바깥이다.
@@ -2948,12 +2972,22 @@ func _tick_hero_state(delta: float) -> void:
 	hero_hp = minf(max_hp(), hero_hp + regen_per_sec() * delta)
 
 
-# 먼저 적힌 스킬이 우선이다. 별도 스킬 시스템 없이 세 개의 쿨다운만 돈다.
-func _next_ready_skill() -> Dictionary:
+# 쿨다운이 찬 스킬을 **장착 순서대로 전부**. 순서가 곧 발동 우선순위다.
+func _ready_skills() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
 	for key in skill_equipped:
-		if float(_skill_cd.get(key, 0.0)) <= 0.0:
-			return _skill_data(str(key))
-	return {}
+		if float(_skill_cd.get(key, 0.0)) > 0.0:
+			continue
+		var data := _skill_data(str(key))
+		if not data.is_empty():
+			out.append(data)
+	return out
+
+
+# 먼저 적힌 스킬이 우선이다.
+func _next_ready_skill() -> Dictionary:
+	var ready := _ready_skills()
+	return ready[0] if not ready.is_empty() else {}
 
 
 # 표(SkillDefs)에서 형태 정보를 꺼내고 **보유 레벨을 반영한** 실제 값으로 만든다.
@@ -3026,22 +3060,30 @@ func _tick_skills(delta: float, foes: Array) -> void:
 		return
 	if _hero_dead or _phase != "fight" or _hero_hit_t >= 0.0 or foes.is_empty():
 		return
-	var skill := _next_ready_skill()
-	if skill.is_empty():
-		return
-	var targeting := str(skill["target"])
+	# **대상이 없으면 다음 스킬을 본다.** 예전엔 1순위 하나만 보고 그게 사거리 밖이면
+	# 통째로 포기했다 — 격이 안 나가면 쿨다운도 안 돌아서 파·진·가호까지 영영 막혔다.
+	var skill := {}
 	var target: Foe = null
-	if targeting != "self":
+	for candidate in _ready_skills():
+		var targeting := str(candidate["target"])
+		if targeting == "self":
+			skill = candidate
+			break
+		var found: Foe = null
 		for f in foes:
 			var in_range := _foe_arrived(f) if targeting == "area" \
-				else _can_hit_foe(f, str(skill["motion"]))
-			if in_range and (target == null or f.position.x < target.position.x):
-				target = f
-	if targeting != "self" and target == null:
+				else _can_hit_foe(f, str(candidate["motion"]))
+			if in_range and (found == null or f.position.x < found.position.x):
+				found = f
+		if found != null:
+			skill = candidate
+			target = found
+			break
+	if skill.is_empty():
 		return
 	_skill_action = str(skill["key"])
 	_skill_action_t = SKILL_DUR
-	_skill_hit_t = SKILL_DUR * 3.0 / 7.0
+	_skill_hit_t = SKILL_DUR * IMPACT_RATIO
 	_skill_impact_sent = false
 	_skill_cd[_skill_action] = float(skill["cooldown"])
 	_skill_target = target
@@ -3090,6 +3132,7 @@ func _resolve_skill(key: String) -> void:
 				_advance_stage()
 		"ward":
 			_summon_t = float(skill["duration"])
+			_summon_bonus = float(skill.get("bonus", 0.0))
 			_anim_fx(fx, Vector2(hero_x, ground_y + fx_y), fx_fps, fx_scale, fx_style, fx_echo)
 
 
@@ -3202,12 +3245,36 @@ func _start_advance() -> void:
 	_spawn_wave()
 
 
+# 동시에 화면에 서 있는 몹 수. **스폰·보충·오프라인 판정이 같은 값을 봐야 한다** —
+# 세 군데에 같은 식을 적어 두면 하나만 고쳤을 때 화면과 계산이 조용히 갈린다.
+#
+# 하한이 4인 이유: 이 값이 곧 처치 처리량의 상한이다. 몹은 화면 밖에서 제 칸까지
+# 걸어오므로(약 2.2초) 동시 n마리면 초당 n/2.2 마리가 한계다. 하한이 2이던 동안
+# 큰 단계 1~7은 60초에 최대 51마리라 60마리 조건을 **DPS와 무관하게** 못 넘었다.
+func _wave_size(at_stage: int) -> int:
+	return clampi(2 + StageDefs.major_stage(at_stage) / 8, 4, MAX_FOES)
+
+
+# 한 마리가 화면 밖에서 제 칸까지 걸어오는 평균 시간. 처리량 상한의 분모다.
+func _lane_walk_seconds(at_stage: int) -> float:
+	var n := _wave_size(at_stage)
+	var right := (n + 1) / 2
+	var total := 0.0
+	for i in n:
+		var side := 1 if i < right else -1
+		var line := i if i < right else i - right
+		var out := float(line) * Grid.u(3)
+		var from := SPAWN_X + out if side > 0 else SPAWN_X_LEFT - out
+		total += absf(from - _lane_x(side, line))
+	return total / float(maxi(1, n)) / Foe.WALK_SPEED
+
+
 # 빈 칸 하나를 채운다. 한 프레임에 한 마리씩만 — 몰아 내보내면 다 겹쳐 걸어온다.
 # 보스·중간보스 구간은 한 마리로 끝나므로 보충하지 않는다.
 func _refill_lanes(foes: Array) -> bool:
 	if _walk_only or StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage):
 		return false
-	var want := clampi(2 + StageDefs.major_stage(stage) / 8, 2, MAX_FOES)
+	var want := _wave_size(stage)
 	if foes.size() >= want:
 		return false
 	var taken := {}
@@ -3248,7 +3315,7 @@ func _spawn_wave() -> void:
 		_spawn_foe()
 		return
 	# 단계가 오를수록 한 무리가 두꺼워진다. 화면 폭 때문에 MAX_FOES 가 상한이다.
-	var n := clampi(2 + StageDefs.major_stage(stage) / 8, 2, MAX_FOES)
+	var n := _wave_size(stage)
 	# **좌우 양쪽에서** 나온다. 시간을 버티는 구조가 되면서 한쪽만 보면 되는 전투는
 	# 서서 기다리기가 정답이 되어 버렸다 — 뒤에서도 오면 자리를 지킬 수가 없다.
 	# 오른쪽을 먼저 채운다: 전진 방향이라 "다가간다"가 계속 읽힌다.
@@ -3825,8 +3892,7 @@ func _offline_profile(at_stage: int) -> Dictionary:
 		for key in roster:
 			hp_mult += float(FoeTiers.get_tier(str(key))["hp_mult"])
 		hp_mult /= maxf(1.0, float(roster.size()))
-	var count := 1 if boss or midboss else clampi(
-		2 + StageDefs.major_stage(at_stage) / 8, 2, MAX_FOES)
+	var count := 1 if boss or midboss else _wave_size(at_stage)
 	return {
 		"hp": 10.0 * hp_mult * StageDefs.enemy_power(at_stage) \
 			* (12.0 if boss else (3.5 if midboss else 1.0)),
@@ -3843,8 +3909,16 @@ func _offline_can_clear(at_stage: int, remaining_kills: int) -> bool:
 	var budget := StageDefs.time_limit(at_stage) - StageDefs.WAVE_WALK_SECONDS
 	if budget <= 0.0:
 		return false
+	# 보스·중간보스는 한 마리라 걸어오는 시간이 예산에서 이미 빠졌다. 일반 구간만
+	# 실시간과 같은 처리량 상한(동시 몹 수 / 걷는 시간)을 건다.
+	var lanes := 0
+	var walk := 0.0
+	if not (StageDefs.is_boss_stage(at_stage) or StageDefs.is_midboss_stage(at_stage)):
+		lanes = _wave_size(at_stage)
+		walk = _lane_walk_seconds(at_stage)
 	return Balance.can_clear_stage(max_hp(), regen_per_sec(), dps(), remaining_kills,
-		float(p["hp"]), int(p["count"]), float(p["damage"]), float(p["interval"]), budget)
+		float(p["hp"]), int(p["count"]), float(p["damage"]), float(p["interval"]),
+		budget, lanes, walk)
 
 
 # 껐던 시간만큼 보상을 준다. 먼저 생존 공식으로 밀 수 있는 최고 단계까지 올리고,

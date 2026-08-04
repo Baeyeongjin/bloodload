@@ -88,7 +88,9 @@ func _init() -> void:
 			"승급하면서 형태가 바뀐다: %s -> %s" % [key, next])
 		assert(GachaDefs.rarity_index(str(SkillDefs.split(next)[1])) == idx + 1,
 			"승급이 한 칸이 아니다: %s -> %s" % [key, next])
-		assert(SkillDefs.power(next, 0) > SkillDefs.power(key, 0),
+		# **rank 로 잰다, power 가 아니라.** 가호는 피해가 0이라 power 로는 등급을
+		# 못 가른다(0 > 0 은 거짓). rank 가 바로 그 경우를 위해 있는 함수다.
+		assert(SkillDefs.rank(next, 0) > SkillDefs.rank(key, 0),
 			"승급했는데 안 세다: " + key)
 		assert(keys.has(next), "승급 결과가 표에 없다: " + next)
 

@@ -125,6 +125,19 @@ func _init() -> void:
 		"시간이 남는데 제한에 걸린다")
 	assert(not Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, 1.0),
 		"제한 시간을 넘겼는데 통과한다")
+	# 처리량 상한 — 몹이 화면 밖에서 걸어오므로 **DPS가 무한이어도** 동시 몹 수보다
+	# 빨리 잡을 수 없다. 이걸 빼면 오프라인이 실시간으로는 못 넘는 구간을 넘어간다.
+	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0e9), 0.0)
+		or Balance.stage_seconds(60, 10.0, 1.0e9) < 0.001,
+		"DPS가 무한인데 시간이 남는다")
+	var flow2 := Balance.stage_seconds(60, 10.0, 1.0e9, 2, 2.33)
+	var flow4 := Balance.stage_seconds(60, 10.0, 1.0e9, 4, 2.33)
+	assert(flow2 > 60.0, "동시 2마리로 60마리를 60초에 잡을 수 있다고 나온다: %.1f초" % flow2)
+	assert(flow4 < 60.0, "동시 4마리인데도 60초를 넘는다: %.1f초" % flow4)
+	assert(flow2 > flow4, "칸이 늘었는데 더 오래 걸린다")
+	# DPS가 모자라면 그쪽이 병목이다 — 둘 중 느린 쪽을 쓴다.
+	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0, 4, 2.33),
+		Balance.push_seconds(60, 10.0, 1.0)), "DPS 병목일 때 처리량이 이긴다")
 	# 구간 종류마다 시간이 다르고, 보스가 가장 길어야 한다.
 	assert(StageDefs.time_limit(10) >= StageDefs.time_limit(1), "보스 제한이 더 짧다")
 	for st in [1, 5, 10, 37, 100]:
