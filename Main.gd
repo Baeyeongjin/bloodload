@@ -42,8 +42,11 @@ const SPAWN_X_LEFT := -84.0   # 화면 밖 왼쪽에서 등장
 const MAX_FOES := 5           # 세로 화면은 가로가 좁아 5마리가 한계
 # 몹이 자리를 잡는 칸. 영웅 기준이 아니라 **화면 기준 고정 좌표**다 — 예전처럼
 # 영웅 사거리 앞에 줄 세우면 영웅이 움직일 이유가 없어서 전투가 정지 화면이 된다.
-const LANES_RIGHT := [380.0, 452.0, 524.0]
-const LANES_LEFT := [196.0, 124.0, 52.0]
+# 간격 64 = 몹 한 마리 폭(32x2)이라 겹치지 않는 최소값이다. 예전 72 는 첫 칸이
+# 영웅에서 92px 나 떨어져 **영웅 주변 184px 가 늘 비어 있었다** — 몹이 중앙으로
+# 못 오는 게 아니라 올 자리가 없었다. 첫 칸을 당겨 공백을 112px 로 줄인다.
+const LANES_RIGHT := [344.0, 408.0, 472.0]
+const LANES_LEFT := [232.0, 168.0, 104.0]
 # 대시. 520 으로 잡았더니 한 칸(92~236px)을 0.2~0.45초에 붙어서 **순간이동**으로
 # 보였다 — 달리기 8프레임을 한 바퀴 돌리려면 최소 0.5초는 이동에 써야 한다.
 # 걷기(120)의 2배면 가까운 칸도 0.4초, 먼 칸은 1초라 뛰는 게 눈에 남는다.
@@ -2836,6 +2839,7 @@ func _process(delta: float) -> void:
 	_tick_hero_state(delta)
 	var visual_frozen := _visual_hitstop_t > 0.0
 	_visual_hitstop_t = maxf(0.0, _visual_hitstop_t - delta)
+	_hitstop_cd = maxf(0.0, _hitstop_cd - delta)
 	_tick_motion(0.0 if visual_frozen else delta)
 	queue_redraw()   # 그림자는 몹이 움직일 때마다 다시 그려야 한다
 	if _offline_t > 0.0:
@@ -3180,7 +3184,26 @@ func _skill_hit_fx(skill: Dictionary, foe: Foe) -> void:
 	_anim_fx(hit_fx, foe.position + Vector2(0, -30.0), 18.0, 1.5)
 
 
+# 히트스톱은 **띄엄띄엄 걸려야 효과가 있다.**
+#
+# 예전엔 맞은 몹마다 이 함수가 불려서 두 가지가 겹쳤다:
+#   1. 피의 파도가 5마리를 때리면 흔들림이 **5겹**으로 쌓였다
+#   2. 공속이 오르면 0.035초 정지가 끊임없이 들어가 화면이 계속 얼어붙었다
+# 둘 다 "타격감"이 아니라 **뚝뚝 끊김**으로 보인다. 한 프레임에 한 번, 그리고
+# 최소 간격을 두고만 건다.
+const HITSTOP_MIN_GAP := 0.14
+var _hitstop_cd := 0.0
+var _hitstop_frame := -1
+
+
 func on_foe_hit(_foe: Foe, _damage: float) -> void:
+	var frame := Engine.get_process_frames()
+	if frame == _hitstop_frame:
+		return          # 같은 프레임의 광역 타격은 한 번으로 친다
+	_hitstop_frame = frame
+	if _hitstop_cd > 0.0:
+		return          # 너무 잦으면 건너뛴다
+	_hitstop_cd = HITSTOP_MIN_GAP
 	_visual_hitstop_t = maxf(_visual_hitstop_t, HITSTOP_DUR)
 	if is_inside_tree():
 		for f in get_tree().get_nodes_in_group("foes"):

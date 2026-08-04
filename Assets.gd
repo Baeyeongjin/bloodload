@@ -9,6 +9,26 @@ extends RefCounted
 static var _cache := {}
 static var _fcache := {}
 static var _reach_cache := {}
+static var _gap_cache := {}
+
+
+# 그림이 캔버스 **아래끝에서 몇 칸 떠 있는가**(원본 픽셀 단위).
+#
+# 발밑 정렬에 쓴다. 도트 그림은 32x32 안에서 차지하는 위치가 제각각이고,
+# **애니메이션은 프레임마다도 다르다**(frost_spider_walk 는 1~6px 로 흔들린다).
+# 캔버스 아래끝을 지면에 붙이면 그 차이만큼 몹이 떴다 가라앉았다 한다.
+static func bottom_gap(texture: Texture2D) -> float:
+	if texture == null:
+		return 0.0
+	var key := texture.resource_path
+	if _gap_cache.has(key):
+		return float(_gap_cache[key])
+	var image := texture.get_image()
+	var used := image.get_used_rect()
+	var gap := 0.0 if used.size.y <= 0 \
+		else float(image.get_height() - (used.position.y + used.size.y))
+	_gap_cache[key] = gap
+	return gap
 
 static func tex(path: String) -> Texture2D:
 	if path == "":

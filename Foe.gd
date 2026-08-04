@@ -36,7 +36,12 @@ var _attack_anim := -1.0
 var _impact_sent := false
 var dying := false
 var dying_t := 0.0
-const DIE_DUR := 0.26
+# 죽는 연출. 0.26 은 스쿼시만 할 때 값이라 날아가는 걸 보기엔 짧다.
+const DIE_DUR := 0.42
+const DIE_FLY := 46.0     # 맞은 쪽 반대로 밀리는 거리
+const DIE_HOP := 22.0     # 떠오르는 높이 (포물선)
+const DIE_DROP := 14.0    # 마지막에 가라앉는 깊이
+const DIE_SPIN := 62.0    # 기우는 각도
 const ATTACK_DUR := 0.42
 # 타격 지점을 **프레임 번호가 아니라 모션 길이의 비율**로 잡는다.
 # 고정 번호(3)로 두면 프레임 수가 다른 모션에서 지점이 밀린다 — 실제로 새로 들어온
@@ -45,6 +50,7 @@ const ATTACK_DUR := 0.42
 const IMPACT_RATIO := 3.0 / 7.0   # 원래 기준: 7프레임 중 네 번째
 const HIT_REACT_DUR := 0.14
 const HIT_KNOCKBACK := 7.0
+const FIRST_SWING := 0.35   # 칸에 도착하고 첫 공격까지. 주기와 별개다
 
 
 func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false) -> void:
@@ -67,7 +73,11 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	_attack_frames = Assets.frames("res://assets/anim/%s_attack" % anim_key)
 	if _attack_frames.is_empty():
 		_attack_frames = Assets.frames("res://assets/anim/%s_attack" % key)
-	_attack_cd = attack_interval()
+	# **첫 타는 빨리 나간다.** 예전엔 여기에 주기 전체(1.5~2.3초)를 넣었는데,
+	# 이 카운트다운은 **제 칸에 도착한 뒤에야** 돌기 시작한다. 그래서 붙고 나서
+	# 2초를 서 있다가 쳤고, 영웅 처치시간이 1.9초라 대부분 때려보지도 못하고 죽었다.
+	# 도착하면 바로 휘두르고, 그 다음부터 제 주기를 탄다.
+	_attack_cd = FIRST_SWING
 	z_index = 2 if boss else 1
 
 
@@ -177,8 +187,13 @@ func hit_offset() -> float:
 
 # 이 몹의 공격이 닿는 거리. 영웅이 이 밖으로 나가면 헛친다 — 대시로 피할 여지가
 # 생겨야 "달려가서 팬다"가 전투가 된다.
+#
+# **44 는 너무 짧았다.** 영웅이 한 칸에 붙으면 옆 칸 몹까지 112px 이라, 붙어 있는
+# 한 마리 말고는 전부 매번 헛쳤다 — 모션은 나가는데 피해가 안 들어가니 화면에서는
+# "공격이 안 나간다"로 보인다. 80 이면 **두 칸까지** 닿아 난전이 된다.
+# 세 칸(176px)은 여전히 못 닿으므로 대시로 빠져나갈 여지는 남는다.
 func reach() -> float:
-	return _size() * 0.5 + 44.0
+	return _size() * 0.5 + 80.0
 
 
 func _draw() -> void:
@@ -195,11 +210,27 @@ func _draw() -> void:
 	# 좌우 반전으로 끝낸다 — 도트라 반전해도 어색한 곳이 없다.
 	draw_set_transform(Vector2(hit_offset(), 0.0), 0.0, Vector2(float(-face), 1.0))
 	if dying:
-		# 죽음: 발은 붙인 채로 가로로 퍼지고 세로로 눌린다. 파티클 없이 스쿼시만.
+		# 죽음. 예전엔 제자리 스쿼시뿐이라 "사라졌다"에 가까웠다 — 맞아서 죽었다는
+		# 인과가 안 보였다. **맞은 쪽으로 날아가면서 무너진다.**
+		#
+		# 종류를 둘로 가른다: 단단한 놈(hp_mult 큰 쪽)은 뒤로 **날아가고**, 무른 놈은
+		# 제자리에서 **녹아내린다**. 같은 연출로 다 죽으면 몹이 다 같아 보인다.
 		var f := dying_t / DIE_DUR
-		wsc = 1.0 + 0.35 * f
-		hsc = 1.0 - 0.55 * f
-		alpha = 1.0 - f
+		var ease_out := 1.0 - (1.0 - f) * (1.0 - f)
+		if hp_mult >= 1.5:
+			# 날아감: 온 길 반대로 밀리며 살짝 떠올랐다 떨어지고, 기울어진다.
+			draw_set_transform(
+				Vector2(float(-face) * DIE_FLY * ease_out,
+					-DIE_HOP * sin(f * PI) + DIE_DROP * f * f),
+				deg_to_rad(float(-face) * DIE_SPIN * ease_out),
+				Vector2(float(-face), 1.0))
+			wsc = 1.0 + 0.10 * f
+			hsc = 1.0 - 0.15 * f
+		else:
+			# 녹아내림: 아래로 흘러 퍼진다. 발밑은 그대로 두고 세로만 무너뜨린다.
+			wsc = 1.0 + 0.55 * f
+			hsc = 1.0 - 0.80 * f
+		alpha = 1.0 - ease_out
 	var tex: Texture2D = _sprite
 	if not dying and _attack_anim >= 0.0 and not _attack_frames.is_empty():
 		var attack_i := mini(int(_attack_anim * float(_attack_frames.size()) / ATTACK_DUR),
@@ -208,9 +239,15 @@ func _draw() -> void:
 	elif not dying and not _walk_frames.is_empty():
 		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()]
 	if tex:
+		# **발밑은 캔버스가 아니라 그림의 아래끝이다.** 캔버스 아래끝을 지면에 붙이면
+		# 그림이 캔버스 안에서 떠 있는 만큼 몹이 공중에 뜬다 — 거미가 그랬다.
+		# 게다가 그 여백은 프레임마다 달라서(서리 거미 1~6px) 걸을 때 위아래로
+		# 흔들린다. 재서 그만큼 내린다.
+		var drop := Assets.bottom_gap(tex) \
+			* (w * hsc / float(maxi(1, tex.get_height())))
 		# 몹은 왼쪽(플레이어)을 본다. 원본이 왼쪽 향함이라 그대로 그린다.
 		draw_texture_rect(tex,
-			Rect2(Vector2(-w * wsc * 0.5, -w * hsc), Vector2(w * wsc, w * hsc)),
+			Rect2(Vector2(-w * wsc * 0.5, -w * hsc + drop), Vector2(w * wsc, w * hsc)),
 			false, Color(1, 1, 1, alpha))
 	else:
 		draw_circle(Vector2(0, -w * 0.4), w * 0.4, Color(0.8, 0.35, 0.35, alpha))
@@ -219,11 +256,16 @@ func _draw() -> void:
 		return
 	# 체력 바: 보스만 크게, 잡몹은 얇게. 난전에서 남은 체력이 읽혀야 한다.
 	# **반전 밖에서** 그린다 — 안에서 그리면 왼쪽 몹만 체력이 오른쪽부터 준다.
+	#
+	# 영웅 바와 **같은 방식**으로 그린다: 어두운 판을 깔고 채움을 1px 안쪽에.
+	# 예전엔 채움을 판과 같은 사각형에 그려서 가득 찼을 때 판이 통째로 덮였다 —
+	# 테두리가 없어 영웅 바와 이질감이 났다.
 	draw_set_transform(Vector2(hit_offset(), 0.0))
 	var bw := w * 0.8
-	var bh := 4.0 if is_boss else 2.0
+	var bh := 7.0 if is_boss else 5.0
 	var by := -w - 8.0
-	draw_rect(Rect2(Vector2(-bw * 0.5, by), Vector2(bw, bh)), Color(0, 0, 0, 0.7))
-	draw_rect(Rect2(Vector2(-bw * 0.5, by), Vector2(bw * clampf(hp / max_hp, 0.0, 1.0), bh)),
+	draw_rect(Rect2(Vector2(-bw * 0.5, by), Vector2(bw, bh)), Color(0.03, 0.03, 0.04, 0.85))
+	draw_rect(Rect2(Vector2(-bw * 0.5 + 1.0, by + 1.0),
+		Vector2((bw - 2.0) * clampf(hp / max_hp, 0.0, 1.0), bh - 2.0)),
 		Color(0.9, 0.25, 0.25) if is_boss else Color(0.85, 0.45, 0.35))
 	draw_set_transform(Vector2.ZERO)

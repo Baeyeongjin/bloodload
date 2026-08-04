@@ -92,8 +92,11 @@ static func hero_regen_per_sec(max_hp: float, regen_level: int) -> float:
 
 # 몹마다 별도 공격속도 표를 만들지 않는다. 이미 있는 hp_mult로 단단한 몹일수록
 # 느리고 무겁게 치는 차이가 자동으로 생긴다.
+#
+# 기본을 1.2 -> 1.0 으로 내렸다. 1.2 면 가장 무른 몹도 1.5초, 단단한 놈은 2.3초라
+# 영웅 처치시간(초반 1.9초)보다 느려서 **한 대도 못 치고 죽는** 몹이 대부분이었다.
 static func foe_attack_interval(hp_mult: float) -> float:
-	return 1.2 + maxf(0.0, hp_mult) * 0.3
+	return 1.0 + maxf(0.0, hp_mult) * 0.3
 
 
 # 오프라인 판정도 실시간 전투와 같은 결정론적 수치를 쓴다. 회복이 받은 DPS 이상이면
