@@ -4874,7 +4874,10 @@ func _offline_profile(at_stage: int) -> Dictionary:
 	return {
 		"hp": FoeTiers.foe_hp(hp_mult, StageDefs.enemy_power(at_stage), boss, midboss),
 		"count": count,
-		"damage": Balance.foe_damage(StageDefs.enemy_power(at_stage)),
+		# 보스·중간보스는 세 번에 한 번 특수 패턴으로 훨씬 아프게 친다. 평타 기준으로만
+		# 계산하면 오프라인이 실제보다 무르게 보고 "깼다"고 판정한다.
+		"damage": Balance.foe_damage(StageDefs.enemy_power(at_stage))
+			* Foe.avg_attack_mult(boss, midboss),
 		"interval": Balance.foe_attack_interval(hp_mult),
 	}
 

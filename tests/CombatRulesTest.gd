@@ -79,6 +79,22 @@ func _init() -> void:
 	assert(boss._attack_frames.size()
 		> Assets.frames("res://assets/anim/wraith_knight_attack").size(),
 		"boss_1_attack 전용 자산이 안 붙고 원본 몹 attack 으로 떨어졌다")
+	# 특수 패턴 모션도 **조용히 떨어진다** — 없으면 평타가 나가서 화면상 티가 안 난다.
+	# 보스 5종 전부 붙어 있어야 한다.
+	assert(boss._special_frames.size() == 9,
+		"boss_1_special 이 안 붙었다: %d 프레임" % boss._special_frames.size())
+	for act_i in range(1, 6):
+		for frame in 9:
+			assert(FileAccess.file_exists(
+				"res://assets/anim/boss_%d_special/%d.png" % [act_i, frame]),
+				"보스 특수 프레임 없음: boss_%d_special/%d" % [act_i, frame])
+	# 특수 스윙은 평타보다 아프고 멀리 닿는다. 오프라인 평균 배수는 그 사이에 있어야
+	# 한다 — 1.0 이면 특수를 안 세는 것이고, SPECIAL_DMG 면 매번 특수로 치는 셈이다.
+	var avg := Foe.avg_attack_mult(true, false)
+	assert(avg > 1.0 and avg < Foe.SPECIAL_DMG,
+		"보스 평균 피해 배수가 평타~특수 사이가 아니다: %f" % avg)
+	assert(is_equal_approx(Foe.avg_attack_mult(false, false), 1.0),
+		"잡몹에 특수 패턴 배수가 붙었다")
 	assert(is_equal_approx(boss._size(), float(Grid.SPRITE) * 2.0 * 1.25 * 2.0))
 	# 특수 패턴 — **보스·중간보스만**, 정해진 주기마다, 예고하는 동안은 멈춘다.
 	# 화면에서는 예고 원이 0.85초만 떴다 사라져서 눈으로는 있는지조차 확인이 어렵다.

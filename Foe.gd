@@ -27,6 +27,7 @@ var hero_x := 0.0          # Main 이 매 프레임 넘겨 준다. 닿을 때만
 
 var _walk_frames: Array = []
 var _attack_frames: Array = []
+var _special_frames: Array = []   # 특수 패턴 전용 모션. 없으면 평타로 떨어진다
 var _sprite: Texture2D = null
 var _anim_t := 0.0
 var _flash_t := 0.0
@@ -76,6 +77,9 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	_attack_frames = Assets.frames("res://assets/anim/%s_attack" % anim_key)
 	if _attack_frames.is_empty():
 		_attack_frames = Assets.frames("res://assets/anim/%s_attack" % key)
+	# 특수 패턴 전용 모션은 보스·중간보스만 쓴다. 아직 없는 보스는 빈 배열이라
+	# _draw 가 평타로 떨어진다 — 하나씩 붙여 나갈 수 있다.
+	_special_frames = Assets.frames("res://assets/anim/%s_special" % anim_key)
 	# **첫 타는 빨리 나간다.** 예전엔 여기에 주기 전체(1.5~2.3초)를 넣었는데,
 	# 이 카운트다운은 **제 칸에 도착한 뒤에야** 돌기 시작한다. 그래서 붙고 나서
 	# 2초를 서 있다가 쳤고, 영웅 처치시간이 1.9초라 대부분 때려보지도 못하고 죽었다.
@@ -166,6 +170,18 @@ const SPECIAL_DMG := 2.4       # 피해 배수. 대신 원 밖으로 나가면 �
 
 func attack_mult() -> float:
 	return SPECIAL_DMG if special_swing else 1.0
+
+
+# **오프라인 판정이 쓰는 평균 피해 배수.** 실시간은 세 번에 한 번만 SPECIAL_DMG 를
+# 쓰지만, 오프라인은 스윙을 하나씩 세지 않고 DPS 로 계산한다. 평타 기준으로만 계산하면
+# 오프라인은 "깼다"는데 실제로 돌리면 죽는다 — 조용히 갈라지는 종류라 여기서 맞춘다.
+#
+#   (평타 (n-1)번 + 특수 1번) / n
+static func avg_attack_mult(boss: bool, midboss: bool) -> float:
+	if not (boss or midboss):
+		return 1.0
+	var n := float(SPECIAL_EVERY)
+	return ((n - 1.0) + SPECIAL_DMG) / n
 
 
 # 지금 특수 패턴을 예고하는 중인가. 그리는 쪽(_draw_attack_tell)과 멈추는 쪽이
@@ -324,9 +340,13 @@ func _draw() -> void:
 		alpha = 1.0 - ease_out
 	var tex: Texture2D = _sprite
 	if not dying and _attack_anim >= 0.0 and not _attack_frames.is_empty():
-		var attack_i := mini(int(_attack_anim * float(_attack_frames.size()) / ATTACK_DUR),
-			_attack_frames.size() - 1)
-		tex = _attack_frames[attack_i]
+		# 특수 스윙은 전용 모션이 있으면 그걸 쓴다. **없으면 평타로 조용히 떨어진다** —
+		# 보스 5종 중 일부만 전용 모션이 붙어 있어도 나머지가 안 깨진다.
+		var frames := _special_frames if special_swing and not _special_frames.is_empty() \
+			else _attack_frames
+		var attack_i := mini(int(_attack_anim * float(frames.size()) / ATTACK_DUR),
+			frames.size() - 1)
+		tex = frames[attack_i]
 	elif not dying and not _walk_frames.is_empty():
 		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()]
 	if tex:
