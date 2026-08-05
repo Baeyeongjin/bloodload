@@ -194,7 +194,10 @@ func _init() -> void:
 	# 여기 숫자를 손으로 고치는 게 맞다. 검사가 없으면 그림 교체가 사거리를 조용히
 	# 바꿔서 스킬이 안 나가는 버그로 돌아온다(2026-08-04 에 실제로 그랬다).
 	assert(is_equal_approx(attack_reach, 26.0), "attack 불투명 픽셀 사거리 측정 실패")
-	assert(is_equal_approx(heavy_reach, 18.0), "heavy 불투명 픽셀 사거리 측정 실패")
+	# heavy 18 -> 28 (2026-08-05 재생성). 예전 그림은 **임팩트 프레임이 애니메이션에서
+	# 가장 오므린 순간**이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로
+	# 보였다. 사거리 판정은 max(사거리, BODY_HALF)=30 이라 그대로지만 손맛이 달라진다.
+	assert(is_equal_approx(heavy_reach, 28.0), "heavy 불투명 픽셀 사거리 측정 실패")
 	assert(not is_equal_approx(attack_reach, heavy_reach), "모션별 사거리가 구분되지 않는다")
 	# 타격 지점은 프레임 번호가 아니라 **모션 길이의 비율**이다. 영웅과 몹이 같은 값을
 	# 써야 8프레임으로 다시 뽑아도 둘의 타격 규칙이 갈리지 않는다.
