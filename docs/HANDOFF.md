@@ -41,7 +41,15 @@ $GODOT = "C:/Users/user/Godot/Godot_v4.7-stable_win64_console.exe"
 & $GODOT --headless --path . --script tests/CombatRulesTest.gd
 ```
 
-2026-08-05 결과: **네 개 모두 OK**, `--import` 에러 0.
+2026-08-05 결과: **다섯 개 모두 OK**(GoalTest 추가), 전체 **4초**, `--import` 에러 0.
+
+> **테스트가 안 끝나던 문제 해결.** Godot 의 `assert` 는 실패하면 그 자리에서 함수를
+> 멈추는데, 그러면 아래 `quit()` 에 못 가서 프로세스가 영영 안 끝났다(타임아웃으로
+> 죽여야 했다). 각 테스트 맨 앞에 20초 시계를 걸어 두어 멈춰도 반드시 끝난다.
+>
+> **SkillTest 40초 -> 0.7초.** 프레임 무결성 검사가 20종 x 9프레임 x 4096px 을
+> `get_pixel` 로 전수 훑고 있었다. 잡으려는 건 "통째로 불투명"과 "통째로 빈" 둘뿐이라
+> 네 모서리 + `get_used_rect()` 로 충분하다.
 
 > **exit 0 을 믿지 말 것.** `--script` 로 돌리면 실패한 `assert()` 가 `SCRIPT ERROR:
 > Assertion failed:` 만 찍고 실행은 계속돼서, 그 뒤의 `print("… OK")` 와 `quit()` 가

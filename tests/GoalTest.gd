@@ -4,6 +4,12 @@ extends SceneTree
 #   godot --headless --path . --script tests/GoalTest.gd
 
 func _init() -> void:
+	# **안전장치.** Godot 의 assert 는 실패하면 그 자리에서 함수를 멈추는데, 그러면
+	# 아래 quit() 에 못 가서 프로세스가 영영 안 끝난다(타임아웃으로 죽여야 했다).
+	# 먼저 시계를 걸어 두면 멈춰도 반드시 끝나고, 종료 코드로 실패가 드러난다.
+	create_timer(20.0).timeout.connect(func() -> void:
+		push_error("테스트가 안 끝났다 — assert 실패로 멈춘 것이다")
+		quit(1))
 	assert(not GoalDefs.TRACKS.is_empty(), "트랙이 하나도 없다")
 	var game = load("res://Main.gd").new()
 	var seen := {}

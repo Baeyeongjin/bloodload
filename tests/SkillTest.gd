@@ -4,6 +4,12 @@ extends SceneTree
 #   godot --headless --script tests/SkillTest.gd
 
 func _init() -> void:
+	# **안전장치.** Godot 의 assert 는 실패하면 그 자리에서 함수를 멈추는데, 그러면
+	# 아래 quit() 에 못 가서 프로세스가 영영 안 끝난다(타임아웃으로 죽여야 했다).
+	# 먼저 시계를 걸어 두면 멈춰도 반드시 끝나고, 종료 코드로 실패가 드러난다.
+	create_timer(20.0).timeout.connect(func() -> void:
+		push_error("테스트가 안 끝났다 — assert 실패로 멈춘 것이다")
+		quit(1))
 	var keys := SkillDefs.all_keys()
 	# 형태 4 x 등급 5 = 20. 신화가 섞이면 아이콘이 없어서 빈 칸이 된다.
 	assert(keys.size() == 20, "스킬이 20종이 아니다: %d" % keys.size())
@@ -119,6 +125,13 @@ func _init() -> void:
 
 # 한 폴더의 프레임이 성한지 본다. 마지막 프레임은 페이드아웃이라 비어도 정상이고,
 # 그 앞은 **투명 픽셀이 하나라도** 있어야 한다(전부 불투명 = 배경이 딸려온 것).
+#
+# **픽셀을 전수로 훑지 않는다.** 20종 x 9프레임 x 4096px = 737k 번 get_pixel 이라
+# 이 검사 하나가 테스트 전체 시간을 먹었다. 잡으려는 건 "프레임 통째로 불투명"과
+# "프레임 통째로 빈" 두 가지뿐이라 그렇게 촘촘히 볼 이유가 없다:
+#   - 빈 프레임: get_used_rect() 가 비면 그게 곧 빈 프레임이다 (엔진이 계산해 준다)
+#   - 불투명 프레임: 배경이 딸려오면 **네 모서리가 전부** 불투명하다. 정상 이펙트는
+#     가운데서 터지고 모서리는 비어 있으므로 모서리 넷만 봐도 갈린다.
 func _check_frames(name: String) -> void:
 	var dir := "res://assets/anim/%s" % name
 	var i := 0
@@ -132,17 +145,15 @@ func _check_frames(name: String) -> void:
 	assert(frames.size() >= 4, "프레임이 너무 적다(%d장): %s" % [frames.size(), name])
 	for f in frames.size():
 		var img: Image = frames[f]
+		var w := img.get_width() - 1
+		var h := img.get_height() - 1
+		var corners := [Vector2i(0, 0), Vector2i(w, 0), Vector2i(0, h), Vector2i(w, h)]
 		var opaque := 0
-		var visible := 0
-		for y in img.get_height():
-			for x in img.get_width():
-				var a := img.get_pixel(x, y).a
-				if a >= 0.999:
-					opaque += 1
-				if a > 0.0:
-					visible += 1
-		assert(opaque < img.get_width() * img.get_height(),
-			"%s/%d 이 전부 불투명하다 — 배경이 딸려온 프레임이다" % [name, f])
+		for c in corners:
+			if img.get_pixelv(c).a >= 0.999:
+				opaque += 1
+		assert(opaque < corners.size(),
+			"%s/%d 이 네 모서리까지 불투명하다 — 배경이 딸려온 프레임이다" % [name, f])
 		if f < frames.size() - 1:
-			assert(visible > 0,
+			assert(img.get_used_rect().size.x > 0,
 				"%s/%d 이 빈 프레임이다 — 이펙트가 중간에 사라진다" % [name, f])

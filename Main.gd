@@ -777,6 +777,18 @@ static func _n(v: float) -> String:
 	return ("%.1f" % v).trim_suffix(".0") + units[i]
 
 
+# 소수점 없는 축약. 좁은 칸(가이드 보상 등)에서 쓴다.
+static func _n_int(v: float) -> String:
+	if v < 1000.0:
+		return str(int(v))
+	var units := ["k", "m", "b", "t"]
+	var i := -1
+	while v >= 1000.0 and i < units.size() - 1:
+		v /= 1000.0
+		i += 1
+	return str(int(v)) + units[i]
+
+
 # 발밑 접지 그림자. 이게 없으면 몹이 바닥에 선 게 아니라 떠 있는 것처럼 보인다.
 # Main 은 z=0 이라 배경(-20) 위, 몹(1~2)·영웅(3) 아래에 깔린다.
 func _draw() -> void:
@@ -882,12 +894,7 @@ func _build_topbar() -> void:
 	_lbl_prog.size = Vector2(bar_w, STAGE_BAR_H)
 	_lbl_prog.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# ── 오른쪽 아래: 전투력. 가운데 덩어리(132~438)와 **겹쳐 있었다** — 그 오른쪽
-	# 빈 칸으로 뺀다. 좁아서 "초당 N"은 뺐다(성장 탭에 그대로 있다).
-	_lbl_power = _mk_label(Vector2(mid_x + mid_w + 6.0, 68.0), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.38))
-	_lbl_power.size = Vector2(w - mid_x - mid_w - 14.0, 24.0)
-	_lbl_power.clip_text = true
+
 	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
@@ -906,9 +913,20 @@ func _build_portrait() -> void:
 	_hud_root.add_child(frame)
 	_lbl_hero = _mk_label(Vector2(0.0, 4.0 + PORTRAIT - 6.0), Type.SIZE_SMALL,
 		Color(0.82, 0.96, 0.82))
-	_lbl_hero.size = Vector2(PORTRAIT + 12.0, 20.0)
+	# 레벨도 전투력과 같은 폭. 초상화 폭(72)에 맞추면 "레벨 999999"(108px)가 잘린다.
+	_lbl_hero.size = Vector2(126.0, 20.0)
 	_lbl_hero.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 전투력은 **초상화 밑에 붙인다**(사장님 지시). 오른쪽 위에 따로 떠 있으면
+	# "누구인가"와 "얼마나 센가"가 화면 양 끝으로 갈라진다.
+	# 칸을 초상화 폭(72)에 맞췄더니 "전투력 285"(90px)가 잘렸다 — 가운데 덩어리가
+	# 시작하는 132 직전까지 준다. 초상화 밑에서 왼쪽으로 조금 넓어질 뿐이라 안 겹친다.
+	_lbl_power = _mk_label(Vector2(0.0, 4.0 + PORTRAIT + 12.0), Type.SIZE_SMALL,
+		Color(1.0, 0.78, 0.38))
+	_lbl_power.size = Vector2(126.0, 20.0)
+	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_lbl_power.clip_text = true
 
 
 # ── 공용 확인창 / 보상창 ───────────────────────────────────────────────────
@@ -2676,21 +2694,24 @@ func _claim_chest() -> void:
 	_save_game()
 
 
-# 상시 가이드 카드. **레퍼런스 구조 그대로.**
+# 상시 가이드 카드.
 #
-#           ┌─ 가이드 40 ─┐   <- 헤더는 카드 위로 튀어나온 탭, 오른쪽 정렬
-#   ┌───┬───┴────────────┤
-#   │💎 │ 누적 처치 10k   │   <- 왼쪽은 보상 아이콘+수량이 한 틀 안에
-#   │109│ [==== 2 / 5 ==]│   <- 오른쪽은 목표 + 진행바(숫자는 바 안)
-#   └───┴────────────────┘
+#              ┌── 가이드 41 ──┐   <- 헤더 탭: 카드 위로 돌출, 오른쪽
+#   ┌──────┬───┴───────────────┤
+#   │ [💎] │ 단계 도달 890단계   │
+#   │  1.2k│ [▬▬▬▬ 849 / 890 ] │
+#   └──────┴───────────────────┘
+#     ↑ 보상 칸: 아이콘 위 / 숫자 아래, **둘 다 틀 안쪽 구멍에**
 #
-# **몸통은 widget_bar 가 아니라 panel 이다.** 띠(80x44)를 208x78 로 늘리니 세로로
-# 뭉개지고 찢어진 위아래 무늬가 번졌다 — 그건 가로 스트립이라 그 모양일 때만 맞다.
-# 창을 그리는 건 이미 panel 9-slice 가 하고 있으니 그걸 쓴다. 띠는 헤더 탭에만.
-const GOAL_CARD := Vector2(208.0, 72.0)
-const GOAL_TAB := Vector2(112.0, 28.0)
-const GOAL_SLOT := 52.0        # 왼쪽 보상 칸
-const GOAL_WIDGET_H := GOAL_CARD.y + GOAL_TAB.y - 8.0   # 탭이 몸통에 8px 물린다
+# 예전엔 숫자가 틀 테두리 위에 얹혀 카드 밖으로 나간 것처럼 보였다.
+# slot_common.png 은 40x40 에 **테두리 4px / 안쪽 구멍 32x32** 다(실측).
+# 그 비율(0.1 / 0.8)로 자리를 잡아야 아이콘도 숫자도 구멍 안에 들어간다.
+const GOAL_CARD := Vector2(216.0, 80.0)
+const GOAL_TAB := Vector2(108.0, 26.0)
+const GOAL_SLOT := 60.0
+const SLOT_BORDER := 0.10       # slot_common 테두리 비율 (4/40)
+const SLOT_HOLE := 0.80         # 안쪽 구멍 비율 (32/40)
+const GOAL_WIDGET_H := GOAL_CARD.y + GOAL_TAB.y - 8.0
 
 
 func _build_goal_widget() -> void:
@@ -2702,38 +2723,41 @@ func _build_goal_widget() -> void:
 	_goal_widget.size = Vector2(GOAL_CARD.x, GOAL_WIDGET_H)
 	_goal_widget.pressed.connect(_on_goal_card_pressed)
 	_hud_root.add_child(_goal_widget)
-	# 헤더 탭 — 카드 위, 오른쪽 정렬. 여기서는 띠가 제 모양대로 쓰인다.
-	_goal_widget.add_child(Ui.widget_bar(Vector2(GOAL_CARD.x - GOAL_TAB.x, 0.0), GOAL_TAB))
-	_goal_widget_name = _panel_label(_goal_widget,
-		Vector2(GOAL_CARD.x - GOAL_TAB.x, 2.0), Type.SIZE_SMALL,
-		Color(1.0, 0.88, 0.5), GOAL_TAB.x, GOAL_TAB.y - 4.0)
+	# 헤더 탭 — 카드 위, 오른쪽 정렬. 띠(가로 스트립)가 제 모양대로 쓰이는 유일한 곳이다.
+	var tab_at := Vector2(GOAL_CARD.x - GOAL_TAB.x, 0.0)
+	_goal_widget.add_child(Ui.widget_bar(tab_at, GOAL_TAB))
+	_goal_widget_name = _panel_label(_goal_widget, tab_at, Type.SIZE_SMALL,
+		Color(1.0, 0.88, 0.5), GOAL_TAB.x, GOAL_TAB.y)
 	_goal_widget_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_goal_widget_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 카드 몸통.
 	var body := Vector2(0.0, GOAL_TAB.y - 8.0)
 	_goal_widget.add_child(Ui.panel(body, GOAL_CARD))
-	# 왼쪽 보상 칸 — 아이콘과 수량이 **한 틀 안에**. 예전엔 수량이 틀 밖 기둥 위에
-	# 걸쳐서 "왼쪽이 잘렸다"로 보였다.
+	# ── 왼쪽 보상 칸. 아이콘·숫자를 **구멍 좌표로** 잡는다.
 	var slot_at := body + Vector2(10.0, (GOAL_CARD.y - GOAL_SLOT) * 0.5)
 	var slot := Ui.image("res://assets/ui/slot_common.png", slot_at,
 		Vector2(GOAL_SLOT, GOAL_SLOT))
 	slot.modulate = Color(0.86, 0.72, 1.0)
 	_goal_widget.add_child(slot)
+	var hole_at := slot_at + Vector2.ONE * (GOAL_SLOT * SLOT_BORDER)
+	var hole := GOAL_SLOT * SLOT_HOLE
+	var num_h := 16.0
 	_goal_widget_icon = Ui.icon("res://assets/items/gem.png",
-		slot_at + Vector2(GOAL_SLOT * 0.22, GOAL_SLOT * 0.06), GOAL_SLOT * 0.46)
+		hole_at + Vector2((hole - (hole - num_h)) * 0.5, 0.0), hole - num_h)
 	_goal_widget.add_child(_goal_widget_icon)
-	_goal_widget_gem = _panel_label(_goal_widget,
-		slot_at + Vector2(0.0, GOAL_SLOT - 20.0), Type.SIZE_SMALL,
-		Color(0.94, 0.88, 1.0), GOAL_SLOT, 18.0)
+	_goal_widget_gem = _panel_label(_goal_widget, hole_at + Vector2(0.0, hole - num_h),
+		Type.SIZE_SMALL, Color(0.96, 0.92, 1.0), hole, num_h)
 	_goal_widget_gem.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 오른쪽 — 목표 한 줄 + 진행바. **두 줄로 안 쓴다**: 목표 이름과 목표치를
-	# 나눠 적으면 같은 말을 두 번 하게 된다(예전에 그랬다).
-	var tx := GOAL_SLOT + 18.0
+	_goal_widget_gem.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_goal_widget_gem.clip_text = true
+	# ── 오른쪽: 목표 한 줄 + 진행바(숫자는 바 안).
+	var tx := 10.0 + GOAL_SLOT + 12.0
 	var tw := GOAL_CARD.x - tx - 12.0
-	_goal_widget_cta = _panel_label(_goal_widget, body + Vector2(tx, 12.0),
+	_goal_widget_cta = _panel_label(_goal_widget, body + Vector2(tx, 14.0),
 		Type.SIZE_SMALL, Color(0.94, 0.92, 0.98), tw, 20.0)
-	var bar_h := 18.0
-	var bar_at := body + Vector2(tx, GOAL_CARD.y - bar_h - 14.0)
+	_goal_widget_cta.clip_text = true
+	var bar_h := 20.0
+	var bar_at := body + Vector2(tx, GOAL_CARD.y - bar_h - 16.0)
 	var back := ColorRect.new()
 	back.color = Color(0.05, 0.04, 0.06, 0.92)
 	back.position = bar_at
@@ -2741,12 +2765,11 @@ func _build_goal_widget() -> void:
 	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_goal_widget.add_child(back)
 	_goal_widget_fill = ColorRect.new()
-	_goal_widget_fill.color = Color(0.86, 0.66, 0.24)
+	_goal_widget_fill.color = Color(0.72, 0.52, 0.18)
 	_goal_widget_fill.position = bar_at
 	_goal_widget_fill.size = Vector2(0.0, bar_h)
 	_goal_widget_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_goal_widget.add_child(_goal_widget_fill)
-	# 진행 숫자는 **바 안에.** 레퍼런스의 0/10 자리다.
 	_goal_widget_bar_label = _panel_label(_goal_widget, bar_at, Type.SIZE_SMALL,
 		Color(0.98, 0.96, 0.98), tw, bar_h)
 	_goal_widget_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2800,11 +2823,18 @@ func _refresh_goal_widget() -> void:
 	var ready := _goal_ready_count()
 	var done := now >= need
 	_goal_widget_name.text = "가이드 %d" % (GoalDefs.cleared_total(goal_step) + 1)
-	_goal_widget_gem.text = _n(GoalDefs.gem_reward(kind, step))
-	_goal_widget_cta.text = "받기 %d개" % ready if done else GoalDefs.label(kind, step)
+	# 보상 칸(48px)에는 소수점이 안 들어간다 — "999.9t"는 72px 이다. 여기서는
+	# 자릿수만 읽히면 되므로 정수로 줄인다("7.6m" -> "7m").
+	_goal_widget_gem.text = _n_int(GoalDefs.gem_reward(kind, step))
+	# 윗줄은 **트랙 이름만.** 목표치는 바로 아래 진행바 안에 "849 / 890"으로 이미
+	# 있어서 "누적 처치 890마리"라고 또 적으면 같은 말을 두 번 하고, 168px 이라
+	# 칸(122px)을 넘어 잘린다(GearTest 가 잡았다).
+	_goal_widget_cta.text = "받기 %d개" % ready if done 		else str(GoalDefs.track(kind).get("name", ""))
 	_goal_widget_cta.add_theme_color_override("font_color",
 		Color(1.0, 0.85, 0.35) if done else Color(0.94, 0.92, 0.98))
-	_goal_widget_bar_label.text = "%s / %s" % [_n(float(now)), _n(float(need))]
+	# 바 안(122px)에는 "999.9k / 999.9k"(180px)가 안 들어간다. 소수점과 공백을 뺀다 —
+	# 비율은 바 길이로 이미 보이고 여기 숫자는 자릿수만 읽히면 된다.
+	_goal_widget_bar_label.text = "%s/%s" % [_n_int(float(now)), _n_int(float(need))]
 	_goal_widget_fill.size.x = _goal_bar_width 		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
 
 
@@ -4595,12 +4625,12 @@ func _refresh_hud() -> void:
 	var power := Balance.combat_power(dps(), max_hp(), regen_per_sec())
 	_lbl_power.text = "전투력 %s" % _n(power)
 	_notify_power(power)
+	# **HP 숫자는 안 띄운다.** 영웅 발밑 체력 바로 이미 보이고, 전투 화면 위에
+	# 숫자가 하나 더 떠 있으면 그만큼 화면이 가려진다. 쓰러졌을 때만 남는다.
+	_lbl_life.visible = _hero_dead
 	if _hero_dead:
 		_lbl_life.text = "부활 %.1f초" % maxf(0.0, _revive_t)
 		_lbl_life.add_theme_color_override("font_color", Color(0.95, 0.48, 0.48))
-	else:
-		_lbl_life.text = "HP %s / %s" % [_n(hero_hp), _n(max_hp())]
-		_lbl_life.add_theme_color_override("font_color", Color(0.72, 0.95, 0.78))
 	if _tab == "gear":
 		_refresh_gear_slots()
 	elif _tab == "growth":
