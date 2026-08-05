@@ -41,7 +41,16 @@ $GODOT = "C:/Users/user/Godot/Godot_v4.7-stable_win64_console.exe"
 & $GODOT --headless --path . --script tests/CombatRulesTest.gd
 ```
 
-2026-08-04 결과: **네 개 모두 OK (exit 0)**, `--import` 에러 0.
+2026-08-05 결과: **네 개 모두 OK**, `--import` 에러 0.
+
+> **exit 0 을 믿지 말 것.** `--script` 로 돌리면 실패한 `assert()` 가 `SCRIPT ERROR:
+> Assertion failed:` 만 찍고 실행은 계속돼서, 그 뒤의 `print("… OK")` 와 `quit()` 가
+> 그대로 돌아 종료 코드가 0 으로 나온다(2026-08-05 확인). 반드시 출력에서
+> `Assertion` 을 걸러 봐야 한다:
+> ```powershell
+> & $GODOT --headless --path . --script tests/SkillTest.gd 2>&1 | Select-String "Assertion"
+> ```
+> 아무것도 안 나오면 통과다. 실제로 이것 때문에 깨진 이펙트 검사를 통과로 잘못 읽었다.
 
 개발 플래그: `--stage=1-5|1-10|50-10|100-10`, `--autoshot`, `--wait=N`,
 `--tab=growth|gear|codex`, `--status`, `--rates`, `--bulk=salvage|fuse[:all]`,
@@ -89,6 +98,27 @@ $GODOT = "C:/Users/user/Godot/Godot_v4.7-stable_win64_console.exe"
 > **다만 이제 몹이 제대로 때린다.** 3-3 에서 12초 만에 HP 14/100 이 됐다.
 > 아래 5장의 "체력이 너무 낮다" 가 그동안 헛치기에 가려져 있었던 것이다 —
 > 다음 작업이 그 밸런스 재설계다.
+
+## 4-2. 피격 이펙트 깨짐 — 해결됨 (2026-08-05)
+
+사장님 보고: *"몹들이 맞을 때 나오는 vfx가 깨진다"*.
+
+`assets/anim/fx_*` 39개 폴더를 전수로 훑어 **프레임의 알파를 셌다.** 실사용 중 결함은
+`fx_hit_splash`(파 계열 피격) 하나였다 — 7장 중 2·4번이 **전부 불투명**(배경이 통째로
+딸려온 프레임)이고 1번이 **빈 프레임**. 화면에서는 스패터 → 사라짐 → 붉은 네모 →
+스패터가 반복돼 "이펙트가 깨진다"로 보인다.
+
+`fx_explosion` / `fx_inferno` / `fx_judgment` / `fx_lightning` 에도 같은 결함이 있지만
+**코드에서 안 쓴다.** 손대지 않았다.
+
+- 재생성(`animate_image`, job `d9343901-…`) 후 쓸 만한 5프레임만 취해 다시 묶었다.
+  새 생성분도 0번이 빈 프레임, 1번이 붉은 판때기였다 — **받은 걸 그대로 넣으면 안 된다.**
+- `SkillTest._check_frames()` 신규: 20종 스킬 이펙트 + 피격 이펙트 3종의 모든 프레임에
+  대해 **전부 불투명이면 실패**(배경 딸려옴), **중간에 빈 프레임이면 실패**(끊김).
+  마지막 프레임이 비는 건 페이드아웃이라 통과시킨다.
+- 하드코딩된 `for frame in 6` 은 지웠다. 몇 장인지가 아니라 **성한지**가 중요하다.
+- 검사는 원본 PNG 가 아니라 **임포트된 텍스처**를 본다 — 게임이 실제로 그리는 것과
+  같은 것을 봐야 하고, `Image.load_from_file` 은 경고를 쏟아 로그를 못 읽게 만든다.
 
 ## 5. 그다음 — 밸런스 재설계
 

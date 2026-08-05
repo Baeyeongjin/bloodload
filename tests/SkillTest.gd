@@ -30,15 +30,23 @@ func _init() -> void:
 		for frame in 8:
 			assert(FileAccess.file_exists("res://assets/anim/%s/%d.png" % [fx, frame]),
 				"이펙트 프레임 없음: %s/%d" % [fx, frame])
+	# **프레임 자체가 성한지** 본다. 파일이 있는 것만으로는 모자라다 — PixelLab 결과에
+	# 배경이 통째로 딸려온 프레임(전부 불투명)이나 빈 프레임(전부 투명)이 섞이면
+	# 화면에서 이펙트가 붉은 네모로 번쩍이거나 중간에 사라진다. 실제로 fx_hit_splash 가
+	# 그랬고(2,4번 불투명 / 1번 빈), 눈으로는 "가끔 깨진다"로만 보여서 원인을 못 찾았다.
+	# 마지막 프레임이 비는 건 페이드아웃이라 정상이다.
+	for key in keys:
+		_check_frames(SkillDefs.fx_of(key))
+
 	# 피격 이펙트는 형태별 3종(가호는 버프라 없다).
 	for shape in SkillDefs.SHAPE_ORDER:
 		var hit := str(SkillDefs.HIT_FX[shape])
 		if shape == "ward":
 			assert(hit.is_empty(), "버프에 피격 이펙트가 붙어 있다")
 			continue
-		for frame in 6:
-			assert(FileAccess.file_exists("res://assets/anim/%s/%d.png" % [hit, frame]),
-				"피격 프레임 없음: %s/%d" % [hit, frame])
+		# 장수는 고정하지 않는다 — 깨진 프레임을 걷어내면 줄어들 수 있고, 몇 장인지가
+		# 아니라 **성한지**가 중요하다. _check_frames 가 존재·장수·알파를 다 본다.
+		_check_frames(hit)
 
 	# 등급이 오르면 세지고, 레벨이 올라도 세져야 한다.
 	assert(SkillDefs.power("strike_legend", 0) > SkillDefs.power("strike_common", 0),
@@ -107,3 +115,34 @@ func _init() -> void:
 		% [SkillDefs.power("strike_common", 0), SkillDefs.power("strike_legend", 0)])
 	print("SkillTest OK")
 	quit()
+
+
+# 한 폴더의 프레임이 성한지 본다. 마지막 프레임은 페이드아웃이라 비어도 정상이고,
+# 그 앞은 **투명 픽셀이 하나라도** 있어야 한다(전부 불투명 = 배경이 딸려온 것).
+func _check_frames(name: String) -> void:
+	var dir := "res://assets/anim/%s" % name
+	var i := 0
+	var frames: Array[Image] = []
+	while ResourceLoader.exists("%s/%d.png" % [dir, i]):
+		# **임포트된 텍스처**를 본다. Image.load_from_file 은 원본 파일을 직접 읽어서
+		# 경고를 쏟고, 게임이 실제로 그리는 것과 다른 것을 검사하게 된다.
+		var tex: Texture2D = load("%s/%d.png" % [dir, i])
+		frames.append(tex.get_image())
+		i += 1
+	assert(frames.size() >= 4, "프레임이 너무 적다(%d장): %s" % [frames.size(), name])
+	for f in frames.size():
+		var img: Image = frames[f]
+		var opaque := 0
+		var visible := 0
+		for y in img.get_height():
+			for x in img.get_width():
+				var a := img.get_pixel(x, y).a
+				if a >= 0.999:
+					opaque += 1
+				if a > 0.0:
+					visible += 1
+		assert(opaque < img.get_width() * img.get_height(),
+			"%s/%d 이 전부 불투명하다 — 배경이 딸려온 프레임이다" % [name, f])
+		if f < frames.size() - 1:
+			assert(visible > 0,
+				"%s/%d 이 빈 프레임이다 — 이펙트가 중간에 사라진다" % [name, f])
