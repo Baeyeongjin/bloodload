@@ -174,6 +174,10 @@ var goal_step := {}
 var _goal_panel: Control
 var _goal_rows: VBoxContainer
 var _goal_widget: Button
+var _chest_btn: Button
+var _chest_label: Label
+var chest_gold := 0.0      # 방치 보상. 눌러서 받을 때까지 지갑에 안 들어간다
+var chest_minutes := 0.0
 var _goal_all_btn: Button
 var _goal_widget_icon: TextureRect
 var _goal_widget_name: Label
@@ -393,6 +397,7 @@ func _ready() -> void:
 	# 불러오기 직후에는 탭 숫자와 목록이 빈 저장본 기준으로 남아 있었다.
 	_refresh_gear_inventory()
 	_refresh_goals()
+	_refresh_chest()
 	_refresh_hud()
 	for arg in args:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
@@ -410,6 +415,11 @@ func _ready() -> void:
 				_auto_equip_skills()
 			_select_tab("growth")
 			_set_growth_mode("skill")
+		# [개발 도구] 방치 보상 상자를 띄운 채로 캡처한다.
+		if arg == "--chest":
+			chest_gold = 12480.0
+			chest_minutes = 143.0
+			_refresh_chest()
 		# [개발 도구] 가이드 창을 띄운 채로 캡처한다.
 		if arg == "--goals":
 			_goal_panel.visible = true
@@ -581,6 +591,7 @@ func _build_scene() -> void:
 	_build_panels()
 	_build_goal_panel(_hud_root)
 	_build_goal_widget()
+	_build_chest()
 	_build_tabbar()
 	_build_dialogs()
 	_select_tab("growth")
@@ -727,7 +738,7 @@ func _build_topbar() -> void:
 	_currency_pills.clear()
 	for i in currencies.size():
 		var x := 8.0 + float(i) * (pill_w + 6.0)
-		var pill := Ui.panel(Vector2(x, 4.0), Vector2(pill_w, 38.0))
+		var pill := Ui.pill(Vector2(x, 4.0), Vector2(pill_w, 38.0))
 		_hud_root.add_child(pill)
 		_currency_pills.append(pill)
 		var ic := Ui.icon(currencies[i][0], Vector2(x + 8.0, 9.0), 28.0)
@@ -2489,6 +2500,56 @@ func _refresh_skill_detail() -> void:
 	_skill_detail.add_child(close)
 
 
+# ── 방치 보상 상자 ─────────────────────────────────────────────────────────
+# 예전엔 접속하자마자 피가 지갑에 들어가고 배너만 6초 떴다. 그러면 **받은 느낌이
+# 없다** — 방치형에서 자리를 비운 보상은 눌러서 여는 게 보상이다(레퍼런스도 그렇다).
+# 이제 계산은 접속할 때 하되 상자에 담아 두고, 누르면 그때 지갑에 들어간다.
+const CHEST_BOX := 72.0
+
+
+func _build_chest() -> void:
+	_chest_btn = Button.new()
+	_chest_btn.flat = true
+	_chest_btn.focus_mode = Control.FOCUS_NONE
+	# 자리는 **전투 띠 위쪽 하늘**이다. 처음엔 레퍼런스처럼 화면 가운데 아래에 뒀는데
+	# 거기는 지면이라 몹 몸통과 겹쳤다(렌더로 확인). 하늘은 배경뿐이라 아무것도 안 가린다.
+	# HP 라벨(VIEW_TOP+12, 오른쪽 정렬)과 겹치지 않게 그 아래로 내린다 — 실측.
+	_chest_btn.position = Vector2(float(Grid.BG.x) - CHEST_BOX - 12.0, VIEW_TOP + 44.0)
+	_chest_btn.size = Vector2(CHEST_BOX, CHEST_BOX)
+	_chest_btn.visible = false
+	_chest_btn.pressed.connect(_claim_chest)
+	_hud_root.add_child(_chest_btn)
+	# 원형 틀을 뒤에 깔아야 "떠 있는 버튼"으로 읽힌다 — 상자만 있으면 배경 소품 같다.
+	_chest_btn.add_child(Ui.icon("res://assets/ui/round_btn.png", Vector2.ZERO, CHEST_BOX))
+	_chest_btn.add_child(Ui.icon("res://assets/ui/chest.png",
+		Vector2(CHEST_BOX * 0.16, CHEST_BOX * 0.16), CHEST_BOX * 0.68))
+	_chest_label = _panel_label(_chest_btn, Vector2(-20.0, CHEST_BOX - 16.0),
+		Type.SIZE_SMALL, Color(1.0, 0.88, 0.5), CHEST_BOX + 40.0, 18.0)
+	_chest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+
+func _refresh_chest() -> void:
+	if not _chest_btn:
+		return
+	_chest_btn.visible = chest_gold > 0.0
+	if _chest_btn.visible:
+		_chest_label.text = "피 %s" % _n(chest_gold)
+
+
+func _claim_chest() -> void:
+	if chest_gold <= 0.0:
+		return
+	gold += chest_gold
+	_notify_stat("관에서 %d분  ·  피 +%s" % [int(chest_minutes), _n(chest_gold)])
+	# 상자가 열리는 순간을 눈으로 잡아 준다 — 사라지기만 하면 눌렀는지 모른다.
+	_anim_fx("fx_hit", _chest_btn.position + Vector2(CHEST_BOX * 0.5, CHEST_BOX * 0.5),
+		16.0, 2.0)
+	chest_gold = 0.0
+	chest_minutes = 0.0
+	_refresh_chest()
+	_save_game()
+
+
 # 상시 가이드 위젯. **창을 안 열어도 지금 목표가 보인다** — 방치형에서 가이드가
 # 메뉴 안에 숨어 있으면 그게 있는 줄도 모르고, 보상이 쌓여도 안 받는다.
 #
@@ -2507,7 +2568,7 @@ func _build_goal_widget() -> void:
 		_goal_panel.visible = true
 		_refresh_goals())
 	_hud_root.add_child(_goal_widget)
-	_goal_widget.add_child(Ui.panel(Vector2.ZERO, _goal_widget.size))
+	_goal_widget.add_child(Ui.widget_bar(Vector2.ZERO, _goal_widget.size))
 	_goal_widget_icon = Ui.icon("res://assets/ui/stat_damage.png", Vector2(10.0, 8.0), 30.0)
 	_goal_widget.add_child(_goal_widget_icon)
 	_goal_widget_name = _panel_label(_goal_widget, Vector2(48.0, 4.0), Type.SIZE_SMALL,
@@ -4376,6 +4437,8 @@ func _save_game() -> void:
 	cfg.set_value("skill", "auto", skill_auto_equip)
 	cfg.set_value("codex", "kills", codex)
 	cfg.set_value("goal", "step", goal_step)
+	cfg.set_value("chest", "gold", chest_gold)
+	cfg.set_value("chest", "minutes", chest_minutes)
 	cfg.set_value("meta", "left_at", Time.get_unix_time_from_system())
 	cfg.save(SAVE_PATH)
 
@@ -4482,6 +4545,8 @@ func _load_game() -> void:
 	# 사전으로 저장돼 있어서 불러오기가 통째로 터진 적이 있다.
 	var saved_goals: Variant = cfg.get_value("goal", "step", {})
 	goal_step = saved_goals if saved_goals is Dictionary else {}
+	chest_gold = float(cfg.get_value("chest", "gold", 0.0))
+	chest_minutes = float(cfg.get_value("chest", "minutes", 0.0))
 	codex_found = 0
 	codex_knowledge = 0
 	for k in codex:
@@ -4563,9 +4628,12 @@ func _grant_offline(left_at: float) -> void:
 	var kill_time := maxf(0.2, float(profile["hp"]) / maxf(0.001, dps()))
 	# 자리를 비운 동안은 절반 효율. 방치가 접속보다 이득이면 게임을 안 켜게 된다.
 	var earned := (away / kill_time) * StageDefs.gold_per_kill(stage) * gold_mult() * 0.5
-	gold += earned
+	# **지갑이 아니라 상자에 담는다.** 눌러서 여는 게 방치 보상의 보상이다.
+	chest_gold += earned
+	chest_minutes += away / 60.0
 	hero_hp = max_hp()
-	_offline_banner.text = "관에서 %d분 · 피 +%s%s" % [int(away / 60.0), _n(earned),
-		(" · %d단계 전진" % climbed) if climbed > 0 else ""]
-	_offline_banner.visible = true
-	_offline_t = 6.0
+	_refresh_chest()
+	if climbed > 0:
+		_offline_banner.text = "관에서 %d분 · %d단계 전진" % [int(away / 60.0), climbed]
+		_offline_banner.visible = true
+		_offline_t = 6.0

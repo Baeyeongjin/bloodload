@@ -261,3 +261,46 @@ static func scroll(pos: Vector2, size: Vector2, horizontal := false) -> ScrollCo
 	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	return s
 
+
+
+# ── 사장님이 고른 신규 UI 자산 (2026-08-05) ────────────────────────────────
+# 큰 판(panel.png) 하나로 다 덮던 걸 용도별 조각으로 나눴다. 상단을 떠 있는
+# 소형 위젯식으로 바꾸면서 "판"이 아니라 "알약/띠/원형 버튼"이 필요해졌다.
+#
+# 여백은 **실측**이다. pill 은 양끝 붉은 보석이 x 0~30 / 66~96 이고 그 사이가
+# 늘어나도 되는 가운데다. widget_bar 는 원본 가운데에 리벳 기둥이 있어서 잘라내고
+# (기둥이 9-slice 가운데에 있으면 늘어나 뭉개진다) 찢어진 왼쪽 + 오른쪽 기둥만 남겼다.
+const PILL := "res://assets/ui/pill.png"
+const PILL_SIDE := 30
+const PILL_CAP := 6
+const WIDGET_BAR := "res://assets/ui/widget_bar.png"
+const WIDGET_SIDE := 16
+const WIDGET_CAP := 8
+
+
+static func _slice(path: String, side: int, cap: int) -> NinePatchRect:
+	var n := NinePatchRect.new()
+	n.texture = Assets.tex(path)
+	n.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	n.set("patch_margin_left", side)
+	n.set("patch_margin_right", side)
+	n.set("patch_margin_top", cap)
+	n.set("patch_margin_bottom", cap)
+	n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return n
+
+
+# 재화 알약. 양끝 보석은 native 크기로 남고 가운데만 늘어난다.
+static func pill(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(PILL, PILL_SIDE, PILL_CAP)
+	n.position = pos
+	n.size = size
+	return n
+
+
+# 가로로 긴 띠(가이드 위젯). 가죽 무늬가 균일해서 가로로 많이 늘려도 안 뭉개진다.
+static func widget_bar(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(WIDGET_BAR, WIDGET_SIDE, WIDGET_CAP)
+	n.position = pos
+	n.size = size
+	return n
