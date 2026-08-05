@@ -33,10 +33,29 @@ func _init() -> void:
 	assert(StageDefs.act_of(1) == StageDefs.act_of(51), "5개 테마가 순환하지 않는다")
 	assert(StageDefs.enemy_power(1000) > StageDefs.enemy_power(999))
 
+	# Main 은 class_name 이 없어서 상수를 읽으려면 스크립트를 불러와야 한다.
+	var main := load("res://Main.gd")
 	for i in StageDefs.act_count():
 		var act: Dictionary = StageDefs.ACTS[i]
 		assert(FileAccess.file_exists("res://assets/anim/%s_walk/0.png" % str(act["boss_anim"])),
 			"보스 walk 자산 없음: " + str(act["boss_anim"]))
+		# **배경 한 장이 전투 띠를 통째로 덮어야 한다.** 그래서 하늘 그라데이션도
+		# 담 잇기도 없앴는데, 짧은 그림을 하나라도 넣으면 그 보정이 없으니 화면에
+		# 빈 자리가 그대로 드러난다.
+		assert(Grid.BG_SRC.y * 2 == int(main.VIEW_BOTTOM),
+			"배경 원본(%d줄)이 전투 띠(%d)와 안 맞는다 — 위아래에 빈 자리가 생긴다"
+			% [Grid.BG_SRC.y, int(main.VIEW_BOTTOM)])
+		# 지면 아래는 위젯(상자·가이드)이 앉을 만큼 남아야 한다. 안 남으면 위젯이
+		# 다시 몹 몸통을 덮는다 — 화면에서는 "UI 가 캐릭터를 가리네"로만 보인다.
+		assert(float((Grid.BG_SRC.y - StageDefs.GROUND_ROW) * 2) >= float(main.WIDGET_BAND),
+			"지면(%d행) 아래가 위젯 띠(%d)보다 얕다"
+			% [StageDefs.GROUND_ROW, int(main.WIDGET_BAND)])
+		# 배경 파일이 실제로 그 규격인지 본다. 짧은 그림을 하나 끼워 넣으면 그 막에서만
+		# 화면이 비는데, 다른 막은 멀쩡하니 눈으로는 한참 뒤에야 걸린다.
+		var bg: Texture2D = load(str(act["bg"]))
+		assert(bg != null and bg.get_size() == Vector2(Grid.BG_SRC),
+			"%s 의 배경이 %s 가 아니다 — tools/fit_ground.py 를 안 돌렸다"
+			% [str(act["name"]), str(Grid.BG_SRC)])
 	assert(FileAccess.file_exists("res://assets/anim/valentino_1_heavy/0.png"))
 	assert(FileAccess.file_exists("res://assets/anim/valentino_1_cast/0.png"))
 

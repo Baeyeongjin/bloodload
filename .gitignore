@@ -12,6 +12,9 @@ autoshot.png
 *.log
 *.tmp
 
+# tools/ 를 import 로 재사용하면서 생긴다 (fit_ground -> make_seamless)
+__pycache__/
+
 # OS/editor noise
 .DS_Store
 Thumbs.db

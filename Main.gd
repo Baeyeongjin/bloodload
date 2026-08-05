@@ -69,59 +69,19 @@ const FOES_IN_REACH := 3
 # 전진 연출. 영웅은 화면 고정(카메라가 흔들리면 UI가 못 읽힌다)이고 대신 배경이 흐른다.
 # 배경은 몹보다 느리게 흘린다(원경 시차). 같은 속도면 도트가 뭉개지고, 반대로
 # 너무 느리면 걷는데 배경이 안 움직여 제자리걸음으로 보인다 — 0.5가 그 사이다.
-# 배경 아래를 메우는 색 — 각 배경 맨 아랫줄에서 뽑았다 (tools/ 없이 눈으로 못 맞춘다).
+# 틈 메우기용 바탕색 — 각 배경 맨 아랫줄의 최빈색이다(눈으로는 못 맞춘다).
+# 배경이 띠를 다 덮게 된 뒤로는 반올림 때문에 1~2px 틈이 생길 때만 보인다.
 const BACKDROP := [
-	Color(0.147, 0.142, 0.121),   # 깨어난 무덤
-	Color(0.183, 0.145, 0.118),   # 화형의 언덕
-	Color(0.304, 0.387, 0.428),   # 서리 봉인지
-	Color(0.083, 0.088, 0.090),   # 핏빛 성소
-	Color(0.050, 0.049, 0.054),   # 빼앗긴 본성
+	Color(0.447, 0.420, 0.318),   # 깨어난 무덤
+	Color(0.196, 0.098, 0.043),   # 화형의 언덕
+	Color(0.125, 0.208, 0.282),   # 서리 봉인지
+	Color(0.224, 0.200, 0.184),   # 핏빛 성소
+	Color(0.153, 0.149, 0.165),   # 빼앗긴 본성
 ]
-# 각 배경 **맨 윗줄의 최빈색**. 화면 위 96px 을 채우는 하늘 그라데이션의 아래끝이다.
-# BACKDROP(맨 아랫줄)과 같은 방식으로 실측했다 — 눈으로 고르면 이음매가 드러난다.
-# 지면 아래 위젯이 앉는 띠의 높이. 상자(72)와 가이드 카드(92)가 캐릭터를 안 가리고
-# 들어갈 만큼이다 — 이 값이 작으면 위젯이 다시 몹 몸통을 덮는다.
-const WIDGET_BAND := 118.0
-const SKY := [
-	Color(0.290, 0.341, 0.294),   # 깨어난 무덤
-	Color(0.451, 0.380, 0.341),   # 화형의 언덕
-	Color(0.624, 0.639, 0.631),   # 서리 봉인지
-	Color(0.063, 0.063, 0.071),   # 핏빛 성소
-	Color(0.039, 0.039, 0.043),   # 빼앗긴 본성
-]
-static var _sky_cache := {}
-
-
-# 지면 아래 바닥. **위는 배경 아래끝 색에서 시작해 아래로 갈수록 검정**이 된다.
-# 예전엔 막 색을 그대로 어둡게만 해서 배경과 색이 갈려 이질적으로 보였다(사장님 지적).
-# 검정으로 떨어뜨리면 어느 막에서든 같은 바닥이 되고, 그 위에 얹은 상자·가이드가
-# 배경과 싸우지 않는다 — 레퍼런스가 그렇게 한다.
-static func _floor_tex(top: Color) -> ImageTexture:
-	var key := top.darkened(0.001)
-	if _sky_cache.has(key):
-		return _sky_cache[key]
-	var h := 48
-	var img := Image.create(1, h, false, Image.FORMAT_RGBA8)
-	for y in h:
-		# 위 1/4 까지는 배경색을 유지해 이음매를 감추고, 그 아래로 검정까지 간다.
-		var t := clampf((float(y) / float(h - 1) - 0.22) / 0.78, 0.0, 1.0)
-		img.set_pixel(0, y, top.lerp(Color(0.02, 0.02, 0.03), t))
-	var tex := ImageTexture.create_from_image(img)
-	_sky_cache[key] = tex
-	return tex
-
-
-# 세로 그라데이션 1픽셀 폭. 가로로 늘려도 균일하니 줄이 안 생긴다.
-static func _sky_tex(bottom: Color) -> ImageTexture:
-	if _sky_cache.has(bottom):
-		return _sky_cache[bottom]
-	var h := 32
-	var img := Image.create(1, h, false, Image.FORMAT_RGBA8)
-	for y in h:
-		img.set_pixel(0, y, bottom.darkened(0.45 * (1.0 - float(y) / float(h - 1))))
-	var tex := ImageTexture.create_from_image(img)
-	_sky_cache[bottom] = tex
-	return tex
+# 지면 아래 위젯이 앉는 띠의 높이 = 가장 위에 오는 위젯(가이드, 106+여백 6)이
+# 시작하는 자리. 지면이 이보다 아래로 내려간 배경을 쓰면 위젯이 몹 몸통을 덮는다.
+# 배경마다 지면 행이 다르니 눈으로는 못 지킨다 — CombatRulesTest 가 막마다 잰다.
+const WIDGET_BAND := GOAL_WIDGET_H + 6.0
 
 
 const PARALLAX := 0.5
@@ -151,8 +111,6 @@ var _scroll := 0.0
 var _walk_only := false   # [개발 도구] --walk
 var _shot_wait := 2.5     # [개발 도구] --wait=N
 var _bg2: Sprite2D
-var _bg_top: TextureRect
-var _bg_floor: TextureRect          # 옆에 이어 붙이는 사본 (좌우 끝 기둥이 만나 이음매를 가린다)
 var _attack_t := 0.0
 var _hero_hit_t := -1.0
 var _pending_target: Foe
@@ -218,14 +176,13 @@ var codex := {}             # 몹 key -> 누적 처치 수
 var codex_found := 0
 var codex_knowledge := 0
 # 트랙 kind -> 지금까지 깬 단계 수. 가이드는 여기서 "다음 목표"를 계산한다.
-var goal_step := {}
-var _goal_panel: Control
-var _goal_rows: VBoxContainer
+# 지금까지 깬 가이드 수 = 지금 도전 중인 가이드의 번호(0부터). 가이드가 한 줄로
+# 이어지므로 상태가 이 숫자 하나뿐이다.
+var goal_index := 0
 var _goal_widget: Button
 var _chest_btn: Button
 var chest_gold := 0.0      # 방치 보상. 눌러서 받을 때까지 지갑에 안 들어간다
 var chest_minutes := 0.0
-var _goal_all_btn: Button
 var _goal_widget_icon: TextureRect
 var _goal_widget_name: Label
 var _goal_widget_prog: Label
@@ -449,7 +406,7 @@ func _ready() -> void:
 	# 그때 센 칸 수는 항상 0이고, 그 뒤로는 소환·분해 때만 갱신돼서
 	# 불러오기 직후에는 탭 숫자와 목록이 빈 저장본 기준으로 남아 있었다.
 	_refresh_gear_inventory()
-	_refresh_goals()
+	_refresh_goal_widget()
 	_refresh_chest()
 	_refresh_hud()
 	for arg in args:
@@ -473,10 +430,6 @@ func _ready() -> void:
 			chest_gold = 12480.0
 			chest_minutes = 143.0
 			_refresh_chest()
-		# [개발 도구] 가이드 창을 띄운 채로 캡처한다.
-		if arg == "--goals":
-			_goal_panel.visible = true
-			_refresh_goals()
 		# [개발 도구] 스킬 상세보기를 띄운 채로 캡처한다.
 		if arg == "--skill-detail" and not skill_owned.is_empty():
 			_open_skill_detail(str(skill_owned.keys()[0]))
@@ -595,31 +548,11 @@ func _build_scene() -> void:
 	# 배경 한 장을 그대로 옆에 붙인다. 반전해 붙이면 픽셀은 완벽히 이어지지만
 	# 이 배경이 좌우 대칭 구도(가운데 길)라 이음매가 나비처럼 보였다.
 	# 그냥 붙이면 좌우 끝의 어두운 나무 기둥 둘이 만나 굵은 나무 하나로 읽힌다.
-	# **하늘을 화면 맨 위까지 잇는다.** 배경 원본은 320px 이라 전투 띠(96~416)에 딱
-	# 맞는데, 그 위 96px 이 단색이라 UI 가 판 위에 얹힌 것처럼 보였다.
 	#
-	# 원본 윗줄을 세로로 늘려 봤더니 **세로 줄무늬**가 생겼다 — 맨 위 세 줄에도
-	# 색이 18~41가지라(산 봉우리·구름) 늘리면 그게 다 기둥이 된다.
-	# 대신 **가로로 균일한 세로 그라데이션**을 깐다: 위는 어둡게, 아래는 배경 윗줄의
-	# 최빈색. 가로 변화가 아예 없으니 줄이 생길 수가 없고, 아래끝이 배경과 같은 색이라
-	# 이음매도 안 보인다. SKY 색은 실측값이다(BACKDROP 과 같은 방식).
-	_bg_top = TextureRect.new()
-	_bg_top.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_bg_top.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_bg_top.stretch_mode = TextureRect.STRETCH_SCALE
-	_bg_top.position = Vector2.ZERO
-	_bg_top.size = Vector2(Grid.BG.x, VIEW_TOP)
-	_bg_top.z_index = -21
-	_bg_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_bg_top)
-	# 지면 아래 바닥 띠. 배경 아래끝 색에서 더 어둡게 내려가 위젯이 앉을 자리를 만든다.
-	_bg_floor = TextureRect.new()
-	_bg_floor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_bg_floor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_bg_floor.stretch_mode = TextureRect.STRETCH_SCALE
-	_bg_floor.z_index = -21
-	_bg_floor.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_bg_floor)
+	# **띠를 메우는 보조 레이어가 셋 있었는데 전부 지웠다**(2026-08-05). 원본이
+	# 160줄이라 전투 띠(416)를 못 덮어서 위는 하늘 그라데이션, 아래는 담을 뒤집어
+	# 잇고 그 위에 흙 그늘을 깔았다. 배경을 208줄로 다시 뽑아 그림 하나가 띠를
+	# 통째로 덮으니 셋 다 할 일이 없어졌다 — 가짜로 메우던 것을 그림이 대신한다.
 	_bg2 = Sprite2D.new()
 	_bg2.centered = false
 	_bg2.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -667,7 +600,6 @@ func _build_scene() -> void:
 	_lbl_life.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 콘텐츠 창 — 탭으로 하나만 띄운다. 세로 화면에서 전부 펼치면 전투가 안 보인다.
 	_build_panels()
-	_build_goal_panel(_hud_root)
 	_build_goal_widget()
 	_build_chest()
 	_build_tabbar()
@@ -899,7 +831,10 @@ func _build_portrait() -> void:
 	# 배지 폭은 "레벨 9999"(84px) + 좌우 여백(6+6)에서 나온 값이다. 초상화(56)보다
 	# 넓지만 레퍼런스도 Lv 배지가 초상화보다 넓다.
 	var lv_size := Vector2(96.0, 22.0)
-	var lv_at := Vector2(6.0 + PORTRAIT * 0.5 - lv_size.x * 0.5, 2.0 + PORTRAIT - 11.0)
+	# 초상화 가운데(34)에 배지 가운데를 맞추면 x=-14 로 **화면 밖으로 나간다**
+	# (배지 96 > 초상화 56). 왼쪽 여백 4를 최소로 두고 거기서부터 놓는다.
+	var lv_at := Vector2(maxf(4.0, 6.0 + PORTRAIT * 0.5 - lv_size.x * 0.5),
+		2.0 + PORTRAIT - 11.0)
 	_hud_root.add_child(Ui.lv_badge(lv_at, lv_size))
 	_lbl_hero = _mk_label(lv_at, Type.SIZE_SMALL, Color(0.88, 0.98, 0.88))
 	_lbl_hero.size = lv_size
@@ -2638,7 +2573,9 @@ func _refresh_skill_detail() -> void:
 # 예전엔 접속하자마자 피가 지갑에 들어가고 배너만 6초 떴다. 그러면 **받은 느낌이
 # 없다** — 방치형에서 자리를 비운 보상은 눌러서 여는 게 보상이다(레퍼런스도 그렇다).
 # 이제 계산은 접속할 때 하되 상자에 담아 두고, 누르면 그때 지갑에 들어간다.
-const CHEST_BOX := 72.0
+# 80 = 원본 40px 의 정확히 2배. 틀을 벗겨 상자를 칸 전체로 키웠으니 배수가 정수여야
+# 도트가 안 뭉갠다(72 였으면 1.8배).
+const CHEST_BOX := 80.0
 
 
 func _build_chest() -> void:
@@ -2652,10 +2589,9 @@ func _build_chest() -> void:
 	_chest_btn.visible = false
 	_chest_btn.pressed.connect(_claim_chest)
 	_hud_root.add_child(_chest_btn)
-	# 원형 틀을 뒤에 깔아야 "떠 있는 버튼"으로 읽힌다 — 상자만 있으면 배경 소품 같다.
-	_chest_btn.add_child(Ui.icon("res://assets/ui/round_btn.png", Vector2.ZERO, CHEST_BOX))
-	_chest_btn.add_child(Ui.icon("res://assets/ui/chest.png",
-		Vector2(CHEST_BOX * 0.16, CHEST_BOX * 0.16), CHEST_BOX * 0.68))
+	# 뒤에 깔았던 원형 틀(round_btn)은 뺐다 — 흙바닥 위에 상자 하나만 놓인 쪽이
+	# 레퍼런스에 맞고, 틀이 배경을 가려 지면과 따로 노는 원이 되어 있었다.
+	_chest_btn.add_child(Ui.icon("res://assets/ui/chest.png", Vector2.ZERO, CHEST_BOX))
 	# 상자는 받을 게 있을 때만 보이므로 점은 늘 붙어 있으면 된다.
 	_chest_btn.add_child(Ui.icon("res://assets/ui/dot_alert.png",
 		Vector2(CHEST_BOX - 22.0, 2.0), 18.0))
@@ -2684,21 +2620,29 @@ func _claim_chest() -> void:
 
 # 상시 가이드 카드.
 #
-#              ┌── 가이드 41 ──┐   <- 헤더 탭: 카드 위로 돌출, 오른쪽
-#   ┌──────┬───┴───────────────┤
-#   │ [💎] │ 단계 도달 890단계   │
-#   │  1.2k│ [▬▬▬▬ 849 / 890 ] │
-#   └──────┴───────────────────┘
-#     ↑ 보상 칸: 아이콘 위 / 숫자 아래, **둘 다 틀 안쪽 구멍에**
+#                  ┌── 가이드 41 ──┐   <- 헤더 탭: 카드 위로 돌출, 오른쪽
+#   ┌──────┬───────┴───────────────┤
+#   │ [💎] │ 처치 530마리           │  <- 미션 내용
+#   │  1.7k│ [▬▬▬▬   289 / 530   ] │  <- 진행바
+#   └──────┴───────────────────────┘
+#     ↑ 보상: 두 줄을 통째로 쓴다
 #
-# 예전엔 숫자가 틀 테두리 위에 얹혀 카드 밖으로 나간 것처럼 보였다.
-# slot_common.png 은 40x40 에 **테두리 4px / 안쪽 구멍 32x32** 다(실측).
-# 그 비율(0.1 / 0.8)로 자리를 잡아야 아이콘도 숫자도 구멍 안에 들어간다.
-const GOAL_CARD := Vector2(216.0, 80.0)
+# **폭이 이 배치를 정했다.** 오른쪽 칸에 미션 내용이 들어가야 하는데, 원래 이름으로는
+# 최장이 "누적 처치 999.9k마리" 168px 이라 어떤 칸에도 안 들어갔다(실제 폰트로 잰 값).
+# 트랙 이름을 줄여(누적 처치 -> 처치) 132px 로 내리고 카드를 236 으로 넓혀 칸 134px 을
+# 확보했다. 카드 왼쪽끝 332 로 보물상자(~328)와 안 겹친다.
+#
+# **글자를 틀에 붙이지 않는다.** Ui.CARD_PAD_* 는 틀 그림이 끝나는 자리라 거기에
+# 그대로 놓으면 글자가 금테에 닿는다 — GOAL_INSET 만큼 한 번 더 띄운다.
+#
+# 보상 칸의 **틀은 뺐다**(사장님 지적). 카드 안에 또 틀을 두르면 테두리가 두 겹이라
+# 60px 칸에서 실제로 쓰는 자리가 34px 밖에 안 남았다 — 보석과 숫자만 놓는다.
+const GOAL_CARD := Vector2(236.0, 88.0)
 const GOAL_TAB := Vector2(108.0, 26.0)
-const GOAL_SLOT := 60.0
-const SLOT_BORDER := 0.075      # slot_reward 테두리 비율 (3/40)
-const SLOT_HOLE := 0.85         # 안쪽 구멍 비율 (34/40)
+const GOAL_INSET := 4.0        # 틀 안쪽 면에서 한 번 더 띄우는 여백
+const GOAL_QUEST_H := 20.0     # 미션 내용 줄
+const GOAL_REWARD_W := 48.0    # 보상 칸 — "999t"(48px)가 최장이라 이보다 못 줄인다
+const GOAL_GAP := 6.0
 const GOAL_WIDGET_H := GOAL_CARD.y + GOAL_TAB.y - 8.0
 
 
@@ -2723,42 +2667,47 @@ func _build_goal_widget() -> void:
 	# **공용 panel(돌 창)이 아니라 카드 전용 자산.** 돌 창 무늬는 테두리가 굵어서
 	# 200px 카드에 쓰면 안쪽이 거의 안 남는다(사장님 지적 "있는 거 쓰지 말고 새로").
 	_goal_widget.add_child(Ui.card(body, GOAL_CARD))
-	# ── 왼쪽 보상 칸. 아이콘·숫자를 **구멍 좌표로** 잡는다.
-	var slot_at := body + Vector2(10.0, (GOAL_CARD.y - GOAL_SLOT) * 0.5)
-	# 보상 칸은 **전용 자산**이다. slot_common(장비 등급 틀)은 테두리가 4/40 이라
-	# 안쪽이 좁아 숫자가 테두리 위로 올라탔다 — slot_reward 는 여백이 3 뿐이다.
-	_goal_widget.add_child(Ui.slot_reward(slot_at, Vector2(GOAL_SLOT, GOAL_SLOT)))
-	var hole_at := slot_at + Vector2.ONE * (GOAL_SLOT * SLOT_BORDER)
-	var hole := GOAL_SLOT * SLOT_HOLE
+	var pad := Vector2(Ui.CARD_PAD_X + GOAL_INSET, Ui.CARD_PAD_Y + GOAL_INSET)
+	var inner := body + pad
+	var inner_w := GOAL_CARD.x - pad.x * 2.0
+	var inner_h := GOAL_CARD.y - pad.y * 2.0
+	# ── 왼쪽 보상: 두 줄을 통째로 쓴다. 틀 없이 보석 위 / 숫자 아래, 세로 가운데.
 	var num_h := 16.0
+	var reward_y := (inner_h - 32.0 - num_h) * 0.5
 	_goal_widget_icon = Ui.icon("res://assets/items/gem.png",
-		hole_at + Vector2((hole - (hole - num_h)) * 0.5, 0.0), hole - num_h)
+		inner + Vector2((GOAL_REWARD_W - 32.0) * 0.5, reward_y), 32.0)
 	_goal_widget.add_child(_goal_widget_icon)
-	_goal_widget_gem = _panel_label(_goal_widget, hole_at + Vector2(0.0, hole - num_h),
-		Type.SIZE_SMALL, Color(0.96, 0.92, 1.0), hole, num_h)
+	_goal_widget_gem = _panel_label(_goal_widget,
+		inner + Vector2(0.0, reward_y + 32.0), Type.SIZE_SMALL,
+		Color(0.96, 0.92, 1.0), GOAL_REWARD_W, num_h)
 	_goal_widget_gem.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_goal_widget_gem.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_goal_widget_gem.clip_text = true
-	# ── 오른쪽: 목표 한 줄 + 진행바(숫자는 바 안).
-	var tx := 10.0 + GOAL_SLOT + 12.0
-	var tw := GOAL_CARD.x - tx - 12.0
-	_goal_widget_cta = _panel_label(_goal_widget, body + Vector2(tx, 14.0),
-		Type.SIZE_SMALL, Color(0.94, 0.92, 0.98), tw, 20.0)
+	# ── 오른쪽: 위 미션 내용 / 아래 진행바(숫자는 바 안).
+	var tx := GOAL_REWARD_W + GOAL_GAP
+	var tw := inner_w - tx
+	_goal_widget_cta = _panel_label(_goal_widget, inner + Vector2(tx, 0.0),
+		Type.SIZE_SMALL, Color(0.94, 0.92, 0.98), tw, GOAL_QUEST_H)
 	_goal_widget_cta.clip_text = true
-	var bar_at := body + Vector2(tx, GOAL_CARD.y - 32.0 - 6.0)
-	# 채움을 **틀 밑에** 깐다. 위에 그리면 테두리를 덮는다(상단 진행바와 같은 규칙).
+	# 바 원본은 32px 인데 **눈에 보이는 부분은 y9~22** 뿐이다. 그림 기준으로 가운데를
+	# 맞춰야 남은 칸 아래쪽에 치우쳐 보이지 않는다.
+	var bar_at := inner + Vector2(tx,
+		GOAL_QUEST_H + (inner_h - GOAL_QUEST_H) * 0.5 - 15.5)
+	_goal_widget.add_child(Ui.bar_mini(bar_at, tw))
+	# 채움은 **틀 위에** 그린다. bar_mini 는 홈통이 불투명이라(실측 alpha 255) 밑에
+	# 깔면 통째로 가려져 진행도가 영영 안 보였다 — 실제로 그 상태였다(사장님 지적).
+	# 대신 홈통 안(y13~18, 좌우 캡 8)만 덮어 테두리를 안 건드린다.
 	_goal_widget_fill = ColorRect.new()
-	_goal_widget_fill.color = Color(0.72, 0.52, 0.18)
-	_goal_widget_fill.position = bar_at + Vector2(4.0, Ui.BAR_MINI_INNER_Y)
+	_goal_widget_fill.color = Color(0.85, 0.63, 0.22)
+	_goal_widget_fill.position = bar_at + Vector2(Ui.BAR_MINI_SIDE, Ui.BAR_MINI_INNER_Y)
 	_goal_widget_fill.size = Vector2(0.0, Ui.BAR_MINI_INNER_H)
 	_goal_widget_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_goal_widget.add_child(_goal_widget_fill)
-	_goal_widget.add_child(Ui.bar_mini(bar_at, tw))
 	_goal_widget_bar_label = _panel_label(_goal_widget, bar_at, Type.SIZE_SMALL,
 		Color(0.98, 0.96, 0.98), tw, 32.0)
 	_goal_widget_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_goal_widget_bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_goal_bar_width = tw - 8.0
+	_goal_bar_width = tw - Ui.BAR_MINI_SIDE * 2.0
 	# 알림 점 — 받을 게 있을 때만. 방치형에서 보상이 쌓인 걸 모르고 지나가면
 	# 그건 플레이어 잘못이 아니라 UI 잘못이다.
 	_goal_dot = Ui.icon("res://assets/ui/dot_alert.png", tab_at + Vector2(-8.0, -4.0), 18.0)
@@ -2766,177 +2715,48 @@ func _build_goal_widget() -> void:
 	_goal_widget.add_child(_goal_dot)
 
 
-# 카드를 눌렀을 때. 받을 게 있으면 **확인만 받고 바로 준다** — 되돌릴 수 없는
-# 것이 아니라서 상세 창까지 갈 이유가 없다. 아직 안 됐으면 그때만 목록을 연다.
+# 카드를 눌렀을 때. **깼을 때만 반응한다** — 받고, 보상 창을 띄우고, 다음 가이드가
+# 그 자리에 올라온다. 아직이면 아무 일도 없다(예전엔 목록 창이 열렸는데 그 창이
+# 지워 달라던 바로 그 창이다).
 func _on_goal_card_pressed() -> void:
-	var ready := _goal_ready_count()
-	if ready <= 0:
-		_goal_panel.visible = true
-		_refresh_goals()
+	if not _goal_ready():
 		return
-	_ask("가이드 %d개를 받습니다." % ready, func() -> void:
-		var got := _claim_all_goals()
-		if got > 0:
-			_show_reward("가이드 완료", [{"icon": "res://assets/items/gem.png",
-				"label": "보석 +%s" % _n(_last_goal_gem)}]))
-
-
-# 위젯에 띄울 트랙 하나를 고른다. 받을 게 있으면 **그걸 먼저** 보여 준다 —
-# 없으면 진행률이 가장 높은 것(= 곧 깰 것)을 보여 줘야 다음 목표가 손에 잡힌다.
-func _goal_featured() -> String:
-	var best := ""
-	var best_ratio := -1.0
-	for t in GoalDefs.TRACKS:
-		var kind := str(t["kind"])
-		var need := GoalDefs.need(kind, _goal_step(kind))
-		var ratio := float(_goal_value(kind)) / maxf(1.0, float(need))
-		if ratio >= 1.0:
-			return kind
-		if ratio > best_ratio:
-			best_ratio = ratio
-			best = kind
-	return best
+	var q := GoalDefs.quest(goal_index)
+	var got := _claim_goal()
+	if got > 0.0:
+		_show_reward("보상 획득", [{"icon": "res://assets/items/gem.png",
+			"label": "보석 +%s" % _n(got),
+			"sub": GoalDefs.label(str(q["kind"]), int(q["step"]))}])
 
 
 func _refresh_goal_widget() -> void:
 	if not _goal_widget:
 		return
-	var kind := _goal_featured()
-	if kind.is_empty():
-		_goal_widget.visible = false
-		return
-	_goal_widget.visible = true
-	var step := _goal_step(kind)
+	var q := GoalDefs.quest(goal_index)
+	var kind := str(q["kind"])
+	var step := int(q["step"])
 	var need := GoalDefs.need(kind, step)
 	var now := _goal_value(kind)
-	var ready := _goal_ready_count()
 	var done := now >= need
-	_goal_widget_name.text = "가이드 %d" % (GoalDefs.cleared_total(goal_step) + 1)
+	_goal_widget_name.text = "가이드 %d" % (goal_index + 1)
 	# 보상 칸(48px)에는 소수점이 안 들어간다 — "999.9t"는 72px 이다. 여기서는
 	# 자릿수만 읽히면 되므로 정수로 줄인다("7.6m" -> "7m").
 	_goal_widget_gem.text = _n_int(GoalDefs.gem_reward(kind, step))
-	# 윗줄은 **트랙 이름만.** 목표치는 바로 아래 진행바 안에 "849 / 890"으로 이미
-	# 있어서 "누적 처치 890마리"라고 또 적으면 같은 말을 두 번 하고, 168px 이라
-	# 칸(122px)을 넘어 잘린다(GearTest 가 잡았다).
-	_goal_widget_cta.text = "받기 %d개" % ready if done 		else str(GoalDefs.track(kind).get("name", ""))
+	# 목표 줄은 **무엇을 얼마나**를 다 적는다("누적 처치 530마리"). 트랙 이름만
+	# 있으면 다음에 뭘 해야 하는지가 안 보인다.
+	# 최장 168px, 칸 176px (GearTest 가 실제 폰트로 지킨다).
+	_goal_widget_cta.text = "눌러서 받기" if done else GoalDefs.label(kind, step)
 	_goal_widget_cta.add_theme_color_override("font_color",
 		Color(1.0, 0.85, 0.35) if done else Color(0.94, 0.92, 0.98))
 	# 바 안(122px)에는 "999.9k / 999.9k"(180px)가 안 들어간다. 소수점과 공백을 뺀다 —
 	# 비율은 바 길이로 이미 보이고 여기 숫자는 자릿수만 읽히면 된다.
-	_goal_widget_bar_label.text = "%s/%s" % [_n_int(float(now)), _n_int(float(need))]
+	# 단계는 "100-10/100-10"이 156px 이라 그마저도 넘는다. 목표는 바로 윗줄에
+	# 이미 있으니 지금 자리만 적는다.
+	_goal_widget_bar_label.text = StageDefs.label(now) if kind == "stage" \
+		else "%s/%s" % [_n_int(float(now)), _n_int(float(need))]
 	_goal_widget_fill.size.x = _goal_bar_width \
 		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
-	_goal_dot.visible = ready > 0
-
-
-# 받을 수 있는 걸 전부 받는다. 한 트랙이 여러 단계 밀려 있으면 그것도 다 준다 —
-# "모두 받기"를 눌렀는데 또 눌러야 하면 그건 모두 받기가 아니다.
-func _claim_all_goals() -> int:
-	var n := 0
-	var gained := 0.0
-	for t in GoalDefs.TRACKS:
-		var kind := str(t["kind"])
-		# 무한 사다리라 상한을 둔다. 값이 아주 크면(치트·복귀) 한 번에 수십 단계가
-		# 열리는데, 그걸 다 주면 보상이 몇 개였는지 화면에서 못 읽는다.
-		for _i in 50:
-			if not _goal_done(kind):
-				break
-			gained += GoalDefs.gem_reward(kind, _goal_step(kind))
-			gem += GoalDefs.gem_reward(kind, _goal_step(kind))
-			goal_step[kind] = _goal_step(kind) + 1
-			n += 1
-	_last_goal_gem = gained
-	if n > 0:
-		_currency_seen["gem"] = true
-		_save_game()
-		_refresh_goals()
-	return n
-
-
-# 가이드 창. 트랙마다 **지금 목표 한 줄**만 보여 준다 — 다음 목표까지 미리 늘어놓으면
-# 무한 사다리라 목록이 끝나지 않는다.
-const GOAL_ROW := 46.0
-
-
-func _build_goal_panel(root: Control) -> void:
-	_goal_panel = Control.new()
-	_goal_panel.position = Vector2(0.0, VIEW_TOP)
-	_goal_panel.size = Vector2(PANEL_W, PANEL_H)
-	_goal_panel.visible = false
-	_goal_panel.z_index = 6
-	root.add_child(_goal_panel)
-	var shade := ColorRect.new()
-	shade.color = Color(0.02, 0.02, 0.04, 0.55)
-	shade.size = Vector2(PANEL_W, PANEL_H)
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	_goal_panel.add_child(shade)
-	_goal_panel.add_child(Ui.panel(Vector2(8.0, 8.0), Vector2(PANEL_W - 16.0, PANEL_H - 16.0)))
-	var title := _panel_label(_goal_panel, Vector2(24.0, 20.0), Type.SIZE_MID,
-		Color(1.0, 0.88, 0.52), PANEL_W - 48.0, 28.0)
-	title.name = "title"
-	title.text = "성장 가이드"
-	# **스크롤이 필요하다.** 트랙 6개 x 52px = 312px 인데 창 안쪽은 200px 남짓이라
-	# 그냥 쌓으면 목록이 창을 뚫고 나가 닫기 버튼 위에 깔린다(실제로 그랬다).
-	# 트랙이 늘어날 것도 정해져 있으니 처음부터 스크롤로 둔다.
-	var sc := Ui.scroll(Vector2(20.0, 52.0),
-		Vector2(PANEL_W - 40.0, PANEL_H - 52.0 - 62.0))
-	_goal_panel.add_child(sc)
-	_goal_rows = VBoxContainer.new()
-	_goal_rows.custom_minimum_size = Vector2(PANEL_W - 40.0 - Ui.SCROLL_W, 0.0)
-	_goal_rows.add_theme_constant_override("separation", 6)
-	sc.add_child(_goal_rows)
-	_goal_all_btn = Ui.button("모두 받기", Vector2(20.0, PANEL_H - 54.0),
-		Vector2(160.0, 40.0), Type.SIZE_SMALL)
-	_goal_all_btn.pressed.connect(func() -> void: _claim_all_goals())
-	_goal_panel.add_child(_goal_all_btn)
-	var close := Ui.button("닫기", Vector2(PANEL_W - 20.0 - 140.0, PANEL_H - 54.0),
-		Vector2(140.0, 40.0), Type.SIZE_SMALL)
-	close.pressed.connect(func() -> void: _goal_panel.visible = false)
-	_goal_panel.add_child(close)
-
-
-func _refresh_goals() -> void:
-	if not _goal_rows:
-		return
-	var ready := _goal_ready_count()
-	_refresh_goal_widget()
-	if not _goal_panel.visible:
-		return
-	if _goal_all_btn:
-		_goal_all_btn.disabled = ready == 0
-		_goal_all_btn.text = "모두 받기 %d" % ready if ready > 0 else "모두 받기"
-	var title: Label = _goal_panel.get_node_or_null("title")
-	if title:
-		title.text = "성장 가이드  ·  %d개 완료" % GoalDefs.cleared_total(goal_step)
-	for child in _goal_rows.get_children():
-		child.queue_free()
-	for t in GoalDefs.TRACKS:
-		var kind := str(t["kind"])
-		var step := _goal_step(kind)
-		var need := GoalDefs.need(kind, step)
-		var now := _goal_value(kind)
-		var done := now >= need
-		var row := Control.new()
-		var row_w := PANEL_W - 40.0 - Ui.SCROLL_W
-		row.custom_minimum_size = Vector2(row_w, GOAL_ROW)
-		row.add_child(Ui.panel(Vector2.ZERO, Vector2(row_w, GOAL_ROW)))
-		row.add_child(Ui.icon("res://assets/ui/%s.png" % str(t["icon"]),
-			Vector2(10.0, 8.0), 30.0))
-		var name := _panel_label(row, Vector2(48.0, 6.0), Type.SIZE_SMALL,
-			Color(1.0, 0.85, 0.35) if done else Color(0.86, 0.86, 0.9), 210.0, 20.0)
-		name.text = GoalDefs.label(kind, step)
-		var prog := _panel_label(row, Vector2(48.0, 24.0), Type.SIZE_SMALL,
-			Color(0.72, 0.72, 0.78), 210.0, 18.0)
-		prog.text = "%s / %s" % [_n(float(now)), _n(float(need))]
-		var reward := _panel_label(row, Vector2(264.0, 14.0), Type.SIZE_SMALL,
-			Color(0.86, 0.72, 1.0), 110.0, 20.0)
-		reward.text = "보석 %s" % _n(GoalDefs.gem_reward(kind, step))
-		var claim := Ui.button("받기" if done else "진행 중",
-			Vector2(row_w - 108.0, 6.0), Vector2(100.0, 34.0), Type.SIZE_SMALL)
-		claim.disabled = not done
-		claim.pressed.connect(func() -> void: _claim_goal(kind))
-		row.add_child(claim)
-		_goal_rows.add_child(row)
+	_goal_dot.visible = done
 
 
 # ── 성장 가이드 ────────────────────────────────────────────────────────────
@@ -2964,38 +2784,28 @@ func _total_kills() -> int:
 	return sum
 
 
-func _goal_step(kind: String) -> int:
-	return int(goal_step.get(kind, 0))
-
-
-func _goal_done(kind: String) -> bool:
-	return _goal_value(kind) >= GoalDefs.need(kind, _goal_step(kind))
-
-
-# 받을 게 하나라도 있나. 버튼에 점을 찍는 데 쓴다 — 방치형에서 보상이 쌓인 걸
+# 지금 가이드를 깼나. 버튼에 점을 찍는 데도 쓴다 — 방치형에서 보상이 쌓인 걸
 # 모르고 지나가면 그건 플레이어 잘못이 아니라 UI 잘못이다.
-func _goal_ready_count() -> int:
-	var n := 0
-	for t in GoalDefs.TRACKS:
-		if _goal_done(str(t["kind"])):
-			n += 1
-	return n
+func _goal_ready() -> bool:
+	var q := GoalDefs.quest(goal_index)
+	return _goal_value(str(q["kind"])) >= GoalDefs.need(str(q["kind"]), int(q["step"]))
 
 
-# **한 번에 한 단계만** 올린다. 조건을 이미 여러 단계 넘겼어도 누를 때마다 하나씩
-# 준다 — 한꺼번에 주면 보상이 몇 개였는지 화면에서 안 읽힌다.
-func _claim_goal(kind: String) -> bool:
-	if not _goal_done(kind):
-		return false
-	var step := _goal_step(kind)
-	var reward := GoalDefs.gem_reward(kind, step)
+# **한 번에 하나만** 올린다. 이미 다음 것까지 깨 있어도 누를 때마다 하나씩 준다 —
+# 한꺼번에 주면 무엇을 몇 개 받았는지 화면에서 안 읽힌다. 다음 것이 이미 깨져
+# 있으면 카드가 곧바로 "눌러서 받기"로 바뀌므로 또 누르면 된다.
+# 받은 보석을 돌려준다(0 = 아직 못 받음).
+func _claim_goal() -> float:
+	if not _goal_ready():
+		return 0.0
+	var q := GoalDefs.quest(goal_index)
+	var reward := GoalDefs.gem_reward(str(q["kind"]), int(q["step"]))
 	gem += reward
 	_currency_seen["gem"] = true
-	goal_step[kind] = step + 1
-	_notify_stat("%s 완료  보석 +%s" % [GoalDefs.label(kind, step), _n(reward)])
+	goal_index += 1
 	_save_game()
-	_refresh_goals()   # _refresh_hud 는 매 프레임 도니까 여기서 부를 필요가 없다
-	return true
+	_refresh_goal_widget()   # _refresh_hud 는 매 프레임 도니까 여기서 부를 필요가 없다
+	return reward
 
 
 # 조각으로 스킬 레벨을 올린다. 장비 강화가 정수를 쓰듯 스킬은 조각을 쓴다 —
@@ -4216,7 +4026,7 @@ func on_foe_killed(f: Foe) -> void:
 	_gain_exp(Balance.exp_per_kill(StageDefs.major_stage(stage)))
 	# 가이드 버튼의 "받을 개수"는 여기서만 갱신한다. _refresh_hud 는 매 프레임이라
 	# 거기 얹으면 초당 60번 라벨을 다시 쓴다.
-	_refresh_goals()
+	_refresh_goal_widget()
 	if _tab == "codex":
 		_refresh_codex()
 	# 전투 드랍은 없앴다(2026-08-04). 장비가 나오는 곳은 **소환 하나**다 —
@@ -4339,26 +4149,17 @@ func _apply_stage_bg() -> void:
 	_bg.texture = t
 	_bg2.texture = t
 	_bg2.visible = t != null
-	# **지면을 올려 아래에 위젯 띠를 만든다.** 예전엔 배경 아래끝을 전투 띠 아래끝에
-	# 맞춰서 지면이 402(띠 끝 416의 14px 위)였고, 상자·가이드가 무조건 캐릭터를 덮었다.
-	# 레퍼런스는 지면 아래에 빈 바닥 띠가 있고 거기에 위젯이 앉는다.
+	# **배경은 화면 맨 위에 붙인다.** 그림 높이가 208x2 = 416 = 전투 띠 그대로라
+	# 밀 여유가 없다. 조금이라도 밀면 반대쪽에 빈 자리가 생기고, 예전엔 그 자리를
+	# 하늘 그라데이션과 담 잇기로 메우다 판때기 같은 띠가 됐다(사장님 지적).
 	#
-	# 막마다 원본의 지면 행(140~153)이 달라서 배경을 고정 위치에 두면 띠 높이가
-	# 막마다 바뀐다 — **지면이 항상 같은 y 에 오도록** 배경 쪽을 민다.
-	var bg_top := VIEW_BOTTOM - WIDGET_BAND - 8.0 - float(act.get("ground", 141)) * 2.0
+	# 대신 **지면 높이가 막마다 다르다.** 예전엔 지면을 늘 290 에 맞추려고 배경을
+	# 밀었는데, 이제는 그림이 정한 자리에 캐릭터가 선다. 위젯이 캐릭터를 안 덮는
+	# 것만 지키면 되고(WIDGET_BAND), 그건 CombatRulesTest 가 막마다 잰다.
+	var bg_top := VIEW_BOTTOM - float(Grid.BG_SRC.y) * 2.0
 	_bg.position.y = bg_top
 	_bg2.position.y = bg_top
-	_bg_top.texture = _sky_tex(SKY[StageDefs.act_of(stage) % SKY.size()])
-	_bg_top.size = Vector2(Grid.BG.x, maxf(0.0, bg_top))
-	_bg_top.visible = t != null
-	ground_y = bg_top + float(act.get("ground", 141)) * 2.0
-	# 배경 아래끝부터 띠 아래끝까지는 **배경 맨 아랫줄 색**으로 이어 붙인다.
-	# BACKDROP 이 그 값이다(원래 그러라고 실측해 둔 색이다).
-	var floor_top := bg_top + float(Grid.BG_SRC.y) * 2.0
-	_bg_floor.position = Vector2(0.0, floor_top)
-	_bg_floor.size = Vector2(Grid.BG.x, maxf(0.0, VIEW_BOTTOM - floor_top))
-	_bg_floor.texture = _floor_tex(BACKDROP[StageDefs.act_of(stage) % BACKDROP.size()])
-	_bg_floor.visible = t != null
+	ground_y = bg_top + float(StageDefs.GROUND_ROW) * 2.0
 	_hero.position.y = ground_y - float(Grid.SPRITE)
 	for f in get_tree().get_nodes_in_group("foes"):
 		f.position.y = ground_y
@@ -4660,7 +4461,7 @@ func _save_game() -> void:
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
 	cfg.set_value("codex", "kills", codex)
-	cfg.set_value("goal", "step", goal_step)
+	cfg.set_value("goal", "index", goal_index)
 	cfg.set_value("chest", "gold", chest_gold)
 	cfg.set_value("chest", "minutes", chest_minutes)
 	cfg.set_value("meta", "left_at", Time.get_unix_time_from_system())
@@ -4765,10 +4566,16 @@ func _load_game() -> void:
 	if skill_equipped.is_empty():
 		_auto_equip_skills()
 	codex = cfg.get_value("codex", "kills", {})
-	# 옛 저장본에는 없다. 사전이 아닌 게 들어오면 버린다 — 예전에 skill.equipped 가
-	# 사전으로 저장돼 있어서 불러오기가 통째로 터진 적이 있다.
-	var saved_goals: Variant = cfg.get_value("goal", "step", {})
-	goal_step = saved_goals if saved_goals is Dictionary else {}
+	# 가이드가 트랙 6개 병렬에서 한 줄로 바뀌었다(2026-08-05). 옛 저장본은 트랙별
+	# 단계를 사전으로 갖고 있으니 **합쳐서** 번호로 옮긴다 — 그냥 0으로 두면
+	# 이미 깬 가이드를 처음부터 다시 깨야 한다.
+	goal_index = int(cfg.get_value("goal", "index", -1))
+	if goal_index < 0:
+		goal_index = 0
+		var old: Variant = cfg.get_value("goal", "step", {})
+		if old is Dictionary:
+			for k in old:
+				goal_index += int(old[k])
 	chest_gold = float(cfg.get_value("chest", "gold", 0.0))
 	chest_minutes = float(cfg.get_value("chest", "minutes", 0.0))
 	codex_found = 0

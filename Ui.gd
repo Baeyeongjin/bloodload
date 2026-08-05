@@ -338,13 +338,20 @@ static func slim_bar(pos: Vector2, width: float) -> NinePatchRect:
 
 # 가이드 카드 전용. 공용 panel(돌 창)이 아니라 **작은 정보 카드**용 자산이다 —
 # 큰 창 무늬를 200px 카드에 쓰면 테두리가 카드를 다 먹는다.
-# 여백은 실측: card_panel 96x48 은 좌우 10~12 / 상하 4, card_tab 64x32 는 좌우 5 / 상하 7.
+#
+# 여백 실측(card_panel 96x48, 가운데 행/열):
+#   가로  투명 0~9   · 틀 10~18 · 안쪽 19~75 · 틀 76~82 · 투명 83~95
+#   세로  투명 0~3   · 틀 4~12  · 안쪽 13~34 · 틀 35~43 · 투명 44~47
+# 9-slice 여백은 **틀 바깥끝까지** 잡아야 한다. 12/4 로 두었을 때 세로 틀(4~12)이
+# 통째로 늘리는 구역에 들어가 아래 금테가 실처럼 늘어나 있었다.
 const CARD_PANEL := "res://assets/ui/card_panel.png"
 const CARD_TAB := "res://assets/ui/card_tab.png"
+const CARD_PAD_X := 20.0    # 안쪽 평평한 면이 시작되는 자리
+const CARD_PAD_Y := 13.0
 
 
 static func card(pos: Vector2, size: Vector2) -> NinePatchRect:
-	var n := _slice(CARD_PANEL, 12, 4)
+	var n := _slice(CARD_PANEL, int(CARD_PAD_X), int(CARD_PAD_Y))
 	n.position = pos
 	n.size = size
 	return n
@@ -363,9 +370,14 @@ static func card_tab(pos: Vector2, size: Vector2) -> NinePatchRect:
 const LV_BADGE := "res://assets/ui/lv_badge.png"        # 64x32  여백 5/7,9
 const CURRENCY_BAR := "res://assets/ui/currency_bar.png" # 128x32 여백 5/2
 const SLOT_REWARD := "res://assets/ui/slot_reward.png"   # 40x40  여백 3/2,3
-const BAR_MINI := "res://assets/ui/bar_mini.png"         # 96x32  여백 3/9
-const BAR_MINI_INNER_Y := 9.0
-const BAR_MINI_INNER_H := 14.0
+const BAR_MINI := "res://assets/ui/bar_mini.png"         # 96x32
+# 실측(row 15 / col 48). 좌우 캡은 x0~7·x88~95 이고 그 안이 홈통이다. 9-slice 여백을
+# 4로 두면 금기둥(x7)이 늘어나는 쪽에 걸려 가로로 번진다 — 8이어야 캡이 고정된다.
+const BAR_MINI_SIDE := 8
+# 홈통(진짜 파인 자리)은 y13~18 뿐이다. 그 위아래 y9~12 · y19~22 는 금·은 베벨이라
+# 채움이 거기까지 올라가면 테두리를 덮는다.
+const BAR_MINI_INNER_Y := 13.0
+const BAR_MINI_INNER_H := 6.0
 const TAG_STATUS := "res://assets/ui/tag_status.png"
 const PLATE_NAME := "res://assets/ui/plate_name.png"
 
@@ -394,7 +406,7 @@ static func slot_reward(pos: Vector2, size: Vector2) -> NinePatchRect:
 
 
 static func bar_mini(pos: Vector2, width: float) -> NinePatchRect:
-	var n := _slice(BAR_MINI, 4, 10)
+	var n := _slice(BAR_MINI, BAR_MINI_SIDE, 10)
 	n.position = pos
 	n.size = Vector2(width, 32.0)
 	return n

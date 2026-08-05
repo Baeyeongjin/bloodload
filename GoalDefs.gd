@@ -3,10 +3,15 @@ extends RefCounted
 
 # 성장 가이드 — 방치형의 "다음에 뭘 하지"를 대신 정해 주고 보상으로 밀어 준다.
 #
+# **가이드는 한 줄로 이어진다.** 가이드 1, 2, 3 … 이 끝없이 이어지고 화면에는
+# 늘 하나만 있다. 깨면 눌러서 받고, 그때 다음 것이 나온다.
+# 예전엔 트랙 6개가 동시에 굴러가서 "받을 게 몇 개 쌓였다"를 보여 줄 목록 창이
+# 따로 필요했는데, 그 창이 곧 지워 달라는 것이었다(사장님 지적). 한 줄이면
+# 창이 필요 없고 "지금 뭘 해야 하나"도 하나로 좁혀진다.
+#
 # **업적 화면을 따로 만들지 않는다.** 방치형에서 업적과 가이드는 같은 데이터의
 # 다른 뷰다(하나는 "지금 목표", 하나는 "지금까지 깬 것). 표를 두 벌 만들면
-# 조건·보상이 두 군데에 흩어져서 하나만 고치면 어긋난다. 여기서는 트랙 하나에
-# 단계가 무한히 이어지고, 화면은 **각 트랙의 지금 단계**만 보여 준다.
+# 조건·보상이 두 군데에 흩어져서 하나만 고치면 어긋난다.
 #
 # **표를 손으로 안 적는다.** 방치형은 목표가 수백 개 필요한데 그걸 다 적으면
 # 줄만 늘고 곡선은 눈으로 못 본다. 트랙마다 `base × mult^단계` 사다리 하나면
@@ -19,17 +24,24 @@ extends RefCounted
 const TRACKS := [
 	{"kind": "stage", "name": "단계 도달", "unit": "단계",
 		"base": 3.0, "mult": 1.55, "gem": 25.0, "icon": "stat_damage"},
-	{"kind": "kills", "name": "누적 처치", "unit": "마리",
+	{"kind": "kills", "name": "처치", "unit": "마리",
 		"base": 120.0, "mult": 2.1, "gem": 18.0, "icon": "stat_drain"},
-	{"kind": "hero_lv", "name": "영웅 레벨", "unit": "레벨",
+	{"kind": "hero_lv", "name": "영웅", "unit": "레벨",
 		"base": 5.0, "mult": 1.7, "gem": 20.0, "icon": "stat_tough"},
-	{"kind": "damage_lv", "name": "공격력 훈련", "unit": "레벨",
+	{"kind": "damage_lv", "name": "공격력", "unit": "레벨",
 		"base": 10.0, "mult": 1.8, "gem": 15.0, "icon": "stat_damage"},
-	{"kind": "pulls", "name": "소환 횟수", "unit": "회",
+	{"kind": "pulls", "name": "소환", "unit": "회",
 		"base": 10.0, "mult": 2.0, "gem": 22.0, "icon": "stat_crit"},
-	{"kind": "knowledge", "name": "도감 지식", "unit": "레벨",
+	{"kind": "knowledge", "name": "지식", "unit": "레벨",
 		"base": 4.0, "mult": 1.6, "gem": 30.0, "icon": "stat_regen"},
 ]
+
+
+# index 번째(0부터) 가이드가 어느 트랙의 몇 단계인지. 트랙을 **돌아가며** 한 단계씩
+# 내준다 — 한 트랙을 다 밀고 다음으로 가면 "처치만 60번" 같은 구간이 생긴다.
+static func quest(index: int) -> Dictionary:
+	var i := maxi(0, index)
+	return {"kind": str(TRACKS[i % TRACKS.size()]["kind"]), "step": i / TRACKS.size()}
 
 
 static func track(kind: String) -> Dictionary:
@@ -63,10 +75,15 @@ static func gem_reward(kind: String, step: int) -> float:
 	return round(float(t["gem"]) * pow(1.35, float(maxi(0, step))))
 
 
+# 단계만 표기가 다르다. **"3단계"는 화면 어디에도 없는 숫자다** — 상단에는 "1-3"으로
+# 나오고, 성장 창의 "3단계 해금"은 또 다른 뜻(큰 단계)이라 같은 낱말이 두 가지를
+# 가리켰다(사장님: "단계 도달이 도대체 뭔데?"). 상단 표기를 그대로 쓴다.
 static func label(kind: String, step: int) -> String:
 	var t := track(kind)
 	if t.is_empty():
 		return ""
+	if kind == "stage":
+		return "%s 도달" % StageDefs.label(need(kind, step))
 	return "%s %s%s" % [str(t["name"]), _n(need(kind, step)), str(t["unit"])]
 
 
@@ -82,11 +99,3 @@ static func _n(v: int) -> String:
 		f /= 1000.0
 		i += 1
 	return ("%.1f" % f).trim_suffix(".0") + units[i]
-
-
-# 지금까지 깬 목표 수. 업적 화면 대신 이 숫자 하나로 "얼마나 했나"를 보여 준다.
-static func cleared_total(steps: Dictionary) -> int:
-	var sum := 0
-	for t in TRACKS:
-		sum += int(steps.get(str(t["kind"]), 0))
-	return sum

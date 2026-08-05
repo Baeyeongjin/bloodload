@@ -48,19 +48,35 @@ func _init() -> void:
 	assert(gem_ratio < need_ratio,
 		"보상이 목표만큼 가파르다: 목표 x%.0f vs 보상 x%.0f" % [need_ratio, gem_ratio])
 
-	# 수령 — 조건을 넘겼을 때만 되고, 한 번에 한 단계만 오른다.
-	game.goal_step = {}
+	# 가이드는 **한 줄로 이어진다.** 한 바퀴 안에 트랙이 전부 한 번씩 나오고,
+	# 바퀴가 돌 때마다 단계가 하나 오른다. 이게 깨지면 같은 목표가 연달아 나오거나
+	# 어떤 트랙은 영영 안 나온다 — 화면에는 멀쩡히 보여서 눈으로는 못 잡는다.
+	var n_tracks := GoalDefs.TRACKS.size()
+	var round_seen := {}
+	for i in n_tracks:
+		var q := GoalDefs.quest(i)
+		round_seen[str(q["kind"])] = true
+		assert(int(q["step"]) == 0, "첫 바퀴인데 단계가 0이 아니다: %d" % i)
+	assert(round_seen.size() == n_tracks, "한 바퀴에 같은 트랙이 두 번 나온다")
+	assert(int(GoalDefs.quest(n_tracks)["step"]) == 1, "두 바퀴째에 단계가 안 올랐다")
+	assert(str(GoalDefs.quest(n_tracks)["kind"]) == str(GoalDefs.quest(0)["kind"]),
+		"바퀴가 같은 순서로 안 돈다")
+	assert(str(GoalDefs.quest(-5)["kind"]) == str(GoalDefs.quest(0)["kind"]),
+		"음수 번호가 첫 가이드로 안 접힌다")
+
+	# 수령 — 조건을 넘겼을 때만 되고, 한 번에 하나만 오른다.
+	game.goal_index = 0
 	game.best_stage = 1
-	assert(not game._claim_goal("stage"), "조건도 안 됐는데 보상이 나온다")
+	assert(not game._goal_ready(), "조건도 안 됐는데 받을 수 있다고 한다")
+	assert(is_equal_approx(game._claim_goal(), 0.0), "조건도 안 됐는데 보상이 나온다")
 	game.best_stage = 99999
 	var gem_before: float = game.gem
-	assert(game._claim_goal("stage"), "조건을 넘겼는데 보상이 안 나온다")
+	assert(game._claim_goal() > 0.0, "조건을 넘겼는데 보상이 안 나온다")
 	assert(game.gem > gem_before, "보상을 줬는데 보석이 안 늘었다")
-	assert(int(game.goal_step["stage"]) == 1, "한 번에 여러 단계가 올랐다")
-	assert(game._goal_ready_count() > 0, "아직 받을 게 있는데 0으로 센다")
+	assert(game.goal_index == 1, "한 번에 여러 개가 올랐다")
 
 	print("가이드 트랙 %d개 · 첫 목표 %s"
-		% [GoalDefs.TRACKS.size(), GoalDefs.label("stage", 0)])
+		% [n_tracks, GoalDefs.label(str(GoalDefs.quest(0)["kind"]), 0)])
 	print("단계 사다리  %s → %s → %s → %s"
 		% [GoalDefs.label("kills", 0), GoalDefs.label("kills", 5),
 		GoalDefs.label("kills", 10), GoalDefs.label("kills", 20)])

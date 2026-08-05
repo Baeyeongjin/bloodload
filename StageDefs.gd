@@ -20,29 +20,34 @@ const KILLS_PER_STAGE := 60
 const MIDBOSS_PREFIXES := ["타락한", "굶주린", "피에 젖은"]
 
 # 막 5개. roster는 그 막에 나오는 몹 키.
-# bg는 가로로 긴 도트 한 장(768x160)이고 화면에는 2배(1536x320)로 그린다.
-#   - 세로 320 = 전투 띠 높이라 딱 맞는다.
+# bg는 가로로 긴 도트 한 장(768x208)이고 화면에는 2배(1536x416)로 그린다.
+#   - 세로 416 = 전투 띠 높이 전체. 그림 하나가 띠를 통째로 덮는다.
 #   - 가로 1536 = 화면 폭의 2.6배라 같은 그림이 금방 되돌아오지 않는다.
 #   - 좌우 끝에 같은 세로 기둥을 세워 그려서, 옆으로 이어 붙이면 기둥 둘이 만나
 #     굵은 기둥 하나로 읽힌다 — 이음매 없이 무한 스크롤된다.
 # 생성 공식과 job id는 docs/BG_RECIPE.md 에 적어 뒀다(추가 맵도 같은 틀로 뽑는다).
-# ground = 원본에서 바닥 윗면이 있는 행. 그림마다 달라서 눈으로 맞추면 캐릭터가
-# 공중에 뜬다 — tools/measure_ground.py 로 실측한 값이다.
 # 몹 키는 arrow-rpg GameConfig.enemy_tiers()의 key를 그대로 쓴다(자산 재사용).
+
+# 바닥 윗면이 있는 행. **막마다 같다** — 지면선이 막이 바뀔 때마다 오르내리면
+# 안 되기 때문이다(사장님). 생성 결과는 지면이 그림마다 아무 데나 오므로
+# 320줄로 넉넉히 뽑아 tools/fit_ground.py 가 이 행 기준으로 208줄을 떠낸다.
+# 코드가 배경을 밀어서 맞추면 반대쪽에 빈 자리가 생기고, 그걸 메우려고 하늘
+# 그라데이션 같은 보정이 다시 붙는다 — 그림 쪽을 맞추는 게 맞다.
+const GROUND_ROW := 145
 const ACTS := [
-	{"name": "깨어난 무덤", "bg": "res://assets/bg/wide_graveyard.png", "ground": 141,
+	{"name": "깨어난 무덤", "bg": "res://assets/bg/wide_graveyard.png",
 		"roster": ["slime", "goblin", "bat", "zombie", "skeleton"],
 		"boss": "wraith_knight", "boss_name": "망령 기사", "boss_anim": "boss_1"},
-	{"name": "화형의 언덕", "bg": "res://assets/bg/wide_hell.png", "ground": 140,
+	{"name": "화형의 언덕", "bg": "res://assets/bg/wide_hell.png",
 		"roster": ["fire_imp", "lava_toad", "hellhound", "orc", "demon"],
 		"boss": "gargoyle", "boss_name": "가고일 군주", "boss_anim": "boss_2"},
-	{"name": "서리 봉인지", "bg": "res://assets/bg/wide_glacier.png", "ground": 153,
+	{"name": "서리 봉인지", "bg": "res://assets/bg/wide_glacier.png",
 		"roster": ["frost_spider", "ice_wisp", "frost_golem", "bat", "ghoul"],
 		"boss": "frost_golem", "boss_name": "프로스트 골렘", "boss_anim": "boss_3"},
-	{"name": "핏빛 성소", "bg": "res://assets/bg/wide_sanctum.png", "ground": 145,
+	{"name": "핏빛 성소", "bg": "res://assets/bg/wide_sanctum.png",
 		"roster": ["void_wraith", "eye_mass", "spider", "cultist", "mushroom"],
 		"boss": "eye_mass", "boss_name": "눈알 덩어리", "boss_anim": "boss_4"},
-	{"name": "빼앗긴 본성", "bg": "res://assets/bg/wide_castle.png", "ground": 147,
+	{"name": "빼앗긴 본성", "bg": "res://assets/bg/wide_castle.png",
 		"roster": ["dark_knight", "wraith_knight", "cultist", "demon", "orc"],
 		"boss": "dark_knight", "boss_name": "다크 나이트", "boss_anim": "boss_5"},
 ]
