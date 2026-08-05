@@ -306,3 +306,109 @@ static func widget_bar(pos: Vector2, size: Vector2) -> NinePatchRect:
 	n.position = pos
 	n.size = size
 	return n
+
+
+# 레퍼런스형 얇은 진행바. 좌우 **화살촉 캡**이 달려 있고 가운데 홈통만 늘어난다.
+#
+# 실측(assets/ui/bar_slim.png, 128x32):
+#   화살촉 + 금기둥  좌 0~25 / 우 102~127  -> 9-slice 좌우 여백 26
+#   홈통 안쪽        y 10~21               -> 채움은 그 안에만 넣는다
+# **세로는 안 늘린다.** 원본이 32px 인데 22px 로 줄이면 금테가 뭉갠다 — 바 높이를
+# 원본에 맞추고(32) 가로만 늘린다.
+const BAR_SLIM := "res://assets/ui/bar_slim.png"
+const BAR_SLIM_H := 32.0
+const BAR_SLIM_SIDE := 26        # 화살촉 + 금기둥
+const BAR_SLIM_INNER_Y := 10.0   # 홈통 위끝
+const BAR_SLIM_INNER_H := 12.0   # 홈통 높이
+
+
+static func slim_bar(pos: Vector2, width: float) -> NinePatchRect:
+	var n := NinePatchRect.new()
+	n.texture = Assets.tex(BAR_SLIM)
+	n.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	n.position = pos
+	n.size = Vector2(width, BAR_SLIM_H)
+	n.set("patch_margin_left", BAR_SLIM_SIDE)
+	n.set("patch_margin_right", BAR_SLIM_SIDE)
+	n.set("patch_margin_top", 4)
+	n.set("patch_margin_bottom", 4)
+	n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return n
+
+
+# 가이드 카드 전용. 공용 panel(돌 창)이 아니라 **작은 정보 카드**용 자산이다 —
+# 큰 창 무늬를 200px 카드에 쓰면 테두리가 카드를 다 먹는다.
+# 여백은 실측: card_panel 96x48 은 좌우 10~12 / 상하 4, card_tab 64x32 는 좌우 5 / 상하 7.
+const CARD_PANEL := "res://assets/ui/card_panel.png"
+const CARD_TAB := "res://assets/ui/card_tab.png"
+
+
+static func card(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(CARD_PANEL, 12, 4)
+	n.position = pos
+	n.size = size
+	return n
+
+
+static func card_tab(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(CARD_TAB, 6, 7)
+	n.position = pos
+	n.size = size
+	return n
+
+
+# ── 레퍼런스 대조로 새로 뽑은 조각들 (2026-08-05) ─────────────────────────
+# 여백은 전부 **실측**이다(안쪽 평평한 면이 시작되는 열/행을 읽었다).
+# 통짜로 쓰는 것(아이콘·알림점)은 여기 없다 — Ui.icon 으로 그냥 그린다.
+const LV_BADGE := "res://assets/ui/lv_badge.png"        # 64x32  여백 5/7,9
+const CURRENCY_BAR := "res://assets/ui/currency_bar.png" # 128x32 여백 5/2
+const SLOT_REWARD := "res://assets/ui/slot_reward.png"   # 40x40  여백 3/2,3
+const BAR_MINI := "res://assets/ui/bar_mini.png"         # 96x32  여백 3/9
+const BAR_MINI_INNER_Y := 9.0
+const BAR_MINI_INNER_H := 14.0
+const TAG_STATUS := "res://assets/ui/tag_status.png"
+const PLATE_NAME := "res://assets/ui/plate_name.png"
+
+
+static func lv_badge(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(LV_BADGE, 6, 8)
+	n.position = pos
+	n.size = size
+	return n
+
+
+# 재화 바. 여백이 좌우 5뿐이라 **안쪽이 넓다** — 알약(pill)은 양끝 보석이 30씩
+# 먹어서 숫자 세 개를 한 줄에 못 넣었다.
+static func currency_bar(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(CURRENCY_BAR, 6, 3)
+	n.position = pos
+	n.size = size
+	return n
+
+
+static func slot_reward(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(SLOT_REWARD, 4, 4)
+	n.position = pos
+	n.size = size
+	return n
+
+
+static func bar_mini(pos: Vector2, width: float) -> NinePatchRect:
+	var n := _slice(BAR_MINI, 4, 10)
+	n.position = pos
+	n.size = Vector2(width, 32.0)
+	return n
+
+
+static func tag(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(TAG_STATUS, 10, 8)
+	n.position = pos
+	n.size = size
+	return n
+
+
+static func name_plate(pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(PLATE_NAME, 10, 11)
+	n.position = pos
+	n.size = size
+	return n

@@ -33,8 +33,6 @@ const SAVE_PATH := "user://bloodlord.cfg"
 #   96..416  전투 띠 (배경 원본 320px 그대로)
 #   416..800 콘텐츠 창
 #   800..896 탭바
-# 레퍼런스처럼 숫자가 바 **안에** 들어가므로 글자 높이만큼 두꺼워야 한다.
-const STAGE_BAR_H := 22.0
 const VIEW_TOP := 96.0
 const VIEW_BOTTOM := 416.0
 # 발이 닿는 선. 배경마다 바닥 높이가 달라서 상수로 두면 캐릭터가 공중에 뜬다.
@@ -83,7 +81,7 @@ const BACKDROP := [
 # BACKDROP(맨 아랫줄)과 같은 방식으로 실측했다 — 눈으로 고르면 이음매가 드러난다.
 # 지면 아래 위젯이 앉는 띠의 높이. 상자(72)와 가이드 카드(92)가 캐릭터를 안 가리고
 # 들어갈 만큼이다 — 이 값이 작으면 위젯이 다시 몹 몸통을 덮는다.
-const WIDGET_BAND := 96.0
+const WIDGET_BAND := 118.0
 const SKY := [
 	Color(0.290, 0.341, 0.294),   # 깨어난 무덤
 	Color(0.451, 0.380, 0.341),   # 화형의 언덕
@@ -94,17 +92,22 @@ const SKY := [
 static var _sky_cache := {}
 
 
-# 지면 아래 바닥. 위는 배경 아래끝 색 그대로, 아래로 갈수록 어두워진다 —
-# 이음매가 안 보이면서 위젯 글자가 읽히는 바탕이 된다.
+# 지면 아래 바닥. **위는 배경 아래끝 색에서 시작해 아래로 갈수록 검정**이 된다.
+# 예전엔 막 색을 그대로 어둡게만 해서 배경과 색이 갈려 이질적으로 보였다(사장님 지적).
+# 검정으로 떨어뜨리면 어느 막에서든 같은 바닥이 되고, 그 위에 얹은 상자·가이드가
+# 배경과 싸우지 않는다 — 레퍼런스가 그렇게 한다.
 static func _floor_tex(top: Color) -> ImageTexture:
-	if _sky_cache.has(top.darkened(0.001)):
-		return _sky_cache[top.darkened(0.001)]
-	var h := 32
+	var key := top.darkened(0.001)
+	if _sky_cache.has(key):
+		return _sky_cache[key]
+	var h := 48
 	var img := Image.create(1, h, false, Image.FORMAT_RGBA8)
 	for y in h:
-		img.set_pixel(0, y, top.darkened(0.55 * float(y) / float(h - 1)))
+		# 위 1/4 까지는 배경색을 유지해 이음매를 감추고, 그 아래로 검정까지 간다.
+		var t := clampf((float(y) / float(h - 1) - 0.22) / 0.78, 0.0, 1.0)
+		img.set_pixel(0, y, top.lerp(Color(0.02, 0.02, 0.03), t))
 	var tex := ImageTexture.create_from_image(img)
-	_sky_cache[top.darkened(0.001)] = tex
+	_sky_cache[key] = tex
 	return tex
 
 
@@ -230,6 +233,7 @@ var _goal_widget_gem: Label
 var _goal_widget_cta: Label
 var _goal_widget_fill: ColorRect
 var _goal_widget_bar_label: Label
+var _goal_dot: TextureRect
 var _goal_bar_width := 0.0
 var _last_goal_gem := 0.0
 var _gear_slots := {}       # slot -> {frame, icon, label, btn} 표시 노드
@@ -819,112 +823,93 @@ const TOP_ICON := 32.0
 
 func _build_topbar() -> void:
 	var w := float(Grid.BG.x)
-	# **레퍼런스 배치로 다시 잡았다.** 예전엔 재화 줄 / 막이름 줄 / 진행 줄이 각각
-	# 화면 폭을 통째로 쓰는 **가로 띠 3층**이라 위쪽이 무겁고 눈이 위아래로 훑어야 했다.
-	# 레퍼런스는 요소를 네 모서리로 흩고 **가운데 위에 정보 덩어리 하나**만 둔다.
-	#   왼쪽 위  : 초상화 + 레벨          (누구인가)
-	#   오른쪽 위: 재화 알약 (작게, 세로)  (얼마 있나)
-	#   가운데 위: 막이름 -> 처치/시간 -> 진행바 한 덩어리 (지금 뭐 하는 중인가)
-	#   오른쪽   : 전투력
+	# **레퍼런스 확대본 그대로.**
+	#   왼쪽 위 : 초상화 + (원 아래 겹치는) 레벨 배지
+	#   그 오른쪽: 교차검 아이콘 + 전투력 / 그 아래 칭호·닉네임 판
+	#   오른쪽 위: 재화 **바 하나**에 세 쌍 (알약 셋이 아니다)
+	#   가운데   : 막이름+단계 -> 상태 태그 -> 진행바(숫자는 홈통 안)
 	_build_portrait()
-	# ── 오른쪽 위: 재화. 폭의 절반만 쓴다. 세 개를 가로로 펼치면 그것만으로 한 줄이다.
+	# ── 재화. 바 하나에 세 쌍. 알약(pill)은 양끝 보석이 30px 씩 먹어서 숫자가
+	# 보석 위로 올라탔다 — 여백이 5뿐인 전용 바로 바꾼다(Ui.currency_bar).
 	var currencies := [
-		["res://assets/ui/res_blood.png", Color(1.0, 0.4, 0.4)],
-		["res://assets/items/gem.png", Color(0.72, 0.82, 1.0)],
-		["res://assets/ui/res_gem.png", Color(0.86, 0.72, 1.0)],
+		["res://assets/ui/res_blood.png", Color(1.0, 0.45, 0.45)],
+		["res://assets/items/gem.png", Color(0.74, 0.84, 1.0)],
+		["res://assets/ui/res_gem.png", Color(0.88, 0.74, 1.0)],
 	]
+	var bar_w := 340.0
+	var bar_at := Vector2(w - bar_w - 8.0, 4.0)
+	_hud_root.add_child(Ui.currency_bar(bar_at, Vector2(bar_w, 30.0)))
+	var slot_w := (bar_w - 16.0) / float(currencies.size())
 	var labels: Array[Label] = []
 	var icons: Array[TextureRect] = []
-	# 알약 9-slice 는 **양끝 보석이 각 30px** 이다(Ui.PILL_SIDE). 118 로 잡았더니
-	# 안쪽이 58px 뿐이라 글자가 보석 위로 올라탔다 — 폭을 늘리고 글자를 보석 안쪽으로 문다.
-	var pill_w := 150.0
-	var pill_h := 28.0
 	_currency_pills.clear()
 	for i in currencies.size():
-		# 2열 x 2행으로 오른쪽 위에 몬다: 혈액은 위 한 칸, 정수·보석은 아래 두 칸.
-		# 혈액이 제일 자주 바뀌는 값이라 혼자 위에 둬서 눈에 먼저 든다.
-		var at := Vector2(w - pill_w - 8.0, 4.0) if i == 0 \
-			else Vector2(w - pill_w * 2.0 - 14.0 + float(i - 1) * (pill_w + 6.0),
-				4.0 + pill_h + 4.0)
-		var pill := Ui.pill(at, Vector2(pill_w, pill_h))
-		_hud_root.add_child(pill)
-		_currency_pills.append(pill)
-		var ic := Ui.icon(currencies[i][0], at + Vector2(6.0, 4.0), 20.0)
+		var at := bar_at + Vector2(8.0 + float(i) * slot_w, 0.0)
+		var ic := Ui.icon(currencies[i][0], at + Vector2(2.0, 5.0), 20.0)
 		_hud_root.add_child(ic)
 		icons.append(ic)
-		var label := _mk_label(at + Vector2(30.0, 0.0), Type.SIZE_SMALL, currencies[i][1])
-		label.size = Vector2(pill_w - 30.0 - float(Ui.PILL_SIDE) + 6.0, pill_h)
-		label.clip_text = true
+		var label := _mk_label(at + Vector2(26.0, 3.0), Type.SIZE_SMALL, currencies[i][1])
+		label.size = Vector2(slot_w - 28.0, 24.0)
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.clip_text = true
 		labels.append(label)
 	_lbl_gold = labels[0]
 	_lbl_essence = labels[1]
 	_lbl_gem = labels[2]
 	_currency_icons = icons
-	# ── 가운데 위: 막이름 -> 처치/시간 -> 진행바. **한 덩어리로 붙인다.**
-	# 예전엔 이름이 2줄째, 진행바는 저 아래 전투 화면 위에 있어서 한 정보가 두 군데로
-	# 쪼개져 있었다.
-	var mid_x := 132.0
-	var mid_w := w - mid_x - 138.0
-	_lbl_stage = _mk_label(Vector2(mid_x, 42.0), Type.SIZE_BODY, Color(1.0, 0.9, 0.55))
+	# ── 가운데: 막이름 + 단계 -> 진행바. 한 덩어리로 붙인다.
+	var mid_x := 148.0
+	var mid_w := w - mid_x - bar_w * 0.0 - 20.0
+	_lbl_stage = _mk_label(Vector2(mid_x, 36.0), Type.SIZE_BODY, Color(1.0, 0.9, 0.55))
 	_lbl_stage.size = Vector2(mid_w, 26.0)
 	_lbl_stage.clip_text = true
 	_lbl_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_stage.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 진행바. **숫자를 바 안에 넣는다**(레퍼런스의 `3,980/5,000` 자리).
-	# 예전엔 숫자가 바 위 별도 줄이라 한 정보가 두 줄을 먹었고, 바는 7px 실선이라
-	# 게이지로 안 읽혔다.
-	var bar_at := Vector2(mid_x, 68.0)
-	var bar_w := mid_w
-	var bar_back := ColorRect.new()
-	bar_back.color = Color(0.05, 0.04, 0.06, 0.92)
-	bar_back.position = bar_at - Vector2(2.0, 2.0)
-	bar_back.size = Vector2(bar_w + 4.0, STAGE_BAR_H + 4.0)
-	bar_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud_root.add_child(bar_back)
+	var bar2_at := Vector2(mid_x, 64.0)
+	# 채움이 **틀 밑에** 깔린다. 위에 그리면 금테와 화살촉을 덮는다.
 	_stage_bar = ColorRect.new()
 	_stage_bar.color = Color(0.72, 0.16, 0.20)
-	_stage_bar.position = bar_at
-	_stage_bar.size = Vector2(0.0, STAGE_BAR_H)
+	_stage_bar.position = bar2_at + Vector2(float(Ui.BAR_SLIM_SIDE), Ui.BAR_SLIM_INNER_Y)
+	_stage_bar.size = Vector2(0.0, Ui.BAR_SLIM_INNER_H)
 	_stage_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_stage_bar_width = bar_w
 	_hud_root.add_child(_stage_bar)
-	# 글자는 채움 **위에** 온다. 채움이 글자를 덮으면 진행할수록 안 읽힌다.
-	_lbl_prog = _mk_label(bar_at, Type.SIZE_SMALL, Color(0.96, 0.94, 0.98))
-	_lbl_prog.size = Vector2(bar_w, STAGE_BAR_H)
+	_hud_root.add_child(Ui.slim_bar(bar2_at, mid_w))
+	_stage_bar_width = mid_w - float(Ui.BAR_SLIM_SIDE) * 2.0
+	# 글자는 **홈통 안에만.** 바 전체 폭을 주면 좌우 화살촉(26px) 위까지 뻗어 잘린다.
+	_lbl_prog = _mk_label(bar2_at + Vector2(float(Ui.BAR_SLIM_SIDE), 0.0),
+		Type.SIZE_SMALL, Color(0.98, 0.96, 0.98))
+	_lbl_prog.size = Vector2(_stage_bar_width, Ui.BAR_SLIM_H)
 	_lbl_prog.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-
-	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_lbl_prog.clip_text = true
 
 
-# 왼쪽 위 초상화 블록. 레퍼런스에서 이 자리가 "누구인가"를 담당한다 —
-# 우리는 여기가 통째로 비어 있어서 화면이 오른쪽으로 쏠려 보였다.
-const PORTRAIT := 60.0
+# 왼쪽 위 초상화 블록. 레퍼런스에서 이 자리가 "누구인가"를 담당한다.
+const PORTRAIT := 56.0
 
 
 func _build_portrait() -> void:
-	var frame := Ui.icon("res://assets/ui/portrait_frame.png", Vector2(6.0, 4.0), PORTRAIT)
 	var face := Ui.icon("res://assets/ui/portrait_hero.png",
-		Vector2(6.0 + PORTRAIT * 0.16, 4.0 + PORTRAIT * 0.14), PORTRAIT * 0.68)
+		Vector2(6.0 + PORTRAIT * 0.16, 2.0 + PORTRAIT * 0.14), PORTRAIT * 0.68)
 	# 얼굴을 틀보다 먼저 붙여야 틀 테두리가 얼굴 위로 온다.
 	_hud_root.add_child(face)
-	_hud_root.add_child(frame)
-	_lbl_hero = _mk_label(Vector2(0.0, 4.0 + PORTRAIT - 6.0), Type.SIZE_SMALL,
-		Color(0.82, 0.96, 0.82))
-	# 레벨도 전투력과 같은 폭. 초상화 폭(72)에 맞추면 "레벨 999999"(108px)가 잘린다.
-	_lbl_hero.size = Vector2(126.0, 20.0)
+	_hud_root.add_child(Ui.icon("res://assets/ui/portrait_frame.png",
+		Vector2(6.0, 2.0), PORTRAIT))
+	# 레벨 배지 — 레퍼런스처럼 **초상화 원 아래에 걸쳐** 놓는다.
+	# 배지 폭은 "레벨 9999"(84px) + 좌우 여백(6+6)에서 나온 값이다. 초상화(56)보다
+	# 넓지만 레퍼런스도 Lv 배지가 초상화보다 넓다.
+	var lv_size := Vector2(96.0, 22.0)
+	var lv_at := Vector2(6.0 + PORTRAIT * 0.5 - lv_size.x * 0.5, 2.0 + PORTRAIT - 11.0)
+	_hud_root.add_child(Ui.lv_badge(lv_at, lv_size))
+	_lbl_hero = _mk_label(lv_at, Type.SIZE_SMALL, Color(0.88, 0.98, 0.88))
+	_lbl_hero.size = lv_size
 	_lbl_hero.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 전투력은 **초상화 밑에 붙인다**(사장님 지시). 오른쪽 위에 따로 떠 있으면
-	# "누구인가"와 "얼마나 센가"가 화면 양 끝으로 갈라진다.
-	# 칸을 초상화 폭(72)에 맞췄더니 "전투력 285"(90px)가 잘렸다 — 가운데 덩어리가
-	# 시작하는 132 직전까지 준다. 초상화 밑에서 왼쪽으로 조금 넓어질 뿐이라 안 겹친다.
-	_lbl_power = _mk_label(Vector2(0.0, 4.0 + PORTRAIT + 12.0), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.38))
-	_lbl_power.size = Vector2(126.0, 20.0)
-	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_hero.clip_text = true
+	# 전투력 — 레퍼런스의 **교차검 + 8M**. 초상화 오른쪽 위.
+	_hud_root.add_child(Ui.icon("res://assets/ui/icon_power.png", Vector2(70.0, 4.0), 24.0))
+	_lbl_power = _mk_label(Vector2(96.0, 4.0), Type.SIZE_SMALL, Color(1.0, 0.82, 0.42))
+	_lbl_power.size = Vector2(96.0, 24.0)
 	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_lbl_power.clip_text = true
 
@@ -2671,6 +2656,9 @@ func _build_chest() -> void:
 	_chest_btn.add_child(Ui.icon("res://assets/ui/round_btn.png", Vector2.ZERO, CHEST_BOX))
 	_chest_btn.add_child(Ui.icon("res://assets/ui/chest.png",
 		Vector2(CHEST_BOX * 0.16, CHEST_BOX * 0.16), CHEST_BOX * 0.68))
+	# 상자는 받을 게 있을 때만 보이므로 점은 늘 붙어 있으면 된다.
+	_chest_btn.add_child(Ui.icon("res://assets/ui/dot_alert.png",
+		Vector2(CHEST_BOX - 22.0, 2.0), 18.0))
 
 
 func _refresh_chest() -> void:
@@ -2709,8 +2697,8 @@ func _claim_chest() -> void:
 const GOAL_CARD := Vector2(216.0, 80.0)
 const GOAL_TAB := Vector2(108.0, 26.0)
 const GOAL_SLOT := 60.0
-const SLOT_BORDER := 0.10       # slot_common 테두리 비율 (4/40)
-const SLOT_HOLE := 0.80         # 안쪽 구멍 비율 (32/40)
+const SLOT_BORDER := 0.075      # slot_reward 테두리 비율 (3/40)
+const SLOT_HOLE := 0.85         # 안쪽 구멍 비율 (34/40)
 const GOAL_WIDGET_H := GOAL_CARD.y + GOAL_TAB.y - 8.0
 
 
@@ -2723,22 +2711,23 @@ func _build_goal_widget() -> void:
 	_goal_widget.size = Vector2(GOAL_CARD.x, GOAL_WIDGET_H)
 	_goal_widget.pressed.connect(_on_goal_card_pressed)
 	_hud_root.add_child(_goal_widget)
-	# 헤더 탭 — 카드 위, 오른쪽 정렬. 띠(가로 스트립)가 제 모양대로 쓰이는 유일한 곳이다.
+	# 헤더 탭 — 카드 위, 오른쪽 정렬.
 	var tab_at := Vector2(GOAL_CARD.x - GOAL_TAB.x, 0.0)
-	_goal_widget.add_child(Ui.widget_bar(tab_at, GOAL_TAB))
+	_goal_widget.add_child(Ui.card_tab(tab_at, GOAL_TAB))
 	_goal_widget_name = _panel_label(_goal_widget, tab_at, Type.SIZE_SMALL,
 		Color(1.0, 0.88, 0.5), GOAL_TAB.x, GOAL_TAB.y)
 	_goal_widget_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_goal_widget_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 카드 몸통.
 	var body := Vector2(0.0, GOAL_TAB.y - 8.0)
-	_goal_widget.add_child(Ui.panel(body, GOAL_CARD))
+	# **공용 panel(돌 창)이 아니라 카드 전용 자산.** 돌 창 무늬는 테두리가 굵어서
+	# 200px 카드에 쓰면 안쪽이 거의 안 남는다(사장님 지적 "있는 거 쓰지 말고 새로").
+	_goal_widget.add_child(Ui.card(body, GOAL_CARD))
 	# ── 왼쪽 보상 칸. 아이콘·숫자를 **구멍 좌표로** 잡는다.
 	var slot_at := body + Vector2(10.0, (GOAL_CARD.y - GOAL_SLOT) * 0.5)
-	var slot := Ui.image("res://assets/ui/slot_common.png", slot_at,
-		Vector2(GOAL_SLOT, GOAL_SLOT))
-	slot.modulate = Color(0.86, 0.72, 1.0)
-	_goal_widget.add_child(slot)
+	# 보상 칸은 **전용 자산**이다. slot_common(장비 등급 틀)은 테두리가 4/40 이라
+	# 안쪽이 좁아 숫자가 테두리 위로 올라탔다 — slot_reward 는 여백이 3 뿐이다.
+	_goal_widget.add_child(Ui.slot_reward(slot_at, Vector2(GOAL_SLOT, GOAL_SLOT)))
 	var hole_at := slot_at + Vector2.ONE * (GOAL_SLOT * SLOT_BORDER)
 	var hole := GOAL_SLOT * SLOT_HOLE
 	var num_h := 16.0
@@ -2756,25 +2745,25 @@ func _build_goal_widget() -> void:
 	_goal_widget_cta = _panel_label(_goal_widget, body + Vector2(tx, 14.0),
 		Type.SIZE_SMALL, Color(0.94, 0.92, 0.98), tw, 20.0)
 	_goal_widget_cta.clip_text = true
-	var bar_h := 20.0
-	var bar_at := body + Vector2(tx, GOAL_CARD.y - bar_h - 16.0)
-	var back := ColorRect.new()
-	back.color = Color(0.05, 0.04, 0.06, 0.92)
-	back.position = bar_at
-	back.size = Vector2(tw, bar_h)
-	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_goal_widget.add_child(back)
+	var bar_at := body + Vector2(tx, GOAL_CARD.y - 32.0 - 6.0)
+	# 채움을 **틀 밑에** 깐다. 위에 그리면 테두리를 덮는다(상단 진행바와 같은 규칙).
 	_goal_widget_fill = ColorRect.new()
 	_goal_widget_fill.color = Color(0.72, 0.52, 0.18)
-	_goal_widget_fill.position = bar_at
-	_goal_widget_fill.size = Vector2(0.0, bar_h)
+	_goal_widget_fill.position = bar_at + Vector2(4.0, Ui.BAR_MINI_INNER_Y)
+	_goal_widget_fill.size = Vector2(0.0, Ui.BAR_MINI_INNER_H)
 	_goal_widget_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_goal_widget.add_child(_goal_widget_fill)
+	_goal_widget.add_child(Ui.bar_mini(bar_at, tw))
 	_goal_widget_bar_label = _panel_label(_goal_widget, bar_at, Type.SIZE_SMALL,
-		Color(0.98, 0.96, 0.98), tw, bar_h)
+		Color(0.98, 0.96, 0.98), tw, 32.0)
 	_goal_widget_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_goal_widget_bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_goal_bar_width = tw
+	_goal_bar_width = tw - 8.0
+	# 알림 점 — 받을 게 있을 때만. 방치형에서 보상이 쌓인 걸 모르고 지나가면
+	# 그건 플레이어 잘못이 아니라 UI 잘못이다.
+	_goal_dot = Ui.icon("res://assets/ui/dot_alert.png", tab_at + Vector2(-8.0, -4.0), 18.0)
+	_goal_dot.visible = false
+	_goal_widget.add_child(_goal_dot)
 
 
 # 카드를 눌렀을 때. 받을 게 있으면 **확인만 받고 바로 준다** — 되돌릴 수 없는
@@ -2835,7 +2824,9 @@ func _refresh_goal_widget() -> void:
 	# 바 안(122px)에는 "999.9k / 999.9k"(180px)가 안 들어간다. 소수점과 공백을 뺀다 —
 	# 비율은 바 길이로 이미 보이고 여기 숫자는 자릿수만 읽히면 된다.
 	_goal_widget_bar_label.text = "%s/%s" % [_n_int(float(now)), _n_int(float(need))]
-	_goal_widget_fill.size.x = _goal_bar_width 		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
+	_goal_widget_fill.size.x = _goal_bar_width \
+		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
+	_goal_dot.visible = ready > 0
 
 
 # 받을 수 있는 걸 전부 받는다. 한 트랙이 여러 단계 밀려 있으면 그것도 다 준다 —
@@ -4601,13 +4592,12 @@ static func stage_progress_text(at_stage: int, done: int, need: int) -> String:
 
 func _refresh_hud() -> void:
 	var act: Dictionary = StageDefs.act_data(stage)
-	# 막 이름만 크게. **단계 번호는 아래 진행 줄로 내렸다** — 둘을 한 줄에 두면
-	# "깨어난 무덤  100-10"이 336px 이라 가운데 칸(306px)을 넘어 조용히 잘린다
-	# (GearTest 가 잡았다).
-	_lbl_stage.text = str(act["name"])
+	# 레퍼런스의 "미궁 54층-4" 자리 — 막 이름과 단계를 **한 줄에** 둔다.
+	# 진행바에서 단계를 빼서 그만큼 자리가 났다.
+	_lbl_stage.text = "%s %s" % [act["name"], StageDefs.label(stage)]
 	var need := StageDefs.kills_needed(stage)
-	_lbl_prog.text = "%s · %s · %d초" % [StageDefs.label(stage),
-		stage_progress_text(stage, kills, need), int(ceil(maxf(0.0, _boss_time)))]
+	_lbl_prog.text = "%s · %d초" % [stage_progress_text(stage, kills, need),
+		int(ceil(maxf(0.0, _boss_time)))]
 	# 남은 시간이 얼마 없으면 붉게. 숫자를 안 보고 있어도 색이 먼저 눈에 들어온다.
 	_lbl_prog.add_theme_color_override("font_color",
 		Color(1.0, 0.45, 0.42) if _boss_time <= 5.0 else Color(0.8, 0.85, 0.95))
@@ -4623,7 +4613,7 @@ func _refresh_hud() -> void:
 	_lbl_gem.text = _n(gem)
 	_refresh_currency_visibility()
 	var power := Balance.combat_power(dps(), max_hp(), regen_per_sec())
-	_lbl_power.text = "전투력 %s" % _n(power)
+	_lbl_power.text = _n(power)
 	_notify_power(power)
 	# **HP 숫자는 안 띄운다.** 영웅 발밑 체력 바로 이미 보이고, 전투 화면 위에
 	# 숫자가 하나 더 떠 있으면 그만큼 화면이 가려진다. 쓰러졌을 때만 남는다.
