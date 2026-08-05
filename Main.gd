@@ -3519,11 +3519,17 @@ func _process(delta: float) -> void:
 			for f in foes:
 				if not is_instance_valid(f) or f.dying:
 					continue
-				var clr: float = absf(f.position.x - hero_x) - f._size() * 0.5 - BODY_HALF
+				# **잉크로 잰다.** 상자(_size()*0.5)로 재면 한쪽당 6px 씩 과장돼
+				# 화면에서는 안 닿는데 겹쳤다고 나온다 — 그 수치로 칸을 옮기면 과보정된다.
+				var clr: float = absf(f.position.x - hero_x) - f.body_half() - BODY_HALF
+				# **영웅이 멈춰 있는지도 같이 찍는다.** 큰 겹침은 대부분 대시로
+				# 지나가는 중인데, 그게 안 찍히면 서 있는 겹침과 구분이 안 돼서
+				# 고칠 수 없는 값을 고치려 들게 된다.
+				var settled := absf(_dash_to - hero_x) <= 1.0
 				if clr < -1.0:
-					print("겹침 %6.1f  영웅 %6.1f  %s %6.1f  도착 %s  모션 %s"
-						% [clr, hero_x, f.display_name, f.position.x,
-						str(_foe_arrived(f)), _motion])
+					print("겹침 %6.1f  영웅 %6.1f %s  %s %6.1f  몹도착 %s"
+						% [clr, hero_x, ("정지" if settled else "대시중"),
+						f.display_name, f.position.x, str(_foe_arrived(f))])
 
 
 # 자동 공격은 모션 시작이 아니라 7프레임 중 네 번째에 피해가 들어간다. 예약한 대상이
@@ -3577,6 +3583,30 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	_play("attack")
 
 
+# 표적이 없을 때도 **몹 몸통 안에는 안 선다.**
+#
+# `_strike_spot` 은 표적이 있을 때만 불린다. 그런데 `_tick_hero_attack` 은 스킬
+# 시전 중(`SKILL_DUR` 0.70초)에는 통째로 return 해서 표적을 다시 잡지 않는다 —
+# 그 사이 큰 몹이 옆 칸에 도착하면 영웅이 대기 자리에 굳은 채로 겹쳐 선다
+# (`--gaps` 로 프로스트 골렘과 -15.3 확인).
+#
+# **잉크로 잰다.** 이건 화면에 겹쳐 보이느냐만 따지는 순수 표시 제약이라,
+# 상자로 재면 필요 이상으로 밀어내 대시가 길어진다. 표적이 생기면 다음 프레임에
+# `_strike_spot`(상자 기준, 더 넉넉)이 이 값을 덮으므로 서로 싸우지 않는다.
+func _clear_idle(x: float) -> float:
+	if not is_inside_tree():
+		return x
+	for f in get_tree().get_nodes_in_group("foes"):
+		if not _foe_arrived(f):
+			continue
+		var need: float = f.body_half() + BODY_HALF
+		var d: float = x - f.position.x
+		if absf(d) >= need:
+			continue
+		x = f.position.x + (need if d >= 0.0 else -need)
+	return x
+
+
 # 대시. 모션·공격과 무관하게 매 프레임 자리로 민다 — 공격 중에도 조금씩 파고들어야
 # 몹이 죽으면서 밀려나도 계속 닿는다.
 func _tick_dash(delta: float) -> void:
@@ -3584,6 +3614,7 @@ func _tick_dash(delta: float) -> void:
 		return
 	if _phase != "fight":
 		_dash_to = HERO_X   # 무리를 치웠으면 걷던 자리로 돌아온다
+	_dash_to = _clear_idle(_dash_to)
 	# 넉백은 **대시보다 먼저** 자리를 옮긴다. 맞은 순간 뒤로 밀리고, 그 다음 프레임부터
 	# 대시가 다시 파고든다 — 밀림과 되돌아옴이 한 몸이라 "얻어맞았다"가 몸으로 읽힌다.
 	if absf(_knock_vx) > 1.0:

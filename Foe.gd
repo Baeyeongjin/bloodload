@@ -235,6 +235,20 @@ func shadow_r() -> float:
 	return _size() * 0.30
 
 
+# 이 몹의 몸이 실제로 차지하는 가로 절반(화면 픽셀).
+#
+# `_size() * 0.5` 은 **상자** 절반이라 잉크보다 넓다. 겹침을 잴 때 상자를 쓰면
+# 화면에서는 안 닿는데 지표는 겹쳤다고 한다 — 자가 틀린 채로 칸을 옮기면 과보정된다.
+# 걸어 들어오는 중에는 프레임이 바뀌므로 지금 그려지는 프레임으로 잰다.
+func body_half() -> float:
+	var tex: Texture2D = _sprite
+	if not _walk_frames.is_empty():
+		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()]
+	if tex == null:
+		return _size() * 0.5
+	return Assets.ink_half_width(tex) * (_size() / float(maxi(1, tex.get_width())))
+
+
 func _size() -> float:
 	var hero_scale := maxf(2.0, body_scale * 2.0) if is_boss or is_midboss else body_scale
 	return float(Grid.SPRITE) * 2.0 * hero_scale

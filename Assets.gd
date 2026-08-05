@@ -17,6 +17,28 @@ static var _gap_cache := {}
 # 발밑 정렬에 쓴다. 도트 그림은 32x32 안에서 차지하는 위치가 제각각이고,
 # **애니메이션은 프레임마다도 다르다**(frost_spider_walk 는 1~6px 로 흔들린다).
 # 캔버스 아래끝을 지면에 붙이면 그 차이만큼 몹이 떴다 가라앉았다 한다.
+# 그림이 **중심에서 좌우로 가장 멀리 뻗은 거리**(원본 픽셀).
+#
+# 겹침을 상자 폭으로 재면 안 된다. 32px 캔버스에 26px 만 차 있으면 한쪽당 3px,
+# 양쪽 6px 이 과장된다 — 실제로 그 오차 때문에 "겹친다"는 지표가 나왔는데 화면에는
+# 안 겹쳐 보였다. 자가 틀리면 벽을 잘못 옮긴다.
+static func ink_half_width(texture: Texture2D) -> float:
+	if texture == null:
+		return 0.0
+	var key := "w:" + texture.resource_path
+	if _gap_cache.has(key):
+		return float(_gap_cache[key])
+	var image := texture.get_image()
+	var used := image.get_used_rect()
+	var half := 0.0
+	if used.size.x > 0:
+		var center := float(image.get_width()) * 0.5
+		half = maxf(center - float(used.position.x),
+			float(used.position.x + used.size.x) - center)
+	_gap_cache[key] = half
+	return half
+
+
 static func bottom_gap(texture: Texture2D) -> float:
 	if texture == null:
 		return 0.0
