@@ -23,6 +23,7 @@ var face := -1
 var hp_mult := 1.0
 var body_scale := 1.0      # 영웅 표시 크기 대비 종별 크기
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
+var hero_x := 0.0          # Main 이 매 프레임 넘겨 준다. 닿을 때만 휘두르는 근거
 
 var _walk_frames: Array = []
 var _attack_frames: Array = []
@@ -151,6 +152,12 @@ func _process(delta: float) -> void:
 
 func _tick_attack(delta: float) -> void:
 	if not combat_active:
+		return
+	# **닿지 않으면 아예 안 휘두른다.** 스윙을 시작해 놓고 임팩트 때 빠지면 모션은
+	# 나가는데 피해가 0이라, 화면에서는 공격이 나갔다 안 나갔다 하는 것으로 보인다.
+	# 시작할 때 재고, 임팩트 때 또 잰다 — 그 사이에 영웅이 대시로 빠져나갔으면
+	# 그때는 진짜로 피한 것이고, 그건 남겨 둬야 대시가 회피 수단이 된다.
+	if _attack_anim < 0.0 and absf(hero_x - position.x) > reach():
 		return
 	if _attack_anim >= 0.0:
 		_attack_anim += delta

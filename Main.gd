@@ -51,6 +51,9 @@ const LANES_LEFT := [232.0, 168.0, 104.0]
 # 보였다 — 달리기 8프레임을 한 바퀴 돌리려면 최소 0.5초는 이동에 써야 한다.
 # 걷기(120)의 2배면 가까운 칸도 0.4초, 먼 칸은 1초라 뛰는 게 눈에 남는다.
 const DASH_SPEED := 240.0
+# 영웅이 한 칸에 붙어 있을 때 사거리 안에 드는 몹 수. 칸 간격(64)과 몹 사거리
+# (_size/2 + 80)에서 나오는 값이라 칸을 옮기면 CombatRulesTest "계측 A" 가 잡는다.
+const FOES_IN_REACH := 3
 # 전진 연출. 영웅은 화면 고정(카메라가 흔들리면 UI가 못 읽힌다)이고 대신 배경이 흐른다.
 # 배경은 몹보다 느리게 흘린다(원경 시차). 같은 속도면 도트가 뭉개지고, 반대로
 # 너무 느리면 걷는데 배경이 안 움직여 제자리걸음으로 보인다 — 0.5가 그 사이다.
@@ -2863,6 +2866,10 @@ func _process(delta: float) -> void:
 		if is_instance_valid(f):
 			f.set_visual_frozen(visual_frozen)
 			f.set_combat_active(_phase == "fight" and not _hero_dead)
+			# 영웅 위치를 넘겨 **닿을 때만 휘두르게** 한다. 예전엔 사거리와 무관하게
+			# 스윙을 시작하고 임팩트 때 빗나갔다 — 6칸 중 절반 이상이 매번 그랬고,
+			# 화면에서는 "몹이 때리는데 아무 일도 안 일어난다"로 보인다.
+			f.hero_x = hero_x
 	_tick_skills(delta, foes)
 	_tick_hero_attack(delta, foes)
 	_tick_dash(delta)
@@ -2880,9 +2887,14 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 				_pending_target.take_damage(_combat_damage(_pending_target))
 				_anim_fx("fx_cleave", _pending_target.position + Vector2(0, -28), 18.0, 2.0)
 			_pending_target = null
-	if _hero_dead or _phase != "fight" or _skill_action != "":
+	if _hero_dead or _phase != "fight":
 		return
+	# 쿨다운은 **스킬 중에도 돈다.** 예전엔 여기서 통째로 빠져나가서, 스킬이 끝난 뒤
+	# 남은 쿨다운을 처음부터 다시 기다렸다 — 네 형태를 다 끼면 시간의 22%가 스킬인데
+	# 그만큼 기본공격이 두 번 지연됐다(계측: CombatRulesTest "계측 C").
 	_attack_t -= delta
+	if _skill_action != "":
+		return
 	# **가장 가까운** 적을 고른다. 예전엔 "제일 왼쪽"이었는데, 좌우 양쪽에서 나오는
 	# 지금은 그러면 등 뒤 적만 계속 쫓아 화면 밖으로 걸어 나간다.
 	var target: Foe = null
@@ -3081,7 +3093,12 @@ func _tick_skills(delta: float, foes: Array) -> void:
 			_skill_action = ""
 			_skill_target = null
 		return
-	if _hero_dead or _phase != "fight" or _hero_hit_t >= 0.0 or foes.is_empty():
+	# **_hero_hit_t 게이트를 뺐다.** 기본공격 임팩트를 기다리는 동안 스킬을 통째로
+	# 막고 있었는데, 그 대기가 주기의 3/7 이라 발동 창이 4/7 밖에 안 됐다. 공속이
+	# 만렙(0.10초)이면 창이 **3.4프레임**까지 줄어서 스킬이 운으로만 나갔다
+	# (계측: CombatRulesTest "계측 B"). 막을 이유도 없다 — 예약된 기본공격 피해는
+	# _tick_hero_attack 맨 위에서 _skill_action 과 무관하게 그대로 들어간다.
+	if _hero_dead or _phase != "fight" or foes.is_empty():
 		return
 	# **대상이 없으면 다음 스킬을 본다.** 예전엔 1순위 하나만 보고 그게 사거리 밖이면
 	# 통째로 포기했다 — 격이 안 나가면 쿨다운도 안 돌아서 파·진·가호까지 영영 막혔다.
@@ -4014,7 +4031,10 @@ func _offline_profile(at_stage: int) -> Dictionary:
 		for key in roster:
 			hp_mult += float(FoeTiers.get_tier(str(key))["hp_mult"])
 		hp_mult /= maxf(1.0, float(roster.size()))
-	var count := 1 if boss or midboss else _wave_size(at_stage)
+	# **무리 크기가 곧 동시 타격 수가 아니다.** 몹은 고정 칸에 서고 영웅은 한 칸에
+	# 붙어 있으므로, 사거리 안에 드는 건 그중 일부다(계측: 6칸 중 평균 2.8).
+	# 무리 크기를 그대로 쓰면 오프라인이 받는 피해를 과대평가해 실시간과 갈린다.
+	var count := 1 if boss or midboss else mini(_wave_size(at_stage), FOES_IN_REACH)
 	return {
 		"hp": 10.0 * hp_mult * StageDefs.enemy_power(at_stage) \
 			* (12.0 if boss else (3.5 if midboss else 1.0)),

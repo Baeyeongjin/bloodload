@@ -198,6 +198,92 @@ func _init() -> void:
 	game.hero_x = game._strike_spot(far_target)
 	assert(game._can_hit_foe(far_target), "뒷칸으로 옮겨 갔는데 공격이 안 닿는다")
 
+	# ── 계측: "공격이 나갔다 안 나갔다" 의 정체 ──────────────────────────────
+	# 화면으로는 "가끔 안 나간다"를 못 가른다. **세어서** 본다.
+	#
+	# 영웅이 어느 칸에 붙어 있을 때, 다른 칸의 몹 몇 마리가 영웅에게 닿는가.
+	# 닿지 않는 몹은 모션만 휘두르고 피해가 0이다 — 화면에서는 그게 곧 "안 나간다".
+	var probe := Foe.new()
+	probe.setup(FoeTiers.get_tier("slime"), 1.0, 1.0)
+	var lanes: Array[float] = []
+	for side in [1, -1]:
+		for line in 3:
+			lanes.append(game._lane_x(side, line))
+	var reach_hits := 0
+	var reach_total := 0
+	var worst := 99
+	for at in lanes:
+		probe.position.x = at
+		# 영웅이 그 칸의 몹을 치려고 선 자리
+		game.hero_x = at - (probe._size() * 0.5 + game._front_reach() - 8.0)
+		var in_reach := 0
+		for other in lanes:
+			reach_total += 1
+			if absf(other - game.hero_x) <= probe.reach():
+				reach_hits += 1
+				in_reach += 1
+		worst = mini(worst, in_reach)
+	var reach_rate := float(reach_hits) / float(maxi(1, reach_total))
+	print("계측 A 몹 사거리: 6칸 중 평균 %.1f마리가 닿는다 (%.0f%%), 최소 %d마리"
+		% [reach_rate * 6.0, reach_rate * 100.0, worst])
+	# 붙어 있는 그 한 마리는 **무조건** 닿아야 한다. 이게 깨지면 아무도 안 때린다.
+	assert(worst >= 1, "영웅이 붙어 선 칸의 몹조차 안 닿는다")
+	# 오프라인이 세는 동시 타격 수는 실측을 넘으면 안 된다 — 넘으면 받는 피해를
+	# 과대평가해서 실시간에서는 넘는 구간을 오프라인이 못 넘는다.
+	assert(float(game.FOES_IN_REACH) >= reach_rate * 6.0 - 0.5
+		and float(game.FOES_IN_REACH) <= float(lanes.size()),
+		"FOES_IN_REACH(%d)가 실측 %.1f 과 어긋난다 — 칸 좌표를 옮겼으면 같이 고칠 것"
+		% [game.FOES_IN_REACH, reach_rate * 6.0])
+
+	# 닿지 않는 몹은 **스윙을 시작조차 하지 않는다.** 헛스윙은 화면에서 버그로 보인다.
+	probe.position.x = 0.0
+	probe.stop_x = 0.0
+	probe.set_combat_active(true)
+	probe.hero_x = 10000.0          # 사거리 밖
+	probe._tick_attack(99.0)
+	assert(probe._attack_anim < 0.0, "사거리 밖인데 몹이 허공에 휘두른다")
+	probe.hero_x = probe.position.x  # 붙었다
+	probe._tick_attack(99.0)
+	assert(probe._attack_anim >= 0.0, "붙어 있는데 몹이 안 휘두른다")
+	probe.free()
+
+	# 스킬 발동 창 — 기본공격 임팩트 전(_hero_hit_t >= 0)에는 스킬이 통째로 막힌다.
+	# 공속이 오를수록 창이 좁아진다. 몇 프레임까지 줄어드는지 센다(60fps 기준).
+	var slow_window: float = Balance.attack_interval(1) * (1.0 - game.IMPACT_RATIO)
+	var fast_window: float = Balance.attack_interval(999999) * (1.0 - game.IMPACT_RATIO)
+	print("계측 B 스킬 창: 옛 게이트였다면 1레벨 %.1f프레임 → 만렙 %.1f프레임 (지금은 상시)"
+		% [slow_window * 60.0, fast_window * 60.0])
+	# 한 프레임보다 좁아지면 스킬은 **운으로만** 나간다 — 그건 버그와 구분이 안 된다.
+	assert(fast_window * 60.0 >= 1.0,
+		"공속 만렙에서 스킬 발동 창이 한 프레임보다 좁다: %.1f프레임" % [fast_window * 60.0])
+	# 게이트를 뺐으므로 **기본공격 임팩트를 기다리는 중에도** 스킬이 나가야 한다.
+	# 이게 깨지면 창이 다시 4/7 로 줄어 만렙에서 스킬이 운으로만 나간다.
+	game.lv["speed"] = 1
+	game._skill_action = ""
+	game._skill_cd.clear()
+	game._hero_hit_t = 0.2          # 기본공격 임팩트 대기 중
+	game._pending_target = target
+	target.position.x = target.stop_x
+	game.hero_x = game._strike_spot(target)
+	game._tick_skills(0.016, [target])
+	assert(game._skill_action != "",
+		"기본공격 임팩트를 기다리는 동안 스킬이 막힌다 — 발동 창이 다시 좁아졌다")
+	# 스킬 시전 중에도 기본공격 쿨다운은 돌아야 스킬 직후 바로 이어진다.
+	game._attack_t = 0.5
+	game._tick_hero_attack(0.1, [target])
+	assert(game._attack_t < 0.5,
+		"스킬 시전 중에 기본공격 쿨다운이 멈춘다 — 스킬이 끝나고 또 기다린다")
+	game._skill_action = ""
+	game._hero_hit_t = -1.0
+	game._pending_target = null
+	game._skill_cd.clear()
+
+	# 스킬 시전 중 기본공격이 멈추면 그만큼 DPS 가 통째로 빈다.
+	var uptime := 0.0
+	for shape in SkillDefs.SHAPE_ORDER:
+		uptime += float(game.SKILL_DUR) / float(SkillDefs.SHAPES[shape]["cooldown"])
+	print("계측 C 스킬 점유율: 네 형태를 다 끼면 시간의 %.0f%%" % [uptime * 100.0])
+
 	# 가호(ward) — 지속 버프. 배수는 **표에서 온다.** 예전엔 _combat_damage 가 1.3 을
 	# 따로 적어 둬서 화면 DPS(dps())와 실제 피해가 갈릴 수 있었다.
 	var damage_before: float = game._combat_damage()
