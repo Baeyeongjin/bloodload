@@ -3059,6 +3059,11 @@ func _skill_data(key: String) -> Dictionary:
 	data["power"] = SkillDefs.power(key, lv) * (1.0 + _skill_combo_bonus(key))
 	data["fx"] = SkillDefs.fx_of(key)
 	data["hit_fx"] = SkillDefs.hit_fx_of(key)
+	# 가호는 피해가 0이라 위 power 로는 등급이 안 갈린다. 배수·지속을 따로 얹는다 —
+	# 안 하면 레전더리 가호와 커먼 가호가 글자만 다른 같은 스킬이 된다.
+	if str(data["shape"]) == "ward":
+		data["bonus"] = SkillDefs.ward_bonus(key)
+		data["duration"] = SkillDefs.ward_duration(key, lv)
 	# 형태가 곧 대상 규칙이다. 표에 target 을 또 적으면 둘이 어긋난다.
 	data["target"] = {"strike": "melee", "wave": "area", "field": "area",
 		"ward": "self"}[str(data["shape"])]

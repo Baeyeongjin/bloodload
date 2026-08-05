@@ -289,10 +289,22 @@ func _init() -> void:
 	var damage_before: float = game._combat_damage()
 	game._skill_cd["ward_common"] = 0.0
 	game._resolve_skill("ward_common")
-	assert(is_equal_approx(game._summon_t, float(SkillDefs.SHAPES["ward"]["duration"]))
+	assert(is_equal_approx(game._summon_t, SkillDefs.ward_duration("ward_common", 0))
 		and game._combat_damage() > damage_before, "가호가 지속 버프를 못 건다")
-	assert(is_equal_approx(game._summon_bonus, float(SkillDefs.SHAPES["ward"]["bonus"])),
+	assert(is_equal_approx(game._summon_bonus, SkillDefs.ward_bonus("ward_common")),
 		"가호 배수가 표와 다르다")
+	# **등급이 가호에도 붙어야 한다.** 예전엔 duration/bonus 를 SHAPES 에서 그대로
+	# 복사해서 레전더리 `불멸의 심장`과 커먼 `피의 결계`가 완전히 같은 스킬이었다 —
+	# 소환 풀의 4분의 1이 등급 차이 없이 돌고 있었다.
+	assert(SkillDefs.ward_bonus("ward_legend") > SkillDefs.ward_bonus("ward_common"),
+		"레전더리 가호가 커먼 가호와 같은 배수다")
+	for i in GachaDefs.SKILL_TOP_INDEX:
+		var lo := str(GachaDefs.RARITIES[i]["key"])
+		var hi := str(GachaDefs.RARITIES[i + 1]["key"])
+		assert(SkillDefs.ward_bonus("ward_" + hi) > SkillDefs.ward_bonus("ward_" + lo),
+			"가호 등급이 %s -> %s 에서 안 오른다" % [lo, hi])
+	assert(SkillDefs.ward_duration("ward_common", 5)
+		> SkillDefs.ward_duration("ward_common", 0), "가호 지속이 레벨을 안 탄다")
 	game.stage = 10
 	game._phase = "fight"
 	game._boss_time = 60.0

@@ -210,6 +210,30 @@ static func cooldown(key: String, lv: int) -> float:
 	return float(shape_of(key)["cooldown"]) * maxf(CD_FLOOR, 1.0 - cut)
 
 
+# ── 가호(ward) 등급 성장 ───────────────────────────────────────────────────
+# **가호는 피해가 0이라 power() 로 등급이 안 갈린다.** 그래서 `duration 6.0` ·
+# `bonus 0.30` 이 SHAPES 표에서 그대로 복사돼, 레전더리 `불멸의 심장`과 커먼
+# `피의 결계`가 **완전히 같은 스킬**이었다 — 소환 풀의 4분의 1(가호 5종)이
+# 등급 차이 없이 돌고 있었다.
+#
+# 축을 둘로 나눈다: **등급은 배수를, 레벨은 지속시간을** 올린다.
+# 등급 배수를 rarity power(1.0~5.5)로 곱하면 레전더리가 +165% 가 되는데,
+# 23초 쿨다운에 6초 지속이면 평균 +43% 라 다른 형태를 다 눌러 버린다.
+# 표로 직접 적어 완만하게 잡았다 — 값을 보고 정할 수 있는 게 낫다.
+const WARD_BONUS := [0.30, 0.45, 0.65, 0.90, 1.20]   # 등급별 피해 배수
+const WARD_LV_DURATION := 0.3    # 레벨당 지속 +0.3초
+
+
+static func ward_bonus(key: String) -> float:
+	var idx := clampi(GachaDefs.rarity_index(str(split(key)[1])), 0, WARD_BONUS.size() - 1)
+	return float(WARD_BONUS[idx])
+
+
+static func ward_duration(key: String, lv: int) -> float:
+	return float(shape_of(key).get("duration", 0.0)) \
+		+ WARD_LV_DURATION * float(maxi(0, lv))
+
+
 # 다음 레벨에 드는 조각. 레벨이 오를수록 무거워진다.
 static func shard_cost(lv: int) -> int:
 	return SHARD_PER_LV * (maxi(0, lv) + 1)
