@@ -268,13 +268,15 @@ static func scroll(pos: Vector2, size: Vector2, horizontal := false) -> ScrollCo
 # 소형 위젯식으로 바꾸면서 "판"이 아니라 "알약/띠/원형 버튼"이 필요해졌다.
 #
 # 여백은 **실측**이다. pill 은 양끝 붉은 보석이 x 0~30 / 66~96 이고 그 사이가
-# 늘어나도 되는 가운데다. widget_bar 는 원본 가운데에 리벳 기둥이 있어서 잘라내고
+# 늘어나도 되는 가운데다. widget_bar 는 원본 가운데에 리벳 기둥이 있어서 잘라냈고,
+# **오른쪽 기둥을 좌우 반전해 왼쪽에도 붙였다** — 처음엔 왼쪽이 원본의 찢어진
+# 단면이라 "카드가 잘렸다"로 보였다. 지금은 [기둥 20 | 가죽 40 | 기둥 20] 대칭이다.
 # (기둥이 9-slice 가운데에 있으면 늘어나 뭉개진다) 찢어진 왼쪽 + 오른쪽 기둥만 남겼다.
 const PILL := "res://assets/ui/pill.png"
 const PILL_SIDE := 30
 const PILL_CAP := 6
 const WIDGET_BAR := "res://assets/ui/widget_bar.png"
-const WIDGET_SIDE := 16
+const WIDGET_SIDE := 20
 const WIDGET_CAP := 8
 
 
