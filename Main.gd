@@ -1342,7 +1342,11 @@ func _stat_effect(key: String) -> String:
 	match key:
 		"damage": return "+%s 피해" % _n(damage())
 		"speed": return "%.2f초 간격" % attack_interval()
-		"gold": return "x%.2f 흡혈" % gold_mult()
+		# "x1.01 흡혈"이라고만 쓰면 체력을 빨아먹는 능력으로 읽힌다. 실제로는
+		# **처치 시 얻는 혈액(재화)의 배수**다 — 회복과 아무 상관이 없다.
+		"gold": return "혈액 x%.2f" % gold_mult()
+		"tough": return "체력 %s" % _n(max_hp())
+		"regen": return "초당 %s 회복" % _n(regen_per_sec())
 		"crit": return "%d%%" % int(minf(1.0, 0.01 * float(stat_lv("crit") - 1)) * 100.0)
 		"critdmg": return "x%.2f 피해" % (1.5 + 0.05 * float(stat_lv("critdmg") - 1))
 	return ""
@@ -2835,8 +2839,21 @@ func _buy(key: String) -> void:
 		next = mini(next, int(s["cap"]))   # 상한을 넘겨 사도 레벨은 안 넘어간다
 	lv[key] = next
 	_apply_hp_growth(old_max)
+	# 흡혈량은 전투력에 안 들어가므로(재화 획득량이지 전투 능력이 아니다) 그냥 사면
+	# 화면에 아무 반응이 없다. 올린 값을 직접 띄운다 — **뭘 사든 반응은 있어야 한다.**
+	if key == "gold":
+		_notify_stat("혈액 획득 x%.2f" % gold_mult())
 	_save_game()
 	_refresh_hud()
+
+
+# 전투력으로 안 잡히는 스탯이 올랐을 때의 알림. 전투력 알림과 **같은 줄**을 쓴다 —
+# 둘이 동시에 뜰 일이 없고(한 번에 한 스탯만 산다), 줄을 늘리면 전투를 가린다.
+func _notify_stat(text: String) -> void:
+	_power_gain = 0.0
+	_power_toast_t = POWER_TOAST_TIME
+	_power_toast.text = text
+	_power_toast.visible = true
 
 
 # ── 루프 ───────────────────────────────────────────────────────────────────
@@ -3857,7 +3874,7 @@ func _refresh_hud() -> void:
 	_lbl_essence.text = "정수 %s" % _n(essence)
 	_lbl_gem.text = "보석 %s" % _n(gem)
 	_refresh_currency_visibility()
-	var power := Balance.combat_power(dps(), _gear_stat("tough"))
+	var power := Balance.combat_power(dps(), max_hp(), regen_per_sec())
 	_lbl_power.text = "전투력 %s · 초당 %s" % [_n(power), _n(dps())]
 	_notify_power(power)
 	if _hero_dead:

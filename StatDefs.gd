@@ -23,8 +23,12 @@ const STATS := [
 		"unlock": 15, "impl": true, "base": 40.0, "exp": 1.28},
 	{"key": "tough", "name": "체력", "icon": "stat_tough",
 		"unlock": 8, "impl": true, "base": 12.0, "exp": 1.15},
+	# 회복은 **상한 스탯**이다(Balance.REGEN_CAP). 생존시간을 무한대로 보내는
+	# 실질 곱연산이라 STATS 1장 규칙에 걸린다. 상한이 있으니 비용 지수도 무한
+	# 스탯(1.16)이 아니라 상한 스탯 쪽(1.22)으로 올린다 — STATS 6장.
 	{"key": "regen", "name": "체력회복", "icon": "stat_regen",
-		"unlock": 20, "impl": true, "base": 15.0, "exp": 1.16},
+		"unlock": 20, "impl": true, "base": 15.0, "exp": 1.22,
+		"cap": Balance.REGEN_CAP_LEVEL},
 ]
 
 

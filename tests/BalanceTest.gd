@@ -109,6 +109,24 @@ func _init() -> void:
 	assert(Balance.hero_max_hp(1, 2.0) > hp0, "방어구가 최대 체력을 안 올린다")
 	assert(is_equal_approx(Balance.hero_regen_per_sec(hp0, 1), 0.0))
 	assert(Balance.hero_regen_per_sec(hp0, 2) > 0.0, "회복 스탯 효과가 없다")
+	# 회복은 **상한이 있어야 한다.** 없으면 Lv67 에서 초당 100% 회복이라 그 뒤로
+	# 아무리 맞아도 안 죽고, survival_seconds 가 INF 를 돌려 오프라인 판정이 생존을
+	# 아예 안 보게 된다(STATS 1장: 곱연산은 반드시 상한).
+	assert(is_equal_approx(Balance.hero_regen_per_sec(hp0, 999999),
+		hp0 * Balance.REGEN_CAP), "회복에 상한이 없다")
+	assert(Balance.hero_regen_per_sec(hp0, Balance.REGEN_CAP_LEVEL - 1)
+		< Balance.hero_regen_per_sec(hp0, Balance.REGEN_CAP_LEVEL),
+		"상한 도달 전인데 회복이 안 오른다")
+	assert(StatDefs.at_cap("regen", Balance.REGEN_CAP_LEVEL),
+		"회복 상한이 스탯 표에 안 걸려 있다 — 상한 넘게 살 수 있다")
+
+	# 전투력은 **전투 능력 전부**를 반영해야 한다. 예전엔 생존 인자가 장비 방어구
+	# 하나뿐이라 체력 스탯을 올려도 지표가 1도 안 움직였다 — 성장했는데 숫자가
+	# 그대로면 그 스탯은 아무도 안 산다.
+	var pow_base := Balance.combat_power(100.0, 100.0, 0.0)
+	assert(Balance.combat_power(200.0, 100.0, 0.0) > pow_base, "공격이 전투력에 없다")
+	assert(Balance.combat_power(100.0, 200.0, 0.0) > pow_base, "체력이 전투력에 없다")
+	assert(Balance.combat_power(100.0, 100.0, 5.0) > pow_base, "회복이 전투력에 없다")
 
 	# 13) 몹 공격과 오프라인 판정은 난수 없이 같은 입력에 같은 결과를 내야 한다.
 	var slow := Balance.foe_attack_interval(3.0)

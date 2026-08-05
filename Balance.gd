@@ -99,8 +99,16 @@ static func auto_dps(hit_damage: float, interval: float, action_duration: float,
 # 방치형에 이게 있는 이유: 스탯이 6~7개가 되면 "내가 세졌나"를 스스로 못 잰다.
 # 하나로 묶어 주면 스테이지를 못 넘을 때 "전투력을 더 올려야겠다"가 바로 나온다.
 # 정확한 전투 계산이 아니라 **비교용 지표**라 단순한 게 낫다.
-static func combat_power(dps: float, tough: float) -> float:
-	return dps * 10.0 + tough * 5.0
+#
+# **생존 쪽 인자가 장비 방어구뿐이었다.** 그래서 체력 스탯을 아무리 올려도 전투력이
+# 1도 안 움직였고, 회복은 아예 안 들어 있었다 — 성장했는데 지표가 그대로면
+# 플레이어는 그 스탯을 안 산다. 실제 최대 체력과 초당 회복을 그대로 받는다.
+#
+# 흡혈량(gold)은 **일부러 뺐다.** 그건 전투 능력이 아니라 재화 획득량이다.
+# 전투력에 섞으면 "전투력을 올렸는데 왜 안 이기지"가 된다 — 대신 그 스탯을 사면
+# 별도 알림이 뜬다(Main._notify_stat).
+static func combat_power(dps: float, max_hp: float, regen_per_sec: float) -> float:
+	return dps * 10.0 + maxf(0.0, max_hp) * 0.5 + maxf(0.0, regen_per_sec) * 5.0
 
 
 # ── 생존 ──────────────────────────────────────────────────────────────────
@@ -115,10 +123,25 @@ static func hero_max_hp(tough_level: int, armor_power: float) -> float:
 		+ 0.12 * maxf(0.0, armor_power))
 
 
-# 체력회복은 최대 체력의 비율이다. Lv1은 아직 추가 효과가 없는 기준 레벨이고,
-# 첫 구매(Lv2)부터 초당 1.5%가 붙는다.
+# 체력회복은 최대 체력의 비율이다. Lv1은 아직 추가 효과가 없는 기준 레벨이다.
+#
+# **상한이 있어야 한다.** 레벨당 +1.5%p 를 무한으로 두면 Lv67 에서 초당 100% 회복이라
+# 그 뒤로는 아무리 맞아도 안 죽는다 — survival_seconds 가 INF 를 돌려주므로 오프라인
+# 판정도 생존을 아예 안 보게 된다. 이건 STATS 1장의 "곱연산은 반드시 상한" 규칙에
+# 걸리는 종류다: 회복은 생존시간을 무한대로 보내므로 실질 곱연산이다.
+#
+# 레벨당 +0.1%p / 상한 5%(20초에 풀피)로 잡았다. 몹에게 맞는 양이 대략 초당 최대
+# 체력의 1~2% 라 Lv15 언저리가 손익분기이고, 그 위는 여유분이다.
+# 상한이 생겼으므로 비용 지수도 무한 스탯(1.16)이 아니라 상한 스탯 쪽으로 올린다
+# (StatDefs, STATS 6장).
+const REGEN_PER_LEVEL := 0.001
+const REGEN_CAP := 0.05
+const REGEN_CAP_LEVEL := 51   # 0.001 x 50 = 0.05
+
+
 static func hero_regen_per_sec(max_hp: float, regen_level: int) -> float:
-	return maxf(0.0, max_hp) * 0.015 * float(maxi(1, regen_level) - 1)
+	var rate := minf(REGEN_CAP, REGEN_PER_LEVEL * float(maxi(1, regen_level) - 1))
+	return maxf(0.0, max_hp) * rate
 
 
 # 몹마다 별도 공격속도 표를 만들지 않는다. 이미 있는 hp_mult로 단단한 몹일수록
