@@ -26,12 +26,15 @@ const SAVE_PATH := "user://bloodlord.cfg"
 # 지면이 같이 내려가 바닥이 잘린다.
 # 상단 UI 를 12유닛(192px) -> 8유닛(128px)으로 줄이고 그만큼을 **하단 콘텐츠 창에**
 # 줬다. 전투 띠 높이(288px)는 그대로다 — 줄어든 건 전투가 아니라 위쪽 판이다.
-#   0..128   상단 (막이름·진행·재화)
-#   128..416 전투 띠
-#   416..800 콘텐츠 창   <- 320 에서 384 로
+# **상단 판을 없앴다**(사장님 레퍼런스). 전투 띠가 배경 원본 높이(320px)에 딱 맞게
+# 96 에서 시작하고, 위 96px 는 막 배경색 하늘이다 — 거기에 소형 위젯(재화 알약,
+# 막 이름, 진행)이 떠 있다. 판이 없어서 게임 화면이 화면의 절반을 넘는다.
+#   0..96    떠 있는 위젯 (막 배경색 위)
+#   96..416  전투 띠 (배경 원본 320px 그대로)
+#   416..800 콘텐츠 창
 #   800..896 탭바
 const STAGE_BAR_H := 7.0
-const VIEW_TOP := 128.0
+const VIEW_TOP := 96.0
 const VIEW_BOTTOM := 416.0
 # 발이 닿는 선. 배경마다 바닥 높이가 달라서 상수로 두면 캐릭터가 공중에 뜬다.
 # 배경은 항상 전투 띠에 딱 맞게 깔고(y = VIEW_TOP), 대신 이 값을 막마다 옮긴다.
@@ -556,8 +559,6 @@ func _build_scene() -> void:
 	_hud.add_child(root)
 	_hud_root = root
 	_build_frame()
-	# 상단 상태창 — 배경 위에 글씨만 얹으면 안 읽혀서 패널을 깐다.
-	_hud_root.add_child(Ui.panel(Grid.uv(0, 0), Grid.uv(36, 8)))
 	_build_topbar()
 	_offline_banner = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 12.0), Type.SIZE_SMALL,
 		Color(0.95, 0.55, 0.55))
@@ -713,30 +714,51 @@ const TOP_ICON := 32.0
 
 func _build_topbar() -> void:
 	var w := float(Grid.BG.x)
-	var right := w - TOP_PAD
-	# 1줄: 막 이름과 단계 (왼쪽) / 전투력 (오른쪽)
-	_lbl_hero = _mk_label(Vector2(TOP_PAD, 8.0), Type.SIZE_SMALL, Color(0.72, 0.92, 0.72))
-	_lbl_hero.size = Vector2(76.0, 34.0)
+	# 1줄: 재화 3종을 **알약**으로. 큰 판 하나 대신 작은 판 셋 — 판이 아니라
+	# 게임 화면 위에 떠 있는 UI 로 읽힌다(레퍼런스 방치형들의 표준 구성).
+	var currencies := [
+		["res://assets/ui/res_blood.png", Color(1.0, 0.4, 0.4)],
+		["res://assets/items/gem.png", Color(0.72, 0.82, 1.0)],
+		["res://assets/ui/res_gem.png", Color(0.86, 0.72, 1.0)],
+	]
+	var labels: Array[Label] = []
+	var icons: Array[TextureRect] = []
+	var pill_w := 182.0
+	_currency_pills.clear()
+	for i in currencies.size():
+		var x := 8.0 + float(i) * (pill_w + 6.0)
+		var pill := Ui.panel(Vector2(x, 4.0), Vector2(pill_w, 38.0))
+		_hud_root.add_child(pill)
+		_currency_pills.append(pill)
+		var ic := Ui.icon(currencies[i][0], Vector2(x + 8.0, 9.0), 28.0)
+		_hud_root.add_child(ic)
+		icons.append(ic)
+		var label := _mk_label(Vector2(x + 42.0, 8.0), Type.SIZE_SMALL, currencies[i][1])
+		label.size = Vector2(pill_w - 50.0, 30.0)
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		labels.append(label)
+	_lbl_gold = labels[0]
+	_lbl_essence = labels[1]
+	_lbl_gem = labels[2]
+	_currency_icons = icons
+	# 2줄: 막 이름·단계는 **가운데**(레퍼런스의 "미궁 54층-4" 자리), 레벨은 왼쪽.
+	_lbl_hero = _mk_label(Vector2(8.0, 46.0), Type.SIZE_SMALL, Color(0.72, 0.92, 0.72))
+	_lbl_hero.size = Vector2(110.0, 26.0)
 	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_lbl_stage = _mk_label(Vector2(TOP_PAD + 82.0, 8.0), Type.SIZE_BODY,
-		Color(1.0, 0.9, 0.55))
-	_lbl_stage.size = Vector2(w - TOP_PAD * 2.0 - 82.0, 34.0)
+	_lbl_stage = _mk_label(Vector2(120.0, 42.0), Type.SIZE_BODY, Color(1.0, 0.9, 0.55))
+	_lbl_stage.size = Vector2(w - 240.0, 30.0)
 	_lbl_stage.clip_text = true
+	_lbl_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_stage.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 전투력은 2줄로 내린다. 1줄에 같이 두면 막 이름이 길 때 글자가 겹친다.
-	_lbl_power = _mk_label(Vector2(w * 0.4, 44.0), Type.SIZE_SMALL, Color(1.0, 0.78, 0.38))
-	_lbl_power.size = Vector2(w * 0.6 - TOP_PAD, 24.0)
+	# 3줄: 왼쪽 진행 / 오른쪽 전투력. 2줄에 전투력을 두면 막 이름과 겹친다(실측).
+	_lbl_power = _mk_label(Vector2(w - 246.0, 68.0), Type.SIZE_SMALL,
+		Color(1.0, 0.78, 0.38))
+	_lbl_power.size = Vector2(238.0, 24.0)
 	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 2줄: 진행 숫자 + 진행바. 숫자만으로는 "얼마나 남았나"가 곁눈질로 안 읽힌다.
-	_lbl_prog = _mk_label(Vector2(TOP_PAD, 44.0), Type.SIZE_SMALL, Color(0.8, 0.85, 0.95))
+	_lbl_prog = _mk_label(Vector2(8.0, 68.0), Type.SIZE_SMALL, Color(0.8, 0.85, 0.95))
 	_lbl_prog.size.y = 24.0
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 진행바는 **전투 화면 맨 위에 얇게** 얹는다. 장식 바(52px)가 상단 판의 4분의 1을
-	# 먹고 있었고, 같은 숫자가 바로 위 줄에 글자로도 적혀 있었다.
-	#
-	# ProgressBar 를 안 쓴다. 테마가 걸린 채로는 최소 높이를 못 내려서 7px 로 지정해도
-	# 22px 로 그려졌다(실측). 채움 사각형 하나면 되는 일에 위젯과 싸울 이유가 없다.
 	var bar_back := ColorRect.new()
 	bar_back.color = Color(0.04, 0.03, 0.05, 0.8)
 	bar_back.position = Vector2(0.0, VIEW_TOP)
@@ -749,30 +771,6 @@ func _build_topbar() -> void:
 	_stage_bar.size = Vector2(0.0, STAGE_BAR_H)
 	_stage_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_stage_bar)
-	# 3줄: 성장에 쓰는 재화는 어디서든 한 번에 읽히도록 한 줄에 모은다.
-	_hud_root.add_child(Ui.panel(Vector2(18.0, 70.0), Vector2(540.0, 50.0)))
-	var currencies := [
-		["res://assets/ui/res_blood.png", Color(1.0, 0.4, 0.4)],
-		["res://assets/items/gem.png", Color(0.72, 0.82, 1.0)],
-		["res://assets/ui/res_gem.png", Color(0.86, 0.72, 1.0)],
-	]
-	var labels: Array[Label] = []
-	var icons: Array[TextureRect] = []
-	# 아이콘 36px = 원본 32px 보다 크지만 NEAREST 라 도트가 뭉개지지 않는다.
-	# 24px 은 32px 원본을 줄이는 쪽이라 오히려 도트가 깨져 뭉개져 보였다.
-	for i in currencies.size():
-		var x := 30.0 + float(i) * 176.0
-		var ic := Ui.icon(currencies[i][0], Vector2(x, 77.0), 36.0)
-		_hud_root.add_child(ic)
-		icons.append(ic)
-		var label := _mk_label(Vector2(x + 42.0, 79.0), Type.SIZE_SMALL, currencies[i][1])
-		label.size = Vector2(126.0, 30.0)
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		labels.append(label)
-	_lbl_gold = labels[0]
-	_lbl_essence = labels[1]
-	_lbl_gem = labels[2]
-	_currency_icons = icons
 
 
 # ── 공용 확인창 / 보상창 ───────────────────────────────────────────────────
@@ -4284,7 +4282,8 @@ func _notify_power(now: float) -> void:
 # "저건 언제 쓰나"가 계속 걸린다. **한 번이라도 얻으면 그때부터 계속 보인다** —
 # 다 쓰고 0이 됐다고 다시 사라지면 그게 더 이상하다.
 var _currency_seen := {"essence": false, "gem": false}
-var _currency_icons: Array[TextureRect] = []
+var _currency_icons: Array[TextureRect]
+var _currency_pills: Array[NinePatchRect] = []
 
 
 func _refresh_currency_visibility() -> void:
@@ -4296,6 +4295,10 @@ func _refresh_currency_visibility() -> void:
 		var open: bool = _currency_seen["essence" if i == 1 else "gem"]
 		_currency_icons[i].visible = open
 		(_lbl_essence if i == 1 else _lbl_gem).visible = open
+		# 알약 판째로 숨긴다. 아이콘만 숨기면 빈 판이 "여기 뭔가 잠겨 있다"가 아니라
+		# 고장으로 보인다.
+		if i < _currency_pills.size() + 1 and _currency_pills.size() == 3:
+			_currency_pills[i].visible = open
 
 
 # 진행 문구. 폰트 칸 폭 검사(GearTest)가 실제 문자열을 재려고 부르므로 static 이다.
