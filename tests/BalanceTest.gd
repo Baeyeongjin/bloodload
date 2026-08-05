@@ -240,6 +240,26 @@ func _init() -> void:
 	# 표시 중에 또 오르면 **합산**해서 보여 준다 — 연속 상승이 한 번으로 보이면 안 된다.
 	assert(main.power_toast(1800.0, 800.0) == "전투력 1.8k  ▲800")
 
+	# 17) 탭 알림 점. **켜지는 것보다 꺼지는 것을 검사한다** — 늘 켜져 있는 점은
+	#     없는 점과 같다. 쓸 게 없으면 반드시 꺼져야 점에 뜻이 생긴다.
+	var m = main.new()
+	m.gold = 0.0
+	m.essence = 0.0
+	m.free_pull_date = Time.get_date_string_from_system()   # 오늘 공짜 뽑기를 이미 썼다
+	assert(not m._tab_todo("growth"), "혈액이 0인데 성장 점이 켜졌다")
+	assert(not m._tab_todo("gear"), "장비를 안 꼈는데 장비 점이 켜졌다")
+	assert(not m._tab_todo("summon"), "공짜 뽑기도 조각도 없는데 소환 점이 켜졌다")
+	assert(not m._tab_todo("codex"), "도감은 눌러 올릴 게 없어 점이 없어야 한다")
+	m.gold = 1.0e12
+	assert(m._tab_todo("growth"), "혈액이 넘치는데 성장 점이 안 켜졌다")
+	m.free_pull_date = ""
+	assert(m._tab_todo("summon"), "공짜 뽑기가 남았는데 소환 점이 안 켜졌다")
+	# 보석만 쌓인 상태로는 안 켜진다 — 아껴 쓰는 재화라 잔소리하지 않기로 한 규칙.
+	m.free_pull_date = Time.get_date_string_from_system()
+	m.gem = 1.0e9
+	assert(not m._tab_todo("summon"), "보석만 있는데 소환 점이 켜졌다")
+	m.free()
+
 	print("Crit: 확률만 x%.2f / 피해만 x%.2f / 둘다 x%.2f"
 		% [only_chance, only_dmg, both])
 	print("BalanceTest OK  (10억으로 Lv%d 까지, 잔액 %.0f)" % [lv2, gold])

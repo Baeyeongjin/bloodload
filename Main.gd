@@ -222,6 +222,7 @@ var _bulk_grid: GridContainer
 var _bulk_selected := {}
 var _panels := {}           # 탭 이름 -> 창 (한 번에 하나만 보인다)
 var _tab_btns := {}
+var _tab_dots := {}         # 탭 이름 -> 붉은 알림 점 (도감은 없다)
 var _tab := "growth"
 var _codex_cells := {}
 var _codex_summary: Label
@@ -3394,6 +3395,12 @@ func _refresh_codex_detail() -> void:
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
 	["summon", "tab_battle", "소환"], ["codex", "tab_codex", "도감"]]
 
+# 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
+# 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
+const TAB_DOT_ON := ["growth", "gear", "summon"]
+const TAB_DOT := 18.0
+const TAB_DOT_AT := Vector2(42.0, 2.0)   # 아이콘(48,6)의 왼쪽 위 모서리에 걸친다
+
 
 func _build_tabbar() -> void:
 	for i in TABS.size():
@@ -3420,6 +3427,15 @@ func _build_tabbar() -> void:
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_tab_btns[name] = marker
+		# 점은 marker **밖**(_hud_root)에 단다. _select_tab 이 안 고른 탭의 marker 를
+		# 통째로 어둡게 하는데, 점이 그 안에 있으면 같이 죽는다 — 지금 보고 있지 않은
+		# 탭이야말로 점을 봐야 하는 탭이라 그러면 기능이 통째로 뒤집힌다.
+		if name in TAB_DOT_ON:
+			var dot := Ui.icon("res://assets/ui/dot_alert.png",
+				Grid.uv(i * 9, 50.0) + TAB_DOT_AT, TAB_DOT)
+			dot.visible = false
+			_hud_root.add_child(dot)
+			_tab_dots[name] = dot
 
 
 func _select_tab(name: String) -> void:
@@ -3433,6 +3449,46 @@ func _select_tab(name: String) -> void:
 		_refresh_codex()
 	elif name == "summon":
 		_refresh_gacha()
+
+
+# 지금 올릴 수 있는 게 있는 탭인가. 방치형에서 "뭘 눌러야 하나"를 탭을 하나씩 열어
+# 보고 알아내게 하면 안 된다 — 그 확인 작업이 방치를 깬다.
+#
+# 점의 뜻은 "살 수 있다"가 아니라 **놀고 있는 자원이 있다**로 잡았다:
+#   성장·장비  벌어서 쓰는 재화(혈액·정수)다. 쥐고 있는 게 곧 손해라 사면 켠다
+#   소환      보석은 아껴 두는 재화다. "살 수 있다"로 켜면 늘 켜져 있어서 잔소리가
+#             되고, 늘 켜진 점은 없는 점과 같다. **안 쓰면 사라지는 것**만 켠다 —
+#             오늘 공짜 뽑기와, 이미 모여서 쓰기만 하면 되는 스킬 조각
+func _tab_todo(tab: String) -> bool:
+	match tab:
+		"growth":
+			var major := StageDefs.major_stage(stage)
+			for s in StatDefs.STATS:
+				var key := str(s["key"])
+				if StatDefs.is_open(key, major) \
+						and not StatDefs.at_cap(key, stat_lv(key)) \
+						and gold >= _buy_cost(key, buy_step):
+					return true
+		"gear":
+			for item in equipped.values():
+				if not (item as Dictionary).is_empty() \
+						and essence >= GearDefs.upgrade_cost(item):
+					return true
+		"summon":
+			if free_pull_date != Time.get_date_string_from_system():
+				return true
+			# _skill_levelable() 를 안 쓴다 — 매 프레임 도는 자리라 배열을 새로 만들
+			# 이유가 없다. 여기는 "하나라도 있나"만 알면 된다.
+			for key in skill_owned:
+				if int(gacha_shards.get("skill:" + str(key), 0)) \
+						>= SkillDefs.shard_cost(int(skill_owned[key])):
+					return true
+	return false
+
+
+func _refresh_tab_dots() -> void:
+	for key in _tab_dots:
+		_tab_dots[key].visible = _tab_todo(key)
 
 
 func _buy(key: String) -> void:
@@ -3526,9 +3582,17 @@ func _process(delta: float) -> void:
 				# 지나가는 중인데, 그게 안 찍히면 서 있는 겹침과 구분이 안 돼서
 				# 고칠 수 없는 값을 고치려 들게 된다.
 				var settled := absf(_dash_to - hero_x) <= 1.0
-				if clr < -1.0:
-					print("겹침 %6.1f  영웅 %6.1f %s  %s %6.1f  몹도착 %s"
-						% [clr, hero_x, ("정지" if settled else "대시중"),
+				# **양쪽을 다 찍는다.** 예전엔 겹침(음수)만 찍었다 — 자가 한쪽으로만
+				# 열려 있으면 반대쪽 고장은 아무리 돌려도 안 잡힌다. 실제로 겹침을
+				# 없애고 나니 이번엔 "멀리서 싸운다"가 남았는데 지표에는 안 보였다.
+				# 겹침은 아무 몹이나 다 찍는다 — 몸이 겹치면 누구든 눈에 띈다.
+				# 뜸은 **지금 상대하는 몹만** 찍는다. 다른 칸 몹과는 원래 멀고,
+				# 그걸 같이 찍으면 진짜 문제가 잡음에 묻힌다(첫 판이 그랬다).
+				var fighting := settled and absf(_strike_spot(f) - hero_x) <= 1.0
+				if clr < -1.0 or (fighting and clr > GAP_MAX):
+					print("%s %6.1f  영웅 %6.1f %s  %s %6.1f  몹도착 %s"
+						% [("겹침" if clr < 0.0 else "뜸  "), clr, hero_x,
+						("정지" if settled else "대시중"),
 						f.display_name, f.position.x, str(_foe_arrived(f))])
 
 
@@ -3651,8 +3715,10 @@ func _foe_arrived(foe: Foe) -> bool:
 
 
 # 칼끝과 적 외곽 사이의 빈 거리. 좌우 어느 쪽에 있든 같은 식이 되도록 **거리**로만 잰다.
+# **잉크로 잰다.** 상자로 재면 빈 캔버스만큼 적이 넓은 셈이 돼서, 보스는 한쪽당
+# 20~28px 떨어진 자리를 "몸통 바로 바깥"이라고 잡는다(사장님: 멀리서 싸우는 느낌).
 func _foe_gap(foe: Foe) -> float:
-	return absf(foe.position.x - hero_x) - foe._size() * 0.5
+	return absf(foe.position.x - hero_x) - foe.body_half()
 
 
 # 피해 순간에 해당 모션의 실제 픽셀 사거리와 적 외곽을 다시 비교한다.
@@ -3681,10 +3747,14 @@ func _in_front_reach(foe: Foe) -> bool:
 # 8프레임 재생성으로 attack 사거리가 30 -> 20 으로 줄면서 생긴 일이다.
 const BODY_HALF := 30.0
 
+# 서 있을 때 몸 사이에 남아도 되는 빈 거리. 이보다 벌어지면 화면에서 "멀리서
+# 허공을 친다"로 보인다 — 2배 확대라 8 은 원본 4픽셀이고, 그 이상은 눈에 띈다.
+const GAP_MAX := 8.0
+
 
 # 그 몹을 치려면 서야 할 자리 — 몹 몸통 바로 바깥이다.
 func _strike_spot(foe: Foe) -> float:
-	var gap := foe._size() * 0.5 + BODY_HALF
+	var gap := foe.body_half() + BODY_HALF
 	return _clear_spot(foe.position.x + (-gap if foe.position.x > hero_x else gap), foe)
 
 
@@ -3701,7 +3771,7 @@ func _clear_spot(x: float, target: Foe) -> float:
 	for f in get_tree().get_nodes_in_group("foes"):
 		if f == target or not _foe_arrived(f):
 			continue
-		var need: float = f._size() * 0.5 + BODY_HALF
+		var need: float = f.body_half() + BODY_HALF
 		var d: float = x - f.position.x
 		if absf(d) >= need:
 			continue
@@ -3718,7 +3788,7 @@ const STAND_TOL := 6.0
 
 
 func _stand_ok(foe: Foe, x: float) -> bool:
-	var gap: float = absf(foe.position.x - x) - foe._size() * 0.5
+	var gap: float = absf(foe.position.x - x) - foe.body_half()
 	return gap >= BODY_HALF - STAND_TOL 		and gap <= maxf(_front_reach(), BODY_HALF) + 1.0
 
 
@@ -4715,6 +4785,7 @@ func _refresh_hud() -> void:
 	if _hero_dead:
 		_lbl_life.text = "부활 %.1f초" % maxf(0.0, _revive_t)
 		_lbl_life.add_theme_color_override("font_color", Color(0.95, 0.48, 0.48))
+	_refresh_tab_dots()
 	if _tab == "gear":
 		_refresh_gear_slots()
 	elif _tab == "growth":

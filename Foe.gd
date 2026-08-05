@@ -237,16 +237,27 @@ func shadow_r() -> float:
 
 # 이 몹의 몸이 실제로 차지하는 가로 절반(화면 픽셀).
 #
-# `_size() * 0.5` 은 **상자** 절반이라 잉크보다 넓다. 겹침을 잴 때 상자를 쓰면
-# 화면에서는 안 닿는데 지표는 겹쳤다고 한다 — 자가 틀린 채로 칸을 옮기면 과보정된다.
-# 걸어 들어오는 중에는 프레임이 바뀌므로 지금 그려지는 프레임으로 잰다.
+# `_size() * 0.5` 은 **상자** 절반이라 잉크보다 넓다. 보스는 빈 캔버스가 한쪽당
+# 20~28px 이나 돼서, 상자로 설 자리를 잡으면 그만큼 떨어져 허공을 친다.
+#
+# **프레임마다 다시 재지 않는다.** 걷는 동안 잉크 폭이 오르내리는데(실측 19.6~28.0)
+# 그 값을 설 자리에 그대로 쓰면 영웅이 몹 숨쉬는 대로 앞뒤로 흔들린다.
+# 가장 넓은 프레임으로 고정한다 — 그래야 어느 순간에도 몸이 안 겹친다.
+var _body_half := -1.0
+
+
 func body_half() -> float:
-	var tex: Texture2D = _sprite
-	if not _walk_frames.is_empty():
-		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()]
-	if tex == null:
-		return _size() * 0.5
-	return Assets.ink_half_width(tex) * (_size() / float(maxi(1, tex.get_width())))
+	if _body_half >= 0.0:
+		return _body_half
+	var frames: Array = _walk_frames if not _walk_frames.is_empty() else [_sprite]
+	var best := 0.0
+	for tex in frames:
+		if tex == null:
+			continue
+		best = maxf(best, Assets.ink_half_width(tex)
+			* (_size() / float(maxi(1, tex.get_width()))))
+	_body_half = best if best > 0.0 else _size() * 0.5
+	return _body_half
 
 
 func _size() -> float:
