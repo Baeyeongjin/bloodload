@@ -166,8 +166,12 @@ func _init() -> void:
 	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0, 4, 2.33),
 		Balance.push_seconds(60, 10.0, 1.0) + 60.0 * Balance.APPROACH_SECONDS),
 		"DPS 병목일 때 처리량이 이긴다")
-	# 구간 종류마다 시간이 다르고, 보스가 가장 길어야 한다.
-	assert(StageDefs.time_limit(10) >= StageDefs.time_limit(1), "보스 제한이 더 짧다")
+	# 구간 종류마다 시간이 다르고, **한 마리당** 보스가 가장 넉넉해야 한다.
+	# 총량으로 재면 안 된다 — 일반 구간은 100마리라 총 100초지만 한 마리에 1초다.
+	# (예전엔 60마리/60초라 총량 비교로도 맞아떨어져서 이 구분이 안 드러났다.)
+	var per_normal := StageDefs.time_limit(1) / float(StageDefs.kills_needed(1))
+	assert(StageDefs.time_limit(10) > per_normal, "보스 한 마리에 주는 시간이 잡몹보다 짧다")
+	assert(StageDefs.time_limit(5) > per_normal, "중간보스 한 마리가 잡몹보다 짧다")
 	for st in [1, 5, 10, 37, 100]:
 		assert(StageDefs.time_limit(st) > 0.0, "제한 시간이 0 이하다: %d" % st)
 
@@ -202,8 +206,9 @@ func _init() -> void:
 		var normal_ttk := _foe_hp(stage, "normal") / build_dps
 		var mid_ttk := _foe_hp(stage, "midboss") / build_dps
 		var boss_ttk := _foe_hp(stage, "boss") / build_dps
-		# 구간은 **제한 시간 안에** 끝나야 한다. 예전엔 보스만 60초를 봤는데,
-		# 60마리 구간이 제한을 넘는지가 실제로 막히는 자리다.
+		# 구간은 **제한 시간 안에** 끝나야 한다. 예전엔 보스만 봤는데, 잡몹 구간이
+		# 제한을 넘는지가 실제로 막히는 자리다. 한 마리당 0.55초(APPROACH_SECONDS)가
+		# 피해와 무관하게 나가므로 처치 수를 늘리면 여기가 먼저 터진다.
 		var kills := StageDefs.kills_needed(stage - 1)   # 보스 구간 바로 앞 = 일반 구간
 		var clear := Balance.stage_seconds(kills, _foe_hp(stage - 1, "normal"), build_dps,
 			4, StageDefs.WAVE_WALK_SECONDS)
@@ -213,9 +218,9 @@ func _init() -> void:
 			"%s 중간보스를 제한 시간 안에 못 잡는다: %.0f초" % [point["name"], mid_ttk])
 		assert(boss_ttk < StageDefs.TIME_BOSS,
 			"%s 보스를 제한 시간 안에 못 잡는다: %.0f초" % [point["name"], boss_ttk])
-		print("TTK %-5s %-7s 일반 %.2fs (60마리 %.0f초) / 중간 %.1fs / 보스 %.1fs  DPS x%.0f"
-			% [point["name"], StageDefs.label(stage), normal_ttk, clear,
-			mid_ttk, boss_ttk, mult])
+		print("TTK %-5s %-7s 일반 %.2fs (%d마리 %.0f초 / 제한 %.0f) / 중간 %.1fs / 보스 %.1fs  DPS x%.0f"
+			% [point["name"], StageDefs.label(stage), normal_ttk, kills, clear,
+			StageDefs.TIME_NORMAL, mid_ttk, boss_ttk, mult])
 
 	# 15) 축약 표기. 자릿수를 한 칸 잘못 세면 조 단위가 천 단위로 보여서
 	#     "얼마나 부자인지"가 통째로 거짓말이 된다.

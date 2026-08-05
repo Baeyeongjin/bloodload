@@ -33,6 +33,9 @@ var _flash_t := 0.0
 var _hit_t := 0.0
 var _visual_frozen := false
 var _attack_cd := 0.0
+var _swing_n := 0          # 몇 번째 스윙인가 — 특수 패턴 주기를 센다
+var _tell_t := -1.0        # 특수 패턴 예고 남은 시간 (-1 = 예고 중 아님)
+var special_swing := false # 지금 나가는 스윙이 특수 패턴인가
 var _attack_anim := -1.0
 var _impact_sent := false
 var dying := false
@@ -149,8 +152,39 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+# 보스·중간보스만 쓰는 특수 패턴. 몇 번에 한 번, **멈춰서 발밑에 착탄 범위를 그리고**
+# 넓게 내려찍는다. 예고 중에는 걸음도 스윙도 멈춘다 — 서 있는 것 자체가 신호다.
+#
+# **잡몹에는 안 붙인다.** 여섯 마리가 동시에 예고하면 바닥이 원으로 덮여서 정작
+# 전투가 안 보인다. 예고는 "지금 피해야 한다"를 말하는 것이고, 그게 매 순간이면
+# 아무 말도 아니다.
+const SPECIAL_EVERY := 3       # 세 번째 스윙마다
+const SPECIAL_TELL := 0.85     # 멈춰서 예고하는 시간
+const SPECIAL_REACH := 1.7     # 착탄 범위 배수 — 원 크기가 그대로 이 값이다
+const SPECIAL_DMG := 2.4       # 피해 배수. 대신 원 밖으로 나가면 통째로 빗나간다
+
+
+func attack_mult() -> float:
+	return SPECIAL_DMG if special_swing else 1.0
+
+
+# 지금 특수 패턴을 예고하는 중인가. 그리는 쪽(_draw_attack_tell)과 멈추는 쪽이
+# 같은 값을 봐야 그림과 움직임이 어긋나지 않는다.
+func telling() -> bool:
+	return _tell_t >= 0.0
+
+
 func _tick_attack(delta: float) -> void:
 	if not combat_active:
+		return
+	# **사거리 검사보다 먼저** 돌린다. 아래 검사에 걸려 빠져나가면 예고가 멈춘 채로
+	# 굳어서 보스가 영영 안 친다.
+	if _tell_t >= 0.0:
+		_tell_t -= delta
+		if _tell_t <= 0.0:
+			_tell_t = -1.0
+			_attack_anim = 0.0
+			_impact_sent = false
 		return
 	# **닿지 않으면 아예 안 휘두른다.** 스윙을 시작해 놓고 임팩트 때 빠지면 모션은
 	# 나가는데 피해가 0이라, 화면에서는 공격이 나갔다 안 나갔다 하는 것으로 보인다.
@@ -171,6 +205,11 @@ func _tick_attack(delta: float) -> void:
 	_attack_cd -= delta
 	if _attack_cd <= 0.0:
 		_attack_cd += attack_interval()
+		_swing_n += 1
+		special_swing = (is_boss or is_midboss) and _swing_n % SPECIAL_EVERY == 0
+		if special_swing:
+			_tell_t = SPECIAL_TELL   # 멈춰서 예고부터. 스윙은 그 뒤에 나간다
+			return
 		_attack_anim = 0.0
 		_impact_sent = false
 
@@ -199,10 +238,56 @@ func hit_offset() -> float:
 # "공격이 안 나간다"로 보인다. 80 이면 **두 칸까지** 닿아 난전이 된다.
 # 세 칸(176px)은 여전히 못 닿으므로 대시로 빠져나갈 여지는 남는다.
 func reach() -> float:
-	return _size() * 0.5 + 80.0
+	var base := _size() * 0.5 + 80.0
+	# 특수 패턴은 넓게 내려찍는다. **예고 중에도 같은 값을 쓴다** — 발밑에 그리는
+	# 원이 곧 이 값이라, 다르면 "원 밖인데 맞았다"가 된다.
+	return base * SPECIAL_REACH if special_swing else base
+
+
+# 특수 패턴 착탄 예고. **보스·중간보스가 멈춰 있는 동안에만** 발밑에 납작한 고리가
+# 차오른다. 고리 크기는 reach() 그대로라 "여기 서 있으면 맞는다"가 그대로 읽히고,
+# 안이 차는 속도가 곧 남은 시간이다.
+#
+# 바닥에만 그린다 — 몸 위에 표식을 얹으면 정작 몹이 안 보이고, 위쪽에 띄우면
+# 전투 화면을 가린다.
+# **원이 아니라 바닥에 누운 판이다.** 옆에서 보는 화면이라 원을 눌러 타원으로 그리면
+# 공중에 뜬 고리처럼 보인다 — 위아래 변을 어긋나게 민 사각형이 바닥에 깔린 것으로
+# 읽힌다(사장님이 보낸 레퍼런스가 그 모양이다).
+const TELL_BAND := 18.0        # 바닥에 깔리는 띠의 두께
+const TELL_SKEW := 12.0        # 윗변을 옆으로 미는 양 = 바닥 기울기
+
+
+func _draw_attack_tell() -> void:
+	if dying or _tell_t < 0.0:
+		return
+	var t := clampf(1.0 - _tell_t / SPECIAL_TELL, 0.0, 1.0)
+	var r := reach()
+	# 채움은 **가운데에서 좌우로** 벌어진다. 그게 곧 남은 시간이다.
+	_tell_quad(r * t, Color(0.95, 0.22, 0.18, 0.30))
+	_tell_outline(r, Color(1.0, 0.40, 0.30, 0.75))
+
+
+func _tell_points(half: float) -> PackedVector2Array:
+	var y0 := -TELL_BAND
+	return PackedVector2Array([
+		Vector2(-half + TELL_SKEW, y0), Vector2(half + TELL_SKEW, y0),
+		Vector2(half, 0.0), Vector2(-half, 0.0)])
+
+
+func _tell_quad(half: float, col: Color) -> void:
+	if half <= 1.0:
+		return
+	draw_colored_polygon(_tell_points(half), col)
+
+
+func _tell_outline(half: float, col: Color) -> void:
+	var p := _tell_points(half)
+	p.append(p[0])
+	draw_polyline(p, col, 2.0)
 
 
 func _draw() -> void:
+	_draw_attack_tell()
 	# 원점이 발밑이다. 가운데 정렬로 그리면 크기가 다른 몹끼리 발 높이가 어긋나
 	# 다 같이 떠 있는 것처럼 보인다.
 	var w := _size()

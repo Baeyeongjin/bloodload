@@ -63,6 +63,10 @@ const LANES_LEFT := [232.0, 168.0, 104.0]
 # 보였다 — 달리기 8프레임을 한 바퀴 돌리려면 최소 0.5초는 이동에 써야 한다.
 # 걷기(120)의 2배면 가까운 칸도 0.4초, 먼 칸은 1초라 뛰는 게 눈에 남는다.
 const DASH_SPEED := 240.0
+# 넉백. 대시(240)보다 빨라야 밀리는 게 보이고, 감쇠가 빨라야 곧 되돌아온다 —
+# 느리게 감쇠하면 몹에서 멀어진 채로 굳어 공격이 끊긴다.
+const KNOCK_SPEED := 380.0
+const KNOCK_DECAY := 1600.0
 # 영웅이 한 칸에 붙어 있을 때 사거리 안에 드는 몹 수. 칸 간격(64)과 몹 사거리
 # (_size/2 + 80)에서 나오는 값이라 칸을 옮기면 CombatRulesTest "계측 A" 가 잡는다.
 const FOES_IN_REACH := 3
@@ -124,6 +128,7 @@ var _motion := ""
 var _motion_hold := 0.0   # 이 시간이 남아 있는 동안은 idle 로 안 돌아간다
 var hero_hp := 100.0
 var hero_x := HERO_X      # 영웅의 현재 x. 대시로 매 프레임 움직인다
+var _knock_vx := 0.0      # 맞아서 밀리는 속도. 대시가 곧 되돌린다
 var hero_face := 1        # +1 오른쪽, -1 왼쪽. 원본이 왼쪽을 보므로 flip_h = face > 0
 var _dash_to := HERO_X    # 이번에 붙으려는 자리
 var _hero_dead := false
@@ -265,6 +270,10 @@ var _skill_synth_btn: Button
 var _step_btns: Array[Button] = []
 var _stage_bar: ColorRect
 var _stage_bar_width := 0.0
+var _stage_icon: TextureRect      # 보스 구간에만 뜨는 마크
+var _timer_bar: ColorRect
+var _timer_bar_width := 0.0
+var _lbl_time: Label
 var _offline_banner: Label
 var _power_toast: Label
 var _confirm_view: Control
@@ -425,6 +434,11 @@ func _ready() -> void:
 				_auto_equip_skills()
 			_select_tab("growth")
 			_set_growth_mode("skill")
+		# [개발 도구] 보상 창을 띄운 채로 캡처한다. 실제로는 F9(치트)나 가이드 수령으로만
+		# 뜨는데, 그 둘 다 헤드리스 캡처로는 못 눌러서 칸 크기를 눈으로 못 봤다.
+		if arg == "--reward":
+			_show_reward("보상 획득", [{"icon": "res://assets/ui/res_gem.png",
+				"label": "보석 +1.2k", "sub": "가이드 3개"}])
 		# [개발 도구] 방치 보상 상자를 띄운 채로 캡처한다.
 		if arg == "--chest":
 			chest_gold = 12480.0
@@ -751,6 +765,29 @@ func _shadow(at: Vector2, r: float) -> void:
 const TOP_PAD := 30.0        # 패널 테두리에서 띄우는 여백 (좌·우 공통)
 const TOP_ROW := 40.0        # 아이콘·글자 한 줄 높이
 const TOP_ICON := 32.0
+# 재화 알약. 아이콘은 판보다 크고 **왼쪽 끝에 걸쳐 밖으로 나온다**(레퍼런스).
+# 판 안에 얌전히 넣으면 아이콘이 작아져 무슨 재화인지 한눈에 안 갈린다.
+# 폭은 아이콘이 먹는 자리 + 숫자 칸(최장 "999.9t" 72) + 오른쪽 여백.
+const PILL_W := 118.0
+const PILL_H := 26.0
+const PILL_GAP := 6.0
+const PILL_ICON := 40.0      # 판(26)보다 크다 — 위아래로 7px 씩 튀어나온다
+const PILL_ICON_OUT := 14.0  # 왼쪽으로 나오는 양
+const BOSS_FACE := 26.0      # 진행바 아래로 걸치는 보스 마크
+# 두 바의 y. 캔버스는 32px 이지만 실제 그림은 타이머 y7~25 · 진행바 y11~21 이라
+# **캔버스 간격과 보이는 간격이 다르다.** 셋을 고르게 벌리려면 보이는 자리로 재야 한다:
+#   글자 34~58(속 38~54) · 타이머 그림 67~85 · 진행바 그림 99~109 -> 사이가 각각 13, 14.
+const TIMER_BAR_Y := 60.0
+const PROG_BAR_Y := 88.0
+# 두 바는 **같은 길이**로 가운데 정렬한다. 최장 글자가 진행 144px / 보스 이름 156px 이라
+# 홈통(260 - 좌우 캡 52 = 208)에 들어간다(GearTest 가 실제 폰트로 지킨다).
+const BAR_W := 260.0        # 타이머·진행바 공통 길이
+# 일반 구간은 **차오르고**(처치 진행도), 보스 구간은 **줄어든다**(남은 체력).
+# 방향이 반대라 색까지 같으면 어느 쪽인지 헷갈린다.
+const STAGE_BAR_COL := Color(0.72, 0.16, 0.20)
+const BOSS_BAR_COL := Color(0.88, 0.22, 0.16)
+const TIMER_BAR_COL := Color(0.30, 0.62, 0.88)
+const TIMER_LOW_COL := Color(0.92, 0.35, 0.28)   # 5초 남으면
 
 
 func _build_topbar() -> void:
@@ -761,52 +798,82 @@ func _build_topbar() -> void:
 	#   오른쪽 위: 재화 **바 하나**에 세 쌍 (알약 셋이 아니다)
 	#   가운데   : 막이름+단계 -> 상태 태그 -> 진행바(숫자는 홈통 안)
 	_build_portrait()
-	# ── 재화. 바 하나에 세 쌍. 알약(pill)은 양끝 보석이 30px 씩 먹어서 숫자가
-	# 보석 위로 올라탔다 — 여백이 5뿐인 전용 바로 바꾼다(Ui.currency_bar).
+	# ── 재화. **재화마다 검은 알약 하나씩**, 앞에 아이콘 뒤에 숫자(레퍼런스).
+	# 예전엔 돌 바 하나에 세 쌍을 우겨넣었는데, 무늬 있는 바가 늘어나면서 뭉개지고
+	# 숫자가 그 위에 얹혀 안 읽혔다. 판이 무늬 없는 검정이면 숫자가 그냥 읽힌다.
+	#
+	# 아이콘·숫자를 **알약의 자식으로** 둔다 — 그래야 잠긴 재화를 숨길 때 알약 하나만
+	# 끄면 되고, 아이콘만 남거나 빈 판이 뜨는 일이 없다.
+	# **아이콘 세 개가 헷갈리기 쉽다.** items/gem(흰 다이아)은 정수고, 보석은
+	# ui/res_gem(보라)다. 가이드 보상과 보상 창이 보석에 흰 다이아를 쓰고 있었다.
 	var currencies := [
-		["res://assets/ui/res_blood.png", Color(1.0, 0.45, 0.45)],
-		["res://assets/items/gem.png", Color(0.74, 0.84, 1.0)],
-		["res://assets/ui/res_gem.png", Color(0.88, 0.74, 1.0)],
+		["res://assets/ui/res_blood.png", Color(1.0, 0.45, 0.45)],   # 혈액
+		["res://assets/items/gem.png", Color(0.74, 0.84, 1.0)],      # 정수
+		["res://assets/ui/res_gem.png", Color(0.88, 0.74, 1.0)],     # 보석
 	]
-	var bar_w := 340.0
-	var bar_at := Vector2(w - bar_w - 8.0, 4.0)
-	_hud_root.add_child(Ui.currency_bar(bar_at, Vector2(bar_w, 30.0)))
-	var slot_w := (bar_w - 16.0) / float(currencies.size())
 	var labels: Array[Label] = []
-	var icons: Array[TextureRect] = []
 	_currency_pills.clear()
 	for i in currencies.size():
-		var at := bar_at + Vector2(8.0 + float(i) * slot_w, 0.0)
-		var ic := Ui.icon(currencies[i][0], at + Vector2(2.0, 5.0), 20.0)
-		_hud_root.add_child(ic)
-		icons.append(ic)
-		var label := _mk_label(at + Vector2(26.0, 3.0), Type.SIZE_SMALL, currencies[i][1])
-		label.size = Vector2(slot_w - 28.0, 24.0)
+		var pill := Ui.pill(Vector2(0.0, 4.0), Vector2(PILL_W, PILL_H))
+		_hud_root.add_child(pill)
+		_currency_pills.append(pill)
+		pill.add_child(Ui.icon(str(currencies[i][0]),
+			Vector2(-PILL_ICON_OUT, (PILL_H - PILL_ICON) * 0.5), PILL_ICON))
+		# _mk_label 은 _hud_root 에 붙여서 돌려준다 — 알약 밑으로 옮겨 단다.
+		# 숫자는 **오른쪽 정렬**. 왼쪽에 붙이면 자릿수가 바뀔 때마다 끝이 들쭉날쭉하다.
+		var lx := PILL_ICON - PILL_ICON_OUT + 4.0
+		var label := _mk_label(Vector2(lx, 0.0), Type.SIZE_SMALL, currencies[i][1])
+		label.size = Vector2(PILL_W - lx - 10.0, PILL_H)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		label.clip_text = true
+		_hud_root.remove_child(label)
+		pill.add_child(label)
 		labels.append(label)
 	_lbl_gold = labels[0]
 	_lbl_essence = labels[1]
 	_lbl_gem = labels[2]
-	_currency_icons = icons
-	# ── 가운데: 막이름 + 단계 -> 진행바. 한 덩어리로 붙인다.
-	var mid_x := 148.0
-	var mid_w := w - mid_x - bar_w * 0.0 - 20.0
-	_lbl_stage = _mk_label(Vector2(mid_x, 36.0), Type.SIZE_BODY, Color(1.0, 0.9, 0.55))
-	_lbl_stage.size = Vector2(mid_w, 26.0)
+	# ── 가운데: 막이름 + 단계 -> 진행바. 한 덩어리로 **화면 가운데에** 붙인다.
+	# 예전엔 초상화 오른쪽(148)부터 남는 폭을 다 썼는데, 그러면 덩어리 가운데가
+	# 352 라 화면 가운데(288)에서 64px 오른쪽으로 밀려 있었다(사장님 지적).
+	# 폭 376 이면 좌우 100px 씩 남아 왼쪽 레벨 배지(4~100)에 정확히 안 닿는다.
+	var mid_w := 376.0
+	var mid_x := (w - mid_w) * 0.5
+	# 막 이름은 뺐다 — 어느 막인지는 배경 그림이 이미 말하고, 글자는 **어디까지 왔나**
+	# 하나만 남기는 게 레퍼런스다("스테이지 1-1"). 크기도 22 -> 16, 색은 흰색.
+	_lbl_stage = _mk_label(Vector2(mid_x, 34.0), Type.SIZE_MID, Color(0.96, 0.96, 1.0))
+	_lbl_stage.size = Vector2(mid_w, 24.0)
 	_lbl_stage.clip_text = true
 	_lbl_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_stage.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var bar2_at := Vector2(mid_x, 64.0)
-	# 채움이 **틀 밑에** 깔린다. 위에 그리면 금테와 화살촉을 덮는다.
+	# ── 제한 시간 바를 진행바 **위에** 올린다(레퍼런스 배치). 두 바 모두 32px 캔버스에
+	# 그림은 그 일부(타이머 y7~25 · 진행바 y11~21)라, 캔버스끼리는 겹쳐도 그림은 안 겹친다.
+	var timer_at := Vector2((w - BAR_W) * 0.5, TIMER_BAR_Y)
+	_hud_root.add_child(Ui.timer_bar(timer_at, BAR_W))
+	_timer_bar = ColorRect.new()
+	_timer_bar.color = TIMER_BAR_COL
+	_timer_bar.position = timer_at + Vector2(float(Ui.BAR_TIMER_L), Ui.BAR_TIMER_INNER_Y)
+	_timer_bar.size = Vector2(0.0, Ui.BAR_TIMER_INNER_H)
+	_timer_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_root.add_child(_timer_bar)
+	_timer_bar_width = BAR_W - float(Ui.BAR_TIMER_L + Ui.BAR_TIMER_R)
+	_lbl_time = _mk_label(timer_at + Vector2(float(Ui.BAR_TIMER_L), 0.0),
+		Type.SIZE_SMALL, Color(0.90, 0.95, 1.0))
+	_lbl_time.size = Vector2(_timer_bar_width, Ui.BAR_TIMER_H)
+	_lbl_time.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_lbl_time.clip_text = true
+	var bar2_at := Vector2((w - BAR_W) * 0.5, PROG_BAR_Y)
+	_hud_root.add_child(Ui.slim_bar(bar2_at, BAR_W))
+	# 채움은 **틀 위에**, 홈통 안(y13~18)에만. 밑에 깔면 홈통이 불투명이라 통째로
+	# 가려진다 — 진행도가 안 채워지는 게 아니라 안 보이는 상태였다(가이드 바와 동일).
 	_stage_bar = ColorRect.new()
-	_stage_bar.color = Color(0.72, 0.16, 0.20)
+	_stage_bar.color = STAGE_BAR_COL
 	_stage_bar.position = bar2_at + Vector2(float(Ui.BAR_SLIM_SIDE), Ui.BAR_SLIM_INNER_Y)
 	_stage_bar.size = Vector2(0.0, Ui.BAR_SLIM_INNER_H)
 	_stage_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_stage_bar)
-	_hud_root.add_child(Ui.slim_bar(bar2_at, mid_w))
-	_stage_bar_width = mid_w - float(Ui.BAR_SLIM_SIDE) * 2.0
+	_stage_bar_width = BAR_W - float(Ui.BAR_SLIM_SIDE) * 2.0
 	# 글자는 **홈통 안에만.** 바 전체 폭을 주면 좌우 화살촉(26px) 위까지 뻗어 잘린다.
 	_lbl_prog = _mk_label(bar2_at + Vector2(float(Ui.BAR_SLIM_SIDE), 0.0),
 		Type.SIZE_SMALL, Color(0.98, 0.96, 0.98))
@@ -814,36 +881,56 @@ func _build_topbar() -> void:
 	_lbl_prog.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_lbl_prog.clip_text = true
+	# 보스 구간 표시. 바 아래끝에 걸쳐 얼굴이 튀어나온다(레퍼런스와 같은 자리) —
+	# 바 색만 바꾸면 "지금이 보스 구간"이 화면을 훑는 눈에는 안 걸린다.
+	# 바 **가운데보다 조금 아래**에 얹어 아래쪽으로 걸쳐 나간다. 완전히 밑으로 내리면
+	# 바와 따로 노는 아이콘이 되고, 가운데에 맞추면 바 안 글자를 물어 문구가 안 읽힌다.
+	_stage_icon = Ui.icon("res://assets/ui/icon_boss.png",
+		Vector2(w * 0.5 - BOSS_FACE * 0.5,
+			PROG_BAR_Y + Ui.BAR_SLIM_H * 0.5 + 4.0), BOSS_FACE)
+	_stage_icon.visible = false
+	_hud_root.add_child(_stage_icon)
 
 
 # 왼쪽 위 초상화 블록. 레퍼런스에서 이 자리가 "누구인가"를 담당한다.
 const PORTRAIT := 56.0
+# 32px 원본의 **정확히 절반**. 1.2배(14~15)면 축소 배율이 정수가 아니라 어떤 도트 줄은
+# 2px, 어떤 줄은 3px 이 되어 지저분해진다 — 16 이 가장 가까운 깨끗한 값이다.
+const POWER_ICON := 16.0
+
+
+# 레벨 배지가 초상화(56)보다 넓어서(96) 둘의 가운데를 맞추면 배지가 화면 밖으로
+# 나간다. **초상화를 오른쪽으로 민다** — 배지를 왼쪽 끝(4)에 붙이고 그 가운데에
+# 초상화를 얹으면 둘이 한 덩어리로 읽힌다.
+const LV_BADGE_SIZE := Vector2(96.0, 22.0)
+const LV_BADGE_AT := Vector2(4.0, 2.0 + PORTRAIT - 11.0)
+const PORTRAIT_X := LV_BADGE_AT.x + (LV_BADGE_SIZE.x - PORTRAIT) * 0.5
 
 
 func _build_portrait() -> void:
 	var face := Ui.icon("res://assets/ui/portrait_hero.png",
-		Vector2(6.0 + PORTRAIT * 0.16, 2.0 + PORTRAIT * 0.14), PORTRAIT * 0.68)
+		Vector2(PORTRAIT_X + PORTRAIT * 0.16, 2.0 + PORTRAIT * 0.14), PORTRAIT * 0.68)
 	# 얼굴을 틀보다 먼저 붙여야 틀 테두리가 얼굴 위로 온다.
 	_hud_root.add_child(face)
 	_hud_root.add_child(Ui.icon("res://assets/ui/portrait_frame.png",
-		Vector2(6.0, 2.0), PORTRAIT))
+		Vector2(PORTRAIT_X, 2.0), PORTRAIT))
 	# 레벨 배지 — 레퍼런스처럼 **초상화 원 아래에 걸쳐** 놓는다.
-	# 배지 폭은 "레벨 9999"(84px) + 좌우 여백(6+6)에서 나온 값이다. 초상화(56)보다
-	# 넓지만 레퍼런스도 Lv 배지가 초상화보다 넓다.
-	var lv_size := Vector2(96.0, 22.0)
-	# 초상화 가운데(34)에 배지 가운데를 맞추면 x=-14 로 **화면 밖으로 나간다**
-	# (배지 96 > 초상화 56). 왼쪽 여백 4를 최소로 두고 거기서부터 놓는다.
-	var lv_at := Vector2(maxf(4.0, 6.0 + PORTRAIT * 0.5 - lv_size.x * 0.5),
-		2.0 + PORTRAIT - 11.0)
-	_hud_root.add_child(Ui.lv_badge(lv_at, lv_size))
-	_lbl_hero = _mk_label(lv_at, Type.SIZE_SMALL, Color(0.88, 0.98, 0.88))
-	_lbl_hero.size = lv_size
+	# 배지 폭은 "레벨 9999"(84px) + 좌우 여백(6+6)에서 나온 값이다.
+	_hud_root.add_child(Ui.lv_badge(LV_BADGE_AT, LV_BADGE_SIZE))
+	_lbl_hero = _mk_label(LV_BADGE_AT, Type.SIZE_SMALL, Color(0.88, 0.98, 0.88))
+	_lbl_hero.size = LV_BADGE_SIZE
 	_lbl_hero.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_lbl_hero.clip_text = true
 	# 전투력 — 레퍼런스의 **교차검 + 8M**. 초상화 오른쪽 위.
-	_hud_root.add_child(Ui.icon("res://assets/ui/icon_power.png", Vector2(70.0, 4.0), 24.0))
-	_lbl_power = _mk_label(Vector2(96.0, 4.0), Type.SIZE_SMALL, Color(1.0, 0.82, 0.42))
+	# 아이콘은 **절반(24 -> 12)**. 원본 32px 짜리를 24로 그렸더니 초상화만큼 커서
+	# 얼굴과 숫자 사이에서 저 혼자 튀었다.
+	var pw_x := PORTRAIT_X + PORTRAIT + 6.0
+	_hud_root.add_child(Ui.icon("res://assets/ui/icon_power.png",
+		Vector2(pw_x, 8.0), POWER_ICON))
+	# 색은 흰색. 금색은 재화(혈액·정수·보석)가 쓰는 색이라 전투력이 재화로 읽혔다.
+	_lbl_power = _mk_label(Vector2(pw_x + POWER_ICON + 4.0, 4.0), Type.SIZE_SMALL,
+		Color(1.0, 1.0, 1.0))
 	_lbl_power.size = Vector2(96.0, 24.0)
 	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_lbl_power.clip_text = true
@@ -893,7 +980,10 @@ func _build_dialogs() -> void:
 	tap.focus_mode = Control.FOCUS_NONE
 	tap.pressed.connect(func() -> void: _reward_view.visible = false)
 	_reward_view.add_child(tap)
-	_reward_view.add_child(Ui.panel(Vector2(48.0, 320.0), Vector2(DLG_W, 176.0)))
+	# **창 높이를 칸에서 뽑는다.** 176 으로 박아 뒀더니 아이콘을 키우는 순간 글자가
+	# 창 밖으로 흘러 아래 성장 창 위에 찍혔다(사장님 지적).
+	var reward_h := 56.0 + REWARD_CELL.y + 16.0
+	_reward_view.add_child(Ui.panel(Vector2(48.0, 320.0), Vector2(DLG_W, reward_h)))
 	# 창 위에 얹는 문장. 보상은 "알림"이 아니라 "받았다"라서 머리 장식이 하나 필요하다.
 	# 크기를 적어 두지 않고 **원본에서 재서** 정확히 2배로 그린다 — 그림을 바꿔도
 	# 도트 밀도가 유지되고 가운데도 저절로 맞는다(원본이 캔버스 가운데가 아닐 수 있다).
@@ -908,14 +998,14 @@ func _build_dialogs() -> void:
 		Color(1.0, 0.88, 0.55), DLG_W, 32.0)
 	_reward_row = HBoxContainer.new()
 	_reward_row.position = Vector2(48.0, 376.0)
-	_reward_row.size = Vector2(DLG_W, 92.0)
+	_reward_row.size = Vector2(DLG_W, REWARD_CELL.y)
 	_reward_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_reward_row.add_theme_constant_override("separation", 16)
 	_reward_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_reward_view.add_child(_reward_row)
 	# 안내는 **창 밖**에 둔다. 안에 넣으면 보상과 같은 무게로 읽혀서 눈이 한 번 더 멈춘다.
-	var hint := _dlg_label(_reward_view, Vector2(48.0, 508.0), Type.SIZE_SMALL,
-		Color(0.68, 0.66, 0.72), DLG_W, 20.0)
+	var hint := _dlg_label(_reward_view, Vector2(48.0, 320.0 + reward_h + 12.0),
+		Type.SIZE_SMALL, Color(0.68, 0.66, 0.72), DLG_W, 20.0)
 	hint.text = "빈 곳을 눌러 닫기"
 
 
@@ -950,6 +1040,13 @@ func _ask(text: String, on_ok: Callable) -> void:
 	_confirm_view.visible = true
 
 
+# 보상 칸. 아이콘이 64px 이라 **뭘 받았는지 한눈에 안 들어왔다**(사장님 지적) —
+# 96 으로 키운다. 5개까지 늘어놓아도 5 x 116 = 580 이라 창(576)에 거의 맞고,
+# 실제로 5개가 뜨는 건 소환 결과뿐이라 그때는 별도 연출(_show_gacha_results)이 돈다.
+const REWARD_BOX := 96.0
+const REWARD_CELL := Vector2(116.0, 140.0)
+
+
 # entries: [{"icon": 경로, "label": "정수 +1.2k"}, ...]
 func _show_reward(title: String, entries: Array) -> void:
 	_reward_title.text = title
@@ -957,26 +1054,30 @@ func _show_reward(title: String, entries: Array) -> void:
 		child.queue_free()
 	for e in entries:
 		var cell := Control.new()
-		cell.custom_minimum_size = Vector2(88.0, 92.0)
+		cell.custom_minimum_size = Vector2(REWARD_CELL.x, REWARD_CELL.y)
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		# 등급 틀을 두르면 무엇을 얻었는지가 **색으로 먼저** 읽힌다. 이름만 있으면
 		# 커먼을 받았는지 레전더리를 받았는지 글자를 다 읽어야 안다.
 		var col := Color(e["col"]) if e.has("col") else Color(1, 1, 1)
+		var pad := (REWARD_CELL.x - REWARD_BOX) * 0.5
 		if e.has("col"):
 			var frame := Ui.image("res://assets/ui/slot_common.png",
-				Vector2(12.0, 0.0), Vector2(64.0, 64.0))
+				Vector2(pad, 0.0), Vector2(REWARD_BOX, REWARD_BOX))
 			frame.modulate = col
 			cell.add_child(frame)
-			cell.add_child(Ui.icon(str(e.get("icon", "")), Vector2(20.0, 8.0), 48.0))
+			# 틀 안쪽 구멍(slot_common 은 40x40 에 테두리 4)에 맞춰 넣는다.
+			cell.add_child(Ui.icon(str(e.get("icon", "")),
+				Vector2(pad + REWARD_BOX * 0.1, REWARD_BOX * 0.1), REWARD_BOX * 0.8))
 		else:
-			cell.add_child(Ui.icon(str(e.get("icon", "")), Vector2(12.0, 0.0), 64.0))
-		var lbl := _panel_label(cell, Vector2(0.0, 64.0), Type.SIZE_SMALL,
-			Color(0.95, 0.92, 0.88), 88.0, 16.0)
+			cell.add_child(Ui.icon(str(e.get("icon", "")),
+				Vector2(pad, 0.0), REWARD_BOX))
+		var lbl := _panel_label(cell, Vector2(0.0, REWARD_BOX + 4.0), Type.SIZE_SMALL,
+			Color(0.95, 0.92, 0.88), REWARD_CELL.x, 18.0)
 		lbl.text = str(e.get("label", ""))
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		if e.has("sub"):
-			var sub := _panel_label(cell, Vector2(0.0, 78.0), Type.SIZE_SMALL,
-				col, 88.0, 16.0)
+			var sub := _panel_label(cell, Vector2(0.0, REWARD_BOX + 22.0), Type.SIZE_SMALL,
+				col, REWARD_CELL.x, 18.0)
 			sub.text = str(e["sub"])
 			sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_reward_row.add_child(cell)
@@ -2229,7 +2330,7 @@ func _build_gacha(root: Control) -> void:
 	_gacha_buttons["one"] = one
 	var ten := Ui.button("10연  보석 300", Vector2(294.0, CONTENT_BOTTOM - 50.0),
 		Vector2(260.0, 50.0), Type.SIZE_SMALL)
-	Ui.cost_icon(ten, "res://assets/ui/res_gem.png")
+	Ui.cost_icon(ten, "res://assets/ui/res_gem.png", 32)
 	ten.pressed.connect(func() -> void: _pull_gacha(10))
 	root.add_child(ten)
 	_gacha_buttons["ten"] = ten
@@ -2674,7 +2775,7 @@ func _build_goal_widget() -> void:
 	# ── 왼쪽 보상: 두 줄을 통째로 쓴다. 틀 없이 보석 위 / 숫자 아래, 세로 가운데.
 	var num_h := 16.0
 	var reward_y := (inner_h - 32.0 - num_h) * 0.5
-	_goal_widget_icon = Ui.icon("res://assets/items/gem.png",
+	_goal_widget_icon = Ui.icon("res://assets/ui/res_gem.png",
 		inner + Vector2((GOAL_REWARD_W - 32.0) * 0.5, reward_y), 32.0)
 	_goal_widget.add_child(_goal_widget_icon)
 	_goal_widget_gem = _panel_label(_goal_widget,
@@ -2724,7 +2825,7 @@ func _on_goal_card_pressed() -> void:
 	var q := GoalDefs.quest(goal_index)
 	var got := _claim_goal()
 	if got > 0.0:
-		_show_reward("보상 획득", [{"icon": "res://assets/items/gem.png",
+		_show_reward("보상 획득", [{"icon": "res://assets/ui/res_gem.png",
 			"label": "보석 +%s" % _n(got),
 			"sub": GoalDefs.label(str(q["kind"]), int(q["step"]))}])
 
@@ -3014,7 +3115,7 @@ func _refresh_gacha() -> void:
 	if free:
 		_gacha_buttons["one"].icon = null
 	else:
-		Ui.cost_icon(_gacha_buttons["one"], "res://assets/ui/res_gem.png")
+		Ui.cost_icon(_gacha_buttons["one"], "res://assets/ui/res_gem.png", 32)
 	_gacha_buttons["ten"].text = "10연  300"
 	_gacha_buttons["one"].disabled = not free and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = gem < GachaDefs.COST * 10.0
@@ -3446,8 +3547,14 @@ func _tick_dash(delta: float) -> void:
 		return
 	if _phase != "fight":
 		_dash_to = HERO_X   # 무리를 치웠으면 걷던 자리로 돌아온다
+	# 넉백은 **대시보다 먼저** 자리를 옮긴다. 맞은 순간 뒤로 밀리고, 그 다음 프레임부터
+	# 대시가 다시 파고든다 — 밀림과 되돌아옴이 한 몸이라 "얻어맞았다"가 몸으로 읽힌다.
+	if absf(_knock_vx) > 1.0:
+		hero_x += _knock_vx * delta
+		_knock_vx = move_toward(_knock_vx, 0.0, KNOCK_DECAY * delta)
 	hero_x = move_toward(hero_x, clampf(_dash_to, 24.0, Grid.BG.x - 24.0),
 		DASH_SPEED * delta)
+	hero_x = clampf(hero_x, 24.0, Grid.BG.x - 24.0)
 	_hero.position.x = hero_x
 	_hero.flip_h = hero_face > 0
 
@@ -3481,8 +3588,10 @@ func _foe_gap(foe: Foe) -> float:
 
 
 # 피해 순간에 해당 모션의 실제 픽셀 사거리와 적 외곽을 다시 비교한다.
+# **_strike_spot 과 같은 값을 본다.** 모션 사거리가 몸통 절반보다 짧아도 몸이 닿아
+# 있으면 맞는 것이 맞다 — 그림상 휘두르는 팔이 짧을 뿐이다.
 func _can_hit_foe(foe: Foe, motion: String = "attack") -> bool:
-	return _foe_arrived(foe) and _foe_gap(foe) <= _motion_reach(motion) + 1.0
+	return _foe_arrived(foe) 		and _foe_gap(foe) <= maxf(_motion_reach(motion), BODY_HALF) + 1.0
 
 
 # **쓰는 근접 모션이 전부 닿는가.** 대시는 이 기준으로 붙어야 한다 —
@@ -3492,9 +3601,19 @@ func _in_front_reach(foe: Foe) -> bool:
 	return _foe_arrived(foe) and _foe_gap(foe) <= _front_reach() + 1.0
 
 
+# 영웅 몸통 절반. 32px 원본의 잉크가 30이고 2배로 그리므로 60px, 절반 30이다(실측).
+#
+# **설 자리와 닿는지 판정이 이 값 하나를 같이 본다.** 예전엔 자리는 모션 사거리로,
+# 판정은 모션 사거리로 따로 재서 둘 다 만족하는 거리가 아예 없었다:
+#   겹치지 않으려면 |dx| >= 52   ·   닿으려면 |dx| <= 48
+# 그래서 영웅이 몹 몸통 안으로 15px 파고든 채로 싸웠다(사장님 지적).
+# 8프레임 재생성으로 attack 사거리가 30 -> 20 으로 줄면서 생긴 일이다.
+const BODY_HALF := 30.0
+
+
 # 그 몹을 치려면 서야 할 자리 — 몹 몸통 바로 바깥이다.
 func _strike_spot(foe: Foe) -> float:
-	var gap := foe._size() * 0.5 + _front_reach() - 8.0
+	var gap := foe._size() * 0.5 + BODY_HALF
 	return foe.position.x + (-gap if foe.position.x > hero_x else gap)
 
 
@@ -3649,6 +3768,31 @@ func _tick_skills(delta: float, foes: Array) -> void:
 	_play(str(skill["motion"]), SKILL_DUR)
 
 
+# 스킬은 **제 표적을 보고 쏜다.** hero_face 는 기본공격이 표적을 잡을 때만 갱신돼서,
+# 반대편 몹에게 스킬이 나가면 투사체가 등 뒤로 날아갔다(사장님 지적). 몸도 같이
+# 돌려야 "저쪽을 보고 쐈다"가 되고, 안 그러면 뒤통수로 쏘는 그림이 된다.
+func _face_toward(target: Foe) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	# hero_face 만 바꾸면 된다 — 그림 뒤집기는 _tick_dash 가 매 프레임 이 값으로 한다.
+	hero_face = 1 if target.position.x >= hero_x else -1
+
+
+# 지금 살아서 제 자리에 선 몹 중 가장 가까운 놈. 광역 스킬이 어느 쪽을 보고
+# 터질지 정하는 데 쓴다 — 여섯 마리가 양쪽에 있어도 방향은 하나여야 한다.
+func _nearest_foe() -> Foe:
+	var best: Foe = null
+	var best_d := INF
+	for f in get_tree().get_nodes_in_group("foes"):
+		if not _foe_arrived(f):
+			continue
+		var d: float = absf(f.position.x - hero_x)
+		if d < best_d:
+			best_d = d
+			best = f
+	return best
+
+
 func _resolve_skill(key: String) -> void:
 	if _hero_dead or _phase != "fight":
 		return
@@ -3670,6 +3814,11 @@ func _resolve_skill(key: String) -> void:
 		_shake_combat(float(p["shake"]))
 	var hit := _combat_damage() * Balance.skill_hit_mult(attack_interval(), SKILL_DUR) \
 		* float(skill["power"]) / 2.2
+	# **쏘기 전에 표적 쪽으로 돈다.** 가호(ward)는 제 몸에 두르는 것이라 방향이 없다.
+	if str(skill["shape"]) == "strike":
+		_face_toward(_skill_target)
+	elif str(skill["shape"]) != "ward":
+		_face_toward(_nearest_foe())
 	match str(skill["shape"]):
 		"strike":
 			if _can_hit_foe(_skill_target, str(skill["motion"])):
@@ -3766,11 +3915,17 @@ func on_foe_attack(_foe: Foe) -> void:
 		return
 	if absf(_foe.position.x - hero_x) > _foe.reach():
 		return
-	var incoming := Balance.foe_damage(StageDefs.enemy_power(stage))
+	# 특수 패턴은 훨씬 아프다. 대신 예고 원 밖으로 나가면(대시) 위 사거리 검사에서
+	# 통째로 빗나가므로, 예고를 보고 빠지는 것이 곧 회피다.
+	var incoming := Balance.foe_damage(StageDefs.enemy_power(stage)) * _foe.attack_mult()
 	hero_hp = maxf(0.0, hero_hp - incoming)
 	_hero_flash_t = 0.10
 	_hero.self_modulate = Color(7, 7, 8)
 	_play("hurt", 0.10)
+	# **때린 놈 반대쪽으로 민다.** 피가 줄고 몸이 붉게 번쩍이는 것만으로는 맞았다는 게
+	# 잘 안 읽힌다 — 자리가 움직여야 몸으로 읽힌다. 대시가 곧 다시 파고들므로
+	# 밀렸다 돌아오는 왕복이 된다.
+	_knock_vx = KNOCK_SPEED * (-1.0 if _foe.position.x > hero_x else 1.0)
 	if hero_hp <= 0.0:
 		_kill_hero()
 
@@ -4363,26 +4518,37 @@ func _notify_power(now: float) -> void:
 # "저건 언제 쓰나"가 계속 걸린다. **한 번이라도 얻으면 그때부터 계속 보인다** —
 # 다 쓰고 0이 됐다고 다시 사라지면 그게 더 이상하다.
 var _currency_seen := {"essence": false, "gem": false}
-var _currency_icons: Array[TextureRect]
-var _currency_pills: Array[NinePatchRect] = []
+var _currency_pills: Array[Panel] = []
 
 
+# 잠긴 재화는 알약째로 숨기고, 남은 것을 **오른쪽 끝부터** 다시 붙인다.
+# 자리를 고정해 두면 가운데가 잠겼을 때 그 자리가 빈 구멍으로 남는다.
 func _refresh_currency_visibility() -> void:
-	if _currency_icons.size() < 3:
+	if _currency_pills.size() < 3:
 		return
 	_currency_seen["essence"] = _currency_seen["essence"] or essence > 0.0
 	_currency_seen["gem"] = _currency_seen["gem"] or gem > 0.0
-	for i in [1, 2]:
-		var open: bool = _currency_seen["essence" if i == 1 else "gem"]
-		_currency_icons[i].visible = open
-		(_lbl_essence if i == 1 else _lbl_gem).visible = open
-		# 알약 판째로 숨긴다. 아이콘만 숨기면 빈 판이 "여기 뭔가 잠겨 있다"가 아니라
-		# 고장으로 보인다.
-		if i < _currency_pills.size() + 1 and _currency_pills.size() == 3:
-			_currency_pills[i].visible = open
+	var open := [true, bool(_currency_seen["essence"]), bool(_currency_seen["gem"])]
+	var x := float(Grid.BG.x) - 8.0
+	for i in range(_currency_pills.size() - 1, -1, -1):
+		_currency_pills[i].visible = open[i]
+		if not open[i]:
+			continue
+		x -= PILL_W
+		_currency_pills[i].position.x = x
+		x -= PILL_GAP
+
+
+# 보스 구간에 서 있는 **한 마리**. 그 구간은 몹이 하나뿐이라 이름·체력을 그대로
+# 상단 바에 쓴다. 전진 중이면 아직 없다.
+func _lone_foe() -> Foe:
+	for f in get_tree().get_nodes_in_group("foes"):
+		return f as Foe
+	return null
 
 
 # 진행 문구. 폰트 칸 폭 검사(GearTest)가 실제 문자열을 재려고 부르므로 static 이다.
+# 보스 구간은 몹이 나온 뒤로는 이 문구 대신 보스 이름이 뜬다.
 static func stage_progress_text(at_stage: int, done: int, need: int) -> String:
 	if StageDefs.is_boss_stage(at_stage):
 		return "보스"
@@ -4393,18 +4559,39 @@ static func stage_progress_text(at_stage: int, done: int, need: int) -> String:
 
 func _refresh_hud() -> void:
 	var act: Dictionary = StageDefs.act_data(stage)
-	# 레퍼런스의 "미궁 54층-4" 자리 — 막 이름과 단계를 **한 줄에** 둔다.
-	# 진행바에서 단계를 빼서 그만큼 자리가 났다.
-	_lbl_stage.text = "%s %s" % [act["name"], StageDefs.label(stage)]
+	# 레퍼런스의 "미궁 54층-4" 자리.
+	_lbl_stage.text = "스테이지 %s" % StageDefs.label(stage)
 	var need := StageDefs.kills_needed(stage)
-	_lbl_prog.text = "%s · %d초" % [stage_progress_text(stage, kills, need),
-		int(ceil(maxf(0.0, _boss_time)))]
-	# 남은 시간이 얼마 없으면 붉게. 숫자를 안 보고 있어도 색이 먼저 눈에 들어온다.
-	_lbl_prog.add_theme_color_override("font_color",
-		Color(1.0, 0.45, 0.42) if _boss_time <= 5.0 else Color(0.8, 0.85, 0.95))
+	# 보스 구간은 처치 수가 0 아니면 1이라 진행바가 끝까지 비어 있다가 갑자기 찼다.
+	# **남은 체력을 대신 보여 준다** — 그게 이 구간의 진행도다.
+	var boss_stage := StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage)
+	var lone := _lone_foe() if boss_stage else null
+	var ratio := clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
+	if boss_stage:
+		ratio = clampf(lone.hp / maxf(1.0, lone.max_hp), 0.0, 1.0) if lone else 1.0
+	# 초는 **타이머 바로 옮겼다.** 진행바에 같이 적으면 한 줄에 두 가지를 재게 된다.
+	_lbl_prog.text = lone.display_name if lone \
+		else stage_progress_text(stage, kills, need)
+	var limit := StageDefs.time_limit(stage)
+	var left := maxf(0.0, _boss_time)
+	var low := left <= 5.0
+	if _timer_bar:
+		_timer_bar.size.x = _timer_bar_width * clampf(left / maxf(1.0, limit), 0.0, 1.0)
+		_timer_bar.color = TIMER_LOW_COL if low else TIMER_BAR_COL
+	if _lbl_time:
+		_lbl_time.text = "%d초" % int(ceil(left))
+		# 남은 시간이 얼마 없으면 붉게. 숫자를 안 보고 있어도 색이 먼저 눈에 들어온다.
+		_lbl_time.add_theme_color_override("font_color",
+			Color(1.0, 0.55, 0.5) if low else Color(0.90, 0.95, 1.0))
 	if _stage_bar:
-		_stage_bar.size.x = float(Grid.BG.x) \
-			* clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
+		# **바 폭으로 잰다.** 화면 폭(576)을 쓰고 있어서 실제 홈통(324)보다 훨씬
+		# 길게 차올랐다 — 56% 만 잡아도 바가 꽉 찬 것처럼 보였다.
+		_stage_bar.size.x = _stage_bar_width * ratio
+		_stage_bar.color = BOSS_BAR_COL if boss_stage else STAGE_BAR_COL
+	if _stage_icon:
+		# **몹 얼굴이 아니라 고정 마크다.** 얼굴을 띄웠더니 바로 뒤에 서 있는 그 보스와
+		# 겹쳐서 하나로 뭉개졌다 — 마크는 "지금 보스 구간"이라는 신호지 초상화가 아니다.
+		_stage_icon.visible = boss_stage
 	_lbl_hero.text = "레벨 %d" % hero_lv
 	# **아이콘만 두고 이름은 뺐다.** 알약 안쪽이 96px 인데 "혈액 999.9t"는 108px 이라
 	# 잘렸다(GearTest 가 잡았다). 아이콘이 바로 왼쪽에 있어서 이름은 중복이다 —

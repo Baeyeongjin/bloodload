@@ -80,6 +80,60 @@ func _init() -> void:
 		> Assets.frames("res://assets/anim/wraith_knight_attack").size(),
 		"boss_1_attack 전용 자산이 안 붙고 원본 몹 attack 으로 떨어졌다")
 	assert(is_equal_approx(boss._size(), float(Grid.SPRITE) * 2.0 * 1.25 * 2.0))
+	# 특수 패턴 — **보스·중간보스만**, 정해진 주기마다, 예고하는 동안은 멈춘다.
+	# 화면에서는 예고 원이 0.85초만 떴다 사라져서 눈으로는 있는지조차 확인이 어렵다.
+	# 여기서 스윙을 세어 확정한다.
+	var pat := Foe.new()
+	pat.setup(boss_tier, 1.0, 1.0, true)
+	pat.combat_active = true
+	pat.hero_x = pat.position.x           # 사거리 검사를 통과시킨다
+	var base_reach := pat.reach()
+	var tells := 0
+	var swings := 0
+	var was_telling := false
+	for _i in 4000:                        # 60fps 로 약 67초
+		var before := pat.special_swing
+		pat._tick_attack(1.0 / 60.0)
+		if pat.telling() and not was_telling:
+			tells += 1
+		was_telling = pat.telling()
+		if pat.special_swing and not before:
+			swings += 1
+	assert(tells > 0, "보스가 특수 패턴을 한 번도 예고하지 않는다")
+	assert(tells == swings, "예고 없이 특수 패턴이 나갔다: 예고 %d / 발동 %d" % [tells, swings])
+	# 예고 중에는 착탄 범위가 넓어져 있어야 한다 — 발밑에 그리는 원이 곧 이 값이라
+	# 다르면 "원 밖인데 맞았다"가 된다.
+	pat.special_swing = true
+	assert(pat.reach() > base_reach * 1.5, "특수 패턴인데 착탄 범위가 그대로다")
+	assert(pat.attack_mult() > 1.0, "특수 패턴인데 피해가 그대로다")
+	pat.special_swing = false
+	assert(is_equal_approx(pat.reach(), base_reach), "평타인데 범위가 특수 패턴이다")
+	# 잡몹에는 안 붙는다. 여섯 마리가 동시에 예고하면 바닥이 원으로 덮인다.
+	var mob := Foe.new()
+	mob.setup(FoeTiers.get_tier("slime"), 1.0, 1.0)
+	mob.combat_active = true
+	mob.hero_x = mob.position.x
+	for _i in 4000:
+		mob._tick_attack(1.0 / 60.0)
+		assert(not mob.telling() and not mob.special_swing, "잡몹이 특수 패턴을 쓴다")
+	pat.free()
+	mob.free()
+
+	# 영웅이 **몸을 겹치지 않고 서면서 닿아야** 한다. 이 둘이 서로 다른 값을 보면
+	# 만족하는 거리가 아예 없어져서, 영웅이 몹 안으로 파고든 채로 싸운다.
+	# 눈으로는 "겹쳐 보이네" 정도라 원인이 사거리라는 걸 못 찾는다.
+	var stand := Foe.new()
+	stand.setup(FoeTiers.get_tier("slime"), 1.0, 1.0)
+	var body_half := float(main.BODY_HALF)
+	var gap: float = stand._size() * 0.5 + body_half    # _strike_spot 과 같은 식
+	# 몸통 밖에 선다.
+	assert(gap >= stand._size() * 0.5 + 24.0, "서는 자리가 몹 몸통 안이다")
+	# 그리고 거기서 닿는다 — _can_hit_foe 는 (|dx| - 몹절반) 을
+	# max(모션 사거리, BODY_HALF) 와 잰다.
+	assert(gap - stand._size() * 0.5 <= body_half + 1.0,
+		"그 자리에 서면 공격이 안 닿는다 — 자리와 판정이 갈렸다")
+	stand.free()
+
 	var reaction := Foe.new()
 	reaction.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
 	reaction.position = Vector2(200.0, 0.0)

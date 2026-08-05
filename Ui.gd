@@ -32,12 +32,17 @@ static func panel(pos: Vector2, size: Vector2) -> NinePatchRect:
 # 원본 크기가 32~96px로 제각각이라 KEEP_ASPECT_CENTERED 로 상자 안에 맞춘다.
 static func icon(path: String, pos: Vector2, box := 0.0) -> TextureRect:
 	var t := TextureRect.new()
+	# **expand_mode 를 맨 먼저 준다.** 기본값(KEEP_SIZE)에서는 최소 크기가 원본 크기고,
+	# Control.update_minimum_size() 는 **트리 밖 노드에서 그냥 되돌아간다** — 그래서
+	# position 을 먼저 주면 그때 최소 32 가 캐시되고, 뒤늦게 expand_mode 를 바꿔도
+	# 캐시가 안 깨진다. 결과가 "size 에 12 를 넣었는데 32 로 그려진다"였고, 화면에서는
+	# 그냥 "이 아이콘만 왜 크지"로만 보였다(전투력 교차검·알림 점이 전부 그랬다).
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	t.texture = Assets.tex(path)
 	t.position = Grid.pxv(pos)
 	var s := box if box > 0.0 else float(Grid.SPRITE * 2)
 	t.size = Vector2(s, s)
-	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return t
@@ -83,6 +88,8 @@ static func button(text: String, pos: Vector2, size: Vector2,
 	return b
 
 
+# 버튼 왼쪽 비용 아이콘. 20px 이 기본인데 **소환 버튼처럼 큰 버튼에서는 작다** —
+# 버튼이 크면 아이콘도 같이 키워 넘긴다(사장님: "소환칸 보석 너무 작다").
 static func cost_icon(button: Button, path: String, width := 20) -> void:
 	button.icon = Assets.tex(path)
 	button.expand_icon = true
@@ -272,9 +279,6 @@ static func scroll(pos: Vector2, size: Vector2, horizontal := false) -> ScrollCo
 # **오른쪽 기둥을 좌우 반전해 왼쪽에도 붙였다** — 처음엔 왼쪽이 원본의 찢어진
 # 단면이라 "카드가 잘렸다"로 보였다. 지금은 [기둥 20 | 가죽 40 | 기둥 20] 대칭이다.
 # (기둥이 9-slice 가운데에 있으면 늘어나 뭉개진다) 찢어진 왼쪽 + 오른쪽 기둥만 남겼다.
-const PILL := "res://assets/ui/pill.png"
-const PILL_SIDE := 30
-const PILL_CAP := 6
 const WIDGET_BAR := "res://assets/ui/widget_bar.png"
 const WIDGET_SIDE := 20
 const WIDGET_CAP := 8
@@ -292,14 +296,6 @@ static func _slice(path: String, side: int, cap: int) -> NinePatchRect:
 	return n
 
 
-# 재화 알약. 양끝 보석은 native 크기로 남고 가운데만 늘어난다.
-static func pill(pos: Vector2, size: Vector2) -> NinePatchRect:
-	var n := _slice(PILL, PILL_SIDE, PILL_CAP)
-	n.position = pos
-	n.size = size
-	return n
-
-
 # 가로로 긴 띠(가이드 위젯). 가죽 무늬가 균일해서 가로로 많이 늘려도 안 뭉개진다.
 static func widget_bar(pos: Vector2, size: Vector2) -> NinePatchRect:
 	var n := _slice(WIDGET_BAR, WIDGET_SIDE, WIDGET_CAP)
@@ -310,16 +306,66 @@ static func widget_bar(pos: Vector2, size: Vector2) -> NinePatchRect:
 
 # 레퍼런스형 얇은 진행바. 좌우 **화살촉 캡**이 달려 있고 가운데 홈통만 늘어난다.
 #
-# 실측(assets/ui/bar_slim.png, 128x32):
+# 실측(assets/ui/bar_slim.png, 128x32, 행 15 / 열 64):
 #   화살촉 + 금기둥  좌 0~25 / 우 102~127  -> 9-slice 좌우 여백 26
-#   홈통 안쪽        y 10~21               -> 채움은 그 안에만 넣는다
+#   홈통(진짜 파인 자리) y 13~18. 그 위아래 y11·y20 은 금 베벨이라 채움이 거기까지
+#   올라가면 테두리를 덮는다.
 # **세로는 안 늘린다.** 원본이 32px 인데 22px 로 줄이면 금테가 뭉갠다 — 바 높이를
 # 원본에 맞추고(32) 가로만 늘린다.
+#
+# **채움은 틀 위에 그린다.** 홈통이 불투명(실측 alpha 255)이라 밑에 깔면 통째로
+# 가려져 진행도가 영영 안 보인다 — bar_mini 와 같은 함정이고 실제로 그 상태였다.
 const BAR_SLIM := "res://assets/ui/bar_slim.png"
 const BAR_SLIM_H := 32.0
 const BAR_SLIM_SIDE := 26        # 화살촉 + 금기둥
-const BAR_SLIM_INNER_Y := 10.0   # 홈통 위끝
-const BAR_SLIM_INNER_H := 12.0   # 홈통 높이
+const BAR_SLIM_INNER_Y := 13.0   # 홈통 위끝
+const BAR_SLIM_INNER_H := 6.0    # 홈통 높이
+
+
+# 제한 시간 바. 실측(assets/ui/bar_timer.png, 128x32, 행 16 / 열 64):
+#   왼쪽 캡(모래시계) x 0~20  ·  오른쪽 캡 x 121~127  -> 여백이 **좌우가 다르다**
+#   홈통 y 14~19 (6줄). 위아래 베벨(y10~13 · y20~23)은 덮으면 안 된다.
+# 모래시계가 왼쪽에만 있어서 좌우를 같은 값으로 자르면 그게 늘어나 뭉갠다.
+const BAR_TIMER := "res://assets/ui/bar_timer.png"
+const BAR_TIMER_H := 32.0
+const BAR_TIMER_L := 21          # 모래시계 캡
+const BAR_TIMER_R := 8
+const BAR_TIMER_INNER_Y := 14.0
+const BAR_TIMER_INNER_H := 6.0
+
+
+# 재화 알약. **자산이 아니라 코드로 그린다.** 도트 원화로 뽑으면 등근 끝이 9-slice 로
+# 늘어나면서 뭉개지는데(재화 바가 그랬다), 여기 필요한 건 무늬 없는 검은 판 하나뿐이라
+# StyleBoxFlat 이면 끝난다 — 길이가 얼마든 모서리가 정확히 둥글다.
+#
+# anti_aliasing 은 **끈다.** 켜 두면 모서리가 흐려져 도트 화면에서 저것만 붕 뜬다.
+static func pill(pos: Vector2, size: Vector2) -> Panel:
+	var p := Panel.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.03, 0.05, 0.66)
+	sb.border_color = Color(0.62, 0.55, 0.40, 0.55)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(int(size.y * 0.5))
+	sb.anti_aliasing = false
+	p.add_theme_stylebox_override("panel", sb)
+	p.position = Grid.pxv(pos)
+	p.size = size
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return p
+
+
+static func timer_bar(pos: Vector2, width: float) -> NinePatchRect:
+	var n := NinePatchRect.new()
+	n.texture = Assets.tex(BAR_TIMER)
+	n.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	n.position = pos
+	n.size = Vector2(width, BAR_TIMER_H)
+	n.set("patch_margin_left", BAR_TIMER_L)
+	n.set("patch_margin_right", BAR_TIMER_R)
+	n.set("patch_margin_top", 4)
+	n.set("patch_margin_bottom", 4)
+	n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return n
 
 
 static func slim_bar(pos: Vector2, width: float) -> NinePatchRect:
