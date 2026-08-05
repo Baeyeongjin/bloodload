@@ -168,6 +168,8 @@ var _gear_mode_buttons := {}
 var _gear_filter := "weapon"   # 보관함 탭 = 슬롯
 var _gear_filter_buttons := {}
 var _gear_detail: Control
+var _skill_detail: Control      # 스킬 상세보기 (장비 상세창과 같은 틀)
+var _skill_selected_key := ""
 var _gear_selected_key := ""
 var _bulk_view: Control
 var _bulk_title: Label
@@ -386,6 +388,9 @@ func _ready() -> void:
 				_auto_equip_skills()
 			_select_tab("growth")
 			_set_growth_mode("skill")
+		# [개발 도구] 스킬 상세보기를 띄운 채로 캡처한다.
+		if arg == "--skill-detail" and not skill_owned.is_empty():
+			_open_skill_detail(str(skill_owned.keys()[0]))
 		# [개발 도구] --skillfx[=strike|wave|field|ward] : 그 형태의 **5등급을 나란히**
 		# 실제 프로필(스타일·잔상·크기)로 얹는다. 크기와 가림 정도는 288px 띠에
 		# 올려 봐야만 판단할 수 있다.
@@ -1070,6 +1075,11 @@ func _build_skill_view(root: Control) -> void:
 	var by := CONTENT_BOTTOM - 38.0
 	# 토글이다. 켜 두면 새 스킬·레벨업·조합 때마다 알아서 다시 낀다 — 방치형에서
 	# "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
+	_skill_detail = Control.new()
+	_skill_detail.size = Vector2(PANEL_W, PANEL_H)
+	_skill_detail.visible = false
+	_skill_detail.z_index = 4
+	root.add_child(_skill_detail)
 	_skill_auto_btn = Ui.button("자동 장착", Vector2(PAD, by),
 		Vector2(bw, 38.0), Type.SIZE_SMALL)
 	_skill_auto_btn.toggle_mode = true
@@ -1163,7 +1173,9 @@ func _skill_card(key: String) -> Control:
 	hit.flat = true
 	hit.size = SK_CARD
 	hit.focus_mode = Control.FOCUS_NONE
-	hit.pressed.connect(func() -> void: _toggle_skill(key))
+	# 누르면 바로 장착이 아니라 **상세보기**가 열린다. 무엇인지 보지도 않고 끼는
+	# 것보다, 위력·쿨다운·조각을 보고 고르는 쪽이 맞다(장비 보관함과 같은 규칙).
+	hit.pressed.connect(func() -> void: _open_skill_detail(key))
 	cell.add_child(hit)
 	var frame := Ui.image("res://assets/ui/slot_common.png",
 		Vector2((SK_CARD.x - 56.0) * 0.5, 0.0), Vector2(56.0, 56.0))
@@ -2316,6 +2328,127 @@ func _receive_gacha_skill(rarity_key: String) -> Dictionary:
 			_auto_equip_skills()
 	return {"kind": "skill", "key": key, "name": SkillDefs.name_of(key),
 		"rarity": rarity_key, "icon": SkillDefs.icon_path(key)}
+
+
+# ── 스킬 상세보기 ──────────────────────────────────────────────────────────
+# 장비 상세창(_refresh_gear_detail)과 **같은 틀**이다. 왼쪽에 아이콘·등급,
+# 오른쪽에 무엇을 하는지, 아래에 장착·레벨업·조합·닫기.
+# 표기 함정: `Lv.` 는 이 블랙레터 폰트에서 `ℒ𝔇` 로 읽힌다 — 반드시 `N레벨` 로 쓴다.
+func _open_skill_detail(key: String) -> void:
+	if not skill_owned.has(key):
+		return
+	_skill_selected_key = key
+	_refresh_skill_detail()
+
+
+func _refresh_skill_detail() -> void:
+	var key := _skill_selected_key
+	if not skill_owned.has(key):
+		_skill_detail.visible = false
+		return
+	for child in _skill_detail.get_children():
+		child.queue_free()
+	_skill_detail.visible = true
+	var lv := int(skill_owned[key])
+	var data := _skill_data(key)
+	var rarity := SkillDefs.rarity_of(key)
+	var col := Color(rarity["col"])
+	# 창 뒤를 눌러도 밑의 카드가 안 눌리게 막는다.
+	var shade := ColorRect.new()
+	shade.color = Color.TRANSPARENT
+	shade.size = Vector2(PANEL_W, PANEL_H)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_skill_detail.add_child(shade)
+	_skill_detail.add_child(Ui.panel(Vector2.ZERO, Vector2(PANEL_W, PANEL_H)))
+	_skill_detail.add_child(Ui.panel(Vector2(18.0, 18.0), Vector2(190.0, 210.0)))
+	_skill_detail.add_child(Ui.panel(Vector2(216.0, 18.0), Vector2(342.0, 210.0)))
+	var frame := Ui.image("res://assets/ui/slot_common.png",
+		Vector2(49.0, 40.0), Vector2(128.0, 128.0))
+	frame.modulate = col
+	_skill_detail.add_child(frame)
+	_skill_detail.add_child(Ui.icon(SkillDefs.icon_path(key), Vector2(75.0, 66.0), 76.0))
+	var tier := _panel_label(_skill_detail, Vector2(30.0, 178.0), Type.SIZE_SMALL,
+		col, 166.0, 24.0)
+	tier.text = "%s · %d레벨" % [rarity["name"], lv]
+	tier.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var name := _panel_label(_skill_detail, Vector2(234.0, 28.0), Type.SIZE_MID,
+		col, 306.0, 28.0)
+	name.text = SkillDefs.name_of(key)
+	var role := _panel_label(_skill_detail, Vector2(234.0, 58.0), Type.SIZE_SMALL,
+		Color(0.82, 0.80, 0.86), 306.0, 20.0)
+	# data["name"] 은 스킬 이름이라 바로 위 줄과 겹친다 — 여기는 **형태**를 적는다.
+	role.text = "%s · %s · 쿨타임 %.1f초" % [str(SkillDefs.shape_of(key)["name"]),
+		str(data["role"]), float(data["cooldown"])]
+	# 무엇을 하는 스킬인지 한 줄. 가호만 피해가 0이라 다른 문장을 쓴다.
+	var effect := _panel_label(_skill_detail, Vector2(234.0, 86.0), Type.SIZE_MID,
+		Color(0.96, 0.82, 0.56), 306.0, 24.0)
+	if str(data["shape"]) == "ward":
+		effect.text = "전 피해 +%d%% · %.1f초" % [int(float(data["bonus"]) * 100.0),
+			float(data["duration"])]
+	else:
+		effect.text = "피해 x%.2f" % float(data["power"])
+	var combo := _panel_label(_skill_detail, Vector2(234.0, 114.0), Type.SIZE_MID,
+		Color(0.62, 0.88, 0.70), 306.0, 24.0)
+	var bonus := _skill_combo_bonus(key)
+	combo.text = "조합 +%d%%" % int(bonus * 100.0) if bonus > 0.0 else "조합 없음"
+	var owned_key := "skill:" + key
+	var shards := int(gacha_shards.get(owned_key, 0))
+	var cost := SkillDefs.shard_cost(lv)
+	var next := SkillDefs.promote_key(key)
+	var rows := [
+		["조각 %d / %d" % [shards, cost], Color(0.82, 0.80, 0.86)],
+		["장착 중" if skill_equipped.has(key) else "미장착", col],
+		["조합 %d / %d" % [shards, SkillDefs.SYNTH_SHARDS], Color(0.72, 0.72, 0.78)],
+		["최고 등급" if next.is_empty() else "→ " + SkillDefs.name_of(next), col],
+	]
+	for i in rows.size():
+		var r := _panel_label(_skill_detail,
+			Vector2(230.0 + float(i % 2) * 158.0, 146.0 + float(i / 2) * 26.0),
+			Type.SIZE_SMALL, rows[i][1], 148.0, 22.0)
+		r.text = rows[i][0]
+		r.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var note := _panel_label(_skill_detail, Vector2(22.0, 232.0), Type.SIZE_SMALL,
+		Color(0.72, 0.72, 0.78), 532.0, 24.0)
+	note.text = "레벨은 위력을, 등급은 한 칸 위를 연다"
+	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var equipped_now := skill_equipped.has(key)
+	var equip := Ui.button("해제" if equipped_now else "장착", Vector2(22.0, 264.0),
+		Vector2(128.0, 44.0), Type.SIZE_SMALL)
+	equip.pressed.connect(func() -> void:
+		_toggle_skill(key)
+		_refresh_skill_detail())
+	_skill_detail.add_child(equip)
+	var level := Ui.button("레벨업", Vector2(158.0, 264.0),
+		Vector2(128.0, 44.0), Type.SIZE_SMALL)
+	level.disabled = shards < cost
+	level.pressed.connect(func() -> void:
+		if _level_up_skill(key):
+			if skill_auto_equip:
+				_auto_equip_skills()
+			_refresh_skills()
+			_refresh_skill_detail()
+			_save_game())
+	_skill_detail.add_child(level)
+	var synth := Ui.button("최고" if next.is_empty() else "조합 %d" % SkillDefs.SYNTH_SHARDS,
+		Vector2(294.0, 264.0), Vector2(128.0, 44.0), Type.SIZE_SMALL)
+	synth.disabled = next.is_empty() or shards < SkillDefs.SYNTH_SHARDS
+	synth.pressed.connect(func() -> void:
+		var made := _synthesize_skill(key)
+		if made.is_empty():
+			return
+		# 재료가 사라졌으므로 **결과 스킬로 창을 옮긴다.** 없는 걸 계속 띄우면
+		# 버튼이 다 회색인 창을 보게 된다.
+		_skill_selected_key = made
+		if skill_auto_equip:
+			_auto_equip_skills()
+		_refresh_skills()
+		_refresh_skill_detail()
+		_save_game())
+	_skill_detail.add_child(synth)
+	var close := Ui.button("닫기", Vector2(430.0, 264.0),
+		Vector2(124.0, 44.0), Type.SIZE_SMALL)
+	close.pressed.connect(func() -> void: _skill_detail.visible = false)
+	_skill_detail.add_child(close)
 
 
 # 조각으로 스킬 레벨을 올린다. 장비 강화가 정수를 쓰듯 스킬은 조각을 쓴다 —

@@ -289,6 +289,17 @@ func _init() -> void:
 		["50.5%", Type.SIZE_SMALL, 85.0, "확률표 값 칸"],
 		["50레벨", Type.SIZE_SMALL, 85.0, "확률표 머리글"],
 		["레벨별 확률  ·  지금 50레벨", Type.SIZE_SMALL, 420.0, "확률표 제목"],
+		# 스킬 상세보기. 오른쪽 패널 안쪽 폭 306px, 아래 4칸 버튼 128px(닫기 124px),
+		# 재화 줄 148px. `Lv.` 는 이 폰트에서 `ℒ𝔇` 로 읽히므로 반드시 `N레벨` 이다.
+		["불멸의 심장", Type.SIZE_MID, 306.0, "스킬 상세 이름"],
+		["가호 · 버프 · 쿨타임 23.0초", Type.SIZE_SMALL, 306.0, "스킬 상세 형태 줄"],
+		["전 피해 +120% · 9.0초", Type.SIZE_MID, 306.0, "스킬 상세 가호 효과"],
+		["피해 x999.99", Type.SIZE_MID, 306.0, "스킬 상세 피해 효과"],
+		["조합 +38%", Type.SIZE_MID, 306.0, "스킬 상세 조합"],
+		["→ 불멸의 심장", Type.SIZE_SMALL, 148.0, "스킬 상세 승급 칸"],
+		["조각 999 / 999", Type.SIZE_SMALL, 148.0, "스킬 상세 조각 칸"],
+		["레벨은 위력을, 등급은 한 칸 위를 연다", Type.SIZE_SMALL, 532.0, "스킬 상세 안내"],
+		["레전더리 · 99레벨", Type.SIZE_SMALL, 166.0, "스킬 상세 등급 칸"],
 	]
 	for c in boxes:
 		var wpx := font.get_string_size(str(c[0]), HORIZONTAL_ALIGNMENT_LEFT, -1,
