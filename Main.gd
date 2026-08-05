@@ -48,15 +48,16 @@ const HERO_DRAW_SCALE := 2.0
 const IMPACT_RATIO := Foe.IMPACT_RATIO   # 원래 기준: 7프레임 중 네 번째
 const SPAWN_X := 660.0        # 화면 밖 오른쪽에서 등장
 const SPAWN_X_LEFT := -84.0   # 화면 밖 왼쪽에서 등장
-# 칸이 좌우 3개씩 여섯인데 5가 상한이라 **왼쪽 마지막 칸을 한 번도 안 썼다.**
-# 60마리/60초 구간에서는 동시 마릿수가 곧 처리량 상한이라(60 x 걷는시간 / n),
-# 한 칸을 놀리면 그만큼 시간이 모자란다.
 const MAX_FOES := 6
 # 몹이 자리를 잡는 칸. 영웅 기준이 아니라 **화면 기준 고정 좌표**다 — 예전처럼
 # 영웅 사거리 앞에 줄 세우면 영웅이 움직일 이유가 없어서 전투가 정지 화면이 된다.
-# 간격 64 = 몹 한 마리 폭(32x2)이라 겹치지 않는 최소값이다. 예전 72 는 첫 칸이
-# 영웅에서 92px 나 떨어져 **영웅 주변 184px 가 늘 비어 있었다** — 몹이 중앙으로
-# 못 오는 게 아니라 올 자리가 없었다. 첫 칸을 당겨 공백을 112px 로 줄인다.
+#
+# **한 줄(오른쪽만)로 바꿨다가 되돌렸다**(2026-08-05). 겹침은 확실히 사라졌지만
+# 몹이 한 마리씩 걸어와 멈춰 서기만 해서 전투가 정적이 됐다(사장님: "너무 재미가
+# 없어졌어"). 겹침보다 난전이 우선이다.
+#
+# 남은 문제: 간격 64 는 64px 몹 기준인데 그 뒤 몹이 1.5배(96px)까지 커져서
+# 이웃끼리 겹친다. 첫 칸도 영웅에서 56 뿐이라 78 이 필요하다. docs/HANDOFF.md 참고.
 const LANES_RIGHT := [344.0, 408.0, 472.0]
 const LANES_LEFT := [232.0, 168.0, 104.0]
 # 대시. 520 으로 잡았더니 한 칸(92~236px)을 0.2~0.45초에 붙어서 **순간이동**으로
@@ -129,6 +130,8 @@ var _motion_hold := 0.0   # 이 시간이 남아 있는 동안은 idle 로 안 �
 var hero_hp := 100.0
 var hero_x := HERO_X      # 영웅의 현재 x. 대시로 매 프레임 움직인다
 var _knock_vx := 0.0      # 맞아서 밀리는 속도. 대시가 곧 되돌린다
+var _gap_probe := false   # [개발 도구] --gaps
+var _gap_t := 0.0
 var hero_face := 1        # +1 오른쪽, -1 왼쪽. 원본이 왼쪽을 보므로 flip_h = face > 0
 var _dash_to := HERO_X    # 이번에 붙으려는 자리
 var _hero_dead := false
@@ -434,6 +437,9 @@ func _ready() -> void:
 				_auto_equip_skills()
 			_select_tab("growth")
 			_set_growth_mode("skill")
+		# [개발 도구] 영웅과 몹이 겹치는 순간만 골라 찍는다.
+		if arg == "--gaps":
+			_gap_probe = true
 		# [개발 도구] 보상 창을 띄운 채로 캡처한다. 실제로는 F9(치트)나 가이드 수령으로만
 		# 뜨는데, 그 둘 다 헤드리스 캡처로는 못 눌러서 칸 크기를 눈으로 못 봤다.
 		if arg == "--reward":
@@ -630,6 +636,15 @@ func _build_scene() -> void:
 # 시간으로 두면 그림이 몇 장이든 리듬이 같다. IMPACT_RATIO 를 프레임 번호에서
 # 비율로 바꾼 것과 같은 이유다.
 const MOTION_CYCLE := {"idle": 0.85, "walk": 0.50, "dash": 0.60, "hurt": 0.36}
+# 휘두르는 데 걸리는 시간. **공격 주기(0.60)와 분리한다.**
+#
+# 주기 전체에 9프레임을 늘려 재생하면 영웅이 늘 휘두르는 중이고, 피해가 0.257초
+# 뒤에야 들어와서 "붙었는데 반응이 없다"가 된다. 짧게 휘두르고 남는 시간은 idle 로
+# 선다 — 몹이 맞닿는 순간 바로 들어가는 느낌이 여기서 나온다(사장님 요청).
+#
+# **초당 타수는 그대로다.** 바뀌는 건 스윙 시작에서 피해까지의 지연뿐이라 DPS 도
+# 밸런스 표도 안 건드린다. 주기가 이보다 짧아지면(공격속도 만렙) 주기를 따른다.
+const ATTACK_SWING := 0.34
 const LOOPING := ["idle", "walk", "dash"]   # 나머지는 한 번 재생하고 idle 로 돌아간다
 
 
@@ -655,9 +670,14 @@ func _play(motion: String, hold := 0.0) -> void:
 
 # 공격 모션은 공격 주기에 맞춰 재생 속도를 바꾼다. 고정 fps로 두면 공격속도를
 # 올려도 그림이 그대로라 업글한 느낌이 안 난다.
+# 한 번 휘두르는 데 실제로 쓰는 시간. 주기가 스윙보다 짧아지면 주기를 따른다.
+func _attack_swing() -> float:
+	return minf(ATTACK_SWING, maxf(0.08, attack_interval()))
+
+
 func _motion_fps() -> float:
 	if _motion == "attack":
-		return float(_hero_frames.size()) / maxf(0.08, attack_interval())
+		return float(_hero_frames.size()) / _attack_swing()
 	if _motion == "heavy" or _motion == "cast":
 		return float(_hero_frames.size()) / SKILL_DUR
 	var cycle := float(MOTION_CYCLE.get(_motion, 0.85))
@@ -3489,6 +3509,21 @@ func _process(delta: float) -> void:
 	_tick_hero_attack(delta, foes)
 	_tick_dash(delta)
 	_refresh_hud()
+	# [개발 도구] --gaps : 영웅과 몹이 겹치는 순간만 골라 찍는다.
+	# **눈으로는 "겹쳐 보이네"까지밖에 못 간다.** 얼마나, 어떤 몹과, 걸어오는 중인지
+	# 서 있는 중인지가 나와야 원인이 갈린다(자리 계산이냐 칸 간격이냐).
+	if _gap_probe:
+		_gap_t += delta
+		if _gap_t >= 0.25:
+			_gap_t = 0.0
+			for f in foes:
+				if not is_instance_valid(f) or f.dying:
+					continue
+				var clr: float = absf(f.position.x - hero_x) - f._size() * 0.5 - BODY_HALF
+				if clr < -1.0:
+					print("겹침 %6.1f  영웅 %6.1f  %s %6.1f  도착 %s  모션 %s"
+						% [clr, hero_x, f.display_name, f.position.x,
+						str(_foe_arrived(f)), _motion])
 
 
 # 자동 공격은 모션 시작이 아니라 7프레임 중 네 번째에 피해가 들어간다. 예약한 대상이
@@ -3535,7 +3570,9 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 		return
 	var interval := attack_interval()
 	_attack_t = interval
-	_hero_hit_t = interval * IMPACT_RATIO
+	# 피해는 **스윙 안에서** 들어온다. 주기로 재면 짧게 휘두르고도 피해는 늦게 나가
+	# 그림과 결과가 어긋난다.
+	_hero_hit_t = _attack_swing() * IMPACT_RATIO
 	_pending_target = target
 	_play("attack")
 
@@ -3597,8 +3634,11 @@ func _can_hit_foe(foe: Foe, motion: String = "attack") -> bool:
 # **쓰는 근접 모션이 전부 닿는가.** 대시는 이 기준으로 붙어야 한다 —
 # 기본공격(30)만 보고 멈추면 더 짧은 스킬 모션(heavy 24)이 안 닿아서
 # 격 스킬이 영영 사거리 밖이 되고, 그러면 쿨다운도 안 돌아 뒤 스킬까지 막힌다.
+# **_strike_spot · _can_hit_foe 와 같은 값을 본다.** 셋이 갈리면 영웅이 서는 자리와
+# 휘두르는 조건이 어긋나서, 제 자리에 서 놓고도 "아직 멀다"며 dash 만 반복한다 —
+# 화면에서는 공격이 가끔 한 대씩 나가는 것으로 보인다("기본공격이 너무 느리다").
 func _in_front_reach(foe: Foe) -> bool:
-	return _foe_arrived(foe) and _foe_gap(foe) <= _front_reach() + 1.0
+	return _foe_arrived(foe) and _stand_ok(foe, hero_x)
 
 
 # 영웅 몸통 절반. 32px 원본의 잉크가 30이고 2배로 그리므로 60px, 절반 30이다(실측).
@@ -3614,7 +3654,41 @@ const BODY_HALF := 30.0
 # 그 몹을 치려면 서야 할 자리 — 몹 몸통 바로 바깥이다.
 func _strike_spot(foe: Foe) -> float:
 	var gap := foe._size() * 0.5 + BODY_HALF
-	return foe.position.x + (-gap if foe.position.x > hero_x else gap)
+	return _clear_spot(foe.position.x + (-gap if foe.position.x > hero_x else gap), foe)
+
+
+# 표적 **아닌** 몹의 몸통 안에는 안 선다. _strike_spot 은 표적 한 마리와의 거리만
+# 맞추므로 반대편 칸에 서 있는 몹은 계산에 안 들어가고, 영웅이 그 위로 대시해
+# 들어간다(--gaps 로 최대 53px 겹침 확인).
+#
+# **표적에게 못 닿는 자리로는 안 민다.** 밀어낸 자리가 사거리 밖이면 공격이 통째로
+# 멈춘다 — 방금 그 버그를 겪었다. 1차원이라 양쪽이 꽉 차면 밀 데가 없는데, 그때는
+# 겹친 채로 두는 게 안 때리는 것보다 낫다.
+func _clear_spot(x: float, target: Foe) -> float:
+	if not is_instance_valid(target) or not is_inside_tree():
+		return x
+	for f in get_tree().get_nodes_in_group("foes"):
+		if f == target or not _foe_arrived(f):
+			continue
+		var need: float = f._size() * 0.5 + BODY_HALF
+		var d: float = x - f.position.x
+		if absf(d) >= need:
+			continue
+		var pushed: float = f.position.x + (need if d >= 0.0 else -need)
+		if _stand_ok(target, pushed):
+			x = pushed
+	return x
+
+
+# 표적 앞 **제 자리**인가. 위쪽만 보면 몹 몸통 **안**에 서 있어도 "닿는다"가 되어
+# 그 자리에서 멈춘다 — 표적이 바뀌는 순간(앞의 몹이 죽고 뒤가 표적이 됨) 영웅이
+# 이미 그 몹 안에 있으면 그대로 겹쳐 서서 팼다(--gaps 로 -58px 확인).
+const STAND_TOL := 6.0
+
+
+func _stand_ok(foe: Foe, x: float) -> bool:
+	var gap: float = absf(foe.position.x - x) - foe._size() * 0.5
+	return gap >= BODY_HALF - STAND_TOL 		and gap <= maxf(_front_reach(), BODY_HALF) + 1.0
 
 
 # 몹이 설 자리. 영웅 기준이 아니라 **화면 기준 고정 칸**이다 — 예전처럼 영웅
@@ -4099,6 +4173,7 @@ func _spawn_foe(side := 1, line := 0) -> void:
 	f.setup(tier, StageDefs.enemy_power(stage),
 		StageDefs.gold_per_kill(stage) * gold_mult(), boss)
 	f.face = -1 if side > 0 else 1
+	# 같은 프레임에 여러 마리가 나가므로 등장 위치도 벌린다. 안 그러면 겹쳐서 걸어온다.
 	# 같은 프레임에 여러 마리가 나가므로 등장 위치도 벌린다. 안 그러면 겹쳐서 걸어온다.
 	var out := float(line) * Grid.u(3)
 	f.position = Vector2(SPAWN_X + out if side > 0 else SPAWN_X_LEFT - out, ground_y)

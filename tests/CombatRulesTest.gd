@@ -122,16 +122,22 @@ func _init() -> void:
 	# 영웅이 **몸을 겹치지 않고 서면서 닿아야** 한다. 이 둘이 서로 다른 값을 보면
 	# 만족하는 거리가 아예 없어져서, 영웅이 몹 안으로 파고든 채로 싸운다.
 	# 눈으로는 "겹쳐 보이네" 정도라 원인이 사거리라는 걸 못 찾는다.
+	var game = load("res://Main.gd").new()
 	var stand := Foe.new()
 	stand.setup(FoeTiers.get_tier("slime"), 1.0, 1.0)
 	var body_half := float(main.BODY_HALF)
 	var gap: float = stand._size() * 0.5 + body_half    # _strike_spot 과 같은 식
 	# 몸통 밖에 선다.
 	assert(gap >= stand._size() * 0.5 + 24.0, "서는 자리가 몹 몸통 안이다")
-	# 그리고 거기서 닿는다 — _can_hit_foe 는 (|dx| - 몹절반) 을
-	# max(모션 사거리, BODY_HALF) 와 잰다.
-	assert(gap - stand._size() * 0.5 <= body_half + 1.0,
-		"그 자리에 서면 공격이 안 닿는다 — 자리와 판정이 갈렸다")
+	# 그리고 거기서 **휘두르고**(_in_front_reach) **닿아야**(_can_hit_foe) 한다.
+	# 둘 다 (|dx| - 몹절반) 을 max(사거리, BODY_HALF) 와 잰다. 셋 중 하나만 빠져도
+	# 영웅이 제 자리에 서 놓고 dash 만 반복한다 — 실제로 _in_front_reach 를 빼먹어
+	# 공격이 가끔 한 대씩만 나갔다(2026-08-05).
+	var foe_gap := gap - stand._size() * 0.5
+	assert(foe_gap <= body_half + 1.0,
+		"그 자리에 서면 공격이 안 닿는다 — _can_hit_foe 가 갈렸다")
+	assert(foe_gap <= maxf(game._front_reach(), body_half) + 1.0,
+		"그 자리에 서면 휘두르지도 않는다 — _in_front_reach 가 갈렸다")
 	stand.free()
 
 	var reaction := Foe.new()
@@ -160,7 +166,6 @@ func _init() -> void:
 	boss.free()
 	reaction.free()
 
-	var game = load("res://Main.gd").new()
 	game.on_foe_hit(null, 1.0)
 	assert(is_equal_approx(game._visual_hitstop_t, game.HITSTOP_DUR),
 		"전투 시각 히트스톱이 시작되지 않았다")
@@ -168,10 +173,11 @@ func _init() -> void:
 	# 프레임 번호 3 을 적어 뒀는데, 그러면 타격 지점이 비율로 바뀐 걸 이 검사가 못 본다.
 	var attack_reach: float = game._motion_reach("attack")
 	var heavy_reach: float = game._motion_reach("heavy")
-	# 값은 **그림에서 잰 것**이다 — 8프레임으로 다시 뽑으면서 바뀌었다(30/24 -> 20/18).
+	# 값은 **그림에서 잰 것**이다 — 8프레임 재생성(30/24 -> 20/18), 그 뒤 크게 휘두르는
+	# 포즈로 attack 만 다시 뽑아 20 -> 26 이 됐다(2026-08-05).
 	# 여기 숫자를 손으로 고치는 게 맞다. 검사가 없으면 그림 교체가 사거리를 조용히
 	# 바꿔서 스킬이 안 나가는 버그로 돌아온다(2026-08-04 에 실제로 그랬다).
-	assert(is_equal_approx(attack_reach, 20.0), "attack 불투명 픽셀 사거리 측정 실패")
+	assert(is_equal_approx(attack_reach, 26.0), "attack 불투명 픽셀 사거리 측정 실패")
 	assert(is_equal_approx(heavy_reach, 18.0), "heavy 불투명 픽셀 사거리 측정 실패")
 	assert(not is_equal_approx(attack_reach, heavy_reach), "모션별 사거리가 구분되지 않는다")
 	# 타격 지점은 프레임 번호가 아니라 **모션 길이의 비율**이다. 영웅과 몹이 같은 값을
@@ -214,15 +220,18 @@ func _init() -> void:
 	assert(game._can_hit_foe(target, "attack") and game._can_hit_foe(target, "heavy"),
 		"칼끝 자리에 섰는데 근접 공격이 닿지 않는다")
 
-	# **대시는 가장 짧은 근접 모션까지 닿게 붙는다.** 기본공격(30)만 보고 멈추면
-	# 격 스킬의 heavy(24)가 안 닿아 스킬이 영영 안 나간다 — 실제로 그 버그가 있었다.
-	assert(game._front_reach() <= game._motion_reach("attack"),
-		"대시 정지 기준이 기본공격 사거리보다 느슨하다")
-	game.hero_x = target.position.x \
-		- (target._size() * 0.5 + game._motion_reach("attack"))
-	assert(game._can_hit_foe(target, "attack"), "기본공격 사거리 계산이 틀렸다")
-	assert(not game._in_front_reach(target),
-		"기본공격만 닿는 거리인데 대시가 멈춘다 — 그 자리에선 스킬 모션이 안 닿는다")
+	# **대시가 멈추는 자리에서는 어떤 근접 모션이든 닿아야 한다.** 안 그러면 영웅이
+	# 제 자리에 서 놓고 공격이 영영 안 나간다 — 실제로 두 번 그랬다: 2026-08-04 에
+	# 격 스킬 heavy 가 안 닿았고, 2026-08-05 에 _in_front_reach 만 옛 기준을 보고
+	# 있어서 기본공격이 가끔 한 대씩만 나갔다("기본공격이 너무 느리다").
+	#
+	# 지금은 서는 자리·휘두름·피해 셋 다 BODY_HALF 를 바닥으로 깐다. 어느 하나가
+	# 바닥을 빠뜨리면 여기서 걸린다.
+	var stop_gap: float = maxf(game._front_reach(), game.BODY_HALF)
+	for m in ["attack", "heavy"]:
+		var hit_gap: float = maxf(game._motion_reach(m), game.BODY_HALF)
+		assert(stop_gap <= hit_gap + 0.01,
+			"대시가 멈추는 자리(%.0f)에서 %s 가 안 닿는다(%.0f)" % [stop_gap, m, hit_gap])
 	game.hero_x = game._strike_spot(target)
 
 	# **도착 전에는 절대 안 맞는다** (HANDOFF 4-5 검증 1번이 보증한다는 규칙).
