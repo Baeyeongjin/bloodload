@@ -159,6 +159,17 @@ var codex := {}             # 몹 key -> 누적 처치 수
 # 프레임 도는 자리라 그때마다 22칸을 세지 않고, 값이 바뀌는 순간에만 다시 센다.
 var codex_found := 0
 var codex_knowledge := 0
+# 트랙 kind -> 지금까지 깬 단계 수. 가이드는 여기서 "다음 목표"를 계산한다.
+var goal_step := {}
+var _goal_panel: Control
+var _goal_rows: VBoxContainer
+var _goal_widget: Button
+var _goal_all_btn: Button
+var _goal_widget_icon: TextureRect
+var _goal_widget_name: Label
+var _goal_widget_prog: Label
+var _goal_widget_gem: Label
+var _goal_widget_cta: Label
 var _gear_slots := {}       # slot -> {frame, icon, label, btn} 표시 노드
 var _gear_equipped_view: Control
 var _gear_inventory_view: Control
@@ -371,6 +382,7 @@ func _ready() -> void:
 	# 그때 센 칸 수는 항상 0이고, 그 뒤로는 소환·분해 때만 갱신돼서
 	# 불러오기 직후에는 탭 숫자와 목록이 빈 저장본 기준으로 남아 있었다.
 	_refresh_gear_inventory()
+	_refresh_goals()
 	_refresh_hud()
 	for arg in args:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
@@ -388,6 +400,10 @@ func _ready() -> void:
 				_auto_equip_skills()
 			_select_tab("growth")
 			_set_growth_mode("skill")
+		# [개발 도구] 가이드 창을 띄운 채로 캡처한다.
+		if arg == "--goals":
+			_goal_panel.visible = true
+			_refresh_goals()
 		# [개발 도구] 스킬 상세보기를 띄운 채로 캡처한다.
 		if arg == "--skill-detail" and not skill_owned.is_empty():
 			_open_skill_detail(str(skill_owned.keys()[0]))
@@ -555,6 +571,8 @@ func _build_scene() -> void:
 	_lbl_life.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 콘텐츠 창 — 탭으로 하나만 띄운다. 세로 화면에서 전부 펼치면 전투가 안 보인다.
 	_build_panels()
+	_build_goal_panel(_hud_root)
+	_build_goal_widget()
 	_build_tabbar()
 	_build_dialogs()
 	_select_tab("growth")
@@ -707,7 +725,8 @@ func _build_topbar() -> void:
 	_lbl_prog = _mk_label(Vector2(TOP_PAD, 58.0), Type.SIZE_SMALL, Color(0.8, 0.85, 0.95))
 	_lbl_prog.size.y = 24.0
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_stage_bar = Ui.bar(Vector2(TOP_PAD, 86.0), right - TOP_PAD, Color(0.78, 0.18, 0.22))
+	_stage_bar = Ui.bar(Vector2(TOP_PAD, 86.0), right - TOP_PAD,
+		Color(0.78, 0.18, 0.22))
 	_hud_root.add_child(_stage_bar)
 	# 3줄: 성장에 쓰는 재화는 어디서든 한 번에 읽히도록 한 줄에 모은다.
 	_hud_root.add_child(Ui.panel(Vector2(18.0, 132.0), Vector2(540.0, 48.0)))
@@ -2451,6 +2470,250 @@ func _refresh_skill_detail() -> void:
 	_skill_detail.add_child(close)
 
 
+# 상시 가이드 위젯. **창을 안 열어도 지금 목표가 보인다** — 방치형에서 가이드가
+# 메뉴 안에 숨어 있으면 그게 있는 줄도 모르고, 보상이 쌓여도 안 받는다.
+#
+# 자리는 전투 띠의 **맨 아래 띠**다. 지면(ground_y ~442) 아래는 벽 그림이라
+# 몹도 영웅도 거기까지 안 내려온다 — 전투를 하나도 안 가리면서 늘 보인다.
+const GOAL_WIDGET_H := 46.0
+
+
+func _build_goal_widget() -> void:
+	_goal_widget = Button.new()
+	_goal_widget.flat = true
+	_goal_widget.focus_mode = Control.FOCUS_NONE
+	_goal_widget.position = Vector2(12.0, VIEW_BOTTOM - GOAL_WIDGET_H - 4.0)
+	_goal_widget.size = Vector2(float(Grid.BG.x) - 24.0, GOAL_WIDGET_H)
+	_goal_widget.pressed.connect(func() -> void:
+		_goal_panel.visible = true
+		_refresh_goals())
+	_hud_root.add_child(_goal_widget)
+	_goal_widget.add_child(Ui.panel(Vector2.ZERO, _goal_widget.size))
+	_goal_widget_icon = Ui.icon("res://assets/ui/stat_damage.png", Vector2(10.0, 8.0), 30.0)
+	_goal_widget.add_child(_goal_widget_icon)
+	_goal_widget_name = _panel_label(_goal_widget, Vector2(48.0, 4.0), Type.SIZE_SMALL,
+		Color(0.92, 0.90, 0.96), 300.0, 20.0)
+	_goal_widget_prog = _panel_label(_goal_widget, Vector2(48.0, 23.0), Type.SIZE_SMALL,
+		Color(0.72, 0.72, 0.78), 300.0, 18.0)
+	_goal_widget_gem = _panel_label(_goal_widget, Vector2(356.0, 13.0), Type.SIZE_SMALL,
+		Color(0.86, 0.72, 1.0), 108.0, 20.0)
+	_goal_widget_gem.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_goal_widget_cta = _panel_label(_goal_widget, Vector2(470.0, 13.0), Type.SIZE_SMALL,
+		Color(1.0, 0.85, 0.35), 72.0, 20.0)
+	_goal_widget_cta.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+
+# 위젯에 띄울 트랙 하나를 고른다. 받을 게 있으면 **그걸 먼저** 보여 준다 —
+# 없으면 진행률이 가장 높은 것(= 곧 깰 것)을 보여 줘야 다음 목표가 손에 잡힌다.
+func _goal_featured() -> String:
+	var best := ""
+	var best_ratio := -1.0
+	for t in GoalDefs.TRACKS:
+		var kind := str(t["kind"])
+		var need := GoalDefs.need(kind, _goal_step(kind))
+		var ratio := float(_goal_value(kind)) / maxf(1.0, float(need))
+		if ratio >= 1.0:
+			return kind
+		if ratio > best_ratio:
+			best_ratio = ratio
+			best = kind
+	return best
+
+
+func _refresh_goal_widget() -> void:
+	if not _goal_widget:
+		return
+	var kind := _goal_featured()
+	if kind.is_empty():
+		_goal_widget.visible = false
+		return
+	_goal_widget.visible = true
+	var t := GoalDefs.track(kind)
+	var step := _goal_step(kind)
+	var need := GoalDefs.need(kind, step)
+	var now := _goal_value(kind)
+	var ready := _goal_ready_count()
+	_goal_widget_icon.texture = Assets.tex("res://assets/ui/%s.png" % str(t["icon"]))
+	_goal_widget_name.text = "가이드 %d  ·  %s" % [GoalDefs.cleared_total(goal_step) + 1,
+		GoalDefs.label(kind, step)]
+	_goal_widget_prog.text = "%s / %s" % [_n(float(now)), _n(float(need))]
+	_goal_widget_gem.text = "보석 %s" % _n(GoalDefs.gem_reward(kind, step))
+	_goal_widget_cta.text = "받기 %d" % ready if ready > 0 else "진행 중"
+	_goal_widget_cta.add_theme_color_override("font_color",
+		Color(1.0, 0.85, 0.35) if ready > 0 else Color(0.62, 0.62, 0.68))
+	_goal_widget_name.add_theme_color_override("font_color",
+		Color(1.0, 0.85, 0.35) if ready > 0 else Color(0.92, 0.90, 0.96))
+
+
+# 받을 수 있는 걸 전부 받는다. 한 트랙이 여러 단계 밀려 있으면 그것도 다 준다 —
+# "모두 받기"를 눌렀는데 또 눌러야 하면 그건 모두 받기가 아니다.
+func _claim_all_goals() -> int:
+	var n := 0
+	var gained := 0.0
+	for t in GoalDefs.TRACKS:
+		var kind := str(t["kind"])
+		# 무한 사다리라 상한을 둔다. 값이 아주 크면(치트·복귀) 한 번에 수십 단계가
+		# 열리는데, 그걸 다 주면 보상이 몇 개였는지 화면에서 못 읽는다.
+		for _i in 50:
+			if not _goal_done(kind):
+				break
+			gained += GoalDefs.gem_reward(kind, _goal_step(kind))
+			gem += GoalDefs.gem_reward(kind, _goal_step(kind))
+			goal_step[kind] = _goal_step(kind) + 1
+			n += 1
+	if n > 0:
+		_currency_seen["gem"] = true
+		_notify_stat("가이드 %d개 완료  보석 +%s" % [n, _n(gained)])
+		_save_game()
+		_refresh_goals()
+	return n
+
+
+# 가이드 창. 트랙마다 **지금 목표 한 줄**만 보여 준다 — 다음 목표까지 미리 늘어놓으면
+# 무한 사다리라 목록이 끝나지 않는다.
+const GOAL_ROW := 46.0
+
+
+func _build_goal_panel(root: Control) -> void:
+	_goal_panel = Control.new()
+	_goal_panel.position = Vector2(0.0, VIEW_TOP)
+	_goal_panel.size = Vector2(PANEL_W, PANEL_H)
+	_goal_panel.visible = false
+	_goal_panel.z_index = 6
+	root.add_child(_goal_panel)
+	var shade := ColorRect.new()
+	shade.color = Color(0.02, 0.02, 0.04, 0.55)
+	shade.size = Vector2(PANEL_W, PANEL_H)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_goal_panel.add_child(shade)
+	_goal_panel.add_child(Ui.panel(Vector2(8.0, 8.0), Vector2(PANEL_W - 16.0, PANEL_H - 16.0)))
+	var title := _panel_label(_goal_panel, Vector2(24.0, 20.0), Type.SIZE_MID,
+		Color(1.0, 0.88, 0.52), PANEL_W - 48.0, 28.0)
+	title.name = "title"
+	title.text = "성장 가이드"
+	# **스크롤이 필요하다.** 트랙 6개 x 52px = 312px 인데 창 안쪽은 200px 남짓이라
+	# 그냥 쌓으면 목록이 창을 뚫고 나가 닫기 버튼 위에 깔린다(실제로 그랬다).
+	# 트랙이 늘어날 것도 정해져 있으니 처음부터 스크롤로 둔다.
+	var sc := Ui.scroll(Vector2(20.0, 52.0),
+		Vector2(PANEL_W - 40.0, PANEL_H - 52.0 - 62.0))
+	_goal_panel.add_child(sc)
+	_goal_rows = VBoxContainer.new()
+	_goal_rows.custom_minimum_size = Vector2(PANEL_W - 40.0 - Ui.SCROLL_W, 0.0)
+	_goal_rows.add_theme_constant_override("separation", 6)
+	sc.add_child(_goal_rows)
+	_goal_all_btn = Ui.button("모두 받기", Vector2(20.0, PANEL_H - 54.0),
+		Vector2(160.0, 40.0), Type.SIZE_SMALL)
+	_goal_all_btn.pressed.connect(func() -> void: _claim_all_goals())
+	_goal_panel.add_child(_goal_all_btn)
+	var close := Ui.button("닫기", Vector2(PANEL_W - 20.0 - 140.0, PANEL_H - 54.0),
+		Vector2(140.0, 40.0), Type.SIZE_SMALL)
+	close.pressed.connect(func() -> void: _goal_panel.visible = false)
+	_goal_panel.add_child(close)
+
+
+func _refresh_goals() -> void:
+	if not _goal_rows:
+		return
+	var ready := _goal_ready_count()
+	_refresh_goal_widget()
+	if not _goal_panel.visible:
+		return
+	if _goal_all_btn:
+		_goal_all_btn.disabled = ready == 0
+		_goal_all_btn.text = "모두 받기 %d" % ready if ready > 0 else "모두 받기"
+	var title: Label = _goal_panel.get_node_or_null("title")
+	if title:
+		title.text = "성장 가이드  ·  %d개 완료" % GoalDefs.cleared_total(goal_step)
+	for child in _goal_rows.get_children():
+		child.queue_free()
+	for t in GoalDefs.TRACKS:
+		var kind := str(t["kind"])
+		var step := _goal_step(kind)
+		var need := GoalDefs.need(kind, step)
+		var now := _goal_value(kind)
+		var done := now >= need
+		var row := Control.new()
+		var row_w := PANEL_W - 40.0 - Ui.SCROLL_W
+		row.custom_minimum_size = Vector2(row_w, GOAL_ROW)
+		row.add_child(Ui.panel(Vector2.ZERO, Vector2(row_w, GOAL_ROW)))
+		row.add_child(Ui.icon("res://assets/ui/%s.png" % str(t["icon"]),
+			Vector2(10.0, 8.0), 30.0))
+		var name := _panel_label(row, Vector2(48.0, 6.0), Type.SIZE_SMALL,
+			Color(1.0, 0.85, 0.35) if done else Color(0.86, 0.86, 0.9), 210.0, 20.0)
+		name.text = GoalDefs.label(kind, step)
+		var prog := _panel_label(row, Vector2(48.0, 24.0), Type.SIZE_SMALL,
+			Color(0.72, 0.72, 0.78), 210.0, 18.0)
+		prog.text = "%s / %s" % [_n(float(now)), _n(float(need))]
+		var reward := _panel_label(row, Vector2(264.0, 14.0), Type.SIZE_SMALL,
+			Color(0.86, 0.72, 1.0), 110.0, 20.0)
+		reward.text = "보석 %s" % _n(GoalDefs.gem_reward(kind, step))
+		var claim := Ui.button("받기" if done else "진행 중",
+			Vector2(row_w - 108.0, 6.0), Vector2(100.0, 34.0), Type.SIZE_SMALL)
+		claim.disabled = not done
+		claim.pressed.connect(func() -> void: _claim_goal(kind))
+		row.add_child(claim)
+		_goal_rows.add_child(row)
+
+
+# ── 성장 가이드 ────────────────────────────────────────────────────────────
+# 트랙마다 "지금 값"을 돌려준다. GoalDefs.TRACKS 에 새 kind 를 넣으면 여기도
+# 한 줄이 필요하다 — GoalTest 가 빠진 걸 잡는다.
+func _goal_value(kind: String) -> int:
+	match kind:
+		"stage": return best_stage
+		"kills": return _total_kills()
+		"hero_lv": return hero_lv
+		"damage_lv": return stat_lv("damage")
+		"pulls":
+			var sum := 0
+			for k in gacha_pulls:
+				sum += int(gacha_pulls[k])
+			return sum
+		"knowledge": return codex_knowledge
+	return 0
+
+
+func _total_kills() -> int:
+	var sum := 0
+	for k in codex:
+		sum += int(codex[k])
+	return sum
+
+
+func _goal_step(kind: String) -> int:
+	return int(goal_step.get(kind, 0))
+
+
+func _goal_done(kind: String) -> bool:
+	return _goal_value(kind) >= GoalDefs.need(kind, _goal_step(kind))
+
+
+# 받을 게 하나라도 있나. 버튼에 점을 찍는 데 쓴다 — 방치형에서 보상이 쌓인 걸
+# 모르고 지나가면 그건 플레이어 잘못이 아니라 UI 잘못이다.
+func _goal_ready_count() -> int:
+	var n := 0
+	for t in GoalDefs.TRACKS:
+		if _goal_done(str(t["kind"])):
+			n += 1
+	return n
+
+
+# **한 번에 한 단계만** 올린다. 조건을 이미 여러 단계 넘겼어도 누를 때마다 하나씩
+# 준다 — 한꺼번에 주면 보상이 몇 개였는지 화면에서 안 읽힌다.
+func _claim_goal(kind: String) -> bool:
+	if not _goal_done(kind):
+		return false
+	var step := _goal_step(kind)
+	var reward := GoalDefs.gem_reward(kind, step)
+	gem += reward
+	_currency_seen["gem"] = true
+	goal_step[kind] = step + 1
+	_notify_stat("%s 완료  보석 +%s" % [GoalDefs.label(kind, step), _n(reward)])
+	_save_game()
+	_refresh_goals()   # _refresh_hud 는 매 프레임 도니까 여기서 부를 필요가 없다
+	return true
+
+
 # 조각으로 스킬 레벨을 올린다. 장비 강화가 정수를 쓰듯 스킬은 조각을 쓴다 —
 # 재화를 새로 만들지 않는다.
 func _level_up_skill(key: String) -> bool:
@@ -2983,6 +3246,9 @@ func _buy(key: String) -> void:
 # 전투력으로 안 잡히는 스탯이 올랐을 때의 알림. 전투력 알림과 **같은 줄**을 쓴다 —
 # 둘이 동시에 뜰 일이 없고(한 번에 한 스탯만 산다), 줄을 늘리면 전투를 가린다.
 func _notify_stat(text: String) -> void:
+	# 씬을 안 띄운 검사에서도 불린다(가이드 수령 검사). 라벨이 없으면 조용히 넘긴다.
+	if _power_toast == null:
+		return
 	_power_gain = 0.0
 	_power_toast_t = POWER_TOAST_TIME
 	_power_toast.text = text
@@ -2996,6 +3262,7 @@ func _process(delta: float) -> void:
 	var visual_frozen := _visual_hitstop_t > 0.0
 	_visual_hitstop_t = maxf(0.0, _visual_hitstop_t - delta)
 	_hitstop_cd = maxf(0.0, _hitstop_cd - delta)
+	_shake_cd = maxf(0.0, _shake_cd - delta)
 	_tick_motion(0.0 if visual_frozen else delta)
 	queue_redraw()   # 그림자는 몹이 움직일 때마다 다시 그려야 한다
 	if _offline_t > 0.0:
@@ -3367,6 +3634,12 @@ func _skill_hit_fx(skill: Dictionary, foe: Foe) -> void:
 # 둘 다 "타격감"이 아니라 **뚝뚝 끊김**으로 보인다. 한 프레임에 한 번, 그리고
 # 최소 간격을 두고만 건다.
 const HITSTOP_MIN_GAP := 0.14
+# 흔들림은 히트스톱보다 **자주** 돈다. 예전엔 둘이 같은 관문을 써서, 히트스톱을
+# 아끼려고 건 0.14초 간격에 흔들림까지 묶여 타격 대부분이 아무 반응이 없었다.
+# 히트스톱은 게임을 실제로 멈추니까 아껴야 하지만, 흔들림은 아낄 이유가 없다.
+const SHAKE_MIN_GAP := 0.055
+const HIT_SHAKE := 5.5      # 기본 타격. 2.0 은 "밀렸다" 정도라 맞은 느낌이 없었다
+var _shake_cd := 0.0
 var _hitstop_cd := 0.0
 var _hitstop_frame := -1
 
@@ -3376,6 +3649,10 @@ func on_foe_hit(_foe: Foe, _damage: float) -> void:
 	if frame == _hitstop_frame:
 		return          # 같은 프레임의 광역 타격은 한 번으로 친다
 	_hitstop_frame = frame
+	# 흔들림 먼저. 히트스톱이 쉬는 동안에도 타격은 손에 잡혀야 한다.
+	if _shake_cd <= 0.0:
+		_shake_cd = SHAKE_MIN_GAP
+		_shake_combat(HIT_SHAKE)
 	if _hitstop_cd > 0.0:
 		return          # 너무 잦으면 건너뛴다
 	_hitstop_cd = HITSTOP_MIN_GAP
@@ -3384,7 +3661,6 @@ func on_foe_hit(_foe: Foe, _damage: float) -> void:
 		for f in get_tree().get_nodes_in_group("foes"):
 			if is_instance_valid(f):
 				f.set_visual_frozen(true)
-	_shake_combat(2.0)
 
 
 # Foe가 자기 attack 애니의 네 번째 프레임에 호출한다.
@@ -3606,6 +3882,7 @@ func _boss_pan(boss: Foe) -> void:
 		return
 	if _combat_shake and _combat_shake.is_valid():
 		_combat_shake.kill()
+	position.y = 0.0   # 흔들림이 중간에 끊겼으면 세로가 남아 있다
 	# 보스를 화면 가운데로. 왼쪽(양수)으로는 안 민다 — 영웅 뒤엔 볼 게 없다.
 	var dx := clampf(float(Grid.BG.x) * 0.5 - boss.position.x, -260.0, 0.0)
 	_boss_pan_t = 0.45 + BOSS_PAN_HOLD + 0.5
@@ -3616,16 +3893,26 @@ func _boss_pan(boss: Foe) -> void:
 	_combat_shake = t
 
 
+# 한 번 밀었다 돌아오는 게 아니라 **줄어들며 두 번 더 떤다.** 1왕복은 "밀렸다"로
+# 읽히고, 감쇠 왕복이라야 "맞았다"로 읽힌다.
+# 세로도 같이 흔든다 — 가로만 흔들면 카메라가 미끄러진 것처럼 보이고, 세로가
+# 섞여야 "쿵"이 된다. 세로는 가로의 절반 이하로 둔다(넘으면 화면이 튄다).
 func _shake_combat(amount: float) -> void:
 	if not is_inside_tree() or _boss_pan_t > 0.0:
 		return
 	if _combat_shake and _combat_shake.is_valid():
 		_combat_shake.kill()
-	position.x = 0.0
+	position = Vector2.ZERO
 	_combat_shake = create_tween()
-	_combat_shake.tween_property(self, "position:x", -amount, 0.03)
-	_combat_shake.tween_property(self, "position:x", amount, 0.05)
-	_combat_shake.tween_property(self, "position:x", 0.0, 0.03)
+	var steps := [
+		Vector2(-amount, amount * 0.42),
+		Vector2(amount * 0.68, -amount * 0.28),
+		Vector2(-amount * 0.32, amount * 0.14),
+		Vector2.ZERO,
+	]
+	var spans := [0.035, 0.045, 0.04, 0.035]
+	for i in steps.size():
+		_combat_shake.tween_property(self, "position", steps[i], float(spans[i]))
 
 
 func on_foe_killed(f: Foe) -> void:
@@ -3643,6 +3930,9 @@ func on_foe_killed(f: Foe) -> void:
 		codex_knowledge += gained
 		_claim_codex_reward()
 	_gain_exp(Balance.exp_per_kill(StageDefs.major_stage(stage)))
+	# 가이드 버튼의 "받을 개수"는 여기서만 갱신한다. _refresh_hud 는 매 프레임이라
+	# 거기 얹으면 초당 60번 라벨을 다시 쓴다.
+	_refresh_goals()
 	if _tab == "codex":
 		_refresh_codex()
 	# 전투 드랍은 없앴다(2026-08-04). 장비가 나오는 곳은 **소환 하나**다 —
@@ -4060,6 +4350,7 @@ func _save_game() -> void:
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
 	cfg.set_value("codex", "kills", codex)
+	cfg.set_value("goal", "step", goal_step)
 	cfg.set_value("meta", "left_at", Time.get_unix_time_from_system())
 	cfg.save(SAVE_PATH)
 
@@ -4162,6 +4453,10 @@ func _load_game() -> void:
 	if skill_equipped.is_empty():
 		_auto_equip_skills()
 	codex = cfg.get_value("codex", "kills", {})
+	# 옛 저장본에는 없다. 사전이 아닌 게 들어오면 버린다 — 예전에 skill.equipped 가
+	# 사전으로 저장돼 있어서 불러오기가 통째로 터진 적이 있다.
+	var saved_goals: Variant = cfg.get_value("goal", "step", {})
+	goal_step = saved_goals if saved_goals is Dictionary else {}
 	codex_found = 0
 	codex_knowledge = 0
 	for k in codex:
