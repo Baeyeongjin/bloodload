@@ -184,6 +184,7 @@ var _goal_widget_name: Label
 var _goal_widget_prog: Label
 var _goal_widget_gem: Label
 var _goal_widget_cta: Label
+var _goal_widget_fill: ColorRect
 var _gear_slots := {}       # slot -> {frame, icon, label, btn} 표시 노드
 var _gear_equipped_view: Control
 var _gear_inventory_view: Control
@@ -600,7 +601,12 @@ func _build_scene() -> void:
 # ── 영웅 모션 ──────────────────────────────────────────────────────────────
 # idle / walk / attack / hurt 네 벌. 스킨을 갈아도 프레임 수와 타이밍이 같으므로
 # 여기 말고 고칠 곳이 없다.
-const MOTION_FPS := {"idle": 6.0, "walk": 10.0, "dash": 15.0, "hurt": 14.0}
+# **초당 프레임이 아니라 한 바퀴에 걸리는 시간을 적는다.** fps 로 두면 그림을 다시
+# 뽑아 장수가 바뀔 때마다 fps 도 같이 고쳐야 하고, 안 고치면 걷기가 슬로모션이 된다 —
+# 5장을 9장으로 늘렸을 때 실제로 그랬다(10fps 면 0.5초 -> 0.9초).
+# 시간으로 두면 그림이 몇 장이든 리듬이 같다. IMPACT_RATIO 를 프레임 번호에서
+# 비율로 바꾼 것과 같은 이유다.
+const MOTION_CYCLE := {"idle": 0.85, "walk": 0.50, "dash": 0.60, "hurt": 0.36}
 const LOOPING := ["idle", "walk", "dash"]   # 나머지는 한 번 재생하고 idle 로 돌아간다
 
 
@@ -631,7 +637,8 @@ func _motion_fps() -> float:
 		return float(_hero_frames.size()) / maxf(0.08, attack_interval())
 	if _motion == "heavy" or _motion == "cast":
 		return float(_hero_frames.size()) / SKILL_DUR
-	return float(MOTION_FPS.get(_motion, 6.0))
+	var cycle := float(MOTION_CYCLE.get(_motion, 0.85))
+	return float(_hero_frames.size()) / maxf(0.05, cycle)
 
 
 func _tick_motion(delta: float) -> void:
@@ -1502,15 +1509,18 @@ func _build_gear(root: Control) -> void:
 		filter_button.pressed.connect(func() -> void: _set_gear_filter(slot_key))
 		_gear_inventory_view.add_child(filter_button)
 		_gear_filter_buttons[slot_key] = filter_button
-	# 목록을 152로 줄여 아래에 일괄 버튼 두 개를 놓는다. 한 칸(112x128 + 간격 8)
-	# 기준이라 어차피 한 줄 + 다음 줄 살짝이 보이는 높이였다.
-	var scroll := Ui.scroll(Vector2(PAD, 102.0), Vector2(CONTENT_W, 152.0))
+	# 목록 높이는 **창 높이에서 뺀다.** 예전엔 152 로 박아 뒀는데 창을 320 -> 384 로
+	# 늘리자 아래가 통째로 비었다. 고정값을 쓰면 창 크기를 바꿀 때마다 다시 찾아야 한다.
+	var list_top := 102.0
+	var scroll := Ui.scroll(Vector2(PAD, list_top),
+		Vector2(CONTENT_W, CONTENT_BOTTOM - 50.0 - list_top))
 	_gear_inventory_view.add_child(scroll)
 	var bulk_w := (CONTENT_W - 12.0) * 0.5
 	for i in 2:
 		var mode: String = "salvage" if i == 0 else "fuse"
 		var b := Ui.button("분해" if i == 0 else "조합",
-			Vector2(PAD + float(i) * (bulk_w + 12.0), 258.0), Vector2(bulk_w, 38.0),
+			Vector2(PAD + float(i) * (bulk_w + 12.0), CONTENT_BOTTOM - 38.0),
+			Vector2(bulk_w, 38.0),
 			Type.SIZE_SMALL)
 		b.pressed.connect(func() -> void: _open_bulk(mode))
 		_gear_inventory_view.add_child(b)
@@ -2154,11 +2164,12 @@ func _build_gacha(root: Control) -> void:
 		Color(0.62, 0.82, 0.68), text_w, 44.0)
 	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var one := Ui.button("", Vector2(22.0, 258.0), Vector2(260.0, 50.0), Type.SIZE_SMALL)
+	var one := Ui.button("", Vector2(22.0, CONTENT_BOTTOM - 50.0),
+		Vector2(260.0, 50.0), Type.SIZE_SMALL)
 	one.pressed.connect(func() -> void: _pull_gacha(1))
 	root.add_child(one)
 	_gacha_buttons["one"] = one
-	var ten := Ui.button("10연  보석 300", Vector2(294.0, 258.0),
+	var ten := Ui.button("10연  보석 300", Vector2(294.0, CONTENT_BOTTOM - 50.0),
 		Vector2(260.0, 50.0), Type.SIZE_SMALL)
 	Ui.cost_icon(ten, "res://assets/ui/res_gem.png")
 	ten.pressed.connect(func() -> void: _pull_gacha(10))
@@ -2550,37 +2561,52 @@ func _claim_chest() -> void:
 	_save_game()
 
 
-# 상시 가이드 위젯. **창을 안 열어도 지금 목표가 보인다** — 방치형에서 가이드가
-# 메뉴 안에 숨어 있으면 그게 있는 줄도 모르고, 보상이 쌓여도 안 받는다.
-#
-# 자리는 전투 띠의 **맨 아래 띠**다. 지면(ground_y ~442) 아래는 벽 그림이라
-# 몹도 영웅도 거기까지 안 내려온다 — 전투를 하나도 안 가리면서 늘 보인다.
-const GOAL_WIDGET_H := 46.0
+# 상시 가이드 카드. **오른쪽 아래 사각형**이다(사장님 레퍼런스). 처음엔 화면 폭
+# 전체를 쓰는 가로 띠였는데, 띠는 "알림 줄"로 읽히고 카드라야 "눌러서 여는 것"으로
+# 읽힌다. 자리는 전투 띠 오른쪽 아래 — 지면 근처지만 오른쪽 칸 몹의 아래쪽만 걸친다.
+const GOAL_CARD := Vector2(196.0, 84.0)
+const GOAL_WIDGET_H := GOAL_CARD.y   # 상자 배치가 이 값을 본다
 
 
 func _build_goal_widget() -> void:
 	_goal_widget = Button.new()
 	_goal_widget.flat = true
 	_goal_widget.focus_mode = Control.FOCUS_NONE
-	_goal_widget.position = Vector2(12.0, VIEW_BOTTOM - GOAL_WIDGET_H - 4.0)
-	_goal_widget.size = Vector2(float(Grid.BG.x) - 24.0, GOAL_WIDGET_H)
+	_goal_widget.position = Vector2(float(Grid.BG.x) - GOAL_CARD.x - 8.0,
+		VIEW_BOTTOM - GOAL_CARD.y - 6.0)
+	_goal_widget.size = GOAL_CARD
 	_goal_widget.pressed.connect(func() -> void:
 		_goal_panel.visible = true
 		_refresh_goals())
 	_hud_root.add_child(_goal_widget)
-	_goal_widget.add_child(Ui.widget_bar(Vector2.ZERO, _goal_widget.size))
-	_goal_widget_icon = Ui.icon("res://assets/ui/stat_damage.png", Vector2(10.0, 8.0), 30.0)
+	_goal_widget.add_child(Ui.widget_bar(Vector2.ZERO, GOAL_CARD))
+	# 1줄: 머리표 "가이드 N". 레퍼런스의 `가이드|602` 자리다.
+	_goal_widget_name = _panel_label(_goal_widget, Vector2(8.0, 4.0), Type.SIZE_SMALL,
+		Color(1.0, 0.88, 0.5), GOAL_CARD.x - 16.0, 18.0)
+	_goal_widget_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 2줄: 왼쪽 보상 아이콘 + 수량, 오른쪽 목표 + 진행.
+	_goal_widget_icon = Ui.icon("res://assets/items/gem.png", Vector2(8.0, 26.0), 40.0)
 	_goal_widget.add_child(_goal_widget_icon)
-	_goal_widget_name = _panel_label(_goal_widget, Vector2(48.0, 4.0), Type.SIZE_SMALL,
-		Color(0.92, 0.90, 0.96), 300.0, 20.0)
-	_goal_widget_prog = _panel_label(_goal_widget, Vector2(48.0, 23.0), Type.SIZE_SMALL,
-		Color(0.72, 0.72, 0.78), 300.0, 18.0)
-	_goal_widget_gem = _panel_label(_goal_widget, Vector2(356.0, 13.0), Type.SIZE_SMALL,
-		Color(0.86, 0.72, 1.0), 108.0, 20.0)
-	_goal_widget_gem.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_goal_widget_cta = _panel_label(_goal_widget, Vector2(470.0, 13.0), Type.SIZE_SMALL,
-		Color(1.0, 0.85, 0.35), 72.0, 20.0)
-	_goal_widget_cta.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_goal_widget_gem = _panel_label(_goal_widget, Vector2(4.0, 64.0), Type.SIZE_SMALL,
+		Color(0.86, 0.72, 1.0), 48.0, 16.0)
+	_goal_widget_gem.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_goal_widget_cta = _panel_label(_goal_widget, Vector2(54.0, 24.0), Type.SIZE_SMALL,
+		Color(0.92, 0.90, 0.96), GOAL_CARD.x - 62.0, 18.0)
+	_goal_widget_prog = _panel_label(_goal_widget, Vector2(54.0, 44.0), Type.SIZE_SMALL,
+		Color(0.72, 0.72, 0.78), GOAL_CARD.x - 62.0, 16.0)
+	# 진행바. 숫자만으로는 얼마나 남았는지 곁눈질로 안 읽힌다.
+	var back := ColorRect.new()
+	back.color = Color(0.05, 0.04, 0.06, 0.85)
+	back.position = Vector2(54.0, 64.0)
+	back.size = Vector2(GOAL_CARD.x - 64.0, 8.0)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_goal_widget.add_child(back)
+	_goal_widget_fill = ColorRect.new()
+	_goal_widget_fill.color = Color(0.95, 0.78, 0.30)
+	_goal_widget_fill.position = back.position
+	_goal_widget_fill.size = Vector2(0.0, 8.0)
+	_goal_widget_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_goal_widget.add_child(_goal_widget_fill)
 
 
 # 위젯에 띄울 트랙 하나를 고른다. 받을 게 있으면 **그걸 먼저** 보여 준다 —
@@ -2608,21 +2634,18 @@ func _refresh_goal_widget() -> void:
 		_goal_widget.visible = false
 		return
 	_goal_widget.visible = true
-	var t := GoalDefs.track(kind)
 	var step := _goal_step(kind)
 	var need := GoalDefs.need(kind, step)
 	var now := _goal_value(kind)
 	var ready := _goal_ready_count()
-	_goal_widget_icon.texture = Assets.tex("res://assets/ui/%s.png" % str(t["icon"]))
-	_goal_widget_name.text = "가이드 %d  ·  %s" % [GoalDefs.cleared_total(goal_step) + 1,
-		GoalDefs.label(kind, step)]
-	_goal_widget_prog.text = "%s / %s" % [_n(float(now)), _n(float(need))]
-	_goal_widget_gem.text = "보석 %s" % _n(GoalDefs.gem_reward(kind, step))
-	_goal_widget_cta.text = "받기 %d" % ready if ready > 0 else "진행 중"
+	var done := now >= need
+	_goal_widget_name.text = "가이드 %d" % (GoalDefs.cleared_total(goal_step) + 1)
+	_goal_widget_gem.text = _n(GoalDefs.gem_reward(kind, step))
+	_goal_widget_cta.text = "받기 %d" % ready if done else GoalDefs.label(kind, step)
 	_goal_widget_cta.add_theme_color_override("font_color",
-		Color(1.0, 0.85, 0.35) if ready > 0 else Color(0.62, 0.62, 0.68))
-	_goal_widget_name.add_theme_color_override("font_color",
-		Color(1.0, 0.85, 0.35) if ready > 0 else Color(0.92, 0.90, 0.96))
+		Color(1.0, 0.85, 0.35) if done else Color(0.92, 0.90, 0.96))
+	_goal_widget_prog.text = "%s / %s" % [_n(float(now)), _n(float(need))]
+	_goal_widget_fill.size.x = (GOAL_CARD.x - 64.0) 		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
 
 
 # 받을 수 있는 걸 전부 받는다. 한 트랙이 여러 단계 밀려 있으면 그것도 다 준다 —
@@ -2934,7 +2957,7 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cards.append(card)
 	var close := Ui.button("보관함 확인" if _gacha_kind in GearDefs.SLOTS else "확인",
-		Vector2(158.0, 258.0),
+		Vector2(158.0, CONTENT_BOTTOM - 50.0),
 		Vector2(260.0, 50.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void:
 		_gacha_reveal.visible = false
