@@ -81,6 +81,9 @@ const BACKDROP := [
 ]
 # 각 배경 **맨 윗줄의 최빈색**. 화면 위 96px 을 채우는 하늘 그라데이션의 아래끝이다.
 # BACKDROP(맨 아랫줄)과 같은 방식으로 실측했다 — 눈으로 고르면 이음매가 드러난다.
+# 지면 아래 위젯이 앉는 띠의 높이. 상자(72)와 가이드 카드(92)가 캐릭터를 안 가리고
+# 들어갈 만큼이다 — 이 값이 작으면 위젯이 다시 몹 몸통을 덮는다.
+const WIDGET_BAND := 96.0
 const SKY := [
 	Color(0.290, 0.341, 0.294),   # 깨어난 무덤
 	Color(0.451, 0.380, 0.341),   # 화형의 언덕
@@ -89,6 +92,20 @@ const SKY := [
 	Color(0.039, 0.039, 0.043),   # 빼앗긴 본성
 ]
 static var _sky_cache := {}
+
+
+# 지면 아래 바닥. 위는 배경 아래끝 색 그대로, 아래로 갈수록 어두워진다 —
+# 이음매가 안 보이면서 위젯 글자가 읽히는 바탕이 된다.
+static func _floor_tex(top: Color) -> ImageTexture:
+	if _sky_cache.has(top.darkened(0.001)):
+		return _sky_cache[top.darkened(0.001)]
+	var h := 32
+	var img := Image.create(1, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		img.set_pixel(0, y, top.darkened(0.55 * float(y) / float(h - 1)))
+	var tex := ImageTexture.create_from_image(img)
+	_sky_cache[top.darkened(0.001)] = tex
+	return tex
 
 
 # 세로 그라데이션 1픽셀 폭. 가로로 늘려도 균일하니 줄이 안 생긴다.
@@ -131,7 +148,8 @@ var _scroll := 0.0
 var _walk_only := false   # [개발 도구] --walk
 var _shot_wait := 2.5     # [개발 도구] --wait=N
 var _bg2: Sprite2D
-var _bg_top: TextureRect          # 옆에 이어 붙이는 사본 (좌우 끝 기둥이 만나 이음매를 가린다)
+var _bg_top: TextureRect
+var _bg_floor: TextureRect          # 옆에 이어 붙이는 사본 (좌우 끝 기둥이 만나 이음매를 가린다)
 var _attack_t := 0.0
 var _hero_hit_t := -1.0
 var _pending_target: Foe
@@ -211,6 +229,8 @@ var _goal_widget_prog: Label
 var _goal_widget_gem: Label
 var _goal_widget_cta: Label
 var _goal_widget_fill: ColorRect
+var _goal_widget_bar_label: Label
+var _goal_bar_width := 0.0
 var _last_goal_gem := 0.0
 var _gear_slots := {}       # slot -> {frame, icon, label, btn} 표시 노드
 var _gear_equipped_view: Control
@@ -588,6 +608,14 @@ func _build_scene() -> void:
 	_bg_top.z_index = -21
 	_bg_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg_top)
+	# 지면 아래 바닥 띠. 배경 아래끝 색에서 더 어둡게 내려가 위젯이 앉을 자리를 만든다.
+	_bg_floor = TextureRect.new()
+	_bg_floor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_bg_floor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bg_floor.stretch_mode = TextureRect.STRETCH_SCALE
+	_bg_floor.z_index = -21
+	_bg_floor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_bg_floor)
 	_bg2 = Sprite2D.new()
 	_bg2.centered = false
 	_bg2.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -2648,11 +2676,21 @@ func _claim_chest() -> void:
 	_save_game()
 
 
-# 상시 가이드 카드. **오른쪽 아래 사각형**이다(사장님 레퍼런스). 처음엔 화면 폭
-# 전체를 쓰는 가로 띠였는데, 띠는 "알림 줄"로 읽히고 카드라야 "눌러서 여는 것"으로
-# 읽힌다. 자리는 전투 띠 오른쪽 아래 — 지면 근처지만 오른쪽 칸 몹의 아래쪽만 걸친다.
-const GOAL_CARD := Vector2(196.0, 84.0)
-const GOAL_WIDGET_H := GOAL_CARD.y   # 상자 배치가 이 값을 본다
+# 상시 가이드 카드. **레퍼런스 구조 그대로.**
+#
+#           ┌─ 가이드 40 ─┐   <- 헤더는 카드 위로 튀어나온 탭, 오른쪽 정렬
+#   ┌───┬───┴────────────┤
+#   │💎 │ 누적 처치 10k   │   <- 왼쪽은 보상 아이콘+수량이 한 틀 안에
+#   │109│ [==== 2 / 5 ==]│   <- 오른쪽은 목표 + 진행바(숫자는 바 안)
+#   └───┴────────────────┘
+#
+# **몸통은 widget_bar 가 아니라 panel 이다.** 띠(80x44)를 208x78 로 늘리니 세로로
+# 뭉개지고 찢어진 위아래 무늬가 번졌다 — 그건 가로 스트립이라 그 모양일 때만 맞다.
+# 창을 그리는 건 이미 panel 9-slice 가 하고 있으니 그걸 쓴다. 띠는 헤더 탭에만.
+const GOAL_CARD := Vector2(208.0, 72.0)
+const GOAL_TAB := Vector2(112.0, 28.0)
+const GOAL_SLOT := 52.0        # 왼쪽 보상 칸
+const GOAL_WIDGET_H := GOAL_CARD.y + GOAL_TAB.y - 8.0   # 탭이 몸통에 8px 물린다
 
 
 func _build_goal_widget() -> void:
@@ -2660,41 +2698,60 @@ func _build_goal_widget() -> void:
 	_goal_widget.flat = true
 	_goal_widget.focus_mode = Control.FOCUS_NONE
 	_goal_widget.position = Vector2(float(Grid.BG.x) - GOAL_CARD.x - 8.0,
-		VIEW_BOTTOM - GOAL_CARD.y - 6.0)
-	_goal_widget.size = GOAL_CARD
-	# **누르면 바로 받는다.** 예전엔 상세 창이 열렸는데, 가이드는 목록을 뒤질 게
-	# 아니라 "다 됐으면 받는" 것이다 — 되돌릴 수 없는 것도 아니라 확인만 받는다.
-	# 아직 안 됐으면 그때만 목록을 열어 다음 목표를 보여 준다.
+		VIEW_BOTTOM - GOAL_WIDGET_H - 6.0)
+	_goal_widget.size = Vector2(GOAL_CARD.x, GOAL_WIDGET_H)
 	_goal_widget.pressed.connect(_on_goal_card_pressed)
 	_hud_root.add_child(_goal_widget)
-	_goal_widget.add_child(Ui.widget_bar(Vector2.ZERO, GOAL_CARD))
-	# 1줄: 머리표 "가이드 N". 레퍼런스의 `가이드|602` 자리다.
-	_goal_widget_name = _panel_label(_goal_widget, Vector2(8.0, 4.0), Type.SIZE_SMALL,
-		Color(1.0, 0.88, 0.5), GOAL_CARD.x - 16.0, 18.0)
+	# 헤더 탭 — 카드 위, 오른쪽 정렬. 여기서는 띠가 제 모양대로 쓰인다.
+	_goal_widget.add_child(Ui.widget_bar(Vector2(GOAL_CARD.x - GOAL_TAB.x, 0.0), GOAL_TAB))
+	_goal_widget_name = _panel_label(_goal_widget,
+		Vector2(GOAL_CARD.x - GOAL_TAB.x, 2.0), Type.SIZE_SMALL,
+		Color(1.0, 0.88, 0.5), GOAL_TAB.x, GOAL_TAB.y - 4.0)
 	_goal_widget_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 2줄: 왼쪽 보상 아이콘 + 수량, 오른쪽 목표 + 진행.
-	_goal_widget_icon = Ui.icon("res://assets/items/gem.png", Vector2(8.0, 26.0), 40.0)
+	_goal_widget_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 카드 몸통.
+	var body := Vector2(0.0, GOAL_TAB.y - 8.0)
+	_goal_widget.add_child(Ui.panel(body, GOAL_CARD))
+	# 왼쪽 보상 칸 — 아이콘과 수량이 **한 틀 안에**. 예전엔 수량이 틀 밖 기둥 위에
+	# 걸쳐서 "왼쪽이 잘렸다"로 보였다.
+	var slot_at := body + Vector2(10.0, (GOAL_CARD.y - GOAL_SLOT) * 0.5)
+	var slot := Ui.image("res://assets/ui/slot_common.png", slot_at,
+		Vector2(GOAL_SLOT, GOAL_SLOT))
+	slot.modulate = Color(0.86, 0.72, 1.0)
+	_goal_widget.add_child(slot)
+	_goal_widget_icon = Ui.icon("res://assets/items/gem.png",
+		slot_at + Vector2(GOAL_SLOT * 0.22, GOAL_SLOT * 0.06), GOAL_SLOT * 0.46)
 	_goal_widget.add_child(_goal_widget_icon)
-	_goal_widget_gem = _panel_label(_goal_widget, Vector2(4.0, 64.0), Type.SIZE_SMALL,
-		Color(0.86, 0.72, 1.0), 48.0, 16.0)
+	_goal_widget_gem = _panel_label(_goal_widget,
+		slot_at + Vector2(0.0, GOAL_SLOT - 20.0), Type.SIZE_SMALL,
+		Color(0.94, 0.88, 1.0), GOAL_SLOT, 18.0)
 	_goal_widget_gem.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_goal_widget_cta = _panel_label(_goal_widget, Vector2(54.0, 24.0), Type.SIZE_SMALL,
-		Color(0.92, 0.90, 0.96), GOAL_CARD.x - 62.0, 18.0)
-	_goal_widget_prog = _panel_label(_goal_widget, Vector2(54.0, 44.0), Type.SIZE_SMALL,
-		Color(0.72, 0.72, 0.78), GOAL_CARD.x - 62.0, 16.0)
-	# 진행바. 숫자만으로는 얼마나 남았는지 곁눈질로 안 읽힌다.
+	# 오른쪽 — 목표 한 줄 + 진행바. **두 줄로 안 쓴다**: 목표 이름과 목표치를
+	# 나눠 적으면 같은 말을 두 번 하게 된다(예전에 그랬다).
+	var tx := GOAL_SLOT + 18.0
+	var tw := GOAL_CARD.x - tx - 12.0
+	_goal_widget_cta = _panel_label(_goal_widget, body + Vector2(tx, 12.0),
+		Type.SIZE_SMALL, Color(0.94, 0.92, 0.98), tw, 20.0)
+	var bar_h := 18.0
+	var bar_at := body + Vector2(tx, GOAL_CARD.y - bar_h - 14.0)
 	var back := ColorRect.new()
-	back.color = Color(0.05, 0.04, 0.06, 0.85)
-	back.position = Vector2(54.0, 64.0)
-	back.size = Vector2(GOAL_CARD.x - 64.0, 8.0)
+	back.color = Color(0.05, 0.04, 0.06, 0.92)
+	back.position = bar_at
+	back.size = Vector2(tw, bar_h)
 	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_goal_widget.add_child(back)
 	_goal_widget_fill = ColorRect.new()
-	_goal_widget_fill.color = Color(0.95, 0.78, 0.30)
-	_goal_widget_fill.position = back.position
-	_goal_widget_fill.size = Vector2(0.0, 8.0)
+	_goal_widget_fill.color = Color(0.86, 0.66, 0.24)
+	_goal_widget_fill.position = bar_at
+	_goal_widget_fill.size = Vector2(0.0, bar_h)
 	_goal_widget_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_goal_widget.add_child(_goal_widget_fill)
+	# 진행 숫자는 **바 안에.** 레퍼런스의 0/10 자리다.
+	_goal_widget_bar_label = _panel_label(_goal_widget, bar_at, Type.SIZE_SMALL,
+		Color(0.98, 0.96, 0.98), tw, bar_h)
+	_goal_widget_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_goal_widget_bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_goal_bar_width = tw
 
 
 # 카드를 눌렀을 때. 받을 게 있으면 **확인만 받고 바로 준다** — 되돌릴 수 없는
@@ -2744,11 +2801,11 @@ func _refresh_goal_widget() -> void:
 	var done := now >= need
 	_goal_widget_name.text = "가이드 %d" % (GoalDefs.cleared_total(goal_step) + 1)
 	_goal_widget_gem.text = _n(GoalDefs.gem_reward(kind, step))
-	_goal_widget_cta.text = "받기 %d" % ready if done else GoalDefs.label(kind, step)
+	_goal_widget_cta.text = "받기 %d개" % ready if done else GoalDefs.label(kind, step)
 	_goal_widget_cta.add_theme_color_override("font_color",
-		Color(1.0, 0.85, 0.35) if done else Color(0.92, 0.90, 0.96))
-	_goal_widget_prog.text = "%s / %s" % [_n(float(now)), _n(float(need))]
-	_goal_widget_fill.size.x = (GOAL_CARD.x - 64.0) 		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
+		Color(1.0, 0.85, 0.35) if done else Color(0.94, 0.92, 0.98))
+	_goal_widget_bar_label.text = "%s / %s" % [_n(float(now)), _n(float(need))]
+	_goal_widget_fill.size.x = _goal_bar_width 		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
 
 
 # 받을 수 있는 걸 전부 받는다. 한 트랙이 여러 단계 밀려 있으면 그것도 다 준다 —
@@ -4261,12 +4318,26 @@ func _apply_stage_bg() -> void:
 	_bg.texture = t
 	_bg2.texture = t
 	_bg2.visible = t != null
-	_bg_top.texture = _sky_tex(SKY[StageDefs.act_of(stage) % SKY.size()])
-	# 배경 아래끝을 띠 아래끝에 맞춘다. 위로 넘치는 만큼은 상단 패널이 가린다.
-	var bg_top := VIEW_BOTTOM - float(Grid.BG_SRC.y) * 2.0
+	# **지면을 올려 아래에 위젯 띠를 만든다.** 예전엔 배경 아래끝을 전투 띠 아래끝에
+	# 맞춰서 지면이 402(띠 끝 416의 14px 위)였고, 상자·가이드가 무조건 캐릭터를 덮었다.
+	# 레퍼런스는 지면 아래에 빈 바닥 띠가 있고 거기에 위젯이 앉는다.
+	#
+	# 막마다 원본의 지면 행(140~153)이 달라서 배경을 고정 위치에 두면 띠 높이가
+	# 막마다 바뀐다 — **지면이 항상 같은 y 에 오도록** 배경 쪽을 민다.
+	var bg_top := VIEW_BOTTOM - WIDGET_BAND - 8.0 - float(act.get("ground", 141)) * 2.0
 	_bg.position.y = bg_top
 	_bg2.position.y = bg_top
+	_bg_top.texture = _sky_tex(SKY[StageDefs.act_of(stage) % SKY.size()])
+	_bg_top.size = Vector2(Grid.BG.x, maxf(0.0, bg_top))
+	_bg_top.visible = t != null
 	ground_y = bg_top + float(act.get("ground", 141)) * 2.0
+	# 배경 아래끝부터 띠 아래끝까지는 **배경 맨 아랫줄 색**으로 이어 붙인다.
+	# BACKDROP 이 그 값이다(원래 그러라고 실측해 둔 색이다).
+	var floor_top := bg_top + float(Grid.BG_SRC.y) * 2.0
+	_bg_floor.position = Vector2(0.0, floor_top)
+	_bg_floor.size = Vector2(Grid.BG.x, maxf(0.0, VIEW_BOTTOM - floor_top))
+	_bg_floor.texture = _floor_tex(BACKDROP[StageDefs.act_of(stage) % BACKDROP.size()])
+	_bg_floor.visible = t != null
 	_hero.position.y = ground_y - float(Grid.SPRITE)
 	for f in get_tree().get_nodes_in_group("foes"):
 		f.position.y = ground_y
