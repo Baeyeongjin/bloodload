@@ -24,8 +24,15 @@ const SAVE_PATH := "user://bloodlord.cfg"
 # 배경은 세로 320(원본 160 x2)이라 띠(288)보다 크다. **아래를 기준으로 붙이고**
 # 넘치는 위쪽은 상단 패널 뒤로 숨긴다 — 위를 기준으로 붙이면 상단 패널을 키울 때마다
 # 지면이 같이 내려가 바닥이 잘린다.
-const VIEW_TOP := 192.0
-const VIEW_BOTTOM := 480.0
+# 상단 UI 를 12유닛(192px) -> 8유닛(128px)으로 줄이고 그만큼을 **하단 콘텐츠 창에**
+# 줬다. 전투 띠 높이(288px)는 그대로다 — 줄어든 건 전투가 아니라 위쪽 판이다.
+#   0..128   상단 (막이름·진행·재화)
+#   128..416 전투 띠
+#   416..800 콘텐츠 창   <- 320 에서 384 로
+#   800..896 탭바
+const STAGE_BAR_H := 7.0
+const VIEW_TOP := 128.0
+const VIEW_BOTTOM := 416.0
 # 발이 닿는 선. 배경마다 바닥 높이가 달라서 상수로 두면 캐릭터가 공중에 뜬다.
 # 배경은 항상 전투 띠에 딱 맞게 깔고(y = VIEW_TOP), 대신 이 값을 막마다 옮긴다.
 var ground_y := 442.0
@@ -240,7 +247,7 @@ var _skill_bulk_btn: Button
 var _skill_auto_btn: Button
 var _skill_synth_btn: Button
 var _step_btns: Array[Button] = []
-var _stage_bar: ProgressBar
+var _stage_bar: ColorRect
 var _offline_banner: Label
 var _power_toast: Label
 var _confirm_view: Control
@@ -550,21 +557,21 @@ func _build_scene() -> void:
 	_hud_root = root
 	_build_frame()
 	# 상단 상태창 — 배경 위에 글씨만 얹으면 안 읽혀서 패널을 깐다.
-	_hud_root.add_child(Ui.panel(Grid.uv(0, 0), Grid.uv(36, 12)))
+	_hud_root.add_child(Ui.panel(Grid.uv(0, 0), Grid.uv(36, 8)))
 	_build_topbar()
-	_offline_banner = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 6.0), Type.SIZE_SMALL,
+	_offline_banner = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 12.0), Type.SIZE_SMALL,
 		Color(0.95, 0.55, 0.55))
 	_offline_banner.visible = false
 	# 전투력 알림은 **전용 줄**이다. 오프라인·장비 알림과 같은 줄을 쓰면 그쪽이 떠 있는
 	# 동안 상승이 통째로 안 보인다 — 전투력은 오를 때마다 무조건 보여야 한다.
-	_power_toast = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 30.0), Type.SIZE_SMALL,
+	_power_toast = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 36.0), Type.SIZE_SMALL,
 		Color(1.0, 0.82, 0.42))
 	_power_toast.size = Vector2(float(Grid.BG.x) - TOP_PAD * 2.0, 24.0)
 	_power_toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_power_toast.visible = false
 	# 전투 띠 안에서 생존 상태를 바로 읽는다. 오른쪽 절반만 써 오프라인 알림과
 	# 겹치지 않고, 별도 패널을 늘려 전투를 가리지 않는다.
-	_lbl_life = _mk_label(Vector2(float(Grid.BG.x) * 0.52, VIEW_TOP + 4.0),
+	_lbl_life = _mk_label(Vector2(float(Grid.BG.x) * 0.52, VIEW_TOP + 12.0),
 		Type.SIZE_SMALL, Color(0.72, 0.95, 0.78))
 	_lbl_life.size = Vector2(float(Grid.BG.x) * 0.48 - TOP_PAD, 24.0)
 	_lbl_life.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -708,28 +715,42 @@ func _build_topbar() -> void:
 	var w := float(Grid.BG.x)
 	var right := w - TOP_PAD
 	# 1줄: 막 이름과 단계 (왼쪽) / 전투력 (오른쪽)
-	_lbl_hero = _mk_label(Vector2(TOP_PAD, 14.0), Type.SIZE_SMALL, Color(0.72, 0.92, 0.72))
-	_lbl_hero.size = Vector2(76.0, 40.0)
+	_lbl_hero = _mk_label(Vector2(TOP_PAD, 8.0), Type.SIZE_SMALL, Color(0.72, 0.92, 0.72))
+	_lbl_hero.size = Vector2(76.0, 34.0)
 	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_lbl_stage = _mk_label(Vector2(TOP_PAD + 82.0, 14.0), Type.SIZE_BODY,
+	_lbl_stage = _mk_label(Vector2(TOP_PAD + 82.0, 8.0), Type.SIZE_BODY,
 		Color(1.0, 0.9, 0.55))
-	_lbl_stage.size = Vector2(w - TOP_PAD * 2.0 - 82.0, 40.0)
+	_lbl_stage.size = Vector2(w - TOP_PAD * 2.0 - 82.0, 34.0)
 	_lbl_stage.clip_text = true
 	_lbl_stage.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 전투력은 2줄로 내린다. 1줄에 같이 두면 막 이름이 길 때 글자가 겹친다.
-	_lbl_power = _mk_label(Vector2(w * 0.4, 58.0), Type.SIZE_SMALL, Color(1.0, 0.78, 0.38))
+	_lbl_power = _mk_label(Vector2(w * 0.4, 44.0), Type.SIZE_SMALL, Color(1.0, 0.78, 0.38))
 	_lbl_power.size = Vector2(w * 0.6 - TOP_PAD, 24.0)
 	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 2줄: 진행 숫자 + 진행바. 숫자만으로는 "얼마나 남았나"가 곁눈질로 안 읽힌다.
-	_lbl_prog = _mk_label(Vector2(TOP_PAD, 58.0), Type.SIZE_SMALL, Color(0.8, 0.85, 0.95))
+	_lbl_prog = _mk_label(Vector2(TOP_PAD, 44.0), Type.SIZE_SMALL, Color(0.8, 0.85, 0.95))
 	_lbl_prog.size.y = 24.0
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_stage_bar = Ui.bar(Vector2(TOP_PAD, 86.0), right - TOP_PAD,
-		Color(0.78, 0.18, 0.22))
+	# 진행바는 **전투 화면 맨 위에 얇게** 얹는다. 장식 바(52px)가 상단 판의 4분의 1을
+	# 먹고 있었고, 같은 숫자가 바로 위 줄에 글자로도 적혀 있었다.
+	#
+	# ProgressBar 를 안 쓴다. 테마가 걸린 채로는 최소 높이를 못 내려서 7px 로 지정해도
+	# 22px 로 그려졌다(실측). 채움 사각형 하나면 되는 일에 위젯과 싸울 이유가 없다.
+	var bar_back := ColorRect.new()
+	bar_back.color = Color(0.04, 0.03, 0.05, 0.8)
+	bar_back.position = Vector2(0.0, VIEW_TOP)
+	bar_back.size = Vector2(Grid.BG.x, STAGE_BAR_H)
+	bar_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_root.add_child(bar_back)
+	_stage_bar = ColorRect.new()
+	_stage_bar.color = Color(0.85, 0.20, 0.24)
+	_stage_bar.position = Vector2(0.0, VIEW_TOP)
+	_stage_bar.size = Vector2(0.0, STAGE_BAR_H)
+	_stage_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_stage_bar)
 	# 3줄: 성장에 쓰는 재화는 어디서든 한 번에 읽히도록 한 줄에 모은다.
-	_hud_root.add_child(Ui.panel(Vector2(18.0, 132.0), Vector2(540.0, 48.0)))
+	_hud_root.add_child(Ui.panel(Vector2(18.0, 70.0), Vector2(540.0, 50.0)))
 	var currencies := [
 		["res://assets/ui/res_blood.png", Color(1.0, 0.4, 0.4)],
 		["res://assets/items/gem.png", Color(0.72, 0.82, 1.0)],
@@ -741,10 +762,10 @@ func _build_topbar() -> void:
 	# 24px 은 32px 원본을 줄이는 쪽이라 오히려 도트가 깨져 뭉개져 보였다.
 	for i in currencies.size():
 		var x := 30.0 + float(i) * 176.0
-		var ic := Ui.icon(currencies[i][0], Vector2(x, 138.0), 36.0)
+		var ic := Ui.icon(currencies[i][0], Vector2(x, 77.0), 36.0)
 		_hud_root.add_child(ic)
 		icons.append(ic)
-		var label := _mk_label(Vector2(x + 42.0, 140.0), Type.SIZE_SMALL, currencies[i][1])
+		var label := _mk_label(Vector2(x + 42.0, 79.0), Type.SIZE_SMALL, currencies[i][1])
 		label.size = Vector2(126.0, 30.0)
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		labels.append(label)
@@ -900,19 +921,19 @@ func _mk_label(pos: Vector2, size: int, col: Color) -> Label:
 
 
 # 콘텐츠 창 3개. 창은 전부 같은 자리(rows 37..57)를 쓰고 탭이 하나만 켠다.
-const PANEL_AT := Vector2(0, 30)
-const PANEL_SIZE := Vector2(36, 20)
+const PANEL_AT := Vector2(0, 26)
+const PANEL_SIZE := Vector2(36, 24)
 # 창 안쪽 여백. 창마다 다른 값을 쓰면 어느 창은 글자가 테두리에 닿는다 — 여기 하나만 본다.
 const PAD := 26.0   # 패널 테두리(Ui.PANEL_MARGIN=12)보다 넉넉히 안쪽
 const PANEL_W := 576.0
-const PANEL_H := 320.0
+const PANEL_H := 384.0
 const CONTENT_W := PANEL_W - PAD * 2.0    # 528
 const CONTENT_BOTTOM := PANEL_H - PAD     # 296
 
 
 func _build_panels() -> void:
 	# 콘텐츠와 탭바는 별도 판이다. 한 장으로 덮으면 하단 메뉴가 콘텐츠에 붙어 보인다.
-	_hud_root.add_child(Ui.panel(Grid.uv(0, 30), Grid.uv(36, 20)))
+	_hud_root.add_child(Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24)))
 	for name in ["growth", "gear", "summon", "codex"]:
 		var c := Control.new()
 		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, PANEL_AT.y))
@@ -4296,7 +4317,8 @@ func _refresh_hud() -> void:
 	_lbl_prog.add_theme_color_override("font_color",
 		Color(1.0, 0.45, 0.42) if _boss_time <= 5.0 else Color(0.8, 0.85, 0.95))
 	if _stage_bar:
-		_stage_bar.value = clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
+		_stage_bar.size.x = float(Grid.BG.x) \
+			* clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
 	_lbl_hero.text = "레벨 %d" % hero_lv
 	_lbl_gold.text = "혈액 %s" % _n(gold)
 	_lbl_essence.text = "정수 %s" % _n(essence)

@@ -260,3 +260,4 @@ static func scroll(pos: Vector2, size: Vector2, horizontal := false) -> ScrollCo
 				GRAB_CAP if horizontal else 6, 6 if horizontal else GRAB_CAP, horizontal))
 	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	return s
+
