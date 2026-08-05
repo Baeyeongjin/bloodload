@@ -126,3 +126,27 @@ static func codex_next_need(kills: int) -> int:
 static func codex_step_of(kills: int) -> int:
 	var lv := codex_level(kills)
 	return int(CODEX_KILL_STEPS[mini(lv, CODEX_KILL_STEPS.size() - 1)])
+
+
+# ── 몹 수치 ────────────────────────────────────────────────────────────────
+# 예전엔 이 공식이 Foe.setup / Main._offline_profile / BalanceTest 세 군데에
+# 각각 적혀 있었다. 하나만 고치면 실시간과 오프라인과 검사가 서로 다른 게임이 된다.
+#
+# HP_BASE 를 10 -> 5.5 로 내렸다. 한 구간이 60마리 / 60초가 되면서 마리당 쓸 수 있는
+# 시간이 1초뿐인데, 10 이면 시작하자마자 처치시간이 1.2초라 1-1 부터 시간 초과였다.
+const HP_BASE := 5.5
+# 보스·중간보스는 **한 마리로 구간을 막는다.** 12 / 3.5 였을 때는 보스 처치시간이
+# 일반 몹의 12배뿐이라, 일반 구간이 45초 걸리는데 보스는 9초에 끝났다 —
+# 벽이어야 할 자리가 제일 쉬웠다. 제한 시간의 절반쯤 걸리게 잡은 값이다.
+const BOSS_HP_MULT := 75.0
+const MIDBOSS_HP_MULT := 48.0
+
+
+static func role_hp_mult(boss: bool, midboss: bool) -> float:
+	if boss:
+		return BOSS_HP_MULT
+	return MIDBOSS_HP_MULT if midboss else 1.0
+
+
+static func foe_hp(hp_mult: float, power: float, boss: bool, midboss: bool) -> float:
+	return HP_BASE * hp_mult * power * role_hp_mult(boss, midboss)

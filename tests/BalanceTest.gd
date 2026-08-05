@@ -120,16 +120,19 @@ func _init() -> void:
 	assert(survives and not fails, "오프라인 생존 판정이 공격/생존 차이를 못 가른다")
 	# 제한 시간이 생긴 뒤로는 **버티기만으로는 못 넘는다.** 같은 입력이라도 시간이
 	# 모자라면 오프라인도 멈춰야 실시간과 결과가 갈리지 않는다.
-	# 위 survives 는 20마리 x 10 / dps 100 = 2초가 걸린다.
-	assert(Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, 3.0),
+	# 위 survives 는 20마리 x 10 / dps 100 = 2초 + 접근 20 x 0.55 = 13초가 걸린다.
+	var push20 := Balance.stage_seconds(20, 10.0, 100.0)
+	assert(is_equal_approx(push20, 2.0 + 20.0 * Balance.APPROACH_SECONDS),
+		"접근 시간이 구간 소요에 안 들어간다: %.1f초" % push20)
+	assert(Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, push20 + 1.0),
 		"시간이 남는데 제한에 걸린다")
-	assert(not Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, 1.0),
+	assert(not Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, push20 - 1.0),
 		"제한 시간을 넘겼는데 통과한다")
 	# 처리량 상한 — 몹이 화면 밖에서 걸어오므로 **DPS가 무한이어도** 동시 몹 수보다
 	# 빨리 잡을 수 없다. 이걸 빼면 오프라인이 실시간으로는 못 넘는 구간을 넘어간다.
-	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0e9), 0.0)
-		or Balance.stage_seconds(60, 10.0, 1.0e9) < 0.001,
-		"DPS가 무한인데 시간이 남는다")
+	# DPS 가 무한이어도 **접근 시간은 남는다** — 몹에게 달려가는 건 못 줄인다.
+	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0e9),
+		60.0 * Balance.APPROACH_SECONDS), "DPS가 무한인데 접근 시간까지 사라진다")
 	var flow2 := Balance.stage_seconds(60, 10.0, 1.0e9, 2, 2.33)
 	var flow4 := Balance.stage_seconds(60, 10.0, 1.0e9, 4, 2.33)
 	assert(flow2 > 60.0, "동시 2마리로 60마리를 60초에 잡을 수 있다고 나온다: %.1f초" % flow2)
@@ -137,32 +140,58 @@ func _init() -> void:
 	assert(flow2 > flow4, "칸이 늘었는데 더 오래 걸린다")
 	# DPS가 모자라면 그쪽이 병목이다 — 둘 중 느린 쪽을 쓴다.
 	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0, 4, 2.33),
-		Balance.push_seconds(60, 10.0, 1.0)), "DPS 병목일 때 처리량이 이긴다")
+		Balance.push_seconds(60, 10.0, 1.0) + 60.0 * Balance.APPROACH_SECONDS),
+		"DPS 병목일 때 처리량이 이긴다")
 	# 구간 종류마다 시간이 다르고, 보스가 가장 길어야 한다.
 	assert(StageDefs.time_limit(10) >= StageDefs.time_limit(1), "보스 제한이 더 짧다")
 	for st in [1, 5, 10, 37, 100]:
 		assert(StageDefs.time_limit(st) > 0.0, "제한 시간이 0 이하다: %d" % st)
 
 	# 14) 대표 성장값별 처치시간. 장비·영웅 레벨을 빼 보수적으로 잡는다.
+	# 첫 보스는 **가르치는 벽**이다. 맨몸으로는 제한 시간에 쫓기고, 조금 훈련하면 열린다.
+	# 예전 검사는 "1레벨 올리면 열린다"였는데 그건 공격력이 레벨당 +100% 였을 때 얘기다 —
+	# 합연산(+2%)에서는 한 레벨로 벽이 열리면 그게 오히려 이상하다.
 	var starter_ttk := _foe_hp(10, "boss") / _build_dps(1, 1, 1, 1)
-	var first_upgrade_ttk := _foe_hp(10, "boss") / _build_dps(2, 1, 1, 1)
-	assert(starter_ttk > 60.0 and first_upgrade_ttk < 60.0,
-		"첫 보스가 성장 전에는 막고 첫 공격력 훈련 뒤에는 열리지 않는다")
-	var checkpoints := [
-		{"name": "첫날", "stage": 50, "build": [60, 40, 10, 10]},
-		{"name": "1주", "stage": 500, "build": [200, 150, 35, 40]},
-		{"name": "1개월", "stage": 1000, "build": [600, 450, 80, 120]},
+	var trained_ttk := _foe_hp(10, "boss") / _build_dps(40, 20, 5, 5)
+	assert(starter_ttk > StageDefs.TIME_BOSS * 0.6,
+		"첫 보스가 맨몸에도 너무 쉽다: %.0f초" % starter_ttk)
+	assert(trained_ttk < StageDefs.TIME_BOSS * 0.6,
+		"첫 보스가 훈련하고도 안 열린다: %.0f초" % trained_ttk)
+	# 공격력은 **레벨당 +2% 합연산**이다. STATS 4장 검산표(DPS 배수)를 그대로 못 박는다 —
+	# 이 검사가 곱연산으로 되돌리는 실수를 잡는다(곱연산이면 x70 / x479 / x8212 가 나온다).
+	var base_dps := _build_dps(1, 1, 1, 1)
+	var design := [
+		{"name": "첫날", "stage": 50, "build": [60, 40, 10, 10], "dps_mult": 3.0},
+		{"name": "1주", "stage": 500, "build": [200, 150, 35, 40], "dps_mult": 15.0},
+		{"name": "1개월", "stage": 1000, "build": [600, 450, 80, 120], "dps_mult": 180.0},
+		{"name": "3개월", "stage": 1000, "build": [1500, 1000, 100, 400], "dps_mult": 4000.0},
 	]
-	for point in checkpoints:
+	for point in design:
 		var build: Array = point["build"]
 		var build_dps := _build_dps(build[0], build[1], build[2], build[3])
-		var normal_ttk := _foe_hp(point["stage"], "normal") / build_dps
-		var mid_ttk := _foe_hp(point["stage"], "midboss") / build_dps
-		var boss_ttk := _foe_hp(point["stage"], "boss") / build_dps
-		assert(boss_ttk < 60.0, "%s 대표 성장값으로 보스를 못 잡는다" % point["name"])
-		print("TTK %-4s %s  일반 %.2fs / 중간 %.2fs / 보스 %.2fs  DPS %.1f"
-			% [point["name"], StageDefs.label(point["stage"]), normal_ttk,
-			mid_ttk, boss_ttk, build_dps])
+		var mult := build_dps / base_dps
+		var want := float(point["dps_mult"])
+		# 설계표와 25% 안에서 맞아야 한다. 곱연산이면 20배 넘게 벌어져 바로 걸린다.
+		assert(mult > want * 0.75 and mult < want * 1.25,
+			"%s DPS 배수가 설계표와 다르다: x%.0f (설계 x%.0f)" % [point["name"], mult, want])
+		var stage: int = point["stage"]
+		var normal_ttk := _foe_hp(stage, "normal") / build_dps
+		var mid_ttk := _foe_hp(stage, "midboss") / build_dps
+		var boss_ttk := _foe_hp(stage, "boss") / build_dps
+		# 구간은 **제한 시간 안에** 끝나야 한다. 예전엔 보스만 60초를 봤는데,
+		# 60마리 구간이 제한을 넘는지가 실제로 막히는 자리다.
+		var kills := StageDefs.kills_needed(stage - 1)   # 보스 구간 바로 앞 = 일반 구간
+		var clear := Balance.stage_seconds(kills, _foe_hp(stage - 1, "normal"), build_dps,
+			4, StageDefs.WAVE_WALK_SECONDS)
+		assert(clear < StageDefs.TIME_NORMAL,
+			"%s 일반 구간이 제한 시간을 넘는다: %.0f초" % [point["name"], clear])
+		assert(mid_ttk < StageDefs.TIME_MIDBOSS,
+			"%s 중간보스를 제한 시간 안에 못 잡는다: %.0f초" % [point["name"], mid_ttk])
+		assert(boss_ttk < StageDefs.TIME_BOSS,
+			"%s 보스를 제한 시간 안에 못 잡는다: %.0f초" % [point["name"], boss_ttk])
+		print("TTK %-5s %-7s 일반 %.2fs (60마리 %.0f초) / 중간 %.1fs / 보스 %.1fs  DPS x%.0f"
+			% [point["name"], StageDefs.label(stage), normal_ttk, clear,
+			mid_ttk, boss_ttk, mult])
 
 	# 15) 축약 표기. 자릿수를 한 칸 잘못 세면 조 단위가 천 단위로 보여서
 	#     "얼마나 부자인지"가 통째로 거짓말이 된다.
@@ -203,5 +232,5 @@ func _foe_hp(at_stage: int, role: String) -> float:
 		for key in act["roster"]:
 			hp_mult += float(FoeTiers.get_tier(str(key))["hp_mult"])
 		hp_mult /= float((act["roster"] as Array).size())
-	var role_mult := 12.0 if role == "boss" else (3.5 if role == "midboss" else 1.0)
-	return 10.0 * hp_mult * StageDefs.enemy_power(at_stage) * role_mult
+	return FoeTiers.foe_hp(hp_mult, StageDefs.enemy_power(at_stage),
+		role == "boss", role == "midboss")

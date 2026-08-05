@@ -62,8 +62,7 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	hp_mult = float(tier.get("hp_mult", 1.0))
 	body_scale = float(tier.get("size", 1.0))
 	# 보스·중간보스는 한 마리로 단계를 막는다.
-	var boss_mult := 12.0 if boss else (3.5 if is_midboss else 1.0)
-	max_hp = 10.0 * hp_mult * power * boss_mult
+	max_hp = FoeTiers.foe_hp(hp_mult, power, boss, is_midboss)
 	hp = max_hp
 	gold = stage_gold * (10.0 if boss else 1.0)
 	_sprite = Assets.tex(str(tier.get("sprite", "")))

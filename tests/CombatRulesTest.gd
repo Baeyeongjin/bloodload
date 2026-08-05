@@ -41,7 +41,7 @@ func _init() -> void:
 	elite_tier["name_prefix"] = "타락한 "
 	var elite := Foe.new()
 	elite.setup(elite_tier, 1.0, 1.0)
-	assert(is_equal_approx(elite.max_hp, normal.max_hp * 3.5))
+	assert(is_equal_approx(elite.max_hp, normal.max_hp * FoeTiers.MIDBOSS_HP_MULT))
 	assert(is_equal_approx(elite._size(), float(Grid.SPRITE) * 4.0))
 	assert(elite.display_name.begins_with("타락한 "))
 	var boss_tier := FoeTiers.get_tier("wraith_knight")

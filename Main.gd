@@ -39,7 +39,10 @@ const HERO_DRAW_SCALE := 2.0
 const IMPACT_RATIO := Foe.IMPACT_RATIO   # 원래 기준: 7프레임 중 네 번째
 const SPAWN_X := 660.0        # 화면 밖 오른쪽에서 등장
 const SPAWN_X_LEFT := -84.0   # 화면 밖 왼쪽에서 등장
-const MAX_FOES := 5           # 세로 화면은 가로가 좁아 5마리가 한계
+# 칸이 좌우 3개씩 여섯인데 5가 상한이라 **왼쪽 마지막 칸을 한 번도 안 썼다.**
+# 60마리/60초 구간에서는 동시 마릿수가 곧 처리량 상한이라(60 x 걷는시간 / n),
+# 한 칸을 놀리면 그만큼 시간이 모자란다.
+const MAX_FOES := 6
 # 몹이 자리를 잡는 칸. 영웅 기준이 아니라 **화면 기준 고정 좌표**다 — 예전처럼
 # 영웅 사거리 앞에 줄 세우면 영웅이 움직일 이유가 없어서 전투가 정지 화면이 된다.
 # 간격 64 = 몹 한 마리 폭(32x2)이라 겹치지 않는 최소값이다. 예전 72 는 첫 칸이
@@ -3238,7 +3241,7 @@ func on_foe_attack(_foe: Foe) -> void:
 		return
 	if absf(_foe.position.x - hero_x) > _foe.reach():
 		return
-	var incoming := StageDefs.enemy_power(stage) * 4.0
+	var incoming := Balance.foe_damage(StageDefs.enemy_power(stage))
 	hero_hp = maxf(0.0, hero_hp - incoming)
 	_hero_flash_t = 0.10
 	_hero.self_modulate = Color(7, 7, 8)
@@ -4036,10 +4039,9 @@ func _offline_profile(at_stage: int) -> Dictionary:
 	# 무리 크기를 그대로 쓰면 오프라인이 받는 피해를 과대평가해 실시간과 갈린다.
 	var count := 1 if boss or midboss else mini(_wave_size(at_stage), FOES_IN_REACH)
 	return {
-		"hp": 10.0 * hp_mult * StageDefs.enemy_power(at_stage) \
-			* (12.0 if boss else (3.5 if midboss else 1.0)),
+		"hp": FoeTiers.foe_hp(hp_mult, StageDefs.enemy_power(at_stage), boss, midboss),
 		"count": count,
-		"damage": StageDefs.enemy_power(at_stage) * 4.0,
+		"damage": Balance.foe_damage(StageDefs.enemy_power(at_stage)),
 		"interval": Balance.foe_attack_interval(hp_mult),
 	}
 

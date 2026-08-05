@@ -41,9 +41,37 @@ static func crit_mult(chance_lv: int, dmg_lv: int) -> float:
 	return 1.0 + chance * (dmg - 1.0)
 
 
+# 공격력. **레벨당 +2% 합연산**이다 — `4 × 레벨`(레벨당 +100%)이 아니다.
+#
+# 코드가 STATS.md 4장 첫 줄의 `4 × 공격력Lv` 를 그대로 베끼고 있었는데, 그 줄이
+# 오타다. **같은 문서 2-1 표는 "+2%(합)"이라 적혀 있고, 4장의 검산표(DPS 배수
+# 첫날 x3 / 1주 x15 / 1개월 x180 / 3개월 x4,000)를 역산하면 +2% 합연산이 나온다** —
+# 아래 공식으로 계산하면 x2.5 / x11.9 / x177.7 / x3,949 로 1% 안에서 맞는다.
+# 곱연산으로 두면 x70 / x479 / x8,212 / x191,210 이라 표와 50배 어긋난다.
+#
+# 이걸 고치면 STATS 1장의 "합연산은 무한, 곱연산은 유한" 규칙도 다시 지켜진다.
+#
+# 기준값 4.0 -> 14.0 은 60마리/60초 구간에서 역산한 값이다. 마리당 쓸 수 있는 시간이
+# 1초인데 **그중 0.55초는 다음 몹에게 달려가는 데 쓴다**(APPROACH_SECONDS) —
+# 실제로 때리는 시간은 0.45초뿐이라 그 안에 몹을 눕힐 만큼 세야 한다.
+const DMG_BASE := 14.0
+const DMG_PER_LEVEL := 0.02
+
+
 static func hero_damage(damage_level: int, gear_damage: float, hero_level: int) -> float:
-	return (4.0 * float(maxi(1, damage_level)) + maxf(0.0, gear_damage)) \
-		* hero_mult(hero_level)
+	return (DMG_BASE * (1.0 + DMG_PER_LEVEL * float(maxi(1, damage_level) - 1))
+		+ maxf(0.0, gear_damage)) * hero_mult(hero_level)
+
+
+# 몹 한 대의 피해. `enemy_power × 4` 였는데 그러면 적 강화를 **그대로** 타서
+# 지수로 오르는 반면 체력은 합연산이라, 후반에 한 대에 여러 번 죽었다.
+# 지수를 0.85 로 눌러 체력 성장이 따라갈 수 있게 한다.
+const FOE_DMG_BASE := 1.0
+const FOE_DMG_EXP := 0.85
+
+
+static func foe_damage(power: float) -> float:
+	return pow(maxf(0.0, power), FOE_DMG_EXP) * FOE_DMG_BASE
 
 
 static func attack_interval(speed_level: int) -> float:
@@ -78,9 +106,12 @@ static func combat_power(dps: float, tough: float) -> float:
 # ── 생존 ──────────────────────────────────────────────────────────────────
 # 체력 스탯과 방어구 실효 수치를 한 공식에 넣는다. 방어구의 base/등급/강화가 이미
 # GearDefs.power() 하나로 합쳐지므로 여기서는 그 값을 "방어구 강화합"으로 받는다.
+# 체력 레벨당 +2% 였는데, 몹 피해가 적 강화를 그대로 타는 동안 체력만 합연산이라
+# 체력 스탯이 장식이었다(실제로 100단계에서 한 대에 9번 죽었다). 몹 피해 지수를
+# 누르고(foe_damage) 이쪽을 +6% 로 올려 양쪽에서 벌린다.
 static func hero_max_hp(tough_level: int, armor_power: float) -> float:
 	return 100.0 * (1.0
-		+ 0.02 * float(maxi(1, tough_level) - 1)
+		+ 0.06 * float(maxi(1, tough_level) - 1)
 		+ 0.12 * maxf(0.0, armor_power))
 
 
@@ -119,12 +150,22 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> f
 #
 # 이걸 빼면 오프라인이 DPS만 보고 "넘을 수 있다"고 판정해서, 실시간으로는 영원히
 # 못 넘는 구간을 껐다 켜면 넘어가 있다.
+#
+# 한 마리를 잡을 때마다 **다음 몹에게 달려가는 시간**이 더 든다. 몹은 고정 칸에 서고
+# 영웅이 칸 사이를 오가므로 DPS 로는 줄일 수 없는 고정비다.
+# 0.55초는 실측값이다 — 1-1 을 25초 돌려 19마리(1.26초/마리)를 세고, 거기서 모델
+# 처치시간(0.67초)을 뺐다. 이게 빠져 있어서 모델은 41초라는데 실제로는 76초였다.
+# ponytail: 대시 속도(DASH_SPEED)나 칸 좌표를 바꾸면 다시 재야 한다.
+const APPROACH_SECONDS := 0.55
+
+
 static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float,
 		lanes := 0, walk_seconds := 0.0) -> float:
-	var push := push_seconds(kills_needed, foe_hp, hero_dps)
+	var n := float(maxi(0, kills_needed))
+	var push := push_seconds(kills_needed, foe_hp, hero_dps) + n * APPROACH_SECONDS
 	if lanes <= 0 or walk_seconds <= 0.0:
 		return push
-	return maxf(push, float(maxi(0, kills_needed)) * walk_seconds / float(lanes))
+	return maxf(push, n * walk_seconds / float(lanes))
 
 
 # time_limit: 구간 제한 시간. 0 이하면 제한 없음.

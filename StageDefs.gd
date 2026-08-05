@@ -102,10 +102,14 @@ static func midboss_prefix(stage: int) -> String:
 
 
 # 단계별 적 강화 배수. 방치형은 "숫자가 오르는 게 보상"이라 곡선이 완만하고 끝이 없다.
-# 지수(1.14^n)면 20단계에서 15배가 돼 방치 시간이 급격히 늘어난다 — 선형+완만한 지수 혼합.
+#
+# 선형항(1 + p×0.35)을 없애고 **순수 지수**로 바꿨다. 선형+지수 혼합이면 초반에
+# 적이 급격히 세지는데(첫날→1주 ×49.2), 그 사이 영웅 DPS 는 ×5 밖에 안 올라
+# 첫 일주일에만 벽이 몰리고 그 뒤로는 성장 체감이 0이었다 — DESIGN 13-1 의
+# "초반 폭발 → 중반 해금 → 후반 누적"과 정반대였고 하필 D+1~D+7 구간이다.
+# 큰 단계마다 ×1.038 이면 100단계 누적 ×40 으로, STATS 4장의 DPS 곡선과 나란히 간다.
 static func enemy_power(stage: int) -> float:
-	var progress := float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE)
-	return (1.0 + progress * 0.35) * pow(1.045, progress)
+	return pow(1.038, float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE))
 
 
 # 처치로 얻는 피. 적 강화보다 조금 느리게 올려 후반에 방치가 필요해지게 한다.
