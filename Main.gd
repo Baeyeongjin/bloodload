@@ -256,6 +256,7 @@ var _skill_auto_btn: Button
 var _skill_synth_btn: Button
 var _step_btns: Array[Button] = []
 var _stage_bar: ColorRect
+var _stage_bar_width := 0.0
 var _offline_banner: Label
 var _power_toast: Label
 var _confirm_view: Control
@@ -732,8 +733,15 @@ const TOP_ICON := 32.0
 
 func _build_topbar() -> void:
 	var w := float(Grid.BG.x)
-	# 1줄: 재화 3종을 **알약**으로. 큰 판 하나 대신 작은 판 셋 — 판이 아니라
-	# 게임 화면 위에 떠 있는 UI 로 읽힌다(레퍼런스 방치형들의 표준 구성).
+	# **레퍼런스 배치로 다시 잡았다.** 예전엔 재화 줄 / 막이름 줄 / 진행 줄이 각각
+	# 화면 폭을 통째로 쓰는 **가로 띠 3층**이라 위쪽이 무겁고 눈이 위아래로 훑어야 했다.
+	# 레퍼런스는 요소를 네 모서리로 흩고 **가운데 위에 정보 덩어리 하나**만 둔다.
+	#   왼쪽 위  : 초상화 + 레벨          (누구인가)
+	#   오른쪽 위: 재화 알약 (작게, 세로)  (얼마 있나)
+	#   가운데 위: 막이름 -> 처치/시간 -> 진행바 한 덩어리 (지금 뭐 하는 중인가)
+	#   오른쪽   : 전투력
+	_build_portrait()
+	# ── 오른쪽 위: 재화. 폭의 절반만 쓴다. 세 개를 가로로 펼치면 그것만으로 한 줄이다.
 	var currencies := [
 		["res://assets/ui/res_blood.png", Color(1.0, 0.4, 0.4)],
 		["res://assets/items/gem.png", Color(0.72, 0.82, 1.0)],
@@ -741,54 +749,89 @@ func _build_topbar() -> void:
 	]
 	var labels: Array[Label] = []
 	var icons: Array[TextureRect] = []
-	var pill_w := 182.0
+	# 알약 9-slice 는 **양끝 보석이 각 30px** 이다(Ui.PILL_SIDE). 118 로 잡았더니
+	# 안쪽이 58px 뿐이라 글자가 보석 위로 올라탔다 — 폭을 늘리고 글자를 보석 안쪽으로 문다.
+	var pill_w := 150.0
+	var pill_h := 28.0
 	_currency_pills.clear()
 	for i in currencies.size():
-		var x := 8.0 + float(i) * (pill_w + 6.0)
-		var pill := Ui.pill(Vector2(x, 4.0), Vector2(pill_w, 38.0))
+		# 2열 x 2행으로 오른쪽 위에 몬다: 혈액은 위 한 칸, 정수·보석은 아래 두 칸.
+		# 혈액이 제일 자주 바뀌는 값이라 혼자 위에 둬서 눈에 먼저 든다.
+		var at := Vector2(w - pill_w - 8.0, 4.0) if i == 0 \
+			else Vector2(w - pill_w * 2.0 - 14.0 + float(i - 1) * (pill_w + 6.0),
+				4.0 + pill_h + 4.0)
+		var pill := Ui.pill(at, Vector2(pill_w, pill_h))
 		_hud_root.add_child(pill)
 		_currency_pills.append(pill)
-		var ic := Ui.icon(currencies[i][0], Vector2(x + 8.0, 9.0), 28.0)
+		var ic := Ui.icon(currencies[i][0], at + Vector2(6.0, 4.0), 20.0)
 		_hud_root.add_child(ic)
 		icons.append(ic)
-		var label := _mk_label(Vector2(x + 42.0, 8.0), Type.SIZE_SMALL, currencies[i][1])
-		label.size = Vector2(pill_w - 50.0, 30.0)
+		var label := _mk_label(at + Vector2(30.0, 0.0), Type.SIZE_SMALL, currencies[i][1])
+		label.size = Vector2(pill_w - 30.0 - float(Ui.PILL_SIDE) + 6.0, pill_h)
+		label.clip_text = true
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		labels.append(label)
 	_lbl_gold = labels[0]
 	_lbl_essence = labels[1]
 	_lbl_gem = labels[2]
 	_currency_icons = icons
-	# 2줄: 막 이름·단계는 **가운데**(레퍼런스의 "미궁 54층-4" 자리), 레벨은 왼쪽.
-	_lbl_hero = _mk_label(Vector2(8.0, 46.0), Type.SIZE_SMALL, Color(0.72, 0.92, 0.72))
-	_lbl_hero.size = Vector2(110.0, 26.0)
-	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_lbl_stage = _mk_label(Vector2(120.0, 42.0), Type.SIZE_BODY, Color(1.0, 0.9, 0.55))
-	_lbl_stage.size = Vector2(w - 240.0, 30.0)
+	# ── 가운데 위: 막이름 -> 처치/시간 -> 진행바. **한 덩어리로 붙인다.**
+	# 예전엔 이름이 2줄째, 진행바는 저 아래 전투 화면 위에 있어서 한 정보가 두 군데로
+	# 쪼개져 있었다.
+	var mid_x := 132.0
+	var mid_w := w - mid_x - 138.0
+	_lbl_stage = _mk_label(Vector2(mid_x, 42.0), Type.SIZE_BODY, Color(1.0, 0.9, 0.55))
+	_lbl_stage.size = Vector2(mid_w, 26.0)
 	_lbl_stage.clip_text = true
 	_lbl_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_stage.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 3줄: 왼쪽 진행 / 오른쪽 전투력. 2줄에 전투력을 두면 막 이름과 겹친다(실측).
-	_lbl_power = _mk_label(Vector2(w - 246.0, 68.0), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.38))
-	_lbl_power.size = Vector2(238.0, 24.0)
-	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_lbl_prog = _mk_label(Vector2(8.0, 68.0), Type.SIZE_SMALL, Color(0.8, 0.85, 0.95))
-	_lbl_prog.size.y = 24.0
+	_lbl_prog = _mk_label(Vector2(mid_x, 66.0), Type.SIZE_SMALL, Color(0.8, 0.85, 0.95))
+	_lbl_prog.size = Vector2(mid_w, 18.0)
+	_lbl_prog.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_prog.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 진행바도 가운데 덩어리 안. 전투 화면 맨 위 전체 폭 실선은 "게이지"로 안 읽혔다.
+	var bar_at := Vector2(mid_x, 86.0)
+	var bar_w := mid_w
 	var bar_back := ColorRect.new()
-	bar_back.color = Color(0.04, 0.03, 0.05, 0.8)
-	bar_back.position = Vector2(0.0, VIEW_TOP)
-	bar_back.size = Vector2(Grid.BG.x, STAGE_BAR_H)
+	bar_back.color = Color(0.05, 0.04, 0.06, 0.9)
+	bar_back.position = bar_at
+	bar_back.size = Vector2(bar_w, STAGE_BAR_H)
 	bar_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(bar_back)
 	_stage_bar = ColorRect.new()
 	_stage_bar.color = Color(0.85, 0.20, 0.24)
-	_stage_bar.position = Vector2(0.0, VIEW_TOP)
+	_stage_bar.position = bar_at
 	_stage_bar.size = Vector2(0.0, STAGE_BAR_H)
 	_stage_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage_bar_width = bar_w
 	_hud_root.add_child(_stage_bar)
+	# ── 오른쪽 아래: 전투력. 가운데 덩어리(132~438)와 **겹쳐 있었다** — 그 오른쪽
+	# 빈 칸으로 뺀다. 좁아서 "초당 N"은 뺐다(성장 탭에 그대로 있다).
+	_lbl_power = _mk_label(Vector2(mid_x + mid_w + 6.0, 64.0), Type.SIZE_SMALL,
+		Color(1.0, 0.78, 0.38))
+	_lbl_power.size = Vector2(w - mid_x - mid_w - 14.0, 24.0)
+	_lbl_power.clip_text = true
+	_lbl_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+
+# 왼쪽 위 초상화 블록. 레퍼런스에서 이 자리가 "누구인가"를 담당한다 —
+# 우리는 여기가 통째로 비어 있어서 화면이 오른쪽으로 쏠려 보였다.
+const PORTRAIT := 60.0
+
+
+func _build_portrait() -> void:
+	var frame := Ui.icon("res://assets/ui/portrait_frame.png", Vector2(6.0, 4.0), PORTRAIT)
+	var face := Ui.icon("res://assets/ui/portrait_hero.png",
+		Vector2(6.0 + PORTRAIT * 0.16, 4.0 + PORTRAIT * 0.14), PORTRAIT * 0.68)
+	# 얼굴을 틀보다 먼저 붙여야 틀 테두리가 얼굴 위로 온다.
+	_hud_root.add_child(face)
+	_hud_root.add_child(frame)
+	_lbl_hero = _mk_label(Vector2(0.0, 4.0 + PORTRAIT - 6.0), Type.SIZE_SMALL,
+		Color(0.82, 0.96, 0.82))
+	_lbl_hero.size = Vector2(PORTRAIT + 12.0, 20.0)
+	_lbl_hero.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
 
 # ── 공용 확인창 / 보상창 ───────────────────────────────────────────────────
@@ -2522,10 +2565,11 @@ func _build_chest() -> void:
 	_chest_btn = Button.new()
 	_chest_btn.flat = true
 	_chest_btn.focus_mode = Control.FOCUS_NONE
-	# 자리는 **전투 띠 위쪽 하늘**이다. 처음엔 레퍼런스처럼 화면 가운데 아래에 뒀는데
-	# 거기는 지면이라 몹 몸통과 겹쳤다(렌더로 확인). 하늘은 배경뿐이라 아무것도 안 가린다.
-	# HP 라벨(VIEW_TOP+12, 오른쪽 정렬)과 겹치지 않게 그 아래로 내린다 — 실측.
-	_chest_btn.position = Vector2(float(Grid.BG.x) - CHEST_BOX - 12.0, VIEW_TOP + 44.0)
+	# 자리는 **전투 띠 하단 왼쪽~가운데**다(레퍼런스의 보물상자 자리).
+	# 가운데 정중앙에 두면 영웅이 그 앞뒤로 대시할 때 겹치고, 오른쪽은 가이드 카드가
+	# 이미 쓴다 — 그 사이 왼쪽 1/3 지점이 비어 있다.
+	_chest_btn.position = Vector2(float(Grid.BG.x) * 0.22 - CHEST_BOX * 0.5,
+		VIEW_BOTTOM - CHEST_BOX - 14.0)
 	_chest_btn.size = Vector2(CHEST_BOX, CHEST_BOX)
 	_chest_btn.visible = false
 	_chest_btn.pressed.connect(_claim_chest)
@@ -4396,10 +4440,13 @@ static func stage_progress_text(at_stage: int, done: int, need: int) -> String:
 
 func _refresh_hud() -> void:
 	var act: Dictionary = StageDefs.act_data(stage)
-	_lbl_stage.text = "%s  %s" % [act["name"], StageDefs.label(stage)]
+	# 막 이름만 크게. **단계 번호는 아래 진행 줄로 내렸다** — 둘을 한 줄에 두면
+	# "깨어난 무덤  100-10"이 336px 이라 가운데 칸(306px)을 넘어 조용히 잘린다
+	# (GearTest 가 잡았다).
+	_lbl_stage.text = str(act["name"])
 	var need := StageDefs.kills_needed(stage)
-	_lbl_prog.text = "%s · %d초" % [stage_progress_text(stage, kills, need),
-		int(ceil(maxf(0.0, _boss_time)))]
+	_lbl_prog.text = "%s · %s · %d초" % [StageDefs.label(stage),
+		stage_progress_text(stage, kills, need), int(ceil(maxf(0.0, _boss_time)))]
 	# 남은 시간이 얼마 없으면 붉게. 숫자를 안 보고 있어도 색이 먼저 눈에 들어온다.
 	_lbl_prog.add_theme_color_override("font_color",
 		Color(1.0, 0.45, 0.42) if _boss_time <= 5.0 else Color(0.8, 0.85, 0.95))
@@ -4407,12 +4454,15 @@ func _refresh_hud() -> void:
 		_stage_bar.size.x = float(Grid.BG.x) \
 			* clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
 	_lbl_hero.text = "레벨 %d" % hero_lv
-	_lbl_gold.text = "혈액 %s" % _n(gold)
-	_lbl_essence.text = "정수 %s" % _n(essence)
-	_lbl_gem.text = "보석 %s" % _n(gem)
+	# **아이콘만 두고 이름은 뺐다.** 알약 안쪽이 96px 인데 "혈액 999.9t"는 108px 이라
+	# 잘렸다(GearTest 가 잡았다). 아이콘이 바로 왼쪽에 있어서 이름은 중복이다 —
+	# 레퍼런스 방치형들도 아이콘 + 숫자만 쓴다.
+	_lbl_gold.text = _n(gold)
+	_lbl_essence.text = _n(essence)
+	_lbl_gem.text = _n(gem)
 	_refresh_currency_visibility()
 	var power := Balance.combat_power(dps(), max_hp(), regen_per_sec())
-	_lbl_power.text = "전투력 %s · 초당 %s" % [_n(power), _n(dps())]
+	_lbl_power.text = "전투력 %s" % _n(power)
 	_notify_power(power)
 	if _hero_dead:
 		_lbl_life.text = "부활 %.1f초" % maxf(0.0, _revive_t)
