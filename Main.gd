@@ -46,31 +46,25 @@ const HERO_DRAW_SCALE := 2.0
 # 프레임 수를 바꾸는 순간(8프레임 통일 예정) 타격이 그린 자세와 어긋난다.
 # Foe.IMPACT_RATIO 와 같은 값을 쓴다 — 영웅과 몹의 타격 규칙이 갈리면 안 된다.
 const IMPACT_RATIO := Foe.IMPACT_RATIO   # 원래 기준: 7프레임 중 네 번째
-const SPAWN_X := 660.0        # 화면 밖 오른쪽에서 등장
-const SPAWN_X_LEFT := -84.0   # 화면 밖 왼쪽에서 등장
+const SPAWN_X := 660.0        # 화면 밖 오른쪽. 몹은 여기(또는 그 뒤)에 서서 기다린다
 const MAX_FOES := 6
-# 몹이 자리를 잡는 칸. 영웅 기준이 아니라 **화면 기준 고정 좌표**다 — 영웅 사거리
-# 앞에 줄 세우면 영웅이 움직일 이유가 없어서 전투가 정지 화면이 된다.
+# 교전 자리. 영웅(288)에서 120px 떨어진 화면 고정 좌표다 — 여기까지 몹이 들어오면
+# 영웅이 전진을 멈추고, 65px 마주 걸어 나가 만난다.
 #
-# **첫 칸을 56 -> 120 으로 밀었다**(2026-08-06). 56 은 몸통 두 개 폭(BODY_HALF 30 +
-# 몹 25)과 같아서, 몹이 걸어와 멈춘 자리가 이미 영웅의 칼끝이었다 — 영웅은 한 걸음도
-# 안 떼고 제자리에서 모션만 재생했다(사장님: "가운데에서 왔다갔다 하지 않아, 그냥
-# 가운데에서 걷고 대시해"). 순차 교전(_tick_engage)이 교전 몹을 hero_x 앞으로 끌어
-# 당기고 있어서, 이 파일 위에 적힌 "영웅 사거리 앞에 줄 세우지 마라"를 스스로 어겼다.
-# 120 이면 작은 몹 상대로 65px, 1.5배 큰 몹 상대로 42px 을 걸어 나간다 — 대시가 눈에
-# 남고, 반대쪽 몹으로 넘어갈 때 총 130px 을 왕복한다.
-#
-# 칸이 셋인 이유: 0번은 교전 자리이고 대기 몹은 1번부터 선다(_reflow_side).
-# 한쪽에 서는 몹은 최대 셋이다 — _refill_lanes 의 quota 가 한쪽당 want/2 로 막는다.
-# 넷째 칸을 넣어 봤지만 그 상한 때문에 영영 안 쓰인다.
-#
-# 남은 문제: 간격 64 는 64px 몹 기준인데 그 뒤 몹이 1.5배(96px)까지 커져서
-# 이웃끼리 겹친다. docs/HANDOFF.md 참고.
-const LANES_RIGHT := [408.0, 472.0, 536.0]
-const LANES_LEFT := [168.0, 104.0, 40.0]
-# 대시. 520 으로 잡았더니 한 칸(92~236px)을 0.2~0.45초에 붙어서 **순간이동**으로
-# 보였다 — 달리기 8프레임을 한 바퀴 돌리려면 최소 0.5초는 이동에 써야 한다.
-# 걷기(120)의 2배면 가까운 칸도 0.4초, 먼 칸은 1초라 뛰는 게 눈에 남는다.
+# **칸 배열(LANES_RIGHT/LEFT)을 지웠다**(2026-08-06). 몹이 여러 칸에 줄 서서 앞칸으로
+# 당겨지던 구조는 "웨이브가 몰려온다"의 장치였다. 지금은 몹이 사냥터에 **서 있고**
+# 영웅이 찾아가므로(사장님), 줄 간격은 `FOE_GAP` 으로 스폰 때 정해지고 그 뒤로는
+# `_advance_world` 가 통째로 밀 뿐 서로 당기지 않는다. 남는 것은 이 한 자리다.
+const FRONT_X := 408.0
+# 서 있는 몹끼리의 간격. 이 값이 **한 마리당 영웅이 달리는 거리**이고, 곧 처리량의
+# 고정비다(`Balance.APPROACH_SECONDS`). 몸통이 겹치지 않는 하한은 50 남짓(잉크 25 x 2,
+# 큰 몹은 96)인데, 그보다 넉넉히 벌려 **달려가는 구간이 눈에 보이게** 한다.
+const FOE_GAP := 160.0
+# 전진 속도. 영웅은 화면 고정이므로 이 값으로 **세상이 왼쪽으로 흐른다**.
+# FOE_GAP / TRAVEL_SPEED = 0.8초가 한 마리당 달리는 시간이다.
+const TRAVEL_SPEED := 200.0
+# 대시. 520 으로 잡았더니 0.2~0.45초에 붙어서 **순간이동**으로 보였다 —
+# 달리기 8프레임을 한 바퀴 돌리려면 최소 0.5초는 이동에 써야 한다.
 const DASH_SPEED := 240.0
 # 전투 밖(보스 등장 · 앵커 복귀)에서 걷는 속도. 대시로 움직이면 걷기 모션을 재생하며
 # 달리는 속도로 미끄러진다. 몹 걷기(55)보다 빠르되 같은 세계로 읽히는 값이다.
@@ -3684,81 +3678,31 @@ func _process(delta: float) -> void:
 
 # 자동 공격은 모션 시작이 아니라 7프레임 중 네 번째에 피해가 들어간다. 예약한 대상이
 # 그 전에 사라졌으면 피해도 이펙트도 만들지 않는다.
-# **순차 교전 관리.** 한 놈이 나와 싸우고, 죽는 걸 보고 나서 다음이 줄에서
-# 걸어 나온다. 교전 몹은 전열(0번 칸)까지 걸어오고, 영웅은 _strike_spot 으로
-# 마주 달린다 — 서로 다가가 만난다.
+# **순차 교전 관리.** 가장 가까운 놈 하나와만 싸운다. 죽으면 전진이 다시 시작되고
+# (`_tick_advance`) 다음 놈이 전열로 흘러 들어온다.
 #
-# **전열은 hero_x 가 아니라 0번 칸이다.** hero_x 로 잡으면 몹이 영웅 발밑까지
-# 걸어와서 영웅이 움직일 거리가 남지 않는다(LANES_RIGHT 주석 참고). 화면 고정
-# 좌표라 영웅이 넉백으로 밀려도 몹이 따라 붙지 않고, 영웅이 다시 걸어 나온다.
+# **몹 자리를 만지지 않는다**(2026-08-06). 예전엔 교전 몹을 전열로 끌어당기고 대기 몹을
+# 앞칸으로 당겼는데(`_reflow_side`), 그건 "웨이브가 몰려온다"의 장치였다. 몹이 서 있고
+# 영웅이 찾아가는 지금은 당길 것이 없다 — 간격은 스폰 때 `FOE_GAP` 으로 정해지고
+# `_advance_world` 가 그 간격을 유지한 채 통째로 민다.
 func _tick_engage(foes: Array) -> void:
 	if _phase != "fight":
 		_engaged = null
 		return
-	if is_instance_valid(_engaged):
-		if _engaged.dying:
-			# 다음 놈을 **표적으로 삼는 건** 사망 연출이 끝나야 한다(그 박자가 "처치했다"를
-			# 읽게 한다). 대신 **걸어 들어오기는 지금 시작한다** — 연출 0.42초를 통째로
-			# 세워 두면 그 뒤에 앞칸 -> 전열 걷기(64px / 55 = 1.16초)가 그대로 붙어서
-			# 한 마리당 1.6초가 피해와 무관하게 나간다. 겹치면 그만큼 줄어든다.
-			_reflow_side(1, foes)
-			_reflow_side(-1, foes)
-			return
-		# 예고·스윙 중에는 자리를 안 옮긴다: "멈춰서 예고"가 신호고, 휘두르며
-		# 따라 걸으면 포즈가 미끄러진다.
-		if not _engaged.telling() and not _engaged.swinging():
-			_engaged.stop_x = _lane_x(_engaged.side, 0)
-			_engaged.to_front = true
+	if is_instance_valid(_engaged) and not _engaged.dying:
+		return
+	# 사망 연출 중에는 다음을 안 부른다 — 그 박자가 "처치했다"를 읽게 한다.
+	if is_instance_valid(_engaged) and _engaged.dying:
 		return
 	_engaged = null
 	var best := INF
 	for f in foes:
 		if not is_instance_valid(f) or f.dying:
 			continue
-		# **전열로 들어오는 중인 놈도 표적이 된다.** 도착을 기다리면 영웅의 대시가
-		# 몹의 걷기 **뒤에** 직렬로 붙는다 — 전열 가속을 넣어도 처리량이 4% 만
-		# 올랐던 이유가 이것이다(실측 0.87 -> 0.90 마리/초). 둘이 마주 걸어야
-		# "서로 다가가 만난다"가 되고, 그 시간이 겹친다.
-		#
-		# 먼저 맞거나 먼저 때리는 일은 없다: `Foe._tick_attack` 은 제 칸에 도착해야
-		# 돌고, `_can_hit_foe`·`_in_front_reach` 도 `_foe_arrived` 를 본다.
-		# 줄에서 기다리는 몹은 그대로 도착해야 차례가 온다.
-		if not f.stepping_up() and absf(f.position.x - f.stop_x) > 1.0:
-			continue
 		var d := absf(f.position.x - hero_x)
 		if d < best:
 			best = d
 			_engaged = f
-	# 빈 칸을 당겨 세운다. 안 당기면 보충된 몹이 서 있는 몹을 뚫고 안쪽 칸으로
-	# 걸어 들어온다 — 몹끼리의 간격은 이 당김이 지킨다.
-	_reflow_side(1, foes)
-	_reflow_side(-1, foes)
-
-
-# 한쪽 줄의 대기 몹을 앞칸부터 촘촘히 다시 세운다. 지금 서 있는 순서(영웅에서
-# 가까운 차례)를 그대로 보존한다 — 순서를 바꾸면 몹끼리 서로를 지나친다.
-#
-# **교전 몹이 있는 쪽은 1번 칸부터 선다.** 0번 칸은 교전 자리이므로, 0부터 채우면
-# 대기 몹이 싸우는 몹 위에 겹쳐 선다.
-func _reflow_side(side: int, foes: Array) -> void:
-	var wait: Array = []
-	for f in foes:
-		if not is_instance_valid(f) or f.dying or f == _engaged or f.side != side:
-			continue
-		wait.append(f)
-	# 죽는 중인 교전 몹은 0번 칸을 **비우는 중**이라 잡아 두지 않는다 — 다음 놈이
-	# 시체가 사라지는 동안 그 자리로 걸어 들어온다.
-	var base := 1 if is_instance_valid(_engaged) and not _engaged.dying \
-		and _engaged.side == side else 0
-	wait.sort_custom(func(a: Foe, b: Foe) -> bool:
-		return absf(a.stop_x - HERO_X) < absf(b.stop_x - HERO_X))
-	for i in wait.size():
-		var line := base + i
-		wait[i].stop_x = _lane_x(side, line)
-		# **0번 칸으로 가는 놈만 빨리 걷는다**(Foe.ENGAGE_WALK_MULT). 여기가 칸을
-		# 배정하는 유일한 자리라, 전열 진입을 아는 것도 여기뿐이다 — 몹 쪽에서
-		# `engaged` 로 보면 이미 도착한 뒤라 늦다.
-		wait[i].to_front = line == 0
 
 
 func _tick_hero_attack(delta: float, foes: Array) -> void:
@@ -3796,15 +3740,15 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	# 틈이 0 이라 안 드러났고, 고정 칸으로 바꾸자 몸통에서 21px 떨어져 팼다(실측).
 	# 넉백으로 밀려도 이 값이 다시 당겨 준다.
 	_dash_to = _strike_spot(target)
-	# **마주 나가는 거리를 못 박는다.** 걸어 들어오는 몹을 표적으로 잡으므로
-	# (`Foe.stepping_up`) 그냥 두면 영웅이 아직 멀리 있는 몹을 향해 계속 나간다 —
-	# 한쪽 줄이 비면 방금 스폰된 몹까지 쫓아가서 중앙에서 172px 벌어졌다(실측).
+	# **나가는 거리를 못 박는다.** 표적은 줄에서 가장 가까운 놈인데 그놈이 아직 저
+	# 뒤에 있을 수 있다 — 그냥 두면 영웅이 화면 밖까지 쫓아간다(실측: 중앙에서
+	# 172px, 화면 전체). 전진은 세상을 미는 쪽이 하고(`_advance_world`), 영웅의
+	# 화면 이동은 전열까지로 묶는다.
 	#
-	# 한계는 **칸이 아니라 그 칸의 몹을 칠 자리**다(120 - 몸통 = 65). 칸(120)으로
-	# 잡으면 영웅이 전열까지 나가 서서 기다리는데, 그건 마주 걷는 게 아니라 먼저
+	# 한계는 **전열이 아니라 전열의 몹을 칠 자리**다(120 - 몸통 = 65). 전열(120)로
+	# 잡으면 영웅이 거기까지 나가 서서 기다리는데, 그건 마주 걷는 게 아니라 먼저
 	# 가서 진 치는 그림이다.
-	var front := _lane_x(target.side, 0)
-	var park: float = front - signf(front - HERO_X) * (target.body_half() + BODY_HALF)
+	var park: float = FRONT_X - (target.body_half() + BODY_HALF)
 	_dash_to = clampf(_dash_to, minf(HERO_X, park), maxf(HERO_X, park))
 	# 사거리 밖이면 달려간다. 붙는 동안 공격 쿨다운은 계속 돌아서 도착하면 바로 친다.
 	#
@@ -4012,11 +3956,29 @@ func _stand_ok(foe: Foe, x: float) -> bool:
 	return gap >= BODY_HALF - STAND_TOL 		and gap <= maxf(_front_reach(), BODY_HALF) + 1.0
 
 
-# 몹이 설 자리. 영웅 기준이 아니라 **화면 기준 고정 칸**이다 — 예전처럼 영웅
-# 사거리 앞에 줄 세우면 영웅이 움직일 이유가 없어 전투가 정지 화면이 된다.
-func _lane_x(side: int, line: int) -> float:
-	var lanes: Array = LANES_RIGHT if side > 0 else LANES_LEFT
-	return float(lanes[mini(line, lanes.size() - 1)])
+# 전진. 영웅은 화면 고정이므로 **세상을 왼쪽으로 민다** — 그게 곧 전진이다.
+# 몹·배경이 같은 이동량을 쓰므로 셋이 어긋날 수가 없다(PARALLAX 주석 참고).
+#
+# `stop_x` 도 함께 민다: 둘이 늘 같아야 몹이 제 자리를 벗어나지 않는다(Foe 는 스스로
+# 걷지 않는다). 죽는 중인 놈도 민다 — 시체만 제자리에 남으면 배경에서 미끄러진다.
+func _advance_world(dx: float) -> void:
+	if not is_inside_tree() or is_zero_approx(dx):
+		return
+	for f in get_tree().get_nodes_in_group("foes"):
+		if not is_instance_valid(f):
+			continue
+		f.position.x -= dx
+		f.stop_x -= dx
+	_scroll += dx * PARALLAX
+	_apply_scroll()
+
+
+# 전열에 들어온 놈이 있는가. 전진을 멈추고 싸울 근거이자, 다시 달릴 근거다.
+func _foe_at_front(foes: Array) -> bool:
+	for f in foes:
+		if is_instance_valid(f) and not f.dying and f.position.x <= FRONT_X + 1.0:
+			return true
+	return false
 
 
 func _tick_hero_state(delta: float) -> void:
@@ -4456,48 +4418,34 @@ func _revive_hero() -> void:
 # 흔해지고, 보스에만 있으면 등장이 사건이 된다.
 func _tick_advance(delta: float, foes: Array) -> void:
 	if _phase == "fight":
-		# 칸이 비면 **바로** 채운다. 예전엔 무리를 다 치워야 다음 무리가 나와서,
-		# 60마리를 잡는 동안 걸어 들어오기만 60마리 x 2.3초가 걸렸다 —
-		# 제한 시간 안에 애초에 못 넘는다. 이제 죽은 자리로 다음 놈이 걸어온다.
-		if _refill_lanes(foes):
-			return
-		if foes.is_empty():
-			_start_advance()
+		# 줄이 짧아지면 **바로** 뒤에 세운다. 몹은 스스로 걸어오지 않으니 미리 서
+		# 있어야 하고, 다음 놈이 없으면 전진할 대상도 없다.
+		_refill_queue(foes)
+		# **전열이 비었으면 다시 달린다.** 예전엔 무리를 다 치워야 전진했는데,
+		# 찾아가는 모델에서는 다음 놈까지 달리는 것이 곧 전투 사이의 리듬이다.
+		# 사망 연출이 끝나기를 기다린다 — 시체를 두고 뛰면 "처치했다"가 안 읽힌다.
+		if not _foe_at_front(foes):
+			_phase = "advance"
 		return
 
 	# 보스 구간은 영웅이 **화면 왼쪽 밖에서** 걸어 들어온다(`_begin_stage_pose`).
-	# 자리에 들어오기 전에는 전투를 열지 않는다 — 그래야 "찾아가서 만난다"가 된다.
-	# 배경은 `_tick_dash` 가 영웅 이동량만큼만 흘린다(PARALLAX).
+	# 자리에 들어오기 전에는 전진도 전투도 없다 — 그래야 "찾아가서 만난다"가 된다.
+	# 이 구간의 배경은 `_tick_dash` 가 영웅의 화면 이동량만큼 흘린다.
 	if _boss_entry:
 		hero_face = 1              # 전진 방향. 이걸 안 잡으면 직전 전투 방향이 남는다
 		_play("walk" if absf(_dash_to - hero_x) > 1.0 else "idle")
 		if absf(hero_x - HERO_X) <= 1.0:
 			_boss_entry = false
 		return
-	# 잡몹 구간은 **서서 맞이한다**(사장님). 몹이 걸어 들어오는 동안 영웅은 가만히 있다.
-	_play("idle")
-	# **선두 한 마리가 닿으면 전투를 시작한다.** 예전엔 무리가 **전부** 제 칸에
-	# 도착해야 넘어갔다 — 그래서 전투가 시작되는 순간엔 이미 여섯이 다 서 있고,
-	# 영웅은 0.14초 만에 중앙을 떠났다(실측). "중앙에 서서 맞이한다"가 화면에 아예
-	# 없었고, 그 앞의 4초는 몹 여섯이 줄 서는 걸 구경하는 빈 시간이었다.
-	#
-	# 선두만 보면 뒷줄은 **전투 중에** 걸어 들어온다 — 레퍼런스 방치형이 그렇고,
-	# 다가오는 게 보이는 것도 그래서다. 처리량은 안 바뀐다(칸이 비면 바로 채우는
-	# _refill_lanes 가 이미 같은 일을 한다).
-	#
-	# **닿기 전에** 시작한다(`stepping_up`). 도착을 기준으로 하면 전투가 열리는 순간
-	# 선두가 이미 칼끝에 서 있어서, 영웅이 0.07초 만에 중앙을 떠난다(실측) — 사장님이
-	# 그리는 "중앙에 서서 맞이한다"가 화면에 없다. 선두가 전열 앞 140px 에 들어오면
-	# 열어서, 영웅은 중앙에서 마주 걸어 나가고 몹은 걸어 들어온다.
-	#
-	# 시간이 아니라 위치로 판정하는 이유: 시간으로 재면 스폰 위치를 바꿀 때마다
-	# 시간도 같이 고쳐야 한다.
-	for f in foes:
-		if not is_instance_valid(f):
-			continue
-		if f.stepping_up() or absf(f.position.x - f.stop_x) <= 1.0:
-			_phase = "fight"
-			return
+	# **전열에 들어온 놈이 있으면 멈춰 서서 싸운다.**
+	if _foe_at_front(foes):
+		_phase = "fight"
+		return
+	# 없으면 달린다. 영웅은 화면 고정이라 세상이 흐르고(`_advance_world`), 몹은
+	# 사냥터에 서 있으니 앞의 놈이 다가오는 것으로 보인다.
+	hero_face = 1
+	_play("dash")
+	_advance_world(TRAVEL_SPEED * delta)
 
 
 # 다음 무리를 부르고 그쪽으로 걷기 시작한다. 무리를 미리 내보내야 배경과 같은
@@ -4507,66 +4455,38 @@ func _start_advance() -> void:
 	_spawn_wave()
 
 
-# 동시에 화면에 서 있는 몹 수. **스폰·보충·오프라인 판정이 같은 값을 봐야 한다** —
+# 동시에 살아 있는 몹 수. **스폰·보충·오프라인 판정이 같은 값을 봐야 한다** —
 # 세 군데에 같은 식을 적어 두면 하나만 고쳤을 때 화면과 계산이 조용히 갈린다.
 #
-# 이 값이 곧 처치 처리량의 상한이다. 몹은 화면 밖에서 제 칸까지 걸어오므로(4초 남짓)
-# 동시 n마리면 초당 n/4 마리가 한계다.
-func _wave_size(at_stage: int) -> int:
-	# **6 고정.** 칸이 좌우 넷씩인데(교전 1 + 대기 3) 여섯이면 한쪽에 최대 넷까지만
-	# 몰려서 겹치지 않고, 그러면서 죽은 자리로 걸어올 다음 놈이 늘 대기 중이다.
-	#
-	# 넷이던 동안은 줄이 비어서, 몹 걷기를 120 -> 80 으로 늦추자 60초 처치가 69 -> 48 로
-	# 떨어졌다(2026-08-06 실측). **처리량이 DPS 가 아니라 걷기에 묶여 있다** — 그때는
-	# 100초 제한이 있어서 이게 못 넘는 벽이었고, 제한을 뺀 뒤로는 진행 속도만 바꾼다.
-	#
-	# 동시 마릿수가 늘어도 **받는 피해는 안 늘어난다** — 순차 교전이라 때리는 건 늘
-	# 한 마리다(Foe.engaged). 오프라인 판정도 count = 1 을 쓴다.
+# **이제 처리량 상한이 아니다.** 몹이 서 있고 영웅이 한 마리씩 찾아가므로, 여섯이
+# 줄 서 있어도 처치 속도는 "한 마리당 달리는 시간 + 처치 시간"으로 정해진다
+# (`FOE_GAP` / `TRAVEL_SPEED`). 그냥 **저 앞에 몇 마리가 보이는가**다.
+func _wave_size(_at_stage: int) -> int:
 	return MAX_FOES
 
 
-# 한 마리가 화면 밖에서 제 칸까지 걸어오는 평균 시간. 처리량 상한의 분모다.
-func _lane_walk_seconds(at_stage: int) -> float:
-	var n := _wave_size(at_stage)
-	var right := (n + 1) / 2
-	var total := 0.0
-	for i in n:
-		var side := 1 if i < right else -1
-		var line := i if i < right else i - right
-		var out := float(line) * Grid.u(3)
-		var from := SPAWN_X + out if side > 0 else SPAWN_X_LEFT - out
-		total += absf(from - _lane_x(side, line))
-	return total / float(maxi(1, n)) / Foe.WALK_SPEED
-
-
-# 빈 칸 하나를 채운다. 한 프레임에 한 마리씩만 — 몰아 내보내면 다 겹쳐 걸어온다.
-# 보스·중간보스 구간은 한 마리로 끝나므로 보충하지 않는다.
-func _refill_lanes(foes: Array) -> bool:
-	if _walk_only or StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage):
-		return false
-	var want := _wave_size(stage)
-	if foes.size() >= want:
-		return false
-	# 칸(한쪽 3개)이 다 차 있으면 **스폰 자체를 미룬다** — 다음 놈은 화면 밖에서
-	# 기다리다가, 교전이 줄을 당겨 칸이 비면 그때 걸어 들어온다.
-	var right := (want + 1) / 2
-	var quota := {1: right, -1: want - right}
-	var alive := {1: 0, -1: 0}
-	var waiting := {1: 0, -1: 0}
+# 줄 맨 뒤 몹의 x. 새 몹은 그보다 FOE_GAP 만큼 더 뒤에 선다.
+func _queue_tail_x(foes: Array) -> float:
+	var tail := -INF
 	for f in foes:
-		if not is_instance_valid(f):
-			continue
-		alive[f.side] += 1
-		if f != _engaged and not f.dying:
-			waiting[f.side] += 1
-	for side in [1, -1]:
-		if alive[side] >= int(quota[side]):
-			continue
-		if waiting[side] >= LANES_RIGHT.size():
-			continue
-		_spawn_foe(side, waiting[side])
-		return true
-	return false
+		if is_instance_valid(f):
+			tail = maxf(tail, f.position.x)
+	return tail
+
+
+# 줄이 짧아지면 뒤에 세운다. 몹은 스스로 걸어오지 않으니 **미리 서 있어야** 하고,
+# 다음 놈이 없으면 영웅이 전진할 대상도 없다.
+# 보스·중간보스 구간은 한 마리로 끝나므로 보충하지 않는다.
+func _refill_queue(foes: Array) -> void:
+	if _walk_only or StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage):
+		return
+	var live := 0
+	for f in foes:
+		if is_instance_valid(f) and not f.dying:
+			live += 1
+	# 한 프레임에 한 마리만. 몰아 세우면 같은 프레임에 같은 자리를 두 번 계산한다.
+	if live < _wave_size(stage):
+		_spawn_foe()
 
 
 func _apply_scroll() -> void:
@@ -4578,27 +4498,16 @@ func _apply_scroll() -> void:
 	_bg2.position.x = w - off
 
 
-# 무리 단위로 한 번에 내보낸다. 예전처럼 한 마리씩 흘려보내면 몹이 끊이지 않아
-# 영웅이 걸을 틈이 없다 — 리듬이 사라진다.
+# 구간을 열 때 사냥터에 몹을 세워 둔다. **줄이지 이 아니라 줄이다** — 앞의 놈이
+# 전열 근처에, 뒤로 FOE_GAP 씩 물러서서. 영웅이 달리면 그 줄이 차례로 다가온다.
 func _spawn_wave() -> void:
 	if _walk_only:
 		return
-	# 제한 시간은 구간에 걸리지 무리에 걸리지 않는다 — 여기서 다시 채우면
-	# 무리를 치울 때마다 시계가 되감겨 제한이 사라진다.
-	if StageDefs.is_boss_stage(stage):
+	if StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage):
 		_spawn_foe()
 		return
-	if StageDefs.is_midboss_stage(stage):
+	for _i in _wave_size(stage):
 		_spawn_foe()
-		return
-	# 단계가 오를수록 한 무리가 두꺼워진다. 화면 폭 때문에 MAX_FOES 가 상한이다.
-	var n := _wave_size(stage)
-	# **좌우 양쪽에서** 나온다. 시간을 버티는 구조가 되면서 한쪽만 보면 되는 전투는
-	# 서서 기다리기가 정답이 되어 버렸다 — 뒤에서도 오면 자리를 지킬 수가 없다.
-	# 오른쪽을 먼저 채운다: 전진 방향이라 "다가간다"가 계속 읽힌다.
-	var right := (n + 1) / 2
-	for i in n:
-		_spawn_foe(1 if i < right else -1, i if i < right else i - right)
 
 
 # 몹이 사라질 때 Main 이 프레임을 넘겨 들고 있던 참조를 놓는다. 셋이 있다:
@@ -4619,7 +4528,9 @@ func _forget_foe(f: Foe) -> void:
 		_skill_target = null
 
 
-func _spawn_foe(side := 1, line := 0) -> void:
+# 사냥터에 한 마리 세운다. **줄 맨 뒤에** 선다 — 첫 마리는 전열 바로 뒤(FRONT_X),
+# 그 뒤로 FOE_GAP 씩 물러난다. 영웅이 전진하면 이 줄이 차례로 다가온다.
+func _spawn_foe() -> void:
 	var act: Dictionary = StageDefs.act_data(stage)
 	var boss := StageDefs.is_boss_stage(stage)
 	var midboss := StageDefs.is_midboss_stage(stage)
@@ -4635,17 +4546,16 @@ func _spawn_foe(side := 1, line := 0) -> void:
 	var f := Foe.new()
 	f.setup(tier, StageDefs.enemy_power(stage),
 		StageDefs.gold_per_kill(stage) * gold_mult(), boss)
-	f.face = -1 if side > 0 else 1
-	f.side = side
-	# 같은 프레임에 여러 마리가 나가므로 등장 위치도 벌린다. 안 그러면 겹쳐서 걸어온다.
-	# 같은 프레임에 여러 마리가 나가므로 등장 위치도 벌린다. 안 그러면 겹쳐서 걸어온다.
-	var out := float(line) * Grid.u(3)
-	f.position = Vector2(SPAWN_X + out if side > 0 else SPAWN_X_LEFT - out, ground_y)
-	f.stop_x = _lane_x(side, line)
-	# 0번 칸이 목표면 처음부터 **전열행**이다. 이걸 스폰에서 안 켜면 `_reflow_side`
-	# 가 켜 주는데, 그건 전투 phase 에서만 돌아서 무리의 선두가 전열로 오는 것을
-	# `_tick_advance` 가 알아볼 수 없다(닭과 달걀).
-	f.to_front = line == 0
+	# 줄 맨 뒤. 빈 사냥터면 전열에, 아니면 마지막 놈에서 FOE_GAP 뒤에 선다.
+	# **화면 밖까지 나가도 된다** — 그게 "저 앞에 더 있다"이고, 영웅이 달려가 만난다.
+	var tail := _queue_tail_x(get_tree().get_nodes_in_group("foes")) \
+		if is_inside_tree() else -INF
+	var at := FRONT_X if tail == -INF else maxf(tail + FOE_GAP, FRONT_X)
+	# 보스·중간보스는 한 마리뿐이라 화면 밖에서 걸어 들어오는 그림이 필요하다.
+	if boss or midboss:
+		at = SPAWN_X
+	f.position = Vector2(at, ground_y)
+	f.stop_x = at
 	# 사라질 때 **들고 있던 참조를 놓는다.** tree_exiting 은 실제 해제 **전에** 오므로
 	# 이 시점의 f 는 아직 멀쩡하다 — _forget_foe 참고.
 	f.tree_exiting.connect(_forget_foe.bind(f))
@@ -5364,39 +5274,32 @@ func _offline_profile(at_stage: int) -> Dictionary:
 	}
 
 
-# 처리량 상한 인자 [칸 수, 걷는 시간]. 보스·중간보스는 한 마리라 상한이 없다.
-# **_offline_can_clear 와 _offline_stage_seconds 가 같은 값을 봐야 한다** — 한쪽만
-# 고치면 "넘을 수 있다"와 "몇 초 걸린다"가 조용히 갈린다.
-func _offline_flow(at_stage: int) -> Array:
-	if StageDefs.is_boss_stage(at_stage) or StageDefs.is_midboss_stage(at_stage):
-		return [0, 0.0]
-	return [_wave_size(at_stage), _lane_walk_seconds(at_stage)]
-
-
-# 그 구간을 미는 데 실제로 걸릴 시간. 실시간과 같은 처리량 상한(동시 몹 수 /
-# 걷는 시간)을 쓴다 — 이게 곧 오프라인에서 한 구간에 물리는 값이다.
+# 그 구간을 미는 데 실제로 걸릴 시간.
+#
+# **처리량 상한(칸 수 / 걷는 시간)이 없어졌다**(2026-08-06). 몹이 서 있고 영웅이 한
+# 마리씩 찾아가므로, 여섯이 줄 서 있어도 한 마리당 "달리는 시간(FOE_GAP /
+# TRAVEL_SPEED) + 처치 시간"이 직렬로 든다 — 그 고정비가 곧
+# `Balance.APPROACH_SECONDS` 다. 동시 마릿수는 처리량에 영향이 없다.
 func _offline_stage_seconds(at_stage: int, remaining_kills: int) -> float:
 	var p := _offline_profile(at_stage)
-	var flow := _offline_flow(at_stage)
-	return StageDefs.WAVE_WALK_SECONDS + Balance.stage_seconds(remaining_kills,
-		float(p["hp"]), dps(), int(flow[0]), float(flow[1]))
+	return StageDefs.WAVE_WALK_SECONDS \
+		+ Balance.stage_seconds(remaining_kills, float(p["hp"]), dps())
 
 
 func _offline_can_clear(at_stage: int, remaining_kills: int) -> bool:
 	var p := _offline_profile(at_stage)
 	# **일반 구간은 제한 시간이 없다**(StageDefs.time_limit 이 0) — 생존만 보면 된다.
-	# 시계로 막히는 건 보스·중간보스뿐이고, 그쪽은 무리가 걸어 들어오는 시간을
-	# 예산에서 먼저 뺀다(실시간에서도 그 시간에 시계가 돈다).
+	# 시계로 막히는 건 보스·중간보스뿐이고, 그쪽은 걸어 들어오는 시간을 예산에서
+	# 먼저 뺀다(실시간에서도 그 시간에 시계가 돈다).
 	var limit := StageDefs.time_limit(at_stage)
 	var budget := 0.0
 	if limit > 0.0:
 		budget = limit - StageDefs.WAVE_WALK_SECONDS
 		if budget <= 0.0:
 			return false
-	var flow := _offline_flow(at_stage)
 	return Balance.can_clear_stage(max_hp(), regen_per_sec(), dps(), remaining_kills,
 		float(p["hp"]), int(p["count"]), float(p["damage"]), float(p["interval"]),
-		budget, int(flow[0]), float(flow[1]))
+		budget)
 
 
 # 껐던 시간만큼 보상을 준다. 먼저 생존 공식으로 밀 수 있는 최고 단계까지 올리고,

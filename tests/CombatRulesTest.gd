@@ -301,7 +301,7 @@ func _init() -> void:
 	game.lv["speed"] = 1
 	var target := Foe.new()
 	target.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
-	target.stop_x = game._lane_x(1, 0)
+	target.stop_x = game.FRONT_X
 	target.position.x = target.stop_x
 	game._phase = "fight"
 	game.hero_x = game._strike_spot(target)
@@ -336,9 +336,9 @@ func _init() -> void:
 	assert(not game._can_hit_foe(target, "attack"), "전진 중에 공격이 들어간다")
 	game._phase = "fight"
 
-	# 칸은 서로 겹치지 않는다. 겹치면 두 마리가 같은 자리에 서서 한 마리로 보인다.
-	assert(not is_equal_approx(game._lane_x(1, 0), game._lane_x(1, 1)), "오른쪽 칸이 겹친다")
-	assert(not is_equal_approx(game._lane_x(1, 0), game._lane_x(-1, 0)), "좌우 칸이 겹친다")
+	# 줄 간격은 서 있는 몹끼리 겹치지 않을 만큼 벌어져야 한다. 겹치면 두 마리가
+	# 한 마리로 보인다. 큰 몹(1.5배)의 잉크 절반이 48 남짓이라 96 이 하한이다.
+	assert(game.FOE_GAP >= 96.0, "줄 간격이 좁아 큰 몹끼리 겹친다: %.0f" % game.FOE_GAP)
 
 	# 1순위 스킬의 대상이 없으면 **다음 스킬을 본다.** 예전엔 통째로 포기했다 —
 	# 격이 안 나가면 그 쿨다운도 안 돌아서 파·진·가호까지 영영 막혔다(스킬 미발동 버그).
@@ -370,7 +370,7 @@ func _init() -> void:
 	# 뒷칸 몹은 앞칸 사거리 밖이다. **움직이는 건 영웅 쪽**이라 옮겨 가면 닿는다.
 	var far_target := Foe.new()
 	far_target.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
-	far_target.stop_x = game._lane_x(1, 1)
+	far_target.stop_x = game.FRONT_X + game.FOE_GAP
 	far_target.position.x = far_target.stop_x
 	game.hero_x = game._strike_spot(target)
 	assert(not game._can_hit_foe(far_target), "뒷칸 몹이 앞칸 사거리 안에 들어와 있다")
@@ -385,9 +385,8 @@ func _init() -> void:
 	var probe := Foe.new()
 	probe.setup(FoeTiers.get_tier("slime"), 1.0, 1.0)
 	var lanes: Array[float] = []
-	for side in [1, -1]:
-		for line in 3:
-			lanes.append(game._lane_x(side, line))
+	for line in 3:
+		lanes.append(game.FRONT_X + float(line) * game.FOE_GAP)
 	var reach_hits := 0
 	var reach_total := 0
 	var worst := 99
@@ -433,17 +432,19 @@ func _init() -> void:
 	assert(swung, "교전 몹이 4초가 지나도 안 휘두른다")
 	gate.free()
 	# **전열이 영웅 몸통 바로 앞이면 영웅은 한 걸음도 안 뗀다.** 순차 교전이 교전 몹을
-	# `hero_x` 앞으로 끌어당기던 동안 정확히 그랬다 — 몹이 걸어와 멈춘 자리가 이미
-	# 칼끝이라, 화면에서는 영웅이 제자리에서 걷기·대시 모션만 재생했다(사장님:
-	# "가운데에서 왔다갓다 하지 않아, 그냥 가운데에서 걷고 대시해").
-	# 0번 칸은 몸통 두 개 폭보다 **확실히** 멀어야 한다. 이 검사가 되돌림을 잡는다.
+	# `hero_x` 앞으로 끌어당기던 동안 정확히 그랬다 — 몹이 멈춘 자리가 이미 칼끝이라,
+	# 화면에서는 영웅이 제자리에서 걷기·대시 모션만 재생했다(사장님: "가운데에서
+	# 왔다갓다 하지 않아, 그냥 가운데에서 걷고 대시해").
 	# 실제 이동량은 tests/EngageCheck.gd 가 씬을 돌려 잰다(느리다, 별도로 돌린다).
-	for row in [game.LANES_RIGHT, game.LANES_LEFT]:
-		var walk: float = absf(float(row[0]) - game.HERO_X) - (25.0 + game.BODY_HALF)
-		assert(walk > 40.0, "전열이 가까워서 영웅이 제자리에 선다: %.0f px" % walk)
-	# 대기 칸은 전열보다 멀어야 한다 — 가까우면 대기 몹이 교전 몹 앞에 끼어든다.
-	assert(absf(float(game.LANES_RIGHT[1]) - game.HERO_X)
-		> absf(float(game.LANES_RIGHT[0]) - game.HERO_X), "1번 칸이 전열보다 가깝다")
+	var walk: float = game.FRONT_X - game.HERO_X - (25.0 + game.BODY_HALF)
+	assert(walk > 40.0, "전열이 가까워서 영웅이 제자리에 선다: %.0f px" % walk)
+	# 전열은 화면 안이어야 한다 — 밖이면 싸우는 걸 못 본다.
+	assert(game.FRONT_X < float(Grid.BG.x) - 40.0,
+		"전열이 화면 밖이다: %.0f" % game.FRONT_X)
+	# **한 마리당 달리는 시간**이 눈에 보일 만큼은 되어야 한다. 0.3초 미만이면
+	# 달려가는 그림이 안 남고, 그건 곧 "찾아간다"가 사라진 것이다.
+	var run: float = game.FOE_GAP / game.TRAVEL_SPEED
+	assert(run > 0.3, "한 마리당 달리는 시간이 너무 짧다: %.2f 초" % run)
 
 	# 닿지 않는 몹은 **스윙을 시작조차 하지 않는다.** 헛스윙은 화면에서 버그로 보인다.
 	probe.position.x = 0.0

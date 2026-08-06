@@ -121,16 +121,14 @@ func _init() -> void:
 		% [killed, SECONDS, float(killed) / SECONDS, stages])
 	print("구간 %d마리          실측 %.0f초  /  모델 %.0f초  /  목표 %.0f초"
 		% [need, SECONDS * float(need) / maxf(1.0, float(killed)),
-		Balance.stage_seconds(need, scene._offline_profile(1)["hp"], scene.dps(),
-			scene._wave_size(1), scene._lane_walk_seconds(1)),
+		Balance.stage_seconds(need, scene._offline_profile(1)["hp"], scene.dps()),
 		StageDefs.PACE_NORMAL])
 	print("")
 	assert(span > 50.0, "영웅이 제자리다: 폭 %.1f px" % span)
 	# **너무 멀리 나가도 안 된다.** 화면 밖에서 걸어오는 몹까지 표적으로 잡으면 영웅이
 	# 끝까지 쫓아가서, 방치형의 "화면 고정" 전제가 깨진다(실측 42~536 = 화면 전체).
 	# 전열(가장 먼 쪽 0번 칸)보다 더 나갈 이유는 없다.
-	var reach: float = maxf(absf(float(scene.LANES_RIGHT[0]) - scene.HERO_X),
-		absf(float(scene.LANES_LEFT[0]) - scene.HERO_X))
+	var reach: float = scene.FRONT_X - scene.HERO_X
 	assert(hx_hi <= scene.HERO_X + reach + 8.0 and hx_lo >= scene.HERO_X - reach - 8.0,
 		"영웅이 전열보다 멀리 나갔다: %.1f ~ %.1f (전열 +-%.0f)" % [hx_lo, hx_hi, reach])
 	assert(not timer_ran, "일반 구간에서 제한 시간이 돌았다")

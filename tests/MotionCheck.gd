@@ -27,14 +27,19 @@ func _init() -> void:
 	var adv_frames := 0
 	var adv_back := 0        # 전진 중 뒤를 본 프레임
 	var prev_x: float = scene.hero_x
+	# **세상이 흐르는 것도 이동이다.** 찾아가는 모델에서 영웅은 앵커에 머물고 배경·몹이
+	# 왼쪽으로 흐른다(`_advance_world`) — hero_x 만 보면 정상 전진을 "제자리 걷기"로
+	# 잡는다(실제로 dash 32%가 그렇게 걸렸다). 둘을 합쳐 "화면에서 움직이는가"로 본다.
+	var prev_scroll: float = scene._scroll
 	while t < SECONDS:
 		await process_frame
 		var d: float = scene.get_process_delta_time()
 		t += d
 		frames += 1
 		var m: String = str(scene._motion)
-		var dx: float = scene.hero_x - prev_x
+		var dx: float = (scene.hero_x - prev_x) + (scene._scroll - prev_scroll)
 		prev_x = scene.hero_x
+		prev_scroll = scene._scroll
 		if m in ["walk", "dash"]:
 			if absf(dx) < 0.05:
 				stuck[m] = int(stuck.get(m, 0)) + 1

@@ -2,37 +2,15 @@ class_name Foe
 extends Node2D
 
 # 방치형 몹. arrow-rpg의 Enemy(600줄)에서 방치형에 필요한 것만 남겼다 —
-# 추격 AI·행동 타입·특수공격·실제 좌표 넉백이 전부 빠진다. 몹은 왼쪽으로 걸어오다 멈춰 서서
-# 맞는 게 전부다. 플레이어가 조작하지 않으므로 회피할 수단도, 피할 이유도 없다.
-
-# 몹이 화면 밖에서 제 칸까지 걸어오는 속도.
+# 추격 AI·행동 타입·특수공격·실제 좌표 넉백이 전부 빠진다.
 #
-# **배경 스크롤과 분리했다**(Main.SCROLL_SPEED). 예전엔 여기에 묶여 있어서 몹을
-# 늦추면 전진 구간까지 같이 늘어졌다. 단 전진 중에는 오른쪽 몹이 배경보다 빨라야
-# 한다 — 느리면 지면에 대해 뒤로 밀려서 뒷걸음질로 보인다. WALK_SPEED > SCROLL_SPEED.
+# **몹은 스스로 걷지 않는다**(2026-08-06, 사장님: "몬스터 웨이브가 아니라 캐릭터가
+# 몬스터를 찾아가는거"). 사냥터에 **서 있는** 것들이고, 화면 안으로 들어오는 것은
+# 영웅이 전진하기 때문이다 — `Main._advance_world` 가 모두를 왼쪽으로 민다.
+# 그래서 걷기 속도·전열 진입 가속·`to_front`·`side` 가 전부 없어졌다: 방향이 하나뿐이고
+# 다가오는 주체가 영웅이라 몹에게는 "어디에 서 있나"만 남는다.
 #
-# 120 -> 80 -> 55: 몹이 천천히 다가와야 "영웅이 마주 걸어가 때린다"가 읽힌다.
-# 80 도 여전히 빨랐다(사장님). **이제 늦출 수 있는 이유**는 일반 구간의 제한 시간을
-# 뺐기 때문이다(StageDefs.time_limit) — 80 에서 이미 100마리/100초를 못 넘겼고,
-# 처리량이 DPS 가 아니라 이 값에 묶여 있어서 연출과 시계가 정면으로 부딪혔다.
-# 시계가 없어진 뒤로 이 값은 **진행 속도**만 바꾼다(Main._lane_walk_seconds ->
-# Balance.stage_seconds -> 오프라인 시간 차감). 늦추면 늦게 가지, 못 가지는 않는다.
-const WALK_SPEED := 55.0
-# **전열로 나설 때는 빨리 걷는다.** 화면 밖에서 어슬렁 다가오는 건 분위기지만
-# 앞으로 나서는 건 기세다 — 연출로도 맞고, 그 구간이 처리량의 병목이라서 그렇다.
-# 대기 몹이 1번 칸에서 전열(0번 칸)로 64px 을 오는 시간이 한 마리당 고정비인데,
-# 55 로는 1.16초가 통째로 빈 시간이었다(사장님: "약간의 속도감").
-#
-# **`engaged` 가 아니라 `to_front` 로 켠다.** 교전 대상은 **도착한** 몹 중에서만
-# 고르므로(Main._tick_engage), 전열로 걸어 들어오는 동안은 아직 engaged 가 아니다 —
-# engaged 에 걸었더니 다 온 뒤에야 배수가 붙어서 아무 효과가 없었다(실측: 그대로 0.87
-# 마리/초). 칸을 배정하는 Main._reflow_side 가 "0번 칸으로 가는 놈"을 표시해 준다.
-#
-# 이 값은 처리량에 직결된다 — 바꾸면 `Balance.APPROACH_SECONDS` 를 다시 재고
-# `StageDefs.KILLS_PER_STAGE` 로 구간 길이를 맞춰야 한다.
-const ENGAGE_WALK_MULT := 1.8
-# 가속이 붙는 최대 거리. 칸 간격(64) 두 개까지만 "줄에서 한 발 나서는 것"으로 본다.
-const STEP_UP_RANGE := 140.0
+# 걷기 그림은 그대로 쓴다 — 제자리에서 발을 놀리는 대기 자세다.
 
 var key := "slime"
 var hp := 10.0
@@ -41,17 +19,17 @@ var gold := 1.0
 var is_boss := false
 var is_midboss := false
 var display_name := ""
-var stop_x := 0.0          # 이 x까지 걸어와서 멈춘다 (자리)
-# 진행 방향. -1 = 오른쪽에서 나와 왼쪽으로, +1 = 왼쪽에서 나와 오른쪽으로.
-# 그림 원본이 왼쪽을 보므로 +1 일 때만 뒤집는다.
+# 서 있는 자리. **Main._advance_world 가 position 과 함께 밀어 준다** — 둘이 늘 같아서
+# 몹은 자기 자리를 벗어나지 않는다. 영웅이 전진하면 이 값도 왼쪽으로 온다.
+var stop_x := 0.0
+# 그림 원본이 왼쪽을 보고, 몹은 전부 영웅의 오른쪽에 서므로 뒤집지 않는다.
+# (양방향이던 동안은 왼쪽 줄을 +1 로 뒤집었다. 방향이 하나가 되어 늘 -1 이다.)
 var face := -1
 var hp_mult := 1.0
 var body_scale := 1.0      # 영웅 표시 크기 대비 종별 크기
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
 var hero_x := 0.0          # Main 이 매 프레임 넘겨 준다. 닿을 때만 휘두르는 근거
 var engaged := false       # 순차 교전 — 영웅과 서로 때리는 단 한 마리만 true (Main 이 정한다)
-var to_front := false      # 전열(0번 칸)로 들어가는 중 — 빨리 걷는다 (Main._reflow_side)
-var side := 1              # 어느 쪽 줄인가 (+1 오른쪽 / -1 왼쪽). 칸 당김·보충이 쓴다
 
 var _walk_frames: Array = []
 var _attack_frames: Array = []
@@ -174,14 +152,9 @@ func _process(delta: float) -> void:
 			queue_free()
 		queue_redraw()
 		return
-	# 제 자리까지 걸어와 멈춘다. 방치형이라 그 뒤로는 자리를 지킨다 —
-	# 움직이는 건 영웅 쪽이다. 좌우 어느 쪽에서 나와도 같은 식이 되도록
-	# 부호를 따지지 않고 move_toward 로 민다.
-	if absf(position.x - stop_x) > 0.5:
-		position.x = move_toward(position.x, stop_x,
-			WALK_SPEED * (ENGAGE_WALK_MULT if stepping_up() else 1.0) * delta)
-	else:
-		_tick_attack(delta)
+	# **자리를 지킨다.** 움직이는 건 영웅 쪽이고, 화면 안으로 들어오는 것은
+	# `Main._advance_world` 가 밀어 주기 때문이다. 스스로 걷지 않는다.
+	_tick_attack(delta)
 	queue_redraw()
 
 
@@ -215,19 +188,8 @@ static func avg_attack_mult(boss: bool, midboss: bool) -> float:
 
 # 지금 특수 패턴을 예고하는 중인가. 그리는 쪽(_draw_attack_tell)과 멈추는 쪽이
 # 같은 값을 봐야 그림과 움직임이 어긋나지 않는다.
-# 스윙 중인가. 교전 몹의 자리 추적(Main._tick_engage)이 이걸 보고 멈춘다 —
-# 휘두르는 중에 영웅이 넉백으로 밀리면 따라 걷는 게 아니라 제자리를 지켜야
-# 스윙 포즈가 미끄러지지 않는다.
-# 전열로 **한 발 나서는 중**인가. 빨리 걷는 조건이자, 영웅이 마주 걸어 나갈 조건이다
-# (Main._tick_engage). **한 곳에서 정해야 한다** — 갈라뜨렸더니 영웅이 방금 스폰된
-# 화면 밖 몹까지 표적으로 잡고 끝까지 쫓아갔다(실측: 영웅 x 범위 42~536, 화면 전체).
-#
-# 거리를 보는 이유: 한쪽 줄이 비면 화면 밖에서 처음 걸어오는 몹도 0번 칸을 향하는데,
-# 그건 등장이지 기세가 아니다. 거기까지 내달리면 "어슬렁 다가온다"가 통째로 사라진다.
-func stepping_up() -> bool:
-	return to_front and absf(position.x - stop_x) <= STEP_UP_RANGE
-
-
+# 스윙 중인가. Main 이 전진을 멈추는 근거다 — 휘두르는 중에 세상이 밀리면
+# 스윙 포즈가 미끄러진다.
 func swinging() -> bool:
 	return _attack_anim >= 0.0
 

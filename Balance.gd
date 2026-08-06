@@ -167,38 +167,30 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> f
 	return float(maxi(0, kills_needed)) * maxf(0.0, foe_hp) / maxf(0.001, hero_dps)
 
 
-# 구간을 미는 데 실제로 걸리는 시간. **DPS만으로는 모자란다** — 몹은 화면 밖에서
-# 제 칸까지 걸어오므로, 동시에 lanes 마리씩 들어오는 구조에서는 아무리 세게 때려도
-# `걷는 시간 / lanes` 보다 빨리 잡을 수 없다. 둘 중 느린 쪽이 실제 시간이다.
+# 한 마리를 잡을 때마다 **다음 놈에게 달려가는 시간**이 더 든다. DPS 로는 줄일 수
+# 없는 고정비이고, 아무리 세게 때려도 구간이 이보다 짧아지지 않는다 — 오프라인이
+# 이걸 안 물리면 실시간으로는 몇 분 걸리는 구간을 껐다 켜면 넘어가 있다.
 #
-# 이걸 빼면 오프라인이 DPS만 보고 "넘을 수 있다"고 판정해서, 실시간으로는 영원히
-# 못 넘는 구간을 껐다 켜면 넘어가 있다.
+# 값은 `Main.FOE_GAP / Main.TRAVEL_SPEED`(줄 간격 / 전진 속도)에 처치 뒤 정리 시간이
+# 붙은 것이다. **처리량 상한 인자(칸 수 / 걷는 시간)를 지웠다**(2026-08-06) — 몹이
+# 서 있고 영웅이 한 마리씩 찾아가므로 동시 마릿수가 처리량에 영향이 없다. 예전엔
+# 몹이 화면 밖에서 여러 칸으로 동시에 걸어 들어와서 그게 병렬 상한이었다.
 #
-# 한 마리를 잡을 때마다 **다음 놈이 전열에 서기까지의 시간**이 더 든다. DPS 로는
-# 줄일 수 없는 고정비다. 대기 몹이 1번 칸에서 전열(0번 칸)로 64px 을 오는 시간인데,
-# 셋이 겹쳐서 줄어든다:
-#   - 전열 진입은 빨리 걷는다 — 64 / (55 x 1.8) = 0.65초 (Foe.ENGAGE_WALK_MULT)
-#   - 사망 연출 0.42초 동안 이미 걸어 들어온다 (Main._tick_engage)
-#   - 영웅이 마주 걸어 나가는 시간이 그와 **병행**이다 (Foe.stepping_up)
-#
-# 0.83초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 55마리(1.09초/마리)를 세고,
-# 거기서 모델 처치시간(0.26초/마리)을 뺐다.
+# 0.57초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 72마리(0.83초/마리)를 세고,
+# 거기서 모델 처치시간(0.26초/마리)을 뺐다. 설계값 FOE_GAP/TRAVEL_SPEED = 0.8초보다
+# 작은 이유: 영웅이 마주 나가는 65px 이 전진과 겹치고, 사망 연출 동안에도 전진한다.
 #
 # 이 값이 얼마나 크게 움직이는지: 0.55(영웅이 제자리에서 팼을 때) -> 0.89(고정 칸으로
 # 옮겨 영웅이 걸어 나가게 한 직후) -> 0.76(전열 가속 + 마주 걷기) -> 0.83(마주 나가는
-# 거리를 만나는 자리로 제한). 짐작으로 못 맞춘다.
-# ponytail: 칸 좌표(Main.LANES_*) · 몹 걷기(Foe.WALK_SPEED · ENGAGE_WALK_MULT) ·
-# 사망 길이(Foe.DIE_DUR)를 바꾸면 tests/EngageCheck.gd 로 다시 재야 한다.
-const APPROACH_SECONDS := 0.83
+# 거리를 제한) -> 0.57(웨이브를 접고 영웅이 찾아가는 모델). 짐작으로 못 맞춘다.
+# ponytail: `Main.FOE_GAP` · `Main.TRAVEL_SPEED` · `Foe.DIE_DUR` 를 바꾸면
+# tests/EngageCheck.gd 로 다시 재야 한다.
+const APPROACH_SECONDS := 0.57
 
 
-static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float,
-		lanes := 0, walk_seconds := 0.0) -> float:
-	var n := float(maxi(0, kills_needed))
-	var push := push_seconds(kills_needed, foe_hp, hero_dps) + n * APPROACH_SECONDS
-	if lanes <= 0 or walk_seconds <= 0.0:
-		return push
-	return maxf(push, n * walk_seconds / float(lanes))
+static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> float:
+	return push_seconds(kills_needed, foe_hp, hero_dps) \
+		+ float(maxi(0, kills_needed)) * APPROACH_SECONDS
 
 
 # time_limit: 구간 제한 시간. 0 이하면 제한 없음.
@@ -207,9 +199,8 @@ static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float,
 # 껐다 켜면 넘어가 있다.
 static func can_clear_stage(hp: float, regen_per_sec: float, hero_dps: float,
 		kills_needed: int, foe_hp: float, foe_count: int, foe_damage: float,
-		foe_interval: float, time_limit := 0.0, lanes := 0,
-		walk_seconds := 0.0) -> bool:
-	var push := stage_seconds(kills_needed, foe_hp, hero_dps, lanes, walk_seconds)
+		foe_interval: float, time_limit := 0.0) -> bool:
+	var push := stage_seconds(kills_needed, foe_hp, hero_dps)
 	if time_limit > 0.0 and push >= time_limit:
 		return false
 	return push < survival_seconds(hp, regen_per_sec, foe_count, foe_damage, foe_interval)

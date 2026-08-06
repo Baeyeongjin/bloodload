@@ -189,20 +189,16 @@ func _init() -> void:
 		"시간이 남는데 제한에 걸린다")
 	assert(not Balance.can_clear_stage(400.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, push20 - 1.0),
 		"제한 시간을 넘겼는데 통과한다")
-	# 처리량 상한 — 몹이 화면 밖에서 걸어오므로 **DPS가 무한이어도** 동시 몹 수보다
-	# 빨리 잡을 수 없다. 이걸 빼면 오프라인이 실시간으로는 못 넘는 구간을 넘어간다.
-	# DPS 가 무한이어도 **접근 시간은 남는다** — 몹에게 달려가는 건 못 줄인다.
+	# **DPS 가 무한이어도 접근 시간은 남는다** — 다음 놈에게 달려가는 건 못 줄인다.
+	# 이걸 빼면 오프라인이 DPS만 보고 실시간으로는 몇 분 걸리는 구간을 넘어간다.
 	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0e9),
 		60.0 * Balance.APPROACH_SECONDS), "DPS가 무한인데 접근 시간까지 사라진다")
-	var flow2 := Balance.stage_seconds(60, 10.0, 1.0e9, 2, 2.33)
-	var flow4 := Balance.stage_seconds(60, 10.0, 1.0e9, 4, 2.33)
-	assert(flow2 > 60.0, "동시 2마리로 60마리를 60초에 잡을 수 있다고 나온다: %.1f초" % flow2)
-	assert(flow4 < 60.0, "동시 4마리인데도 60초를 넘는다: %.1f초" % flow4)
-	assert(flow2 > flow4, "칸이 늘었는데 더 오래 걸린다")
-	# DPS가 모자라면 그쪽이 병목이다 — 둘 중 느린 쪽을 쓴다.
-	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0, 4, 2.33),
+	# DPS 가 모자라면 그만큼 더 걸린다. 둘은 **더해진다** — 예전엔 동시 몹 수로 나누는
+	# 병렬 상한과 둘 중 느린 쪽을 골랐는데, 몹이 서 있고 영웅이 한 마리씩 찾아가는
+	# 지금은 병렬이 없다(Balance.stage_seconds 주석).
+	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0),
 		Balance.push_seconds(60, 10.0, 1.0) + 60.0 * Balance.APPROACH_SECONDS),
-		"DPS 병목일 때 처리량이 이긴다")
+		"처치 시간과 접근 시간이 안 더해진다")
 	# **제한 시간은 보스·중간보스에만 붙는다**(2026-08-06). 일반 구간을 시계로 막으면
 	# 몹 걷기 속도가 곧 벽이 되어 연출을 못 늦춘다 — StageDefs.time_limit 주석 참고.
 	# 이 검사가 "일반 구간에도 다시 걸자"는 되돌림을 잡는다.
@@ -255,13 +251,11 @@ func _init() -> void:
 		# 일반 구간은 이제 제한 시간이 없다 — 대신 **목표 페이스**(PACE_NORMAL)를 본다.
 		# 넘겨도 실패하지는 않지만, 넘기면 구간이 늘어져 죽은 화면이 된다.
 		#
-		# **실제 칸 수·걷는 시간으로 잰다.** 예전엔 4칸·2.3초를 박아 뒀는데, 그래서
-		# 몹 걷기를 80 으로 늦춰 100마리에 125초가 걸리게 됐을 때 이 검사가 통과했다
-		# (2026-08-06 실측으로 발견). 처리량은 DPS 가 아니라 걷기에 묶여 있어서,
-		# 모델이 진짜 좌표를 안 보면 연출 수정이 페이스를 깨도 조용하다.
+		# **처리량 상한(칸 수 / 걷는 시간)이 없어졌다**(2026-08-06). 몹이 서 있고 영웅이
+		# 한 마리씩 찾아가므로 한 마리당 고정비가 직렬로 든다 — 그게
+		# `APPROACH_SECONDS` 다. 동시 마릿수는 처리량에 영향이 없다.
 		var kills := StageDefs.kills_needed(stage - 1)   # 보스 구간 바로 앞 = 일반 구간
-		var clear := Balance.stage_seconds(kills, _foe_hp(stage - 1, "normal"), build_dps,
-			game._wave_size(stage - 1), game._lane_walk_seconds(stage - 1))
+		var clear := Balance.stage_seconds(kills, _foe_hp(stage - 1, "normal"), build_dps)
 		assert(clear < StageDefs.PACE_NORMAL,
 			"%s 일반 구간이 목표 페이스를 넘는다: %.0f초 (목표 %.0f초)"
 			% [point["name"], clear, StageDefs.PACE_NORMAL])
