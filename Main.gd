@@ -520,6 +520,30 @@ func _ready() -> void:
 						float(fp["fps"]), float(fp["scale"]), str(fp["style"]),
 						int(fp["echo"])))
 			add_child(fx_timer)
+		# [개발 도구] --cast=field_common : 교전이 붙고 표적이 둘 이상 설 때까지 기다렸다가
+		# 그 스킬을 **실제 시전 경로로** 한 번 쏜다.
+		#
+		# `--skillfx` 와 다르다. 저건 이펙트 5등급을 정해진 자리에 얹기만 해서 크기·가림만
+		# 본다 — "맞는 놈마다 문양이 깔린다" 같은 **규칙**은 실제 경로로 쏴야 화면에 나온다.
+		if arg.begins_with("--cast="):
+			var cast_key := arg.trim_prefix("--cast=")
+			var cast_timer := Timer.new()
+			cast_timer.wait_time = 0.1
+			cast_timer.autostart = true
+			cast_timer.timeout.connect(func() -> void:
+				if _phase != "fight" or _aoe_targets().size() < 2:
+					return
+				cast_timer.queue_free()
+				# 시전 조건만 비운다. 쿨다운과 진행 중 동작이 남아 있으면 조용히 빠진다.
+				_skill_action = ""
+				_skill_cd.clear()
+				_resolve_skill(cast_key)
+				# 시각을 찍는다. `--wait` 이 이보다 이르면 아직 안 쐈고, 늦으면 세상이
+				# 전진한 뒤라 문양이 화면 왼쪽으로 밀려 있다 — 둘 다 화면만 보면
+				# "안 깔렸다"로 보인다.
+				print("CAST: %s  t=%.2fs  대상 %d" % [cast_key,
+					float(Time.get_ticks_msec()) * 0.001, _aoe_targets().size()]))
+			add_child(cast_timer)
 		# [개발 도구] --equip=first : 첫 보관 장비를 장착해 "장착 중" 표시를 캡처한다.
 		if arg == "--equip=first" and not gear_inventory.is_empty():
 			_equip_inventory_item(str(gear_inventory.keys()[0]))
@@ -589,7 +613,8 @@ func _autoshot() -> void:
 	await get_tree().create_timer(_shot_wait).timeout
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("user://autoshot.png")
-	print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+	print("AUTOSHOT SAVED (t=%.2fs): %s" % [float(Time.get_ticks_msec()) * 0.001,
+		ProjectSettings.globalize_path("user://autoshot.png")])
 	get_tree().quit()
 
 
