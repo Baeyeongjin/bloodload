@@ -4001,6 +4001,12 @@ func _advance_world(dx: float) -> void:
 			continue
 		f.position.x -= dx
 		f.stop_x -= dx
+	# **바닥에 놓인 것도 같이 밀린다.** 장판(진)은 화면이 아니라 **땅의 한 자리**다 —
+	# 안 밀면 세상이 흐르는데 문양만 화면에 붙어 지면 위를 미끄러진다.
+	for n in get_tree().get_nodes_in_group(WORLD_FX_GROUP):
+		if is_instance_valid(n):
+			n.position.x -= dx
+	_field_x -= dx
 	_scroll += dx * PARALLAX
 	_apply_scroll()
 
@@ -4182,6 +4188,96 @@ func _nearest_foe() -> Foe:
 	return best
 
 
+# 장판(진). 바닥에 깔아 두고 **지속시간 동안 초당 tick_rate 번**, 그때 문양 위에 서
+# 있는 놈을 때린다. 우리 유일한 다단히트 스킬이다.
+#
+# **판정이 화면이 아니라 문양 폭이다.** 다른 광역은 "화면 안"으로 잡지만(`_aoe_targets`)
+# 장판은 땅의 한 자리라 그 자리에 있는 놈만 맞아야 한다 — 그래야 "서 있으면 맞는다"가
+# 규칙이 되고, 영웅이 전진해 지나가면 뒤에 남는다.
+#
+# 왜 Area2D 가 아닌가: 도형을 세우면 크기를 이펙트와 따로 관리해야 하고 둘이 조용히
+# 갈린다(이번에 겪은 `fx_y` 문제와 같은 종류). 여기서는 **그림 폭이 곧 판정 폭**이라
+# 한 숫자만 본다. ponytail: 세로 축이나 비원형 범위가 생기면 Area2D 로 올린다.
+#
+# **틱마다 표적을 다시 고른다.** 깔 때의 목록을 들고 있으면 죽은 놈에게 계속 넣거나
+# 나중에 흘러 들어온 놈을 빼먹는다. `_defer_stage_advance` 로 한 틱을 묶어 구간 넘김이
+# 틱 도중에 끼어드는 것을 막는다.
+const WORLD_FX_GROUP := "world_fx"
+var _field_x := 0.0        # 문양 중심의 현재 x. _advance_world 가 같이 민다
+var _field_half := 0.0     # 문양 반폭 = 판정 반폭
+var _field_gen := 0        # 구간이 바뀌면 올라간다. 지난 구간의 틱을 끊는 표
+
+
+func _start_field(fx: String, fps: float, scale: float, style: String, echo: int,
+		skew: float, per_tick: float, ticks: int, gap: float,
+		skill: Dictionary) -> void:
+	# 문양은 **첫 표적 자리**에 깐다. 아무도 없으면 영웅 앞에.
+	var at := _aoe_targets()
+	_field_x = at[0].position.x if not at.is_empty() \
+		else hero_x + float(hero_face) * (_motion_reach("attack") + 48.0)
+	var frames: Array = Assets.frames("res://assets/anim/%s" % fx)
+	_field_half = (float(frames[0].get_width()) * scale * 0.5) if not frames.is_empty() \
+		else 32.0 * scale
+	# 그림은 한 번만 띄운다 — 이미 머무는 그림이라 틱마다 새로 띄우면 겹쳐서 두꺼워진다.
+	_anim_fx(fx, Vector2(_field_x,
+		_fx_anchor_y(style, fx, scale, ground_y - float(Grid.SPRITE), 0.0)),
+		fps, scale, style, echo, 1.0, hero_face, skew, true)
+	var gen := _field_gen
+	for i in ticks:
+		var t := create_tween()
+		t.tween_interval(gap * float(i))
+		t.tween_callback(func() -> void:
+			# **phase 는 안 본다.** 문양은 땅에 있는 것이라 영웅이 다음 놈에게 달려가는
+			# 동안에도 남아 있어야 한다 — phase 를 보게 뒀더니 전진 구간에서 모든 틱이
+			# 빠져나가 피해가 0 번 들어갔다(실측). 끊는 조건은 사망과 구간 교체뿐이다.
+			if not is_inside_tree() or _hero_dead or gen != _field_gen:
+				return
+			var live := _field_targets()
+			if live.is_empty():
+				return
+			_defer_stage_advance = true
+			for f in live:
+				f.take_damage(per_tick)
+				_skill_hit_fx(skill, f)
+			_defer_stage_advance = false
+			if kills >= StageDefs.kills_needed(stage):
+				_advance_stage())
+
+
+# 문양 위에 서 있는 놈. 화면 밖으로 밀려난 문양은 아무도 안 때린다(자연히 빈 배열).
+func _field_targets() -> Array[Foe]:
+	var out: Array[Foe] = []
+	if not is_inside_tree():
+		return out
+	for f in get_tree().get_nodes_in_group("foes"):
+		if not is_instance_valid(f) or f.dying:
+			continue
+		if absf(f.position.x - _field_x) <= _field_half + f.body_half():
+			out.append(f)
+	return out
+
+
+# 광역이 닿는 범위. **화면 안까지다.**
+#
+# 예전엔 `_foe_arrived` 만 봤다. 웨이브 모델에서는 그게 곧 "칸에 서 있다"라 화면 안과
+# 같은 뜻이었는데, 찾아가는 모델로 바꾼 뒤 몹이 전부 제 자리에 서 있으므로(스스로 걷지
+# 않는다) 줄 맨 뒤 화면 밖 놈들까지 판정에 들었다 — 6마리면 **800px 를 때리는데 화면에
+# 보이는 건 2마리(160px)** 였다(실측). 안 보이는 곳에서 피해가 나가고, 처치 수만 올라간다.
+#
+# 오른쪽 끝은 화면 폭에서 몸통 절반을 빼 준다: 몸이 반쯤 걸친 놈은 보이는 놈이다.
+func _aoe_targets() -> Array[Foe]:
+	var out: Array[Foe] = []
+	if not is_inside_tree():
+		return out
+	for f in get_tree().get_nodes_in_group("foes"):
+		if not _foe_arrived(f):
+			continue
+		if f.position.x - f.body_half() > float(Grid.BG.x):
+			continue
+		out.append(f)
+	return out
+
+
 func _resolve_skill(key: String) -> void:
 	if _hero_dead or _phase != "fight":
 		return
@@ -4214,38 +4310,60 @@ func _resolve_skill(key: String) -> void:
 				var dealt := minf(_skill_target.hp, hit)
 				_skill_target.take_damage(hit)
 				gold += dealt * 0.20
-				_anim_fx(fx, _skill_target.position + Vector2(0, fx_y),
+				_anim_fx(fx, Vector2(_skill_target.position.x,
+					_fx_anchor_y(fx_style, fx, fx_scale,
+						_skill_target.position.y - _skill_target.body_half(), fx_y)),
 					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
 				_skill_hit_fx(skill, _skill_target)
-		"wave", "field":
+		"field":
+			# **다단히트.** 깔아 두고 지속시간 동안 초당 tick_rate 번, 그때 장판 안에
+			# 서 있는 놈에게 넣는다 — 들어오는 순간에만 발화하는 `body_entered` 식이
+			# 아니라 "지금 겹친 놈들"을 매 틱 다시 본다(Godot 커뮤니티 표준 패턴).
+			# 이펙트는 이미 머무는 그림이라 한 번만 띄우고 그대로 둔다.
+			var ticks := maxi(1, int(round(
+				float(skill["duration"]) * float(skill["tick_rate"]))))
+			_start_field(fx, fx_fps, fx_scale, fx_style, fx_echo, fx_skew,
+				hit / float(ticks), ticks, 1.0 / float(skill["tick_rate"]), skill)
+			if kills >= StageDefs.kills_needed(stage):
+				_advance_stage()
+		"wave":
 			_defer_stage_advance = true
-			var struck: Array[Foe] = []
-			for f in get_tree().get_nodes_in_group("foes"):
-				if _foe_arrived(f):
-					f.take_damage(hit)
-					_skill_hit_fx(skill, f)
-					struck.append(f)
+			var struck := _aoe_targets()
+			for f in struck:
+				f.take_damage(hit)
+				_skill_hit_fx(skill, f)
 			_defer_stage_advance = false
-			# **떨어지는 것은 맞는 놈들 머리 위마다 뜬다.** 광역인데 영웅 앞 한 자리에서만
-			# 쏟아지면 "저기만 비가 온다"로 보인다. 쓸고 지나가는 것(sweep)과 바닥에
-			# 깔리는 것(hold·rise)은 하나여야 맞으므로 fall 만 나눈다.
+			# **맞는 놈마다 하나씩 띄운다.** 예전엔 fall(혈우)만 그렇게 했고 나머지
+			# 19종은 영웅 앞 한 자리에 64px 하나였다 — 800px 를 때리면서 64px 를
+			# 보여 주니(때리는 폭의 8%) 광역이 아니라 아이콘이 튀는 그림이었다.
+			# 사장님이 혈우만 괜찮다고 한 이유가 이것이고, 새 아트 없이 고쳐진다.
 			#
-			# 나눠 뜰 때는 잔상을 끈다 — 잔상은 **하나짜리 이펙트를 크게 보이게** 하는
-			# 장치라, 이미 여러 개가 떠 있으면 화면만 두꺼워지고 등급은 크기로 읽힌다.
-			if fx_style == "fall" and not struck.is_empty():
-				for f in struck:
-					_anim_fx(fx, Vector2(f.position.x, ground_y + fx_y),
-						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew)
-			else:
-				_anim_fx(fx, Vector2(hero_x + float(hero_face) * (_motion_reach("attack") + 48.0),
-					ground_y + fx_y),
+			# 나눠 뜰 때는 잔상(echo)을 끈다 — 잔상은 **하나짜리 이펙트를 크게 보이게**
+			# 하는 장치라, 이미 여러 개가 떠 있으면 화면만 두꺼워진다. 등급은 크기로 읽힌다.
+			#
+			# 아무도 없으면 영웅 앞에 한 번 띄운다: 쿨다운을 썼는데 화면에 아무 일도
+			# 안 일어나면 "안 나갔다"로 보인다.
+			if struck.is_empty():
+				var ahead := hero_x \
+					+ float(hero_face) * (_motion_reach("attack") + 48.0)
+				_anim_fx(fx, Vector2(ahead,
+					_fx_anchor_y(fx_style, fx, fx_scale,
+						ground_y - float(Grid.SPRITE), fx_y)),
 					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
+			else:
+				for f in struck:
+					_anim_fx(fx, Vector2(f.position.x,
+						_fx_anchor_y(fx_style, fx, fx_scale,
+							f.position.y - f.body_half(), fx_y)),
+						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew)
 			if kills >= StageDefs.kills_needed(stage):
 				_advance_stage()
 		"ward":
 			_summon_t = float(skill["duration"])
 			_summon_bonus = float(skill.get("bonus", 0.0))
-			_anim_fx(fx, Vector2(hero_x, ground_y + fx_y),
+			_anim_fx(fx, Vector2(hero_x,
+				_fx_anchor_y(fx_style, fx, fx_scale,
+					ground_y - float(Grid.SPRITE), fx_y)),
 				fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
 
 
@@ -4438,6 +4556,9 @@ func _kill_hero() -> void:
 #
 # **암전 뒤에서 부른다** — 그래야 자리 이동이 순간이동으로 안 보인다.
 func _begin_stage_pose() -> void:
+	# 지난 구간에 깔린 장판의 틱을 끊는다. 구간이 바뀌면 그 땅은 없어진 것이다 —
+	# 안 끊으면 새 구간의 몹이 이전 구간 문양에 맞는다(`_start_field` 의 gen 검사).
+	_field_gen += 1
 	_boss_entry = StageDefs.is_boss_stage(stage)
 	hero_x = -float(Grid.SPRITE) if _boss_entry else HERO_X
 	_dash_to = HERO_X
@@ -4857,8 +4978,41 @@ const SQUASH_TILT := 0.88   # 기운 만큼 세로를 눌러 원근을 만든다
 
 # face: +1 오른쪽, -1 왼쪽. **영웅이 보는 쪽으로 나간다.** 좌우 양쪽에서 몹이 나오므로
 # 고정해 두면 절반은 등 뒤로 날아간다 — 창이 반대를 겨누고 파가 뒤로 쓸린다.
+# 이펙트가 그려질 세로 자리. **그림 높이를 보고 정한다.**
+#
+# `fx_y` 만으로는 등급이 올라 배율이 커질 때(1.0 -> 1.6) 아래끝이 지면 밑으로
+# 가라앉는다 — 오프셋을 배율 1.0 에서 맞춰 놨기 때문이다. 실측(2026-08-06):
+# `field` 18~37px · `strike_legend` 35px · `wave_legend` 15px 묻힘. 등급이 높을수록
+# 심하니, 뽑은 보람이 가장 커야 할 쪽이 가장 어긋나 있었다.
+#
+# 스타일이 곧 "무엇에 붙는가"다:
+#   바닥에 깔리는 것(hold·fall·rise)  아래끝을 지면에 붙인다
+#   몸에 터지는 것(burst·sweep)       몸통 가운데에 맞춘다
+#   몸에 두르는 것(pulse·orbit)       영웅 몸통 가운데 (지금도 그렇다)
+#
+# `fx_y` 는 그 기준선에서의 **미세 조정**으로 남는다. 배율이 바뀌어도 기준선은
+# 안 움직이므로 크기를 키워도 같은 자리에 커진다.
+const FX_GROUND_LIFT := 6.0    # 바닥 이펙트를 지면보다 살짝 띄운다(그림자에 안 묻히게)
+
+
+func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
+		body_mid: float, nudge: float) -> float:
+	var frames: Array = Assets.frames("res://assets/anim/%s" % fx_name)
+	if frames.is_empty():
+		return body_mid + nudge
+	var tex: Texture2D = frames[0]
+	var h := float(tex.get_height()) * draw_scale
+	if style == "hold" or style == "fall" or style == "rise":
+		# 아래끝 = 지면. 중심은 그보다 높이 절반만큼 위다.
+		return ground_y - h * 0.5 - FX_GROUND_LIFT
+	return body_mid + nudge
+
+
+# in_world = 바닥에 놓이는 것. `_advance_world` 가 영웅 전진량만큼 같이 밀어 준다 —
+# 안 밀면 세상이 흐르는데 그림만 화면에 붙어 지면 위를 미끄러진다.
 func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
-		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0) -> void:
+		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0,
+		in_world := false) -> void:
 	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
 	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
 	for i in echo:
@@ -4898,6 +5052,8 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	else:
 		fx.z_index = 5 if alpha >= 1.0 else 4
 	add_child(fx)
+	if in_world:
+		fx.add_to_group(WORLD_FX_GROUP)
 	fx.animation_finished.connect(fx.queue_free)
 	fx.play("play")
 	if style.is_empty() or not fx.is_inside_tree():
