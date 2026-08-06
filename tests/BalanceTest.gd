@@ -137,20 +137,24 @@ func _init() -> void:
 	# 13) 몹 공격과 오프라인 판정은 난수 없이 같은 입력에 같은 결과를 내야 한다.
 	var slow := Balance.foe_attack_interval(3.0)
 	assert(slow > Balance.foe_attack_interval(1.0), "단단한 몹이 더 빠르게 친다")
-	var survives := Balance.can_clear_stage(100.0, 0.0, 100.0,
+	# 체력 400 은 **접근 시간에 안 걸리게** 잡은 값이다. 100 이었을 때는 생존 18.8초 vs
+	# 소요 19.8초로 아슬아슬해서, APPROACH_SECONDS 를 0.55 -> 0.89 로 재실측하자 이
+	# 픽스처가 통째로 뒤집혔다 — 이 검사가 보려는 건 "공격/생존을 가르는가"지
+	# 접근 시간의 자릿수가 아니다.
+	var survives := Balance.can_clear_stage(400.0, 0.0, 100.0,
 		20, 10.0, 2, 4.0, 1.5)
-	var fails := Balance.can_clear_stage(100.0, 0.0, 2.0,
+	var fails := Balance.can_clear_stage(400.0, 0.0, 2.0,
 		20, 10.0, 5, 40.0, 1.5)
 	assert(survives and not fails, "오프라인 생존 판정이 공격/생존 차이를 못 가른다")
-	# 제한 시간이 생긴 뒤로는 **버티기만으로는 못 넘는다.** 같은 입력이라도 시간이
+	# 제한 시간이 **있는 구간**(보스·중간보스)에서는 버티기만으로 못 넘는다. 시간이
 	# 모자라면 오프라인도 멈춰야 실시간과 결과가 갈리지 않는다.
-	# 위 survives 는 20마리 x 10 / dps 100 = 2초 + 접근 20 x 0.55 = 13초가 걸린다.
+	# 위 survives 는 20마리 x 10 / dps 100 = 2초 + 접근 20 x 0.89 = 19.8초가 걸린다.
 	var push20 := Balance.stage_seconds(20, 10.0, 100.0)
 	assert(is_equal_approx(push20, 2.0 + 20.0 * Balance.APPROACH_SECONDS),
 		"접근 시간이 구간 소요에 안 들어간다: %.1f초" % push20)
-	assert(Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, push20 + 1.0),
+	assert(Balance.can_clear_stage(400.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, push20 + 1.0),
 		"시간이 남는데 제한에 걸린다")
-	assert(not Balance.can_clear_stage(100.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, push20 - 1.0),
+	assert(not Balance.can_clear_stage(400.0, 0.0, 100.0, 20, 10.0, 2, 4.0, 1.5, push20 - 1.0),
 		"제한 시간을 넘겼는데 통과한다")
 	# 처리량 상한 — 몹이 화면 밖에서 걸어오므로 **DPS가 무한이어도** 동시 몹 수보다
 	# 빨리 잡을 수 없다. 이걸 빼면 오프라인이 실시간으로는 못 넘는 구간을 넘어간다.
@@ -166,16 +170,25 @@ func _init() -> void:
 	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0, 4, 2.33),
 		Balance.push_seconds(60, 10.0, 1.0) + 60.0 * Balance.APPROACH_SECONDS),
 		"DPS 병목일 때 처리량이 이긴다")
-	# 구간 종류마다 시간이 다르고, **한 마리당** 보스가 가장 넉넉해야 한다.
-	# 총량으로 재면 안 된다 — 일반 구간은 100마리라 총 100초지만 한 마리에 1초다.
-	# (예전엔 60마리/60초라 총량 비교로도 맞아떨어져서 이 구분이 안 드러났다.)
-	var per_normal := StageDefs.time_limit(1) / float(StageDefs.kills_needed(1))
+	# **제한 시간은 보스·중간보스에만 붙는다**(2026-08-06). 일반 구간을 시계로 막으면
+	# 몹 걷기 속도가 곧 벽이 되어 연출을 못 늦춘다 — StageDefs.time_limit 주석 참고.
+	# 이 검사가 "일반 구간에도 다시 걸자"는 되돌림을 잡는다.
+	for st in [1, 2, 4, 6, 9, 11, 37, 100]:
+		if StageDefs.is_boss_stage(st) or StageDefs.is_midboss_stage(st):
+			continue
+		assert(StageDefs.time_limit(st) <= 0.0, "일반 구간에 제한 시간이 붙었다: %d" % st)
+	# 한 마리당으로 재면 보스가 가장 넉넉해야 한다. 총량으로 재면 안 된다 —
+	# 일반 구간은 100마리라 목표 100초지만 한 마리에 1초다.
+	var per_normal := StageDefs.PACE_NORMAL / float(StageDefs.kills_needed(1))
 	assert(StageDefs.time_limit(10) > per_normal, "보스 한 마리에 주는 시간이 잡몹보다 짧다")
 	assert(StageDefs.time_limit(5) > per_normal, "중간보스 한 마리가 잡몹보다 짧다")
-	for st in [1, 5, 10, 37, 100]:
-		assert(StageDefs.time_limit(st) > 0.0, "제한 시간이 0 이하다: %d" % st)
+	assert(StageDefs.time_limit(5) > 0.0 and StageDefs.time_limit(10) > 0.0,
+		"보스 구간의 제한 시간이 사라졌다")
 
 	# 14) 대표 성장값별 처치시간. 장비·영웅 레벨을 빼 보수적으로 잡는다.
+	# **칸 수·걷는 시간은 실제 구현에서 읽는다.** 둘 다 노드를 안 만지므로 맨
+	# 인스턴스로 부를 수 있다(씬을 띄우면 자산 로딩까지 딸려 온다).
+	var game = load("res://Main.gd").new()
 	# 첫 보스는 **가르치는 벽**이다. 맨몸으로는 제한 시간에 쫓기고, 조금 훈련하면 열린다.
 	# 예전 검사는 "1레벨 올리면 열린다"였는데 그건 공격력이 레벨당 +100% 였을 때 얘기다 —
 	# 합연산(+2%)에서는 한 레벨로 벽이 열리면 그게 오히려 이상하다.
@@ -206,21 +219,27 @@ func _init() -> void:
 		var normal_ttk := _foe_hp(stage, "normal") / build_dps
 		var mid_ttk := _foe_hp(stage, "midboss") / build_dps
 		var boss_ttk := _foe_hp(stage, "boss") / build_dps
-		# 구간은 **제한 시간 안에** 끝나야 한다. 예전엔 보스만 봤는데, 잡몹 구간이
-		# 제한을 넘는지가 실제로 막히는 자리다. 한 마리당 0.55초(APPROACH_SECONDS)가
-		# 피해와 무관하게 나가므로 처치 수를 늘리면 여기가 먼저 터진다.
+		# 일반 구간은 이제 제한 시간이 없다 — 대신 **목표 페이스**(PACE_NORMAL)를 본다.
+		# 넘겨도 실패하지는 않지만, 넘기면 구간이 늘어져 죽은 화면이 된다.
+		#
+		# **실제 칸 수·걷는 시간으로 잰다.** 예전엔 4칸·2.3초를 박아 뒀는데, 그래서
+		# 몹 걷기를 80 으로 늦춰 100마리에 125초가 걸리게 됐을 때 이 검사가 통과했다
+		# (2026-08-06 실측으로 발견). 처리량은 DPS 가 아니라 걷기에 묶여 있어서,
+		# 모델이 진짜 좌표를 안 보면 연출 수정이 페이스를 깨도 조용하다.
 		var kills := StageDefs.kills_needed(stage - 1)   # 보스 구간 바로 앞 = 일반 구간
 		var clear := Balance.stage_seconds(kills, _foe_hp(stage - 1, "normal"), build_dps,
-			4, StageDefs.WAVE_WALK_SECONDS)
-		assert(clear < StageDefs.TIME_NORMAL,
-			"%s 일반 구간이 제한 시간을 넘는다: %.0f초" % [point["name"], clear])
+			game._wave_size(stage - 1), game._lane_walk_seconds(stage - 1))
+		assert(clear < StageDefs.PACE_NORMAL,
+			"%s 일반 구간이 목표 페이스를 넘는다: %.0f초 (목표 %.0f초)"
+			% [point["name"], clear, StageDefs.PACE_NORMAL])
 		assert(mid_ttk < StageDefs.TIME_MIDBOSS,
 			"%s 중간보스를 제한 시간 안에 못 잡는다: %.0f초" % [point["name"], mid_ttk])
 		assert(boss_ttk < StageDefs.TIME_BOSS,
 			"%s 보스를 제한 시간 안에 못 잡는다: %.0f초" % [point["name"], boss_ttk])
-		print("TTK %-5s %-7s 일반 %.2fs (%d마리 %.0f초 / 제한 %.0f) / 중간 %.1fs / 보스 %.1fs  DPS x%.0f"
+		print("TTK %-5s %-7s 일반 %.2fs (%d마리 %.0f초 / 페이스 %.0f) / 중간 %.1fs / 보스 %.1fs  DPS x%.0f"
 			% [point["name"], StageDefs.label(stage), normal_ttk, kills, clear,
-			StageDefs.TIME_NORMAL, mid_ttk, boss_ttk, mult])
+			StageDefs.PACE_NORMAL, mid_ttk, boss_ttk, mult])
+	game.free()
 
 	# 15) 축약 표기. 자릿수를 한 칸 잘못 세면 조 단위가 천 단위로 보여서
 	#     "얼마나 부자인지"가 통째로 거짓말이 된다.

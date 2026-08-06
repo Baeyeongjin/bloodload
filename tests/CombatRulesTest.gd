@@ -432,6 +432,18 @@ func _init() -> void:
 			swung = true
 	assert(swung, "교전 몹이 4초가 지나도 안 휘두른다")
 	gate.free()
+	# **전열이 영웅 몸통 바로 앞이면 영웅은 한 걸음도 안 뗀다.** 순차 교전이 교전 몹을
+	# `hero_x` 앞으로 끌어당기던 동안 정확히 그랬다 — 몹이 걸어와 멈춘 자리가 이미
+	# 칼끝이라, 화면에서는 영웅이 제자리에서 걷기·대시 모션만 재생했다(사장님:
+	# "가운데에서 왔다갓다 하지 않아, 그냥 가운데에서 걷고 대시해").
+	# 0번 칸은 몸통 두 개 폭보다 **확실히** 멀어야 한다. 이 검사가 되돌림을 잡는다.
+	# 실제 이동량은 tests/EngageCheck.gd 가 씬을 돌려 잰다(느리다, 별도로 돌린다).
+	for row in [game.LANES_RIGHT, game.LANES_LEFT]:
+		var walk: float = absf(float(row[0]) - game.HERO_X) - (25.0 + game.BODY_HALF)
+		assert(walk > 40.0, "전열이 가까워서 영웅이 제자리에 선다: %.0f px" % walk)
+	# 대기 칸은 전열보다 멀어야 한다 — 가까우면 대기 몹이 교전 몹 앞에 끼어든다.
+	assert(absf(float(game.LANES_RIGHT[1]) - game.HERO_X)
+		> absf(float(game.LANES_RIGHT[0]) - game.HERO_X), "1번 칸이 전열보다 가깝다")
 
 	# 닿지 않는 몹은 **스윙을 시작조차 하지 않는다.** 헛스윙은 화면에서 버그로 보인다.
 	probe.position.x = 0.0
