@@ -176,16 +176,18 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> f
 # 서 있고 영웅이 한 마리씩 찾아가므로 동시 마릿수가 처리량에 영향이 없다. 예전엔
 # 몹이 화면 밖에서 여러 칸으로 동시에 걸어 들어와서 그게 병렬 상한이었다.
 #
-# 0.57초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 72마리(0.83초/마리)를 세고,
+# 0.47초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 82마리(0.73초/마리)를 세고,
 # 거기서 모델 처치시간(0.26초/마리)을 뺐다. 설계값 FOE_GAP/TRAVEL_SPEED = 0.8초보다
-# 작은 이유: 영웅이 마주 나가는 65px 이 전진과 겹치고, 사망 연출 동안에도 전진한다.
+# 작은 이유: 사망 연출 동안에도 전진하고, **공격 쿨다운이 전진 중에 돈다**
+# (`_tick_hero_attack`) — 그래서 마주치면 대개 즉시 첫 스윙이 나간다.
 #
 # 이 값이 얼마나 크게 움직이는지: 0.55(영웅이 제자리에서 팼을 때) -> 0.89(고정 칸으로
 # 옮겨 영웅이 걸어 나가게 한 직후) -> 0.76(전열 가속 + 마주 걷기) -> 0.83(마주 나가는
-# 거리를 제한) -> 0.57(웨이브를 접고 영웅이 찾아가는 모델). 짐작으로 못 맞춘다.
+# 거리를 제한) -> 0.57(찾아가는 모델) -> 0.47(전진 중에도 공격 쿨다운이 돌게).
+# 짐작으로 못 맞춘다.
 # ponytail: `Main.FOE_GAP` · `Main.TRAVEL_SPEED` · `Foe.DIE_DUR` 를 바꾸면
 # tests/EngageCheck.gd 로 다시 재야 한다.
-const APPROACH_SECONDS := 0.57
+const APPROACH_SECONDS := 0.47
 
 
 static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> float:

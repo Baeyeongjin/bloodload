@@ -3735,12 +3735,23 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 				_pending_target.take_damage(_combat_damage(_pending_target))
 				_anim_fx("fx_cleave", _pending_target.position + Vector2(0, -28), 18.0, 2.0)
 			_pending_target = null
-	if _hero_dead or _phase != "fight":
+	if _hero_dead:
 		return
-	# 쿨다운은 **스킬 중에도 돈다.** 예전엔 여기서 통째로 빠져나가서, 스킬이 끝난 뒤
-	# 남은 쿨다운을 처음부터 다시 기다렸다 — 네 형태를 다 끼면 시간의 22%가 스킬인데
-	# 그만큼 기본공격이 두 번 지연됐다(계측: CombatRulesTest "계측 C").
+	# 쿨다운은 **전진 중에도, 스킬 중에도 돈다.**
+	#
+	# 전진: 예전엔 phase 가드가 이 줄 **위에** 있어서 몹에게 달려가는 동안 쿨다운이
+	# 얼어붙었다가, 마주친 뒤에야 0.60초를 처음부터 셌다 — 화면에서는 "붙어서 한참
+	# 멈췄다가 공격"으로 보인다(사장님). 실측: 사거리 진입 -> 첫 피해 0.56초(중간 0.60,
+	# 최대 0.87). 그 앞의 두 구간(표적 선정·이동)은 0.00초였다.
+	#
+	# 스킬: 같은 실수를 여기서 이미 한 번 했다 — 스킬 중에 통째로 빠져나가서 끝난 뒤
+	# 남은 쿨다운을 처음부터 기다렸고, 네 형태를 다 끼면 시간의 22%가 스킬인데 그만큼
+	# 기본공격이 두 번 지연됐다(계측: CombatRulesTest "계측 C").
+	#
+	# 칼을 뽑아 든 채로 달리는 것이지 쉬는 것이 아니다. 스윙 타이머는 계속 돈다.
 	_attack_t -= delta
+	if _phase != "fight":
+		return
 	if _skill_action != "":
 		# 표적을 다시 고르지는 않지만(모션이 끊긴다) **자리는 따라간다.** 전열을
 		# ±56 에서 ±120 으로 밀면서 굳은 자리와 표적 사이가 최대 68px 까지 벌어졌다
@@ -4282,18 +4293,39 @@ var _dmg_pops := 0
 
 
 func _pop_damage(foe: Foe, damage: float) -> void:
-	if _dmg_pops >= DMG_POP_MAX or not is_instance_valid(foe) or damage <= 0.0:
+	if not is_instance_valid(foe):
 		return
 	var bite := damage / maxf(1.0, foe.max_hp)
 	var big := bite >= 0.5
+	_pop_number(_n(damage), foe.position.x,
+		foe.position.y - foe.body_half() * 2.2 - 20.0,
+		Color(1.0, 0.55, 0.28) if big
+			else (Color(1.0, 0.86, 0.45) if bite >= 0.15 else Color(1.0, 0.97, 0.92)),
+		big, damage)
+
+
+# 영웅이 맞은 피해. **붉은색으로 영웅 위에** 띄운다 — 레퍼런스도 그렇다(실측: 왼쪽에
+# 붉은 `52.1K`). 몹이 받는 숫자와 색으로 갈리므로 누가 맞았는지 바로 읽힌다.
+#
+# 크기는 **최대 체력 대비**로 정한다. 몹 쪽과 같은 기준이다 — 화면에서 궁금한 건
+# 절대값이 아니라 "얼마나 아팠나"고, 한 방에 반이 날아가면 그건 커야 한다.
+func _pop_hero_damage(damage: float) -> void:
+	var bite := damage / maxf(1.0, max_hp())
+	_pop_number(_n(damage), hero_x, ground_y - float(Grid.SPRITE) * HERO_DRAW_SCALE - 8.0,
+		Color(1.0, 0.32, 0.30), bite >= 0.15, damage)
+
+
+func _pop_number(text: String, at_x: float, at_y: float, col: Color,
+		big: bool, damage: float) -> void:
+	if _dmg_pops >= DMG_POP_MAX or damage <= 0.0:
+		return
 	var l := Label.new()
-	l.text = _n(damage)
+	l.text = text
 	l.add_theme_font_override("font", Type.font())
 	# **11의 배수만 쓴다** — 도트 폰트라 그 외 크기는 픽셀이 어긋나 뭉개진다(Type).
 	l.add_theme_font_size_override("font_size",
 		Type.SIZE_BODY if big else Type.SIZE_SMALL)
-	l.add_theme_color_override("font_color", Color(1.0, 0.55, 0.28) if big
-		else (Color(1.0, 0.86, 0.45) if bite >= 0.15 else Color(1.0, 0.97, 0.92)))
+	l.add_theme_color_override("font_color", col)
 	# 테두리. "깨어난 무덤"은 바닥이 밝은 흙색이라 흰 숫자가 그대로 묻힌다.
 	l.add_theme_constant_override("outline_size", 6)
 	l.add_theme_color_override("font_outline_color", Color(0.05, 0.02, 0.04))
@@ -4303,8 +4335,7 @@ func _pop_damage(foe: Foe, damage: float) -> void:
 	# **몹에 붙이지 않는다.** 자식이면 죽는 순간 같이 사라져서, 정작 가장 보고 싶은
 	# 마지막 한 방의 숫자가 안 뜬다. 영웅(3)·보스(2) 위로 올린다.
 	l.z_index = 6
-	var top := foe.position.y - foe.body_half() * 2.2 - 20.0
-	l.position = Vector2(roundf(foe.position.x - DMG_POP_W * 0.5), roundf(top))
+	l.position = Vector2(roundf(at_x - DMG_POP_W * 0.5), roundf(at_y))
 	add_child(l)
 	_dmg_pops += 1
 	var y0 := l.position.y
@@ -4357,6 +4388,7 @@ func on_foe_attack(_foe: Foe) -> void:
 	# 통째로 빗나가므로, 예고를 보고 빠지는 것이 곧 회피다.
 	var incoming := Balance.foe_damage(StageDefs.enemy_power(stage)) * _foe.attack_mult()
 	hero_hp = maxf(0.0, hero_hp - incoming)
+	_pop_hero_damage(incoming)
 	_hero_flash_t = 0.10
 	_hero.self_modulate = Color(7, 7, 8)
 	_play("hurt", 0.10)
