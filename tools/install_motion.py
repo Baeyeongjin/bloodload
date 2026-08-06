@@ -127,8 +127,19 @@ def check(motion, paths, strict_foot=True):
         "%s: 프레임이 서로 같다 (고유 %d/%d) - ?index= 로 받았는지 확인할 것" \
         % (motion, len(set(digests)), len(digests))
 
-    # (2) 방향 고정
+    # (2) 방향 고정 - **망토가 있는 스킨에서만 자동 판정이 된다.**
+    #
+    # 몹은 망토 같은 표식이 없어서 좌우 대칭 상관으로 재 봤는데 **못 쓴다.**
+    # 실측(2026-08-06): 기존 정상 몹 자산의 정규화 점수가 -0.036~+0.055 로 퍼져
+    # 있고(ice_wisp -0.036, goblin -0.024 가 정상인데 음수), 실제 반전의 신호 크기는
+    # 그 프레임 자기 비대칭과 같다(skeleton f3 은 +0.020 -> -0.020). 두 분포가
+    # 겹치므로 임계값을 어디에 두든 오탐이나 누락이 난다.
+    #
+    # 그래서 몹은 **사람이 대조표를 보고 확인한다.** 여기서 없는 검사를 있는 척하지
+    # 않는다 - 통과 도장이 거짓이면 검사가 없는 것보다 나쁘다.
     known = [(i, v) for i, v in enumerate(faces) if v is not None]
+    if not known:
+        print("        [주의] %s: 망토가 없어 방향 자동 판정 불가 - 대조표를 볼 것" % motion)
     if known:
         bad = [i for i, v in known if v < 0.0]
         assert not bad, \

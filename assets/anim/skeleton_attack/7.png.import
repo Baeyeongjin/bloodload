@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c2i0hotf2j638"
-path="res://.godot/imported/0.png-499f64ff4cc3c3f6e708f00dfad5df78.ctex"
+uid="uid://6ougy27ytfyx"
+path="res://.godot/imported/7.png-a6fa3976004e0c80934c8f7cf8221f08.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/skeleton_attack/0.png"
-dest_files=["res://.godot/imported/0.png-499f64ff4cc3c3f6e708f00dfad5df78.ctex"]
+source_file="res://assets/anim/skeleton_attack/7.png"
+dest_files=["res://.godot/imported/7.png-a6fa3976004e0c80934c8f7cf8221f08.ctex"]
 
 [params]
 

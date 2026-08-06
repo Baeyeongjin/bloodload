@@ -113,8 +113,12 @@ func _init() -> void:
 	assert(is_equal_approx(boss._size(), float(Grid.SPRITE) * 2.0 * 1.25 * 2.0))
 	# **모션 캔버스 비율.** _draw 는 텍스처를 _size() 상자에 늘려 그리므로, 공격 모션만
 	# 큰 캔버스로 뽑으면 여백까지 눌려 몹이 작아진다. 그래서 비율(모션 캔버스 / 걷기
-	# 캔버스)만큼 상자를 키운다. 오늘 자산은 전부 같은 캔버스라 **1.0 이어야 한다** —
-	# 이게 1.0 이 아니면 이 장치가 기존 그림 크기를 건드렸다는 뜻이다.
+	# 캔버스)만큼 상자를 키운다.
+	#
+	# 걷기 자신은 기준이므로 **늘 1.0** 이다 — 이게 깨지면 기준을 잘못 잡은 것이다.
+	# 다른 모션은 여백을 주려고 캔버스를 키울 수 있으니 1.0 을 강요하지 않는다.
+	# 대신 **깔끔한 정수배**여야 한다: 어긋난 비율(1.5 같은)은 잉크가 반 픽셀에 걸려
+	# 도트가 뭉개진다.
 	for f in [normal, boss]:
 		var walk: Array = f._walk_frames
 		if walk.is_empty():
@@ -123,9 +127,9 @@ func _init() -> void:
 			"걷기 프레임의 캔버스 비율이 1.0 이 아니다: %f" % f._art_ratio(walk[0]))
 		var atk: Array = f._attack_frames
 		if not atk.is_empty():
-			assert(is_equal_approx(f._art_ratio(atk[0]), 1.0),
-				"공격 캔버스가 걷기와 다르다 (비율 %f) — 의도한 여백이면 이 숫자를 갱신할 것"
-				% f._art_ratio(atk[0]))
+			var ratio: float = f._art_ratio(atk[0])
+			assert(ratio >= 1.0 and is_equal_approx(ratio, roundf(ratio)),
+				"공격 캔버스 비율이 정수배가 아니다: %f — 도트가 뭉개진다" % ratio)
 	# 특수 패턴 — **보스·중간보스만**, 정해진 주기마다, 예고하는 동안은 멈춘다.
 	# 화면에서는 예고 원이 0.85초만 떴다 사라져서 눈으로는 있는지조차 확인이 어렵다.
 	# 여기서 스윙을 세어 확정한다.
