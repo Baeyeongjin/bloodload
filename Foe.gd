@@ -275,6 +275,35 @@ func body_half() -> float:
 	return _body_half
 
 
+# **걷기 캔버스가 몸 크기를 정한다.** 다른 모션은 더 큰 캔버스를 써서 "움직일 자리"를
+# 얻을 수 있다.
+#
+# 왜 필요한가: _draw 는 텍스처를 _size() 상자에 늘려 그린다. 그래서 32px 짜리 몹의
+# 공격 모션만 64px 로 뽑으면 투명 여백까지 같은 상자에 눌려 **몹이 절반 크기**가 된다.
+# 영웅 쪽에서 같은 함정을 밟고 실측으로 잡았다(2026-08-06).
+#
+# 32 캔버스에서는 잉크가 이미 30/32 칸을 차지해서 자세가 바뀔 여지가 2~3px 뿐이다.
+# 내려찍기에서 고개를 숙이거나 몸을 접으려면 여백이 있어야 한다.
+#
+# 비율 = 그 모션 캔버스 / 걷기 캔버스. 오늘 자산은 전부 1.0 이라 그림이 안 변한다
+# (잡몹 32/32, 보스 64/64 — 보스는 64 지만 잉크가 꽉 차 있다).
+var _art_base := -1.0
+
+
+func _art_ratio(tex: Texture2D) -> float:
+	if tex == null:
+		return 1.0
+	if _art_base < 0.0:
+		_art_base = float(tex.get_width())
+		if not _walk_frames.is_empty():
+			var w0: Texture2D = _walk_frames[0]
+			if w0 != null and w0.get_width() > 0:
+				_art_base = float(w0.get_width())
+	if _art_base <= 0.0:
+		return 1.0
+	return float(tex.get_width()) / _art_base
+
+
 func _size() -> float:
 	var hero_scale := maxf(2.0, body_scale * 2.0) if is_boss or is_midboss else body_scale
 	return float(Grid.SPRITE) * 2.0 * hero_scale
@@ -394,11 +423,14 @@ func _draw() -> void:
 		# 그림이 캔버스 안에서 떠 있는 만큼 몹이 공중에 뜬다 — 거미가 그랬다.
 		# 게다가 그 여백은 프레임마다 달라서(서리 거미 1~6px) 걸을 때 위아래로
 		# 흔들린다. 재서 그만큼 내린다.
+		# **상자는 그 모션의 캔버스 비율만큼 키운다.** 여백 있는 모션도 몸 크기가
+		# 유지된다. 아래 체력 바는 w 를 그대로 써야 모션마다 폭이 안 튄다.
+		var dw := w * _art_ratio(tex)
 		var drop := Assets.bottom_gap(tex) \
-			* (w * hsc / float(maxi(1, tex.get_height())))
+			* (dw * hsc / float(maxi(1, tex.get_height())))
 		# 몹은 왼쪽(플레이어)을 본다. 원본이 왼쪽 향함이라 그대로 그린다.
 		draw_texture_rect(tex,
-			Rect2(Vector2(-w * wsc * 0.5, -w * hsc + drop), Vector2(w * wsc, w * hsc)),
+			Rect2(Vector2(-dw * wsc * 0.5, -dw * hsc + drop), Vector2(dw * wsc, dw * hsc)),
 			false, Color(1, 1, 1, alpha))
 	else:
 		draw_circle(Vector2(0, -w * 0.4), w * 0.4, Color(0.8, 0.35, 0.35, alpha))

@@ -3688,7 +3688,7 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	_attack_t = interval
 	# 피해는 **스윙 안에서** 들어온다. 주기로 재면 짧게 휘두르고도 피해는 늦게 나가
 	# 그림과 결과가 어긋난다.
-	_hero_hit_t = _attack_swing() * IMPACT_RATIO
+	_hero_hit_t = _impact_time("attack", _attack_swing())
 	_pending_target = target
 	_play("attack")
 
@@ -3742,6 +3742,26 @@ func _tick_dash(delta: float) -> void:
 #
 # 프레임 번호는 실제 프레임 수에서 비율로 뽑는다. 7프레임이면 3(지금과 동일),
 # 8프레임이면 3, 9프레임이면 4 — 모션을 다시 뽑아도 사거리 측정이 따라간다.
+# 그 모션에서 피해가 들어갈 프레임. 그림에서 가장 멀리 뻗은 프레임을 쓴다 —
+# 이유는 Assets.reach_peak_frame 주석에 있다. 그림이 없으면 옛 고정 비율로 떨어진다.
+func _impact_frame(motion: String) -> int:
+	var dir := "res://assets/anim/%s_%s" % [skin, motion]
+	var n := Assets.frames(dir).size()
+	if n <= 0:
+		return 0
+	return Assets.reach_peak_frame(dir, true)
+
+
+# 임팩트 프레임이 화면에 떠 있는 **동안**의 시각. 프레임 f 는
+# [f/n, (f+1)/n) x 길이 구간에 보이므로 그 가운데를 잡는다.
+func _impact_time(motion: String, dur: float) -> float:
+	var dir := "res://assets/anim/%s_%s" % [skin, motion]
+	var n := Assets.frames(dir).size()
+	if n <= 0:
+		return dur * IMPACT_RATIO
+	return dur * (float(_impact_frame(motion)) + 0.5) / float(n)
+
+
 # **큰 동작 모션은 여백 있는 캔버스에 뽑는다.** 32x32 에서는 잉크가 이미 26~31칸을
 # 차지해서 자세가 바뀔 여지가 2~4px 뿐이고, 배율 2를 곱해도 화면에서 4~8px 다 —
 # 프롬프트를 어떻게 쓰든 "크게 휘두르기"도 "달려나가 멈추기"도 "쓰러져 눕기"도
@@ -3755,9 +3775,7 @@ func _tick_dash(delta: float) -> void:
 # 기준이라 64 에서 그대로 맞는다.
 func _motion_reach(motion: String) -> float:
 	var dir := "res://assets/anim/%s_%s" % [skin, motion]
-	var n := maxi(1, Assets.frames(dir).size())
-	return Assets.frame_reach(dir, int(round(float(n) * IMPACT_RATIO)),
-		HERO_DRAW_SCALE, true)
+	return Assets.frame_reach(dir, _impact_frame(motion), HERO_DRAW_SCALE, true)
 
 
 # 근접 사거리는 **쓰는 근접 모션 중 가장 짧은 것**에 맞춘다. 긴 쪽에 맞추면
@@ -3993,7 +4011,7 @@ func _tick_skills(delta: float, foes: Array) -> void:
 		return
 	_skill_action = str(skill["key"])
 	_skill_action_t = SKILL_DUR
-	_skill_hit_t = SKILL_DUR * IMPACT_RATIO
+	_skill_hit_t = _impact_time(str(skill["motion"]), SKILL_DUR)
 	_skill_impact_sent = false
 	_skill_cd[_skill_action] = float(skill["cooldown"])
 	_skill_target = target
@@ -4177,10 +4195,16 @@ func _kill_hero() -> void:
 	_hero_flash_t = 0.0
 	_hero.self_modulate = Color.WHITE
 	_anim_fx("fx_death_blood", Vector2(hero_x, ground_y - 42.0), 18.0, 2.0)
+	# **쓰러져 눕는 걸 보여준다.** 예전엔 위로 띄우면서(-32) 0.55초에 페이드아웃해
+	# 넘어지는 그림이 있어도 안 보였다 — 사장님: "쓰러지는것도 아예 눕거나".
+	# 비루프 모션이라 _play 가 마지막 프레임(누운 자세)을 물고 있어 준다.
+	# hold 를 부활 시간만큼 줘서 그 사이 idle 로 돌아가지 않게 한다.
+	_play("death", REVIVE_TIME)
 	if _death_tween and _death_tween.is_valid():
 		_death_tween.kill()
-	_death_tween = create_tween().set_parallel(true)
-	_death_tween.tween_property(_hero, "position:y", _hero.position.y - 32.0, DEATH_FADE_TIME)
+	# 떠오르지 않는다. 누운 자세를 보여주고 **부활 직전에만** 사라진다.
+	_death_tween = create_tween()
+	_death_tween.tween_interval(maxf(0.0, REVIVE_TIME - DEATH_FADE_TIME))
 	_death_tween.tween_property(_hero, "modulate:a", 0.0, DEATH_FADE_TIME)
 	_death_tween.finished.connect(func() -> void:
 		if _hero_dead:

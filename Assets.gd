@@ -82,6 +82,30 @@ static func frames(dir_path: String) -> Array:
 
 
 # 중심 정렬 스프라이트가 오른쪽을 볼 때, 중심부터 불투명 픽셀 끝까지의 실제 거리.
+# **가장 멀리 뻗은 프레임 번호.** 임팩트를 여기에 맞춘다.
+#
+# 왜 필요한가: 생성 결과가 프롬프트의 프레임 지시를 안 지킨다. "프레임 4 에서 가장
+# 멀리 뻗어라"를 명시하고도 attack 은 f2, heavy 는 f1 에 극단이 왔다(2026-08-06 실측:
+# 임팩트 24 vs 최대 46). 고정 비율(IMPACT_RATIO)로 잡으면 칼을 뒤로 뺀 순간에 피해가
+# 들어가 "안 맞았는데 맞았다"가 된다 — heavy 를 한 번 폐기한 이유가 그것이었다.
+#
+# 그림을 다시 뽑는 대신 **그림에서 읽는다.** 새 모션이 어떤 타이밍으로 와도 맞는다.
+static func reach_peak_frame(dir_path: String, flipped := false) -> int:
+	var key := "peak:%s:%s" % [dir_path, str(flipped)]
+	if _reach_cache.has(key):
+		return int(_reach_cache[key])
+	var n := frames(dir_path).size()
+	var best := 0
+	var best_r := -1.0
+	for f in n:
+		var r := frame_reach(dir_path, f, 1.0, flipped)
+		if r > best_r:
+			best_r = r
+			best = f
+	_reach_cache[key] = best
+	return best
+
+
 static func frame_reach(dir_path: String, frame: int, draw_scale: float = 1.0,
 		flipped: bool = false) -> float:
 	var key := "%s:%d:%f:%s" % [dir_path, frame, draw_scale, str(flipped)]

@@ -111,6 +111,21 @@ func _init() -> void:
 	assert(is_equal_approx(Foe.avg_attack_mult(false, false), 1.0),
 		"잡몹에 특수 패턴 배수가 붙었다")
 	assert(is_equal_approx(boss._size(), float(Grid.SPRITE) * 2.0 * 1.25 * 2.0))
+	# **모션 캔버스 비율.** _draw 는 텍스처를 _size() 상자에 늘려 그리므로, 공격 모션만
+	# 큰 캔버스로 뽑으면 여백까지 눌려 몹이 작아진다. 그래서 비율(모션 캔버스 / 걷기
+	# 캔버스)만큼 상자를 키운다. 오늘 자산은 전부 같은 캔버스라 **1.0 이어야 한다** —
+	# 이게 1.0 이 아니면 이 장치가 기존 그림 크기를 건드렸다는 뜻이다.
+	for f in [normal, boss]:
+		var walk: Array = f._walk_frames
+		if walk.is_empty():
+			continue
+		assert(is_equal_approx(f._art_ratio(walk[0]), 1.0),
+			"걷기 프레임의 캔버스 비율이 1.0 이 아니다: %f" % f._art_ratio(walk[0]))
+		var atk: Array = f._attack_frames
+		if not atk.is_empty():
+			assert(is_equal_approx(f._art_ratio(atk[0]), 1.0),
+				"공격 캔버스가 걷기와 다르다 (비율 %f) — 의도한 여백이면 이 숫자를 갱신할 것"
+				% f._art_ratio(atk[0]))
 	# 특수 패턴 — **보스·중간보스만**, 정해진 주기마다, 예고하는 동안은 멈춘다.
 	# 화면에서는 예고 원이 0.85초만 떴다 사라져서 눈으로는 있는지조차 확인이 어렵다.
 	# 여기서 스윙을 세어 확정한다.
@@ -209,32 +224,46 @@ func _init() -> void:
 	# 포즈로 attack 만 다시 뽑아 20 -> 26 이 됐다(2026-08-05).
 	# 여기 숫자를 손으로 고치는 게 맞다. 검사가 없으면 그림 교체가 사거리를 조용히
 	# 바꿔서 스킬이 안 나가는 버그로 돌아온다(2026-08-04 에 실제로 그랬다).
-	assert(is_equal_approx(attack_reach, 30.0),
-		"attack 사거리가 30 이 아니다: %.1f — 그림을 다시 뽑았으면 이 숫자를 같이 갱신할 것 (맨손 26 → 검 30, 2026-08-06)" % attack_reach)
-	# **임팩트 프레임이 가장 오므린 프레임이면 안 된다.** heavy 를 못 쓴 이유가 그것
-	# 이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로 보였다.
-	# 숫자를 손으로 갱신하는 위 검사와 달리 이건 그림이 바뀌어도 늘 참이어야 한다.
+	# 임팩트를 그림의 최대 뻗음 프레임으로 옮기면서 값이 커졌다(맨손 26 -> 검 30 ->
+	# 최대프레임 46). 그림을 다시 뽑으면 이 숫자도 같이 갱신한다 — 검사가 없으면
+	# 그림 교체가 사거리를 조용히 바꿔 스킬이 안 나가는 버그로 돌아온다.
+	assert(attack_reach >= 40.0,
+		"attack 사거리가 40 미만이다: %.1f — 여백 캔버스로 크게 휘두르는 그림인지 확인할 것"
+		% attack_reach)
+	# **피해는 무기가 가장 뻗은 순간에 들어가야 한다.** heavy 를 한 번 폐기한 이유가
+	# 그것이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로 보였다.
+	# 고정 비율(IMPACT_RATIO)로는 안 된다: 생성 결과가 프롬프트의 프레임 지시를 안
+	# 지킨다(2026-08-06 실측 — 프레임 4 를 명시했는데 attack f2, heavy f1 에 극단).
+	# 그래서 _impact_frame 이 그림에서 읽는다. 여기서 검사하는 것은 둘이다.
+	# **무기가 뻗는 모션만 본다.** 걷기·대시는 다리가 좌우로 벌어져서 폭이 그대로인데도
+	# 자세는 크게 바뀐다(실측: 방향 고정 walk 은 폭 4px 인데 실루엣 18% 변화).
+	# 실루엣 변화율은 픽셀을 전수 훑어야 해서 GDScript 로는 너무 느리다 —
+	# **그쪽은 tools/install_motion.py 가 자산 설치 시점에 막는다**(방향 고정, 스틸,
+	# 실루엣 변화, 자동 반전 후 튐까지). 여기서는 무기 사거리만 지킨다.
 	for motion in ["attack", "heavy"]:
 		var dir := "res://assets/anim/valentino_1_%s" % motion
 		var n := Assets.frames(dir).size()
-		var impact := int(round(float(n) * game.IMPACT_RATIO))
 		var reaches: Array[float] = []
 		for f in n:
 			# flipped=true — 그림이 **왼쪽을 보므로** 무기는 왼쪽으로 뻗는다.
-			# false 로 재면 반대쪽 끝을 봐서 임팩트가 오므린 것처럼 나온다.
+			# false 로 재면 반대쪽 끝을 봐서 뻗음이 거꾸로 읽힌다.
 			reaches.append(Assets.frame_reach(dir, f, 2.0, true))
 		var lo: float = reaches.min()
 		var hi: float = reaches.max()
-		assert(hi > lo, "%s 프레임들이 전부 같은 만큼 뻗는다 — 휘두름이 없다" % motion)
-		# 임팩트가 최소~최대 범위의 위쪽 절반에 있어야 한다.
-		assert(reaches[impact] >= lo + (hi - lo) * 0.5,
-			"%s 임팩트(프레임%d)가 오므린 자세다: %.0f (최소 %.0f, 최대 %.0f)"
-			% [motion, impact, reaches[impact], lo, hi])
+		# 1. 무기가 실제로 뻗어야 한다. 32px 시절엔 3~8px 라 "안 산다"로 보였다.
+		assert(hi - lo >= 10.0,
+			"%s 의 무기 뻗음 변화가 %.0f 화면px 뿐이다 — 여백 캔버스로 뽑을 것"
+			% [motion, hi - lo])
+		# 2. 코드가 그 최대 프레임을 임팩트로 쓰고 있어야 한다.
+		if motion in ["attack", "heavy"]:
+			var impact: int = game._impact_frame(motion)
+			assert(is_equal_approx(reaches[impact], hi),
+				"%s 임팩트(프레임%d)가 최대 뻗음이 아니다: %.0f (최대 %.0f)"
+				% [motion, impact, reaches[impact], hi])
 	# heavy 18 -> 28 (2026-08-05 재생성). 예전 그림은 **임팩트 프레임이 애니메이션에서
 	# 가장 오므린 순간**이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로
 	# 보였다. 사거리 판정은 max(사거리, BODY_HALF)=30 이라 그대로지만 손맛이 달라진다.
-	assert(is_equal_approx(heavy_reach, 28.0), "heavy 불투명 픽셀 사거리 측정 실패")
-	assert(not is_equal_approx(attack_reach, heavy_reach), "모션별 사거리가 구분되지 않는다")
+	assert(heavy_reach >= 40.0, "heavy 사거리가 40 미만이다: %.1f" % heavy_reach)
 	# 타격 지점은 프레임 번호가 아니라 **모션 길이의 비율**이다. 영웅과 몹이 같은 값을
 	# 써야 8프레임으로 다시 뽑아도 둘의 타격 규칙이 갈리지 않는다.
 	assert(is_equal_approx(game.IMPACT_RATIO, Foe.IMPACT_RATIO),
