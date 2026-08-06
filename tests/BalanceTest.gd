@@ -199,6 +199,23 @@ func _init() -> void:
 	assert(is_equal_approx(Balance.stage_seconds(60, 10.0, 1.0),
 		Balance.push_seconds(60, 10.0, 1.0) + 60.0 * Balance.APPROACH_SECONDS),
 		"처치 시간과 접근 시간이 안 더해진다")
+	# **때리는 것은 이산이다.** 간격을 주면 한 대에 죽는 몹도 스윙 한 번을 다 센다.
+	# 안 그러면 초반(한 방 컷)에서 모델이 마리당 0.4초씩 낙관해서 방치 수익이
+	# 과지급된다 — 실측은 Balance.push_seconds 주석에 있다.
+	#   체력 10 · DPS 100 · 간격 0.6  ->  한 대 60 피해라 1타, 즉 0.6초
+	assert(is_equal_approx(Balance.push_seconds(1, 10.0, 100.0, 0.6), 0.6),
+		"한 방에 죽는데 스윙 한 번을 안 센다: %.3f" % Balance.push_seconds(1, 10.0, 100.0, 0.6))
+	assert(Balance.push_seconds(1, 10.0, 100.0, 0.6) > Balance.push_seconds(1, 10.0, 100.0),
+		"이산 모델이 연속 모델보다 빠르다 — 올림이 안 걸렸다")
+	# 두 대 걸리면 두 배. 올림이라 1.1타도 2타다.
+	#   체력 70 · 한 대 60  ->  1.17타 -> 2타 -> 1.2초
+	assert(is_equal_approx(Balance.push_seconds(1, 70.0, 100.0, 0.6), 1.2),
+		"올림이 안 된다: %.3f" % Balance.push_seconds(1, 70.0, 100.0, 0.6))
+	# 여러 대 걸리는 후반에는 오차가 올림 한 번(<1타)으로 줄어든다 — 초반만큼
+	# 벌어지지 않아야 한다. 벌어지면 per_swing 을 잘못 되돌린 것이다.
+	var many_cont := Balance.push_seconds(1, 6000.0, 100.0)
+	var many_disc := Balance.push_seconds(1, 6000.0, 100.0, 0.6)
+	assert(many_disc - many_cont < 0.6, "후반 오차가 한 타를 넘는다: %.3f" % (many_disc - many_cont))
 	# **제한 시간은 보스·중간보스에만 붙는다**(2026-08-06). 일반 구간을 시계로 막으면
 	# 몹 걷기 속도가 곧 벽이 되어 연출을 못 늦춘다 — StageDefs.time_limit 주석 참고.
 	# 이 검사가 "일반 구간에도 다시 걸자"는 되돌림을 잡는다.

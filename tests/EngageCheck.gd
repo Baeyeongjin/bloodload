@@ -125,7 +125,8 @@ func _init() -> void:
 		% [killed, SECONDS, float(killed) / SECONDS, stages])
 	print("구간 %d마리          실측 %.0f초  /  모델 %.0f초  /  목표 %.0f초"
 		% [need, SECONDS * float(need) / maxf(1.0, float(killed)),
-		Balance.stage_seconds(need, scene._offline_profile(1)["hp"], scene.dps()),
+		Balance.stage_seconds(need, scene._offline_profile(1)["hp"], scene.dps(),
+			scene.attack_interval()),
 		StageDefs.PACE_NORMAL])
 	print("")
 	# **움직이는 것은 세상이다.** 찾아가는 모델에서 영웅은 앵커를 지키고 배경·몹이

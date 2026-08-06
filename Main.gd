@@ -5568,8 +5568,11 @@ func _offline_profile(at_stage: int) -> Dictionary:
 # `Balance.APPROACH_SECONDS` 다. 동시 마릿수는 처리량에 영향이 없다.
 func _offline_stage_seconds(at_stage: int, remaining_kills: int) -> float:
 	var p := _offline_profile(at_stage)
+	# **공격 간격을 같이 넘긴다.** 안 넘기면 모델이 피해를 연속으로 봐서, 한 대에
+	# 죽는 몹을 0.2초에 잡는 것으로 센다(실제는 스윙 한 번 0.6초). 그 차이가 곧
+	# 방치 수익 과지급이다 — `Balance.push_seconds` 주석에 실측이 있다.
 	return StageDefs.WAVE_WALK_SECONDS \
-		+ Balance.stage_seconds(remaining_kills, float(p["hp"]), dps())
+		+ Balance.stage_seconds(remaining_kills, float(p["hp"]), dps(), attack_interval())
 
 
 func _offline_can_clear(at_stage: int, remaining_kills: int) -> bool:
@@ -5585,7 +5588,7 @@ func _offline_can_clear(at_stage: int, remaining_kills: int) -> bool:
 			return false
 	return Balance.can_clear_stage(max_hp(), regen_per_sec(), dps(), remaining_kills,
 		float(p["hp"]), int(p["count"]), float(p["damage"]), float(p["interval"]),
-		budget)
+		budget, attack_interval())
 
 
 # 껐던 시간만큼 보상을 준다. 먼저 생존 공식으로 밀 수 있는 최고 단계까지 올리고,

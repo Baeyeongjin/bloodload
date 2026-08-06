@@ -163,8 +163,29 @@ static func survival_seconds(hp: float, regen_per_sec: float, foe_count: int,
 	return INF if net <= 0.0 else maxf(0.0, hp) / net
 
 
-static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> float:
-	return float(maxi(0, kills_needed)) * maxf(0.0, foe_hp) / maxf(0.001, hero_dps)
+# **때리는 것은 이산이다.** `체력 / DPS` 는 피해가 연속으로 흐른다고 보는데, 실제로는
+# 한 대에 죽는 몹도 스윙 한 번(공격 간격)은 기다려야 한다. 1-1 실측:
+#
+#   몹 체력 7.2 · 한 대 17.8 · 간격 0.60초  ->  필요 타수 0.40회(연속) / 1회(실제)
+#   마리당  모델 0.212초  vs  실측 0.600초   ->  60마리에 23초가 통째로 빠진다
+#
+# 오프라인은 이 모델로 구간 수를 세므로(`_offline_stage_seconds`) 그만큼 방치 수익이
+# 과지급된다. **초반일수록 심하다** — 한 대에 죽을 만큼 세지면 오차가 간격 전체가 되고,
+# 여러 대 걸리는 후반에는 올림 한 번(<1타)으로 줄어든다.
+#
+# `swing_interval` 을 주면 **올림한 타수 × 간격**으로 정확히 센다. 한 대의 피해는
+# `DPS × 간격` 으로 되돌린다 — 스킬 시전 손실·가호 버프가 이미 DPS 에 반영돼 있어서
+# 그 회계를 그대로 쓰고 타이밍만 이산으로 만든다.
+# 안 주면 옛 연속 모델로 떨어진다. **그건 맞는 값이 아니라 옛 호출부용 발판이다.**
+static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float,
+		swing_interval := 0.0) -> float:
+	var kills := float(maxi(0, kills_needed))
+	var dps := maxf(0.001, hero_dps)
+	if swing_interval <= 0.0:
+		return kills * maxf(0.0, foe_hp) / dps
+	var per_swing := dps * swing_interval
+	var swings := maxf(1.0, ceil(maxf(0.0, foe_hp) / maxf(0.001, per_swing)))
+	return kills * swings * swing_interval
 
 
 # 한 마리를 잡을 때마다 **다음 놈에게 달려가는 시간**이 더 든다. DPS 로는 줄일 수
@@ -190,8 +211,9 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> f
 const APPROACH_SECONDS := 0.47
 
 
-static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> float:
-	return push_seconds(kills_needed, foe_hp, hero_dps) \
+static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float,
+		swing_interval := 0.0) -> float:
+	return push_seconds(kills_needed, foe_hp, hero_dps, swing_interval) \
 		+ float(maxi(0, kills_needed)) * APPROACH_SECONDS
 
 
@@ -201,8 +223,8 @@ static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> 
 # 껐다 켜면 넘어가 있다.
 static func can_clear_stage(hp: float, regen_per_sec: float, hero_dps: float,
 		kills_needed: int, foe_hp: float, foe_count: int, foe_damage: float,
-		foe_interval: float, time_limit := 0.0) -> bool:
-	var push := stage_seconds(kills_needed, foe_hp, hero_dps)
+		foe_interval: float, time_limit := 0.0, swing_interval := 0.0) -> bool:
+	var push := stage_seconds(kills_needed, foe_hp, hero_dps, swing_interval)
 	if time_limit > 0.0 and push >= time_limit:
 		return false
 	return push < survival_seconds(hp, regen_per_sec, foe_count, foe_damage, foe_interval)
