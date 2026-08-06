@@ -181,14 +181,15 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> f
 #   - 사망 연출 0.42초 동안 이미 걸어 들어온다 (Main._tick_engage)
 #   - 영웅이 마주 걸어 나가는 시간이 그와 **병행**이다 (Foe.stepping_up)
 #
-# 0.76초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 59마리(1.02초/마리)를 세고,
+# 0.83초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 55마리(1.09초/마리)를 세고,
 # 거기서 모델 처치시간(0.26초/마리)을 뺐다.
 #
 # 이 값이 얼마나 크게 움직이는지: 0.55(영웅이 제자리에서 팼을 때) -> 0.89(고정 칸으로
-# 옮겨 영웅이 걸어 나가게 한 직후) -> 0.76(전열 가속 + 마주 걷기). 짐작으로 못 맞춘다.
+# 옮겨 영웅이 걸어 나가게 한 직후) -> 0.76(전열 가속 + 마주 걷기) -> 0.83(마주 나가는
+# 거리를 만나는 자리로 제한). 짐작으로 못 맞춘다.
 # ponytail: 칸 좌표(Main.LANES_*) · 몹 걷기(Foe.WALK_SPEED · ENGAGE_WALK_MULT) ·
 # 사망 길이(Foe.DIE_DUR)를 바꾸면 tests/EngageCheck.gd 로 다시 재야 한다.
-const APPROACH_SECONDS := 0.76
+const APPROACH_SECONDS := 0.83
 
 
 static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float,

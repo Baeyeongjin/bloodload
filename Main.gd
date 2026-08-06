@@ -3783,6 +3783,16 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	# 틈이 0 이라 안 드러났고, 고정 칸으로 바꾸자 몸통에서 21px 떨어져 팼다(실측).
 	# 넉백으로 밀려도 이 값이 다시 당겨 준다.
 	_dash_to = _strike_spot(target)
+	# **마주 나가는 거리를 못 박는다.** 걸어 들어오는 몹을 표적으로 잡으므로
+	# (`Foe.stepping_up`) 그냥 두면 영웅이 아직 멀리 있는 몹을 향해 계속 나간다 —
+	# 한쪽 줄이 비면 방금 스폰된 몹까지 쫓아가서 중앙에서 172px 벌어졌다(실측).
+	#
+	# 한계는 **칸이 아니라 그 칸의 몹을 칠 자리**다(120 - 몸통 = 65). 칸(120)으로
+	# 잡으면 영웅이 전열까지 나가 서서 기다리는데, 그건 마주 걷는 게 아니라 먼저
+	# 가서 진 치는 그림이다.
+	var front := _lane_x(target.side, 0)
+	var park: float = front - signf(front - HERO_X) * (target.body_half() + BODY_HALF)
+	_dash_to = clampf(_dash_to, minf(HERO_X, park), maxf(HERO_X, park))
 	# 사거리 밖이면 달려간다. 붙는 동안 공격 쿨다운은 계속 돌아서 도착하면 바로 친다.
 	if not _in_front_reach(target):
 		_play("dash")
@@ -4408,13 +4418,28 @@ func _tick_advance(delta: float, foes: Array) -> void:
 	_play("walk")
 	_scroll += SCROLL_SPEED * delta
 	_apply_scroll()
-	# 선두가 전열에 닿으면 다 같이 멈춰 선다. 시간이 아니라 위치로 판정하는 이유:
-	# 시간으로 재면 스폰 위치를 바꿀 때마다 시간도 같이 고쳐야 한다.
+	# **선두 한 마리가 닿으면 전투를 시작한다.** 예전엔 무리가 **전부** 제 칸에
+	# 도착해야 넘어갔다 — 그래서 전투가 시작되는 순간엔 이미 여섯이 다 서 있고,
+	# 영웅은 0.14초 만에 중앙을 떠났다(실측). "중앙에 서서 맞이한다"가 화면에 아예
+	# 없었고, 그 앞의 4초는 몹 여섯이 줄 서는 걸 구경하는 빈 시간이었다.
+	#
+	# 선두만 보면 뒷줄은 **전투 중에** 걸어 들어온다 — 레퍼런스 방치형이 그렇고,
+	# 다가오는 게 보이는 것도 그래서다. 처리량은 안 바뀐다(칸이 비면 바로 채우는
+	# _refill_lanes 가 이미 같은 일을 한다).
+	#
+	# **닿기 전에** 시작한다(`stepping_up`). 도착을 기준으로 하면 전투가 열리는 순간
+	# 선두가 이미 칼끝에 서 있어서, 영웅이 0.07초 만에 중앙을 떠난다(실측) — 사장님이
+	# 그리는 "중앙에 서서 맞이한다"가 화면에 없다. 선두가 전열 앞 140px 에 들어오면
+	# 열어서, 영웅은 중앙에서 마주 걸어 나가고 몹은 걸어 들어온다.
+	#
+	# 시간이 아니라 위치로 판정하는 이유: 시간으로 재면 스폰 위치를 바꿀 때마다
+	# 시간도 같이 고쳐야 한다.
 	for f in foes:
-		if is_instance_valid(f) and absf(f.position.x - f.stop_x) > 1.0:
+		if not is_instance_valid(f):
+			continue
+		if f.stepping_up() or absf(f.position.x - f.stop_x) <= 1.0:
+			_phase = "fight"
 			return
-	if not foes.is_empty():
-		_phase = "fight"
 
 
 # 다음 무리를 부르고 그쪽으로 걷기 시작한다. 무리를 미리 내보내야 배경과 같은
@@ -4559,6 +4584,10 @@ func _spawn_foe(side := 1, line := 0) -> void:
 	var out := float(line) * Grid.u(3)
 	f.position = Vector2(SPAWN_X + out if side > 0 else SPAWN_X_LEFT - out, ground_y)
 	f.stop_x = _lane_x(side, line)
+	# 0번 칸이 목표면 처음부터 **전열행**이다. 이걸 스폰에서 안 켜면 `_reflow_side`
+	# 가 켜 주는데, 그건 전투 phase 에서만 돌아서 무리의 선두가 전열로 오는 것을
+	# `_tick_advance` 가 알아볼 수 없다(닭과 달걀).
+	f.to_front = line == 0
 	# 사라질 때 **들고 있던 참조를 놓는다.** tree_exiting 은 실제 해제 **전에** 오므로
 	# 이 시점의 f 는 아직 멀쩡하다 — _forget_foe 참고.
 	f.tree_exiting.connect(_forget_foe.bind(f))
@@ -4685,6 +4714,13 @@ func _advance_stage() -> void:
 	# 배경과 몹이 **암전 뒤에서** 바뀐다. 그냥 갈아 끼우면 화면이 휙 튄다.
 	_fade(func() -> void:
 		kills = 0
+		# **암전 뒤에서 영웅을 중앙에 되돌린다**(사장님). `_tick_dash` 의
+		# `_phase != "fight"` 분기가 어차피 되돌리지만, 그건 부작용이지 보장이 아니다 —
+		# 암전(FADE_OUT)이 복귀(최대 0.53초)보다 짧으면 화면에서 걸어가는 게 보인다.
+		# 암전 중이라 순간이동으로 안 보인다.
+		hero_x = HERO_X
+		_dash_to = HERO_X
+		_hero.position.x = HERO_X
 		var next_stage := mini(stage + 1, StageDefs.total_stages())
 		if next_stage > best_stage:
 			if StageDefs.is_boss_stage(stage):
