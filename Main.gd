@@ -2485,11 +2485,20 @@ func _grant_test_gems() -> void:
 # [테스트용] F9 로 보석 1만. 버튼이 아니라 단축키인 이유: 버튼은 화면에 계속 남아
 # 나중에 지우는 걸 잊는다. 단축키는 안 누르면 없는 것과 같다.
 const CHEAT_GEMS := 10000.0
+# [테스트용] F10 으로 1막 1-1 로 뛰고, 다시 누르면 원래 자리로 돌아온다.
+#
+# **저장본을 지우지 않는다.** 보석·장비·레벨·도감은 그대로다 — 새 몹 모션을 보려고
+# 진행을 날릴 이유가 없고, 저장본이 실제로 날아간 사고가 한 번 있었다(인계 3-3).
+# 되돌아올 자리를 기억해 두는 토글이라 왕복이 한 키로 끝난다.
+var _dev_return_stage := 0
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
+		return
+	if key.keycode == KEY_F10:
+		_dev_jump_stage()
 		return
 	if key.keycode != KEY_F9:
 		return
@@ -2499,6 +2508,19 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	_save_game()
 	_show_reward("테스트 지급", [{"icon": "res://assets/ui/res_gem.png",
 		"label": "보석 +%s" % _n(CHEAT_GEMS)}])
+
+
+func _dev_jump_stage() -> void:
+	if _dev_return_stage > 0:
+		stage = clampi(_dev_return_stage, 1, StageDefs.total_stages())
+		_dev_return_stage = 0
+	else:
+		_dev_return_stage = stage
+		stage = 1
+	# best_stage 는 건드리지 않는다 — 최고 기록이지 현재 위치가 아니다.
+	_restart_stage("테스트 이동")
+	_refresh_hud()
+	_save_game()
 
 
 func _pull_gacha(count: int) -> void:
