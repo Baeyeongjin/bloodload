@@ -173,6 +173,11 @@ const SPECIAL_EVERY := 3       # 세 번째 스윙마다
 const SPECIAL_TELL := 0.85     # 멈춰서 예고하는 시간
 const SPECIAL_REACH := 1.7     # 착탄 범위 배수 — 원 크기가 그대로 이 값이다
 const SPECIAL_DMG := 2.4       # 피해 배수. 대신 원 밖으로 나가면 통째로 빗나간다
+# [개발 도구] `--tell` 이 켠다. 매 스윙을 특수로 만들어 **예고판을 화면에 고정**한다.
+# 왜 필요한가: 예고는 0.85초고 주기는 세 스윙마다라, 캡처 시각을 맞추는 것이 사실상
+# 도박이다 — 실제로 6장을 흩뿌려 찍고 한 장도 못 잡았다(2026-08-06). 판 크기·기울기·
+# 차오르는 속도는 눈으로 봐야 판단이 되는 값들이라 확실히 잡히는 길이 필요하다.
+static var force_special := false
 
 
 func attack_mult() -> float:
@@ -257,7 +262,8 @@ func _tick_attack(delta: float) -> void:
 	if _attack_cd <= 0.0:
 		_attack_cd += attack_interval()
 		_swing_n += 1
-		special_swing = (is_boss or is_midboss) and _swing_n % SPECIAL_EVERY == 0
+		special_swing = (is_boss or is_midboss) \
+			and (force_special or _swing_n % SPECIAL_EVERY == 0)
 		if special_swing:
 			_tell_t = SPECIAL_TELL   # 멈춰서 예고부터. 스윙은 그 뒤에 나간다
 			return

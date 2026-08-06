@@ -597,6 +597,10 @@ func _ready() -> void:
 		# [개발 도구] --gear-detail=first : 첫 보관 장비 상세/합성 팝업을 연다.
 		if arg == "--gear-detail=first" and not gear_inventory.is_empty():
 			_open_gear_detail(str(gear_inventory.keys()[0]))
+		# [개발 도구] --tell: 보스·중간보스가 **매 스윙 특수 패턴**을 쓰게 한다.
+		# 예고(0.85초)가 세 스윙마다 오므로 그냥 찍으면 잡히지 않는다.
+		if arg == "--tell":
+			Foe.force_special = true
 		# [개발 도구] --walk: 무리를 치우고 계속 걷게 해 스크롤 이음매를 확인한다.
 		if arg == "--walk":
 			_walk_only = true

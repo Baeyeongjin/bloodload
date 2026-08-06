@@ -77,7 +77,21 @@ Copy-Item "$iso\Godot\app_userdata\Bloodlord\autoshot.png" out.png -Force
 | `--rates` | 소환 레벨별 확률표 |
 | `--equip` / `--gear-detail` / `--gear-mode=` / `--bulk=` | 장비 화면 |
 | `--status` | 도감 능력치 창 |
+| `--tell` | 보스·중간보스가 **매 스윙 특수 패턴**을 쓴다 (예고판 캡처용) |
 | `--walk` / `--dialog=` | 기타 |
+
+### 예고판(특수 패턴)을 찍으려면 `--tell` 을 쓴다
+
+예고는 0.85초인데 주기가 세 스윙마다라, 그냥 찍으면 **거의 안 잡힌다** —
+2026-08-06 에 0.7초 간격으로 6장을 흩뿌려 찍고 한 장도 못 잡았다(잡힌 건 영웅 스킬
+이펙트였다). `--tell` 이 매 스윙을 특수로 만들어 예고를 화면에 고정한다.
+
+```powershell
+& $g --path $p --rendering-method gl_compatibility --resolution 576x896 `
+    -- "--stage=1-5" --tell --autoshot --wait=7.6
+```
+
+`1-5` 는 중간보스 구간이다(`MIDBOSS_STEP`). 보스는 `--stage=1-10`.
 
 ### `--gaps` 읽는 법
 
