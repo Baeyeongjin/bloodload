@@ -94,12 +94,19 @@ func _init() -> void:
 	var sk := SkillDefs.SHAPES["field"]
 	var want := int(round(float(sk["duration"]) * float(sk["tick_rate"])))
 	var gen0: int = scene._field_gen
+	var world0: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size()
 	scene._resolve_skill("field_common")
 	await process_frame
-	print("   깔린 뒤: _field_x %.1f  반폭 %.1f  gen %d->%d  world_fx %d  대상 %d"
-		% [scene._field_x, scene._field_half, gen0, scene._field_gen,
-		(scene.get_tree().get_nodes_in_group("world_fx") as Array).size(),
-		(scene._field_targets() as Array).size()])
+	var laid: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size() - world0
+	var marked: int = (scene._field_targets() as Array).size()
+	print("   깔린 뒤: _field_x %.1f  판정반폭 %.0f  gen %d->%d  문양 %d장  대상 %d"
+		% [scene._field_x, scene.FIELD_REACH, gen0, scene._field_gen, laid, marked])
+	# **피해가 들어가는 자리에는 문양이 있어야 한다.** 판정 폭을 아트 폭에서 떼어 낸
+	# 대가가 이것이다 - 이 검사가 없으면 FIELD_REACH 를 키우는 순간 아무것도 안 그려진
+	# 자리에서 피해가 나가고, 그게 오늘 고친 "안 보이는 데서 때리기"다.
+	assert(laid >= marked,
+		"맞는 놈보다 문양이 적다: %d장 / %d마리 - 안 보이는 자리에서 피해가 난다"
+		% [laid, marked])
 	print("   probe x %.1f  잉크반폭 %.1f  거리 %.1f  dying %s"
 		% [probe.position.x, probe.body_half(),
 		absf(probe.position.x - scene._field_x), str(probe.dying)])
@@ -125,13 +132,15 @@ func _init() -> void:
 	assert(drops >= 2, "진이 다단히트가 아니다: %d 번" % drops)
 	assert(drops >= want - 1, "틱이 모자라다: %d / %d" % [drops, want])
 	assert(drops <= want + 1, "틱이 설계보다 많다: %d / %d (평타가 섞였나)" % [drops, want])
-	# **문양 폭이 몹 간격보다 좁으면 광역이 아니다.** 반폭 32 + 몹 22 = +-54px 인데
-	# 몹은 FOE_GAP(160) 간격으로 서므로 한 번에 한 마리만 든다 - 다단히트는 되지만
-	# "광역"은 아니다. 이건 아트 폭(64px)의 한계이고, 넓히려면 문양을 다시 뽑아야 한다.
+	# **판정 폭이 몹 간격보다 좁으면 광역이 아니다.** 예전엔 아트 폭(64px)이 판정이라
+	# 반폭 32 + 몹 22 = +-54px 였고 몹은 FOE_GAP(160) 간격이라 한 번에 한 마리였다 -
+	# 다단히트는 되지만 광역은 아니었다. 이제 FIELD_REACH 가 판정이고 두 칸을 덮는다.
+	var reach: float = scene.FIELD_REACH + probe.body_half()
+	var mobs := 1 + int(reach / scene.FOE_GAP)
 	print("")
-	print("문양 판정 폭 +-%.0f px  ·  몹 간격 %.0f px  ->  한 번에 최대 %d 마리"
-		% [scene._field_half + probe.body_half(), scene.FOE_GAP,
-		1 + int(2.0 * (scene._field_half + probe.body_half()) / scene.FOE_GAP)])
+	print("진 판정 폭 +-%.0f px  ·  몹 간격 %.0f px  ->  한 번에 최대 %d 마리"
+		% [reach, scene.FOE_GAP, mobs])
+	assert(mobs >= 2, "진이 광역이 아니다: 판정 +-%.0f 로 %d 마리" % [reach, mobs])
 	print("")
 	print("AoeCheck OK")
 	quit()

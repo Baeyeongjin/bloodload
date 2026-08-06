@@ -4191,37 +4191,56 @@ func _nearest_foe() -> Foe:
 # 장판(진). 바닥에 깔아 두고 **지속시간 동안 초당 tick_rate 번**, 그때 문양 위에 서
 # 있는 놈을 때린다. 우리 유일한 다단히트 스킬이다.
 #
-# **판정이 화면이 아니라 문양 폭이다.** 다른 광역은 "화면 안"으로 잡지만(`_aoe_targets`)
+# **판정이 화면이 아니라 진의 자리다.** 다른 광역은 "화면 안"으로 잡지만(`_aoe_targets`)
 # 장판은 땅의 한 자리라 그 자리에 있는 놈만 맞아야 한다 — 그래야 "서 있으면 맞는다"가
 # 규칙이 되고, 영웅이 전진해 지나가면 뒤에 남는다.
 #
+# **판정 폭은 아트 폭에서 안 나온다**(2026-08-06 에 바꿨다). 원래는 그림 폭 = 판정 폭
+# 이었고 그게 정직하긴 했지만 64px 문양이 160px 간격을 못 덮어 **한 번에 한 마리**였다.
+# 넓은 한 장(384px)을 세 번 뽑아 봤고 셋 다 못 썼다: 첫 판은 돌바닥 타일이 딸려 왔고,
+# 피만 그린 판은 가운데만 진해서 **둘째 몹 자리 잉크가 1%** 였다(실측). 생성기는
+# 주제를 가운데로 모으므로 폭을 고르게 채운 문양은 안 나온다.
+#
+# 그래서 **맞는 놈마다 문양을 하나씩 깐다.** 혈우(`wave_rare`)가 이미 그 방식이고
+# 사장님이 광역으로 읽히는 건 그것뿐이라고 했다. 피해가 들어가는 자리에는 항상 그림이
+# 있으니, 판정 폭을 그림보다 넓혀도 "안 보이는 데서 때리기"가 생기지 않는다 —
+# 아트 폭 결합을 뗀 대가를 대상마다 그리는 것으로 치른다.
+#
 # 왜 Area2D 가 아닌가: 도형을 세우면 크기를 이펙트와 따로 관리해야 하고 둘이 조용히
-# 갈린다(이번에 겪은 `fx_y` 문제와 같은 종류). 여기서는 **그림 폭이 곧 판정 폭**이라
-# 한 숫자만 본다. ponytail: 세로 축이나 비원형 범위가 생기면 Area2D 로 올린다.
+# 갈린다(이번에 겪은 `fx_y` 문제와 같은 종류). 지금은 숫자 하나(FIELD_REACH)뿐이다.
+# ponytail: 세로 축이나 비원형 범위가 생기면 Area2D 로 올린다.
 #
 # **틱마다 표적을 다시 고른다.** 깔 때의 목록을 들고 있으면 죽은 놈에게 계속 넣거나
-# 나중에 흘러 들어온 놈을 빼먹는다. `_defer_stage_advance` 로 한 틱을 묶어 구간 넘김이
-# 틱 도중에 끼어드는 것을 막는다.
+# freed 된 놈을 잡는다. `_defer_stage_advance` 로 한 틱을 묶어 구간 넘김이 틱 도중에
+# 끼어드는 것을 막는다.
 const WORLD_FX_GROUP := "world_fx"
-var _field_x := 0.0        # 문양 중심의 현재 x. _advance_world 가 같이 민다
-var _field_half := 0.0     # 문양 반폭 = 판정 반폭
+# 진의 판정 반폭 = **몹 두 칸**(FOE_GAP 160 기준으로 0 과 +160 을 덮고 +320 은 못 덮는다).
+# 세 칸까지 늘리면 커먼 광역 하나가 화면에 보이는 몹을 전부 쓸어서 평타가 할 일이 없다.
+const FIELD_REACH := 180.0
+var _field_x := 0.0        # 진의 중심 x. _advance_world 가 같이 민다
 var _field_gen := 0        # 구간이 바뀌면 올라간다. 지난 구간의 틱을 끊는 표
 
 
 func _start_field(fx: String, fps: float, scale: float, style: String, echo: int,
 		skew: float, per_tick: float, ticks: int, gap: float,
 		skill: Dictionary) -> void:
-	# 문양은 **첫 표적 자리**에 깐다. 아무도 없으면 영웅 앞에.
+	# 진의 중심은 **첫 표적 자리**다. 아무도 없으면 영웅 앞에.
 	var at := _aoe_targets()
 	_field_x = at[0].position.x if not at.is_empty() \
 		else hero_x + float(hero_face) * (_motion_reach("attack") + 48.0)
-	var frames: Array = Assets.frames("res://assets/anim/%s" % fx)
-	_field_half = (float(frames[0].get_width()) * scale * 0.5) if not frames.is_empty() \
-		else 32.0 * scale
-	# 그림은 한 번만 띄운다 — 이미 머무는 그림이라 틱마다 새로 띄우면 겹쳐서 두꺼워진다.
-	_anim_fx(fx, Vector2(_field_x,
-		_fx_anchor_y(style, fx, scale, ground_y - float(Grid.SPRITE), 0.0)),
-		fps, scale, style, echo, 1.0, hero_face, skew, true)
+	var cy := _fx_anchor_y(style, fx, scale, ground_y - float(Grid.SPRITE), 0.0)
+	# **맞는 놈마다 하나씩**, 단 **시전 때 한 번만**. 틱마다 또 깔면 2마리 x 6틱 = 12장이
+	# 전투 화면을 덮는다. 그림 수명은 지속시간과 같게 맞춰 뒀다(SkillDefs 의 fx_fps).
+	# 아무도 없으면 영웅 앞에 하나 — 쿨다운을 썼는데 화면에 아무 일도 없으면
+	# "안 나갔다"로 보인다.
+	var spots := _field_targets()
+	if spots.is_empty():
+		_anim_fx(fx, Vector2(_field_x, cy), fps, scale, style, echo, 1.0,
+			hero_face, skew, true)
+	else:
+		for f in spots:
+			_anim_fx(fx, Vector2(f.position.x, cy), fps, scale, style, echo, 1.0,
+				hero_face, skew, true)
 	var gen := _field_gen
 	for i in ticks:
 		var t := create_tween()
@@ -4244,15 +4263,19 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 				_advance_stage())
 
 
-# 문양 위에 서 있는 놈. 화면 밖으로 밀려난 문양은 아무도 안 때린다(자연히 빈 배열).
+# 진 안에 서 있는 놈. **화면 안까지다** — `_aoe_targets` 와 같은 이유로 같은 함수를 쓴다.
+#
+# 매 틱 다시 골라도 시전 때와 같은 집합이다: 몹은 스스로 걷지 않고 문양도 세상과 같은
+# 양으로 밀리므로(`_advance_world`) 둘의 **상대 거리가 변하지 않는다**. 그래서 새로
+# 흘러 들어오는 놈은 없고 죽은 놈만 빠진다 — 문양 없는 자리에서 피해가 날 일이 없다.
 func _field_targets() -> Array[Foe]:
 	var out: Array[Foe] = []
 	if not is_inside_tree():
 		return out
 	for f in get_tree().get_nodes_in_group("foes"):
-		if not is_instance_valid(f) or f.dying:
+		if not is_instance_valid(f) or f.dying or not _on_screen(f):
 			continue
-		if absf(f.position.x - _field_x) <= _field_half + f.body_half():
+		if absf(f.position.x - _field_x) <= FIELD_REACH + f.body_half():
 			out.append(f)
 	return out
 
@@ -4265,6 +4288,10 @@ func _field_targets() -> Array[Foe]:
 # 보이는 건 2마리(160px)** 였다(실측). 안 보이는 곳에서 피해가 나가고, 처치 수만 올라간다.
 #
 # 오른쪽 끝은 화면 폭에서 몸통 절반을 빼 준다: 몸이 반쯤 걸친 놈은 보이는 놈이다.
+func _on_screen(f: Foe) -> bool:
+	return f.position.x - f.body_half() <= float(Grid.BG.x)
+
+
 func _aoe_targets() -> Array[Foe]:
 	var out: Array[Foe] = []
 	if not is_inside_tree():
@@ -4272,7 +4299,7 @@ func _aoe_targets() -> Array[Foe]:
 	for f in get_tree().get_nodes_in_group("foes"):
 		if not _foe_arrived(f):
 			continue
-		if f.position.x - f.body_half() > float(Grid.BG.x):
+		if not _on_screen(f):
 			continue
 		out.append(f)
 	return out
@@ -4993,6 +5020,24 @@ const SQUASH_TILT := 0.88   # 기운 만큼 세로를 눌러 원근을 만든다
 # `fx_y` 는 그 기준선에서의 **미세 조정**으로 남는다. 배율이 바뀌어도 기준선은
 # 안 움직이므로 크기를 키워도 같은 자리에 커진다.
 const FX_GROUND_LIFT := 6.0    # 바닥 이펙트를 지면보다 살짝 띄운다(그림자에 안 묻히게)
+# **길(밝은 흙 띠)의 세로 폭 58px** — 배경 wide_graveyard 의 y117~145(29줄)를 2배로
+# 그린 값이고 실측이다. 그 위는 나무·담이 서 있는 어두운 구역이다.
+#
+# 바닥에 깔리는 문양(hold)은 그림이 64줄이라 길을 12px 넘어서, 위쪽 균열이 나무
+# 밑동 구역까지 올라가 "땅에 깔린 것"이 아니라 "허공에 뜬 것"으로 보였다.
+const ROAD_H := 58.0
+
+
+# 바닥 문양의 세로 배율. **등급은 가로만 넓히고 세로는 길에 맞춘다** — 등급이 높다고
+# 문양이 나무까지 자라면 땅에 깔렸다는 게 깨진다. 그림 높이가 다르면 배율도 달라야
+# 하므로 여기서 한 번만 계산하고, 자리 계산(`_fx_anchor_y`)과 그리기(`_anim_fx`)가
+# 같은 값을 쓴다 — 둘이 갈리면 문양이 지면에서 뜨거나 파묻힌다.
+func _ground_scale_y(fx_name: String, draw_scale: float) -> float:
+	var frames: Array = Assets.frames("res://assets/anim/%s" % fx_name)
+	if frames.is_empty():
+		return draw_scale
+	return minf(draw_scale,
+		(ROAD_H - FX_GROUND_LIFT) / float(frames[0].get_height()))
 
 
 func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
@@ -5002,6 +5047,8 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 		return body_mid + nudge
 	var tex: Texture2D = frames[0]
 	var h := float(tex.get_height()) * draw_scale
+	if style == "hold":
+		h = float(tex.get_height()) * _ground_scale_y(fx_name, draw_scale)
 	if style == "hold" or style == "fall" or style == "rise":
 		# 아래끝 = 지면. 중심은 그보다 높이 절반만큼 위다.
 		return ground_y - h * 0.5 - FX_GROUND_LIFT
@@ -5027,6 +5074,8 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	var textures := Assets.frames("res://assets/anim/%s" % name)
 	if textures.is_empty():
 		return
+	# 바닥 문양만 세로를 길에 맞춘다. 나머지는 가로세로 같은 배율이다.
+	var draw_y := _ground_scale_y(name, draw_scale) if style == "hold" else draw_scale
 	var sprite_frames := SpriteFrames.new()
 	sprite_frames.add_animation("play")
 	sprite_frames.set_animation_loop("play", false)
@@ -5039,7 +5088,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	fx.position = at
 	# **좌우 반전은 scale.x 부호 하나로 끝낸다.** 아래 스타일들이 전부 `full` 에서
 	# 크기를 뽑으므로, 여기서 부호를 넣어 두면 모든 연출이 저절로 따라 뒤집힌다.
-	fx.scale = Vector2(draw_scale * float(signi(face)), draw_scale)
+	fx.scale = Vector2(draw_scale * float(signi(face)), draw_y)
 	fx.modulate.a = alpha
 	# 잔상은 본체 뒤에 깔린다. 위에 오면 본체가 흐려 보인다.
 	#
@@ -5059,7 +5108,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	if style.is_empty() or not fx.is_inside_tree():
 		return
 	var life := float(textures.size()) / maxf(1.0, fps)
-	var full := Vector2(draw_scale * float(signi(face)), draw_scale)
+	var full := Vector2(draw_scale * float(signi(face)), draw_y)
 	# 사라지는 꼬리는 어느 방식이든 공통이다. 마지막 프레임에서 뚝 끊기면
 	# "끝났다"가 아니라 "버그"로 보인다.
 	var fade := fx.create_tween()
@@ -5101,7 +5150,10 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			# 눈(감시의 눈)이 기울어 보였다. 바닥 문양은 정면으로 읽혀야 한다.
 			fx.scale = Vector2(full.x * 0.45, full.y * 0.10)
 			fx.modulate.a = 0.0
-			t.tween_property(fx, "scale", full * 1.12, life * 0.38) \
+			# **넘겼다 돌아오는 건 가로만.** 세로는 길 폭에 맞춰 둔 값이라 12% 라도
+			# 넘기면 그 순간 균열이 나무 구역으로 올라간다. 바닥에 퍼지는 그림은
+			# 옆으로 벌어지는 것만으로 튕김이 읽힌다.
+			t.tween_property(fx, "scale", Vector2(full.x * 1.12, full.y), life * 0.38) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			t.parallel().tween_property(fx, "modulate:a", keep_a, life * 0.22)
 			t.tween_property(fx, "scale", full, life * 0.3)
