@@ -175,16 +175,20 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float) -> f
 # 못 넘는 구간을 껐다 켜면 넘어가 있다.
 #
 # 한 마리를 잡을 때마다 **다음 놈이 전열에 서기까지의 시간**이 더 든다. DPS 로는
-# 줄일 수 없는 고정비다. 대부분은 대기 몹이 1번 칸에서 전열(0번 칸)로 걸어오는
-# 시간이다 — 64px / Foe.WALK_SPEED(55) = 1.16초, 그중 사망 연출 0.42초가 겹쳐서
-# 실질 0.74초. 영웅이 마주 달려가는 시간은 그와 병행이라 안 더해진다.
+# 줄일 수 없는 고정비다. 대기 몹이 1번 칸에서 전열(0번 칸)로 64px 을 오는 시간인데,
+# 셋이 겹쳐서 줄어든다:
+#   - 전열 진입은 빨리 걷는다 — 64 / (55 x 1.8) = 0.65초 (Foe.ENGAGE_WALK_MULT)
+#   - 사망 연출 0.42초 동안 이미 걸어 들어온다 (Main._tick_engage)
+#   - 영웅이 마주 걸어 나가는 시간이 그와 **병행**이다 (Foe.stepping_up)
 #
-# 0.89초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 52마리(1.15초/마리)를 세고,
+# 0.76초는 실측값이다 — 1-1(맨몸 세이브)을 60초 돌려 59마리(1.02초/마리)를 세고,
 # 거기서 모델 처치시간(0.26초/마리)을 뺐다.
-# ponytail: 칸 좌표(Main.LANES_*)·몹 걷기(Foe.WALK_SPEED)·사망 길이(Foe.DIE_DUR)를
-# 바꾸면 다시 재야 한다. 0.55 였을 때는 영웅이 제자리에서 팼고(몹을 hero_x 앞으로
-# 끌어당겼다) 걷기가 120 이었다 — 그 조건이 통째로 바뀌었다.
-const APPROACH_SECONDS := 0.89
+#
+# 이 값이 얼마나 크게 움직이는지: 0.55(영웅이 제자리에서 팼을 때) -> 0.89(고정 칸으로
+# 옮겨 영웅이 걸어 나가게 한 직후) -> 0.76(전열 가속 + 마주 걷기). 짐작으로 못 맞춘다.
+# ponytail: 칸 좌표(Main.LANES_*) · 몹 걷기(Foe.WALK_SPEED · ENGAGE_WALK_MULT) ·
+# 사망 길이(Foe.DIE_DUR)를 바꾸면 tests/EngageCheck.gd 로 다시 재야 한다.
+const APPROACH_SECONDS := 0.76
 
 
 static func stage_seconds(kills_needed: int, foe_hp: float, hero_dps: float,

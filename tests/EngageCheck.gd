@@ -41,7 +41,14 @@ func _init() -> void:
 	var timer_ran := false
 	var moving := 0
 	var frames := 0
-	var kills0: int = scene.kills
+	# **누적으로 센다.** scene.kills 는 구간이 넘어갈 때 0 으로 리셋된다 —
+	# KILLS_PER_STAGE 가 40 이 된 뒤로 60초 안에 몇 번 넘어가서, 차이로 재면
+	# 처치 8마리(실제 48)로 나온다. 실제로 그 함정에 빠졌다.
+	var total := 0
+	var prev: int = scene.kills
+	var stages := 0
+	var pops_hi := 0        # 동시에 떠 있던 피해 숫자 최대치
+	var labels_hi := 0      # 실제 노드 수. _dmg_pops 와 어긋나면 새고 있는 것이다
 
 	while t < SECONDS:
 		await process_frame
@@ -50,6 +57,19 @@ func _init() -> void:
 		if scene._phase != "fight":
 			continue
 		frames += 1
+		var k: int = scene.kills
+		if k >= prev:
+			total += k - prev
+		else:
+			total += k + 1      # 구간을 넘긴 그 한 방까지
+			stages += 1
+		prev = k
+		pops_hi = maxi(pops_hi, int(scene._dmg_pops))
+		var pop_now := 0
+		for c in scene.get_children():
+			if c is Label and int(c.z_index) == 6:
+				pop_now += 1
+		labels_hi = maxi(labels_hi, pop_now)
 		var hx: float = scene.hero_x
 		hx_lo = minf(hx_lo, hx)
 		hx_hi = maxf(hx_hi, hx)
@@ -82,7 +102,8 @@ func _init() -> void:
 				gap_hi_lane = e.stop_x
 
 	var span := hx_hi - hx_lo
-	var killed: int = scene.kills - kills0
+	var killed := total
+	var need := StageDefs.KILLS_PER_STAGE
 	print("")
 	print("전투 프레임          %d  (%.0f초)" % [frames, SECONDS])
 	print("영웅 x 범위          %.1f ~ %.1f  (폭 %.1f px)" % [hx_lo, hx_hi, span])
@@ -94,18 +115,34 @@ func _init() -> void:
 		% [gap_frames, gap_skill_frames,
 		100.0 * float(gap_skill_frames) / maxf(1.0, float(gap_frames))])
 	print("일반 구간 시계 돌았나 %s" % str(timer_ran))
-	print("처치                 %d 마리 / %.0f초  = %.2f 마리/초  -> 100마리에 %.0f초"
-		% [killed, SECONDS, float(killed) / SECONDS,
-		SECONDS * 100.0 / maxf(1.0, float(killed))])
-	print("모델 예상            %.0f초 (칸 %d, 걷기 %.2f초)"
-		% [Balance.stage_seconds(100, scene._offline_profile(1)["hp"], scene.dps(),
+	print("피해 숫자 동시 최대   %d 개 (노드 %d, 상한 %d)"
+		% [pops_hi, labels_hi, scene.DMG_POP_MAX])
+	print("처치                 %d 마리 / %.0f초  = %.2f 마리/초  (구간 %d 회 통과)"
+		% [killed, SECONDS, float(killed) / SECONDS, stages])
+	print("구간 %d마리          실측 %.0f초  /  모델 %.0f초  /  목표 %.0f초"
+		% [need, SECONDS * float(need) / maxf(1.0, float(killed)),
+		Balance.stage_seconds(need, scene._offline_profile(1)["hp"], scene.dps(),
 			scene._wave_size(1), scene._lane_walk_seconds(1)),
-		scene._wave_size(1), scene._lane_walk_seconds(1)])
+		StageDefs.PACE_NORMAL])
 	print("")
 	assert(span > 50.0, "영웅이 제자리다: 폭 %.1f px" % span)
+	# **너무 멀리 나가도 안 된다.** 화면 밖에서 걸어오는 몹까지 표적으로 잡으면 영웅이
+	# 끝까지 쫓아가서, 방치형의 "화면 고정" 전제가 깨진다(실측 42~536 = 화면 전체).
+	# 전열(가장 먼 쪽 0번 칸)보다 더 나갈 이유는 없다.
+	var reach: float = maxf(absf(float(scene.LANES_RIGHT[0]) - scene.HERO_X),
+		absf(float(scene.LANES_LEFT[0]) - scene.HERO_X))
+	assert(hx_hi <= scene.HERO_X + reach + 8.0 and hx_lo >= scene.HERO_X - reach - 8.0,
+		"영웅이 전열보다 멀리 나갔다: %.1f ~ %.1f (전열 +-%.0f)" % [hx_lo, hx_hi, reach])
 	assert(not timer_ran, "일반 구간에서 제한 시간이 돌았다")
 	assert(killed > 0, "처치가 안 늘었다 - 전투가 멈췄다")
 	assert(overlap > -8.0, "몹끼리 겹친다: %.1f px" % overlap)
 	assert(gap_hi <= scene.GAP_MAX + 1.0, "멀리서 허공을 친다: %.1f px" % gap_hi)
+	# 피해 숫자가 상한을 넘거나 노드가 카운터보다 많으면 새고 있는 것이다 —
+	# 트윈 콜백이 안 돌면 라벨이 화면에 그대로 쌓여 전투를 가린다.
+	assert(pops_hi <= scene.DMG_POP_MAX,
+		"피해 숫자가 상한을 넘었다: %d" % pops_hi)
+	assert(labels_hi <= scene.DMG_POP_MAX,
+		"피해 숫자 노드가 안 지워진다: %d 개" % labels_hi)
+	assert(pops_hi > 0, "피해 숫자가 아예 안 떴다")
 	print("EngageCheck OK")
 	quit()

@@ -18,6 +18,21 @@ extends Node2D
 # 시계가 없어진 뒤로 이 값은 **진행 속도**만 바꾼다(Main._lane_walk_seconds ->
 # Balance.stage_seconds -> 오프라인 시간 차감). 늦추면 늦게 가지, 못 가지는 않는다.
 const WALK_SPEED := 55.0
+# **전열로 나설 때는 빨리 걷는다.** 화면 밖에서 어슬렁 다가오는 건 분위기지만
+# 앞으로 나서는 건 기세다 — 연출로도 맞고, 그 구간이 처리량의 병목이라서 그렇다.
+# 대기 몹이 1번 칸에서 전열(0번 칸)로 64px 을 오는 시간이 한 마리당 고정비인데,
+# 55 로는 1.16초가 통째로 빈 시간이었다(사장님: "약간의 속도감").
+#
+# **`engaged` 가 아니라 `to_front` 로 켠다.** 교전 대상은 **도착한** 몹 중에서만
+# 고르므로(Main._tick_engage), 전열로 걸어 들어오는 동안은 아직 engaged 가 아니다 —
+# engaged 에 걸었더니 다 온 뒤에야 배수가 붙어서 아무 효과가 없었다(실측: 그대로 0.87
+# 마리/초). 칸을 배정하는 Main._reflow_side 가 "0번 칸으로 가는 놈"을 표시해 준다.
+#
+# 이 값은 처리량에 직결된다 — 바꾸면 `Balance.APPROACH_SECONDS` 를 다시 재고
+# `StageDefs.KILLS_PER_STAGE` 로 구간 길이를 맞춰야 한다.
+const ENGAGE_WALK_MULT := 1.8
+# 가속이 붙는 최대 거리. 칸 간격(64) 두 개까지만 "줄에서 한 발 나서는 것"으로 본다.
+const STEP_UP_RANGE := 140.0
 
 var key := "slime"
 var hp := 10.0
@@ -35,6 +50,7 @@ var body_scale := 1.0      # 영웅 표시 크기 대비 종별 크기
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
 var hero_x := 0.0          # Main 이 매 프레임 넘겨 준다. 닿을 때만 휘두르는 근거
 var engaged := false       # 순차 교전 — 영웅과 서로 때리는 단 한 마리만 true (Main 이 정한다)
+var to_front := false      # 전열(0번 칸)로 들어가는 중 — 빨리 걷는다 (Main._reflow_side)
 var side := 1              # 어느 쪽 줄인가 (+1 오른쪽 / -1 왼쪽). 칸 당김·보충이 쓴다
 
 var _walk_frames: Array = []
@@ -162,7 +178,8 @@ func _process(delta: float) -> void:
 	# 움직이는 건 영웅 쪽이다. 좌우 어느 쪽에서 나와도 같은 식이 되도록
 	# 부호를 따지지 않고 move_toward 로 민다.
 	if absf(position.x - stop_x) > 0.5:
-		position.x = move_toward(position.x, stop_x, WALK_SPEED * delta)
+		position.x = move_toward(position.x, stop_x,
+			WALK_SPEED * (ENGAGE_WALK_MULT if stepping_up() else 1.0) * delta)
 	else:
 		_tick_attack(delta)
 	queue_redraw()
@@ -201,6 +218,16 @@ static func avg_attack_mult(boss: bool, midboss: bool) -> float:
 # 스윙 중인가. 교전 몹의 자리 추적(Main._tick_engage)이 이걸 보고 멈춘다 —
 # 휘두르는 중에 영웅이 넉백으로 밀리면 따라 걷는 게 아니라 제자리를 지켜야
 # 스윙 포즈가 미끄러지지 않는다.
+# 전열로 **한 발 나서는 중**인가. 빨리 걷는 조건이자, 영웅이 마주 걸어 나갈 조건이다
+# (Main._tick_engage). **한 곳에서 정해야 한다** — 갈라뜨렸더니 영웅이 방금 스폰된
+# 화면 밖 몹까지 표적으로 잡고 끝까지 쫓아갔다(실측: 영웅 x 범위 42~536, 화면 전체).
+#
+# 거리를 보는 이유: 한쪽 줄이 비면 화면 밖에서 처음 걸어오는 몹도 0번 칸을 향하는데,
+# 그건 등장이지 기세가 아니다. 거기까지 내달리면 "어슬렁 다가온다"가 통째로 사라진다.
+func stepping_up() -> bool:
+	return to_front and absf(position.x - stop_x) <= STEP_UP_RANGE
+
+
 func swinging() -> bool:
 	return _attack_anim >= 0.0
 

@@ -3695,14 +3695,23 @@ func _tick_engage(foes: Array) -> void:
 		# 따라 걸으면 포즈가 미끄러진다.
 		if not _engaged.telling() and not _engaged.swinging():
 			_engaged.stop_x = _lane_x(_engaged.side, 0)
+			_engaged.to_front = true
 		return
 	_engaged = null
 	var best := INF
 	for f in foes:
 		if not is_instance_valid(f) or f.dying:
 			continue
-		if absf(f.position.x - f.stop_x) > 1.0:
-			continue   # 걸어오는 중이면 줄부터 선다
+		# **전열로 들어오는 중인 놈도 표적이 된다.** 도착을 기다리면 영웅의 대시가
+		# 몹의 걷기 **뒤에** 직렬로 붙는다 — 전열 가속을 넣어도 처리량이 4% 만
+		# 올랐던 이유가 이것이다(실측 0.87 -> 0.90 마리/초). 둘이 마주 걸어야
+		# "서로 다가가 만난다"가 되고, 그 시간이 겹친다.
+		#
+		# 먼저 맞거나 먼저 때리는 일은 없다: `Foe._tick_attack` 은 제 칸에 도착해야
+		# 돌고, `_can_hit_foe`·`_in_front_reach` 도 `_foe_arrived` 를 본다.
+		# 줄에서 기다리는 몹은 그대로 도착해야 차례가 온다.
+		if not f.stepping_up() and absf(f.position.x - f.stop_x) > 1.0:
+			continue
 		var d := absf(f.position.x - hero_x)
 		if d < best:
 			best = d
@@ -3731,7 +3740,12 @@ func _reflow_side(side: int, foes: Array) -> void:
 	wait.sort_custom(func(a: Foe, b: Foe) -> bool:
 		return absf(a.stop_x - HERO_X) < absf(b.stop_x - HERO_X))
 	for i in wait.size():
-		wait[i].stop_x = _lane_x(side, base + i)
+		var line := base + i
+		wait[i].stop_x = _lane_x(side, line)
+		# **0번 칸으로 가는 놈만 빨리 걷는다**(Foe.ENGAGE_WALK_MULT). 여기가 칸을
+		# 배정하는 유일한 자리라, 전열 진입을 아는 것도 여기뿐이다 — 몹 쪽에서
+		# `engaged` 로 보면 이미 도착한 뒤라 늦다.
+		wait[i].to_front = line == 0
 
 
 func _tick_hero_attack(delta: float, foes: Array) -> void:
@@ -4227,8 +4241,68 @@ var _shake_cd := 0.0
 var _hitstop_cd := 0.0
 var _hitstop_frame := -1
 
+# ── 피해 숫자 ──────────────────────────────────────────────────────────────
+# **치명타 표시는 없다.** 치명타는 확률을 굴리지 않고 기댓값을 곱하는 결정론 축이라
+# (`Balance.crit_mult`) "터진 순간"이 존재하지 않는다. 굴리게 바꾸면 오프라인 보상을
+# 같은 공식으로 못 계산한다(DESIGN 1장) — 숫자 연출 때문에 그걸 깨지 않는다.
+#
+# 대신 **그 몹 최대 체력 대비 몇 할인가**로 색과 크기를 나눈다. 출처(평타/스킬)로
+# 나누려면 `Foe.take_damage` 까지 인자를 끌고 와야 하는데, 화면에서 정작 궁금한 건
+# "얼마나 아팠나"다 — 그건 `on_foe_hit` 이 이미 받는 두 값으로 나온다.
+const DMG_POP_RISE := 34.0
+const DMG_POP_DUR := 0.55
+# 동시 표시 상한. 광역기가 여섯을 때려도 화면이 숫자로 막히면 안 된다
+# (이펙트가 플레이 화면을 가리면 안 된다 — 사장님).
+const DMG_POP_MAX := 8
+const DMG_POP_W := 120.0     # 가운데 정렬용 상자 폭. 글자 폭을 재는 것보다 싸다
+var _dmg_pops := 0
+
+
+func _pop_damage(foe: Foe, damage: float) -> void:
+	if _dmg_pops >= DMG_POP_MAX or not is_instance_valid(foe) or damage <= 0.0:
+		return
+	var bite := damage / maxf(1.0, foe.max_hp)
+	var big := bite >= 0.5
+	var l := Label.new()
+	l.text = _n(damage)
+	l.add_theme_font_override("font", Type.font())
+	# **11의 배수만 쓴다** — 도트 폰트라 그 외 크기는 픽셀이 어긋나 뭉개진다(Type).
+	l.add_theme_font_size_override("font_size",
+		Type.SIZE_BODY if big else Type.SIZE_SMALL)
+	l.add_theme_color_override("font_color", Color(1.0, 0.55, 0.28) if big
+		else (Color(1.0, 0.86, 0.45) if bite >= 0.15 else Color(1.0, 0.97, 0.92)))
+	# 테두리. "깨어난 무덤"은 바닥이 밝은 흙색이라 흰 숫자가 그대로 묻힌다.
+	l.add_theme_constant_override("outline_size", 6)
+	l.add_theme_color_override("font_outline_color", Color(0.05, 0.02, 0.04))
+	l.size = Vector2(DMG_POP_W, 26.0)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# **몹에 붙이지 않는다.** 자식이면 죽는 순간 같이 사라져서, 정작 가장 보고 싶은
+	# 마지막 한 방의 숫자가 안 뜬다. 영웅(3)·보스(2) 위로 올린다.
+	l.z_index = 6
+	var top := foe.position.y - foe.body_half() * 2.2 - 20.0
+	l.position = Vector2(roundf(foe.position.x - DMG_POP_W * 0.5), roundf(top))
+	add_child(l)
+	_dmg_pops += 1
+	var y0 := l.position.y
+	var t := create_tween()
+	t.set_parallel(true)
+	# **좌표를 정수로 굳힌다.** 그냥 position:y 를 트윈하면 소수점 좌표에 도트 폰트가
+	# 걸려 글자가 흐려진다(Grid 주석과 같은 이유).
+	t.tween_method(func(v: float) -> void:
+		l.position.y = roundf(y0 - v), 0.0, DMG_POP_RISE, DMG_POP_DUR) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	t.tween_property(l, "modulate:a", 0.0, DMG_POP_DUR * 0.55) \
+		.set_delay(DMG_POP_DUR * 0.45)
+	t.chain().tween_callback(func() -> void:
+		_dmg_pops -= 1
+		l.queue_free())
+
 
 func on_foe_hit(_foe: Foe, _damage: float) -> void:
+	# **숫자는 프레임 관문보다 먼저.** 아래 관문은 흔들림·히트스톱을 아끼려고 광역
+	# 타격을 한 번으로 접는 건데, 숫자는 맞은 놈마다 떠야 "여섯을 같이 때렸다"가 읽힌다.
+	_pop_damage(_foe, _damage)
 	var frame := Engine.get_process_frames()
 	if frame == _hitstop_frame:
 		return          # 같은 프레임의 광역 타격은 한 번으로 친다
