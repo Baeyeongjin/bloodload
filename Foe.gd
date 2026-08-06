@@ -24,6 +24,8 @@ var hp_mult := 1.0
 var body_scale := 1.0      # 영웅 표시 크기 대비 종별 크기
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
 var hero_x := 0.0          # Main 이 매 프레임 넘겨 준다. 닿을 때만 휘두르는 근거
+var engaged := false       # 순차 교전 — 영웅과 서로 때리는 단 한 마리만 true (Main 이 정한다)
+var side := 1              # 어느 쪽 줄인가 (+1 오른쪽 / -1 왼쪽). 칸 당김·보충이 쓴다
 
 var _walk_frames: Array = []
 var _attack_frames: Array = []
@@ -186,12 +188,25 @@ static func avg_attack_mult(boss: bool, midboss: bool) -> float:
 
 # 지금 특수 패턴을 예고하는 중인가. 그리는 쪽(_draw_attack_tell)과 멈추는 쪽이
 # 같은 값을 봐야 그림과 움직임이 어긋나지 않는다.
+# 스윙 중인가. 교전 몹의 자리 추적(Main._tick_engage)이 이걸 보고 멈춘다 —
+# 휘두르는 중에 영웅이 넉백으로 밀리면 따라 걷는 게 아니라 제자리를 지켜야
+# 스윙 포즈가 미끄러지지 않는다.
+func swinging() -> bool:
+	return _attack_anim >= 0.0
+
+
 func telling() -> bool:
 	return _tell_t >= 0.0
 
 
 func _tick_attack(delta: float) -> void:
 	if not combat_active:
+		return
+	# **교전 몹만 휘두른다**(순차 교전). 나머지는 제 칸에서 기다린다 — 여럿이
+	# 한꺼번에 때리면 방치형의 "한 놈씩 나와서 싸운다" 리듬이 사라진다.
+	# 쿨다운도 여기서 같이 멈춘다: 기다리는 동안 돌려 두면 교전이 넘어오는 순간
+	# 밀린 쿨다운이 음수로 쌓여 연타가 터진다.
+	if not engaged:
 		return
 	# **사거리 검사보다 먼저** 돌린다. 아래 검사에 걸려 빠져나가면 예고가 멈춘 채로
 	# 굳어서 보스가 영영 안 친다.

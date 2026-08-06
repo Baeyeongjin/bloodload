@@ -68,9 +68,6 @@ const DASH_SPEED := 240.0
 # 느리게 감쇠하면 몹에서 멀어진 채로 굳어 공격이 끊긴다.
 const KNOCK_SPEED := 380.0
 const KNOCK_DECAY := 1600.0
-# 영웅이 한 칸에 붙어 있을 때 사거리 안에 드는 몹 수. 칸 간격(64)과 몹 사거리
-# (_size/2 + 80)에서 나오는 값이라 칸을 옮기면 CombatRulesTest "계측 A" 가 잡는다.
-const FOES_IN_REACH := 3
 # 전진 연출. 영웅은 화면 고정(카메라가 흔들리면 UI가 못 읽힌다)이고 대신 배경이 흐른다.
 # 배경은 몹보다 느리게 흘린다(원경 시차). 같은 속도면 도트가 뭉개지고, 반대로
 # 너무 느리면 걷는데 배경이 안 움직여 제자리걸음으로 보인다 — 0.5가 그 사이다.
@@ -119,6 +116,11 @@ var _bg2: Sprite2D
 var _attack_t := 0.0
 var _hero_hit_t := -1.0
 var _pending_target: Foe
+# **순차 교전.** 영웅과 서로 때리는 몹은 언제나 이 한 마리다. 나머지는 제 칸에서
+# 기다리고(공격 금지), 죽는 동안은 다음을 안 부른다 — 사망 처리가 끝나야 다음이
+# 걸어 나온다. 레퍼런스 방치형의 리듬이고, HANDOFF 3장의 잔여 겹침(-8.5, 표적
+# 아닌 몹)도 구조적으로 사라진다: 표적 아닌 몹이 영웅 곁에 설 일 자체가 없다.
+var _engaged: Foe
 var _bg: Sprite2D
 var _hero: Sprite2D
 var _hero_frames: Array = []
@@ -3553,10 +3555,12 @@ func _process(delta: float) -> void:
 		_refresh_hud()
 		return
 	_tick_advance(delta, foes)
+	_tick_engage(foes)
 	for f in foes:
 		if is_instance_valid(f):
 			f.set_visual_frozen(visual_frozen)
 			f.set_combat_active(_phase == "fight" and not _hero_dead)
+			f.engaged = f == _engaged
 			# 영웅 위치를 넘겨 **닿을 때만 휘두르게** 한다. 예전엔 사거리와 무관하게
 			# 스윙을 시작하고 임팩트 때 빗나갔다 — 6칸 중 절반 이상이 매번 그랬고,
 			# 화면에서는 "몹이 때리는데 아무 일도 안 일어난다"로 보인다.
@@ -3598,6 +3602,56 @@ func _process(delta: float) -> void:
 
 # 자동 공격은 모션 시작이 아니라 7프레임 중 네 번째에 피해가 들어간다. 예약한 대상이
 # 그 전에 사라졌으면 피해도 이펙트도 만들지 않는다.
+# **순차 교전 관리.** 한 놈이 나와 싸우고, 죽는 걸 보고 나서 다음이 줄에서
+# 걸어 나온다. 교전 몹은 영웅 앞 잉크 간격까지 걸어오고(몹이 다가온다), 영웅도
+# _strike_spot 으로 마주 달린다(영웅도 그쪽으로 간다) — 서로 다가가 만난다.
+func _tick_engage(foes: Array) -> void:
+	if _phase != "fight":
+		_engaged = null
+		return
+	if is_instance_valid(_engaged):
+		if _engaged.dying:
+			return   # 사망 처리 중 — 끝나야 다음을 부른다
+		# 예고·스윙 중에는 자리를 안 옮긴다: "멈춰서 예고"가 신호고, 휘두르며
+		# 따라 걸으면 포즈가 미끄러진다. 문턱 4px 는 넉백으로 흔들리는 영웅을
+		# 매 프레임 쫓아 제자리걸음으로 떠는 것을 막는다.
+		if not _engaged.telling() and not _engaged.swinging():
+			var gap: float = _engaged.body_half() + BODY_HALF
+			var want: float = hero_x + (gap if _engaged.position.x >= hero_x else -gap)
+			if absf(want - _engaged.stop_x) > 4.0:
+				_engaged.stop_x = want
+		return
+	_engaged = null
+	var best := INF
+	for f in foes:
+		if not is_instance_valid(f) or f.dying:
+			continue
+		if absf(f.position.x - f.stop_x) > 1.0:
+			continue   # 걸어오는 중이면 줄부터 선다
+		var d := absf(f.position.x - hero_x)
+		if d < best:
+			best = d
+			_engaged = f
+	# 빈 칸을 당겨 세운다. 안 당기면 보충된 몹이 서 있는 몹을 뚫고 안쪽 칸으로
+	# 걸어 들어온다 — 몹끼리의 간격은 이 당김이 지킨다.
+	_reflow_side(1, foes)
+	_reflow_side(-1, foes)
+
+
+# 한쪽 줄의 대기 몹을 앞칸부터 촘촘히 다시 세운다. 지금 서 있는 순서(영웅에서
+# 가까운 차례)를 그대로 보존한다 — 순서를 바꾸면 몹끼리 서로를 지나친다.
+func _reflow_side(side: int, foes: Array) -> void:
+	var wait: Array = []
+	for f in foes:
+		if not is_instance_valid(f) or f.dying or f == _engaged or f.side != side:
+			continue
+		wait.append(f)
+	wait.sort_custom(func(a: Foe, b: Foe) -> bool:
+		return absf(a.stop_x - HERO_X) < absf(b.stop_x - HERO_X))
+	for i in wait.size():
+		wait[i].stop_x = _lane_x(side, i)
+
+
 func _tick_hero_attack(delta: float, foes: Array) -> void:
 	if _hero_hit_t >= 0.0:
 		_hero_hit_t -= delta
@@ -3615,17 +3669,9 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	_attack_t -= delta
 	if _skill_action != "":
 		return
-	# **가장 가까운** 적을 고른다. 예전엔 "제일 왼쪽"이었는데, 좌우 양쪽에서 나오는
-	# 지금은 그러면 등 뒤 적만 계속 쫓아 화면 밖으로 걸어 나간다.
-	var target: Foe = null
-	var best := INF
-	for f in foes:
-		if not _foe_arrived(f):
-			continue
-		var d := absf(f.position.x - hero_x)
-		if d < best:
-			best = d
-			target = f
+	# **표적은 교전 몹 하나다.** 고르는 건 _tick_engage 가 한다. 죽는 동안은
+	# 표적이 없어서 영웅이 잠깐 선다 — 그 박자가 "처치했다"를 읽게 한다.
+	var target: Foe = _engaged if is_instance_valid(_engaged) and not _engaged.dying else null
 	if target == null:
 		return
 	hero_face = 1 if target.position.x >= hero_x else -1
@@ -4210,17 +4256,24 @@ func _refill_lanes(foes: Array) -> bool:
 	var want := _wave_size(stage)
 	if foes.size() >= want:
 		return false
-	var taken := {}
-	for f in foes:
-		if is_instance_valid(f):
-			taken[int(f.stop_x)] = true
+	# 칸(한쪽 3개)이 다 차 있으면 **스폰 자체를 미룬다** — 다음 놈은 화면 밖에서
+	# 기다리다가, 교전이 줄을 당겨 칸이 비면 그때 걸어 들어온다.
 	var right := (want + 1) / 2
-	for i in want:
-		var side := 1 if i < right else -1
-		var line := i if i < right else i - right
-		if taken.has(int(_lane_x(side, line))):
+	var quota := {1: right, -1: want - right}
+	var alive := {1: 0, -1: 0}
+	var waiting := {1: 0, -1: 0}
+	for f in foes:
+		if not is_instance_valid(f):
 			continue
-		_spawn_foe(side, line)
+		alive[f.side] += 1
+		if f != _engaged and not f.dying:
+			waiting[f.side] += 1
+	for side in [1, -1]:
+		if alive[side] >= int(quota[side]):
+			continue
+		if waiting[side] >= LANES_RIGHT.size():
+			continue
+		_spawn_foe(side, waiting[side])
 		return true
 	return false
 
@@ -4274,6 +4327,7 @@ func _spawn_foe(side := 1, line := 0) -> void:
 	f.setup(tier, StageDefs.enemy_power(stage),
 		StageDefs.gold_per_kill(stage) * gold_mult(), boss)
 	f.face = -1 if side > 0 else 1
+	f.side = side
 	# 같은 프레임에 여러 마리가 나가므로 등장 위치도 벌린다. 안 그러면 겹쳐서 걸어온다.
 	# 같은 프레임에 여러 마리가 나가므로 등장 위치도 벌린다. 안 그러면 겹쳐서 걸어온다.
 	var out := float(line) * Grid.u(3)
@@ -4969,10 +5023,9 @@ func _offline_profile(at_stage: int) -> Dictionary:
 		for key in roster:
 			hp_mult += float(FoeTiers.get_tier(str(key))["hp_mult"])
 		hp_mult /= maxf(1.0, float(roster.size()))
-	# **무리 크기가 곧 동시 타격 수가 아니다.** 몹은 고정 칸에 서고 영웅은 한 칸에
-	# 붙어 있으므로, 사거리 안에 드는 건 그중 일부다(계측: 6칸 중 평균 2.8).
-	# 무리 크기를 그대로 쓰면 오프라인이 받는 피해를 과대평가해 실시간과 갈린다.
-	var count := 1 if boss or midboss else mini(_wave_size(at_stage), FOES_IN_REACH)
+	# **순차 교전이라 동시 타격은 언제나 1이다.** 기다리는 몹은 공격하지 않는다
+	# (Foe.engaged 게이트). 무리 크기를 쓰면 받는 피해를 몇 배로 과대평가한다.
+	var count := 1
 	return {
 		"hp": FoeTiers.foe_hp(hp_mult, StageDefs.enemy_power(at_stage), boss, midboss),
 		"count": count,

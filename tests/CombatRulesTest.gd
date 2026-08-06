@@ -102,6 +102,7 @@ func _init() -> void:
 	var pat := Foe.new()
 	pat.setup(boss_tier, 1.0, 1.0, true)
 	pat.combat_active = true
+	pat.engaged = true                    # 보스는 혼자라 실전에서 늘 교전 상태다
 	pat.hero_x = pat.position.x           # 사거리 검사를 통과시킨다
 	var base_reach := pat.reach()
 	var tells := 0
@@ -193,7 +194,8 @@ func _init() -> void:
 	# 포즈로 attack 만 다시 뽑아 20 -> 26 이 됐다(2026-08-05).
 	# 여기 숫자를 손으로 고치는 게 맞다. 검사가 없으면 그림 교체가 사거리를 조용히
 	# 바꿔서 스킬이 안 나가는 버그로 돌아온다(2026-08-04 에 실제로 그랬다).
-	assert(is_equal_approx(attack_reach, 26.0), "attack 불투명 픽셀 사거리 측정 실패")
+	assert(is_equal_approx(attack_reach, 30.0),
+		"attack 사거리가 30 이 아니다: %.1f — 그림을 다시 뽑았으면 이 숫자를 같이 갱신할 것 (검 도입으로 26→30, 2026-08-06)" % attack_reach)
 	# heavy 18 -> 28 (2026-08-05 재생성). 예전 그림은 **임팩트 프레임이 애니메이션에서
 	# 가장 오므린 순간**이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로
 	# 보였다. 사거리 판정은 max(사거리, BODY_HALF)=30 이라 그대로지만 손맛이 달라진다.
@@ -338,17 +340,37 @@ func _init() -> void:
 		% [reach_rate * 6.0, reach_rate * 100.0, worst])
 	# 붙어 있는 그 한 마리는 **무조건** 닿아야 한다. 이게 깨지면 아무도 안 때린다.
 	assert(worst >= 1, "영웅이 붙어 선 칸의 몹조차 안 닿는다")
-	# 오프라인이 세는 동시 타격 수는 실측을 넘으면 안 된다 — 넘으면 받는 피해를
-	# 과대평가해서 실시간에서는 넘는 구간을 오프라인이 못 넘는다.
-	assert(float(game.FOES_IN_REACH) >= reach_rate * 6.0 - 0.5
-		and float(game.FOES_IN_REACH) <= float(lanes.size()),
-		"FOES_IN_REACH(%d)가 실측 %.1f 과 어긋난다 — 칸 좌표를 옮겼으면 같이 고칠 것"
-		% [game.FOES_IN_REACH, reach_rate * 6.0])
+	# **순차 교전 게이트.** 기다리는 몹은 코앞에 영웅이 있어도 휘두르면 안 되고,
+	# 교전으로 넘어오면 휘둘러야 한다. 깨지는 방향이 둘 다 실제 사고다: 게이트가
+	# 없으면 여럿이 한꺼번에 때리고(옛 동작), 쿨다운까지 같이 안 멈추면 교전
+	# 순간 밀린 쿨다운이 연타로 터진다.
+	var gate := Foe.new()
+	gate.setup(FoeTiers.get_tier("slime"), 1.0, 1.0)
+	gate.set_combat_active(true)
+	gate.position.x = 100.0
+	gate.stop_x = 100.0
+	gate.hero_x = 100.0
+	gate.engaged = false
+	var dt := 1.0 / 60.0
+	var swung := false
+	for i in 240:
+		gate._tick_attack(dt)
+		if gate.swinging():
+			swung = true
+	assert(not swung, "기다리는 몹이 휘둘렀다 — 순차 교전 게이트가 깨졌다")
+	gate.engaged = true
+	for i in 240:
+		gate._tick_attack(dt)
+		if gate.swinging():
+			swung = true
+	assert(swung, "교전 몹이 4초가 지나도 안 휘두른다")
+	gate.free()
 
 	# 닿지 않는 몹은 **스윙을 시작조차 하지 않는다.** 헛스윙은 화면에서 버그로 보인다.
 	probe.position.x = 0.0
 	probe.stop_x = 0.0
 	probe.set_combat_active(true)
+	probe.engaged = true            # 사거리 검사만 보려는 것 — 교전 게이트는 위에서 따로 쟀다
 	probe.hero_x = 10000.0          # 사거리 밖
 	probe._tick_attack(99.0)
 	assert(probe._attack_anim < 0.0, "사거리 밖인데 몹이 허공에 휘두른다")
