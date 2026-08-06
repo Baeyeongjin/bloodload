@@ -90,6 +90,9 @@ static func frames(dir_path: String) -> Array:
 # 들어가 "안 맞았는데 맞았다"가 된다 — heavy 를 한 번 폐기한 이유가 그것이었다.
 #
 # 그림을 다시 뽑는 대신 **그림에서 읽는다.** 새 모션이 어떤 타이밍으로 와도 맞는다.
+#
+# **가로로 뻗는 모션에만 쓴다.** 내려찍기는 아래로 눌리지 옆으로 안 뻗으므로 이 자로
+# 재면 잡음에서 최대값을 고른다 — 그쪽은 `slam_peak_frame` 을 쓴다.
 static func reach_peak_frame(dir_path: String, flipped := false) -> int:
 	var key := "peak:%s:%s" % [dir_path, str(flipped)]
 	if _reach_cache.has(key):
@@ -101,6 +104,37 @@ static func reach_peak_frame(dir_path: String, flipped := false) -> int:
 		var r := frame_reach(dir_path, f, 1.0, flipped)
 		if r > best_r:
 			best_r = r
+			best = f
+	_reach_cache[key] = best
+	return best
+
+
+# **내려찍기가 바닥에 닿는 프레임.** 잉크 높이가 가장 낮은 프레임이다.
+#
+# 스프라이트는 발이 지면에 붙어 있어 아래끝이 고정이므로(실측: 슬라임 9프레임 모두
+# bottom 29), 높이가 줄어드는 것이 곧 **몸이 아래로 눌렸다**는 뜻이다.
+#
+# 가로 자(`reach_peak_frame`)로는 못 잡는다. 2026-08-06 실측 — 몹 8종 내려찍기의
+# 가로 뻗음은 거의 안 변해서(용암 두꺼비 30~31) 최대값이 사실상 잡음이고, 그걸로
+# 고르면 f2 처럼 **아직 들어올리는 중인** 프레임이 임팩트가 된다.
+#
+#   슬라임 높이 25 27 28 28 26 23 20 22 24  -> f6 (가로 자는 f6, 우연히 일치)
+#   두꺼비 높이 24 26 30 30 30 26 23 23 24  -> f6 (가로 자는 f2, 빗나감)
+#   임프   높이 31 31 32 30 28 28 29 29 31  -> f4 (가로 자는 f1, 빗나감)
+static func slam_peak_frame(dir_path: String) -> int:
+	var key := "slam:%s" % dir_path
+	if _reach_cache.has(key):
+		return int(_reach_cache[key])
+	var all_frames := frames(dir_path)
+	var best := 0
+	var best_h := 1 << 30
+	for f in all_frames.size():
+		var texture: Texture2D = all_frames[f]
+		var used := texture.get_image().get_used_rect()
+		if used.size.x <= 0:
+			continue
+		if used.size.y < best_h:
+			best_h = used.size.y
 			best = f
 	_reach_cache[key] = best
 	return best

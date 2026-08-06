@@ -103,6 +103,27 @@ func _init() -> void:
 			assert(FileAccess.file_exists(
 				"res://assets/anim/boss_%d_special/%d.png" % [act_i, frame]),
 				"보스 특수 프레임 없음: boss_%d_special/%d" % [act_i, frame])
+	# 중간보스 내려찍기 8종. **피해는 바닥에 닿는 프레임에 들어가야 한다.**
+	# 가로 자(reach_peak_frame)로 재면 안 된다 — 내려찍기는 옆으로 안 뻗어서 가로
+	# 뻗음이 거의 안 변하고(용암 두꺼비 30~31), 그 잡음에서 최대를 고르면 아직
+	# 들어올리는 중인 f1~f2 가 임팩트가 된다(2026-08-06 실측). 그래서 세로로 잰다.
+	# 거미(spider)는 PixelLab object 가 없어 빠져 있다 — PIXELLAB_ARMOR_IDS 참고.
+	for slam_key in ["slime", "bat", "frost_spider", "ice_wisp", "mushroom",
+			"lava_toad", "fire_imp", "hellhound"]:
+		var slam_dir := "res://assets/anim/%s_special" % slam_key
+		var slam_frames := Assets.frames(slam_dir)
+		assert(slam_frames.size() == 9,
+			"%s 내려찍기가 9프레임이 아니다: %d" % [slam_key, slam_frames.size()])
+		var heights := []
+		for slam_tex in slam_frames:
+			heights.append(int(slam_tex.get_image().get_used_rect().size.y))
+		var h_lo: int = heights.min()
+		var h_hi: int = heights.max()
+		# 안 눌리면 내려찍기가 아니다 — 스틸이거나 동작이 통째로 없는 그림이다.
+		assert(h_hi - h_lo >= 3,
+			"%s 내려찍기가 안 눌린다 (높이 %d~%d)" % [slam_key, h_lo, h_hi])
+		assert(int(heights[Assets.slam_peak_frame(slam_dir)]) == h_lo,
+			"%s 임팩트가 가장 눌린 프레임이 아니다" % slam_key)
 	# 특수 스윙은 평타보다 아프고 멀리 닿는다. 오프라인 평균 배수는 그 사이에 있어야
 	# 한다 — 1.0 이면 특수를 안 세는 것이고, SPECIAL_DMG 면 매번 특수로 치는 셈이다.
 	var avg := Foe.avg_attack_mult(true, false)

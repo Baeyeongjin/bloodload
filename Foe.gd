@@ -34,6 +34,8 @@ var engaged := false       # 순차 교전 — 영웅과 서로 때리는 단 �
 var _walk_frames: Array = []
 var _attack_frames: Array = []
 var _special_frames: Array = []   # 특수 패턴 전용 모션. 없으면 평타로 떨어진다
+var _attack_dir := ""             # 임팩트 프레임을 그림에서 읽으려면 경로가 필요하다
+var _special_dir := ""
 var _sprite: Texture2D = null
 var _anim_t := 0.0
 var _flash_t := 0.0
@@ -80,12 +82,15 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	# walk 과 **같은 키**를 쓴다. 보스는 anim_key(boss_1~5)로 전용 자산이 따로 있고,
 	# 없으면 Assets.frames 가 빈 배열을 주므로 원본 몹 attack 으로 떨어진다.
 	var anim_key := str(tier.get("anim_key", key))
-	_attack_frames = Assets.frames("res://assets/anim/%s_attack" % anim_key)
+	_attack_dir = "res://assets/anim/%s_attack" % anim_key
+	_attack_frames = Assets.frames(_attack_dir)
 	if _attack_frames.is_empty():
-		_attack_frames = Assets.frames("res://assets/anim/%s_attack" % key)
+		_attack_dir = "res://assets/anim/%s_attack" % key
+		_attack_frames = Assets.frames(_attack_dir)
 	# 특수 패턴 전용 모션은 보스·중간보스만 쓴다. 아직 없는 보스는 빈 배열이라
 	# _draw 가 평타로 떨어진다 — 하나씩 붙여 나갈 수 있다.
-	_special_frames = Assets.frames("res://assets/anim/%s_special" % anim_key)
+	_special_dir = "res://assets/anim/%s_special" % anim_key
+	_special_frames = Assets.frames(_special_dir)
 	# **첫 타는 빨리 나간다.** 예전엔 여기에 주기 전체(1.5~2.3초)를 넣었는데,
 	# 이 카운트다운은 **제 칸에 도착한 뒤에야** 돌기 시작한다. 그래서 붙고 나서
 	# 2초를 서 있다가 쳤고, 영웅 처치시간이 1.9초라 대부분 때려보지도 못하고 죽었다.
@@ -174,6 +179,22 @@ func attack_mult() -> float:
 	return SPECIAL_DMG if special_swing else 1.0
 
 
+# 이 스윙에서 피해가 들어갈 시각.
+#
+# **내려찍기(특수)만 그림에서 읽는다.** 고정 비율(`IMPACT_RATIO`)은 생성기가 극단을
+# 어디에 두든 늘 43% 지점에 피해를 넣는다. 슬라임 실측(2026-08-06): 가장 납작한
+# 프레임은 f6(높이 20)인데 비율은 f4(높이 26)를 가리켰다 — 몸이 가장 곧추선, 즉
+# **가장 오므린 순간**이다. 08-05 에 영웅 `heavy` 를 폐기한 이유와 같은 증상이다.
+#
+# 평타는 **안 건드린다.** 지금 타이밍이 틀렸다는 근거가 없고, 몹 22종의 평타 박자를
+# 한꺼번에 흔들 이유가 없다. 고칠 근거가 생기면 그때 같은 방식으로 옮긴다.
+func _impact_at() -> float:
+	if not (special_swing and not _special_frames.is_empty()) or _special_dir == "":
+		return ATTACK_DUR * IMPACT_RATIO
+	var peak := Assets.slam_peak_frame(_special_dir)
+	return ATTACK_DUR * (float(peak) + 0.5) / float(_special_frames.size())
+
+
 # **오프라인 판정이 쓰는 평균 피해 배수.** 실시간은 세 번에 한 번만 SPECIAL_DMG 를
 # 쓰지만, 오프라인은 스윙을 하나씩 세지 않고 DPS 로 계산한다. 평타 기준으로만 계산하면
 # 오프라인은 "깼다"는데 실제로 돌리면 죽는다 — 조용히 갈라지는 종류라 여기서 맞춘다.
@@ -224,7 +245,7 @@ func _tick_attack(delta: float) -> void:
 		return
 	if _attack_anim >= 0.0:
 		_attack_anim += delta
-		if not _impact_sent and _attack_anim >= ATTACK_DUR * IMPACT_RATIO:
+		if not _impact_sent and _attack_anim >= _impact_at():
 			_impact_sent = true
 			var main := get_parent()
 			if main and main.has_method("on_foe_attack"):
