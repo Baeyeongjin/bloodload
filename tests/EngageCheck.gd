@@ -47,6 +47,7 @@ func _init() -> void:
 	var total := 0
 	var prev: int = scene.kills
 	var stages := 0
+	var scroll0: float = scene._scroll
 	var pops_hi := 0        # 동시에 떠 있던 피해 숫자 최대치
 	var labels_hi := 0      # 실제 노드 수. _dmg_pops 와 어긋나면 새고 있는 것이다
 
@@ -102,11 +103,14 @@ func _init() -> void:
 				gap_hi_lane = e.stop_x
 
 	var span := hx_hi - hx_lo
+	var scrolled: float = scene._scroll - scroll0
 	var killed := total
 	var need := StageDefs.KILLS_PER_STAGE
 	print("")
 	print("전투 프레임          %d  (%.0f초)" % [frames, SECONDS])
-	print("영웅 x 범위          %.1f ~ %.1f  (폭 %.1f px)" % [hx_lo, hx_hi, span])
+	print("영웅 x 범위          %.1f ~ %.1f  (폭 %.1f px, 앵커 %.0f)"
+		% [hx_lo, hx_hi, span, scene.HERO_X])
+	print("세상 전진            %.0f px = %.0f px/초" % [scrolled, scrolled / SECONDS])
 	print("이동 중 프레임 비율  %.0f%%" % (100.0 * float(moving) / maxf(1.0, float(frames))))
 	print("몹끼리 최소 클리어런스 %.1f px  (음수 = 겹침)" % overlap)
 	print("교전 몹과 최대 빈틈  %.1f px (한계 %.1f) / 그때 스킬 '%s' / 몹칸 %.0f"
@@ -124,13 +128,17 @@ func _init() -> void:
 		Balance.stage_seconds(need, scene._offline_profile(1)["hp"], scene.dps()),
 		StageDefs.PACE_NORMAL])
 	print("")
-	assert(span > 50.0, "영웅이 제자리다: 폭 %.1f px" % span)
-	# **너무 멀리 나가도 안 된다.** 화면 밖에서 걸어오는 몹까지 표적으로 잡으면 영웅이
-	# 끝까지 쫓아가서, 방치형의 "화면 고정" 전제가 깨진다(실측 42~536 = 화면 전체).
-	# 전열(가장 먼 쪽 0번 칸)보다 더 나갈 이유는 없다.
-	var reach: float = scene.FRONT_X - scene.HERO_X
-	assert(hx_hi <= scene.HERO_X + reach + 8.0 and hx_lo >= scene.HERO_X - reach - 8.0,
-		"영웅이 전열보다 멀리 나갔다: %.1f ~ %.1f (전열 +-%.0f)" % [hx_lo, hx_hi, reach])
+	# **움직이는 것은 세상이다.** 찾아가는 모델에서 영웅은 앵커를 지키고 배경·몹이
+	# 왼쪽으로 흐른다 — "영웅이 50px 넘게 움직여야 한다"는 웨이브 모델의 규칙이라
+	# 여기서는 정상 동작을 실패로 잡는다. 대신 **전진이 실제로 일어났는가**를 본다.
+	assert(scrolled > 200.0, "세상이 전진하지 않았다: %.0f px" % scrolled)
+	# **영웅은 앵커를 크게 벗어나지 않는다.** 벗어나면 화면 고정 전제가 깨진다 —
+	# 표적을 멀리까지 쫓게 두자 42~536(화면 전체)까지 나갔다(실측). 큰 몹이 자리를
+	# 밀어내는 폭(23px)에 넉백 여유를 더한 만큼만 허용한다.
+	var slack: float = scene.FRONT_X - scene.HERO_X + 40.0
+	assert(hx_hi <= scene.HERO_X + slack and hx_lo >= scene.HERO_X - slack,
+		"영웅이 앵커에서 너무 멀다: %.1f ~ %.1f (앵커 %.0f +-%.0f)"
+		% [hx_lo, hx_hi, scene.HERO_X, slack])
 	assert(not timer_ran, "일반 구간에서 제한 시간이 돌았다")
 	assert(killed > 0, "처치가 안 늘었다 - 전투가 멈췄다")
 	assert(overlap > -8.0, "몹끼리 겹친다: %.1f px" % overlap)

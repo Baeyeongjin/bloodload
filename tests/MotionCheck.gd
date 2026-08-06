@@ -23,6 +23,7 @@ func _init() -> void:
 	var t := 0.0
 	var frames := 0
 	var stuck := {}          # 모션 -> 안 움직인 프레임 수
+	var by := {}             # 제자리 프레임의 국면별 분포
 	var moving := {}         # 모션 -> 움직인 프레임 수
 	var adv_frames := 0
 	var adv_back := 0        # 전진 중 뒤를 본 프레임
@@ -43,6 +44,11 @@ func _init() -> void:
 		if m in ["walk", "dash"]:
 			if absf(dx) < 0.05:
 				stuck[m] = int(stuck.get(m, 0)) + 1
+				# 어느 국면에서 나는지 갈라 찍는다 - 원인이 전진 쪽인지 전투 쪽인지
+				var why := "%s/%s" % [str(scene._phase),
+					("dying" if (is_instance_valid(scene._engaged)
+						and scene._engaged.dying) else "live")]
+				by[why] = int(by.get(why, 0)) + 1
 			else:
 				moving[m] = int(moving.get(m, 0)) + 1
 		if scene._phase != "fight":
@@ -57,6 +63,7 @@ func _init() -> void:
 		var mv := int(moving.get(m, 0))
 		print("%-5s  움직임 %5d / 제자리 %5d  -> 제자리 비율 %.0f%%"
 			% [m, mv, s, 100.0 * float(s) / maxf(1.0, float(s + mv))])
+	print("제자리 프레임 국면별: %s" % str(by))
 	print("전진 구간 %d 프레임 중 뒤를 본 프레임 %d (%.0f%%)"
 		% [adv_frames, adv_back, 100.0 * float(adv_back) / maxf(1.0, float(adv_frames))])
 	# 이동 모션은 **실제로 움직일 때만** 재생돼야 한다. 실측으로 walk 95% / dash 62% 가

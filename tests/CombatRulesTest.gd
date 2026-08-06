@@ -431,13 +431,21 @@ func _init() -> void:
 			swung = true
 	assert(swung, "교전 몹이 4초가 지나도 안 휘두른다")
 	gate.free()
-	# **전열이 영웅 몸통 바로 앞이면 영웅은 한 걸음도 안 뗀다.** 순차 교전이 교전 몹을
-	# `hero_x` 앞으로 끌어당기던 동안 정확히 그랬다 — 몹이 멈춘 자리가 이미 칼끝이라,
-	# 화면에서는 영웅이 제자리에서 걷기·대시 모션만 재생했다(사장님: "가운데에서
-	# 왔다갓다 하지 않아, 그냥 가운데에서 걷고 대시해").
-	# 실제 이동량은 tests/EngageCheck.gd 가 씬을 돌려 잰다(느리다, 별도로 돌린다).
-	var walk: float = game.FRONT_X - game.HERO_X - (25.0 + game.BODY_HALF)
-	assert(walk > 40.0, "전열이 가까워서 영웅이 제자리에 선다: %.0f px" % walk)
+	# **앵커에서 전열의 몹에 닿아야 한다.** 전열을 영웅 몸통 두 개 폭에 붙여 뒀으므로
+	# (FRONT_X 주석) 영웅은 자리를 안 옮기고 그대로 친다 — 안 닿으면 영영 못 때린다.
+	# 겹치지도 않아야 한다: 겹치면 몹 몸통 안에 서서 팬다.
+	var anchor_probe := Foe.new()
+	anchor_probe.setup(FoeTiers.get_tier("slime"), 10.0, 1.0)
+	anchor_probe.stop_x = game.FRONT_X
+	anchor_probe.position.x = game.FRONT_X
+	assert(game._stand_ok(anchor_probe, game.HERO_X),
+		"앵커(%.0f)에서 전열 몹(%.0f)이 제 자리가 아니다 — 닿지 않거나 겹친다"
+		% [game.HERO_X, game.FRONT_X])
+	anchor_probe.free()
+	# 앵커는 화면 **왼쪽 절반**에 있어야 한다. 방향이 하나라 앞쪽(오른쪽)을 넓게 써야
+	# 다가오는 놈들이 보인다 — 레퍼런스 영상도 영웅이 42% 자리다(실측).
+	assert(game.HERO_X < float(Grid.BG.x) * 0.5,
+		"앵커가 화면 절반보다 오른쪽이다: %.0f" % game.HERO_X)
 	# 전열은 화면 안이어야 한다 — 밖이면 싸우는 걸 못 본다.
 	assert(game.FRONT_X < float(Grid.BG.x) - 40.0,
 		"전열이 화면 밖이다: %.0f" % game.FRONT_X)
