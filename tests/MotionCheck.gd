@@ -1,0 +1,95 @@
+extends SceneTree
+
+# 모션과 실제 이동이 어긋나는 프레임을 센다. 사장님 보고 두 건의 원인을 가른다.
+#   (1) "달리는데 앞으로 안 나가고 제자리에서 걷는다"
+#       -> walk/dash 를 재생하면서 hero_x 가 안 변하는 프레임
+#   (2) "스테이지 클리어하면 중앙에서 문워크처럼 뒤로 달린다"
+#       -> 전진(advance) 구간에서 hero_face 가 진행 방향(+1)과 반대인 프레임
+#          배경은 왼쪽으로 흐르므로(=영웅이 오른쪽으로 간다) face 는 +1 이어야 한다
+
+const SECONDS := 50.0
+
+func _init() -> void:
+	create_timer(300.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
+	var scene: Node = load("res://Main.tscn").instantiate()
+	root.add_child(scene)
+	await process_frame
+	await process_frame
+	scene.stage = 1
+	scene._restart_stage("측정")
+
+	var t := 0.0
+	var frames := 0
+	var stuck := {}          # 모션 -> 안 움직인 프레임 수
+	var moving := {}         # 모션 -> 움직인 프레임 수
+	var adv_frames := 0
+	var adv_back := 0        # 전진 중 뒤를 본 프레임
+	var prev_x: float = scene.hero_x
+	while t < SECONDS:
+		await process_frame
+		var d: float = scene.get_process_delta_time()
+		t += d
+		frames += 1
+		var m: String = str(scene._motion)
+		var dx: float = scene.hero_x - prev_x
+		prev_x = scene.hero_x
+		if m in ["walk", "dash"]:
+			if absf(dx) < 0.05:
+				stuck[m] = int(stuck.get(m, 0)) + 1
+			else:
+				moving[m] = int(moving.get(m, 0)) + 1
+		if scene._phase != "fight":
+			adv_frames += 1
+			if int(scene.hero_face) < 0:
+				adv_back += 1
+
+	print("")
+	print("전체 %d 프레임 (%.0f초)" % [frames, SECONDS])
+	for m in ["walk", "dash"]:
+		var s := int(stuck.get(m, 0))
+		var mv := int(moving.get(m, 0))
+		print("%-5s  움직임 %5d / 제자리 %5d  -> 제자리 비율 %.0f%%"
+			% [m, mv, s, 100.0 * float(s) / maxf(1.0, float(s + mv))])
+	print("전진 구간 %d 프레임 중 뒤를 본 프레임 %d (%.0f%%)"
+		% [adv_frames, adv_back, 100.0 * float(adv_back) / maxf(1.0, float(adv_frames))])
+	# 이동 모션은 **실제로 움직일 때만** 재생돼야 한다. 실측으로 walk 95% / dash 62% 가
+	# 제자리였다 — 화면에서는 그게 "제자리에서 걷는다"다.
+	for m in ["walk", "dash"]:
+		var s := int(stuck.get(m, 0))
+		var mv := int(moving.get(m, 0))
+		assert(float(s) / maxf(1.0, float(s + mv)) < 0.15,
+			"%s 가 제자리에서 재생된다: %d 프레임" % [m, s])
+	assert(adv_back == 0, "전진하는데 뒤를 본다(문워크): %d 프레임" % adv_back)
+
+	# 보스 구간은 **왼쪽 화면 밖에서** 걸어 들어와야 한다.
+	# 암전이 걷힌 뒤에 재면 이미 한참 걸어 들어와 있다 — 등장 전체에서 **최솟값**을 본다.
+	scene.stage = StageDefs.BOSS_EVERY          # 1막 10구간 = 보스
+	scene._restart_stage("보스 측정")
+	var t2 := 0.0
+	var lo := INF
+	var faced_back := 0
+	var fought_early := false
+	var entered := false
+	while t2 < 12.0:
+		await process_frame
+		t2 += scene.get_process_delta_time()
+		if scene._boss_entry:
+			entered = true
+			lo = minf(lo, scene.hero_x)
+			if int(scene.hero_face) < 0:
+				faced_back += 1
+			if scene._phase == "fight":
+				fought_early = true
+		elif entered:
+			break
+	print("보스 등장  최소 hero_x %.1f  (앵커 %.0f)  ·  %.2f 초에 도착" % [lo, scene.HERO_X, t2])
+	print("   들어오는 중 전투 %s  ·  뒤를 본 프레임 %d" % [str(fought_early), faced_back])
+	assert(entered, "보스 구간인데 등장 연출이 안 켜졌다")
+	assert(lo < 0.0, "보스 구간인데 화면 안에서 시작한다: %.1f" % lo)
+	assert(faced_back == 0, "왼쪽에서 들어오는데 왼쪽을 본다: %d 프레임" % faced_back)
+	assert(not fought_early, "영웅이 들어오는 중에 전투가 열렸다")
+	assert(not scene._boss_entry, "12초가 지나도 앵커에 못 들어왔다")
+	print("MotionCheck OK")
+	quit()

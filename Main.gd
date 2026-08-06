@@ -72,6 +72,9 @@ const LANES_LEFT := [168.0, 104.0, 40.0]
 # 보였다 — 달리기 8프레임을 한 바퀴 돌리려면 최소 0.5초는 이동에 써야 한다.
 # 걷기(120)의 2배면 가까운 칸도 0.4초, 먼 칸은 1초라 뛰는 게 눈에 남는다.
 const DASH_SPEED := 240.0
+# 전투 밖(보스 등장 · 앵커 복귀)에서 걷는 속도. 대시로 움직이면 걷기 모션을 재생하며
+# 달리는 속도로 미끄러진다. 몹 걷기(55)보다 빠르되 같은 세계로 읽히는 값이다.
+const ENTER_SPEED := 90.0
 # 넉백. 대시(240)보다 빨라야 밀리는 게 보이고, 감쇠가 빨라야 곧 되돌아온다 —
 # 느리게 감쇠하면 몹에서 멀어진 채로 굳어 공격이 끊긴다.
 const KNOCK_SPEED := 380.0
@@ -94,13 +97,18 @@ const BACKDROP := [
 const WIDGET_BAND := GOAL_WIDGET_H + 6.0
 
 
-const PARALLAX := 0.5
-# **몹 걷기 속도에서 분리했다.** 배경이 흐르는 건 영웅이 전진하는 연출이라, 몹이
-# 천천히 다가오게 바꿨다고 같이 느려지면 전진 구간이 통째로 늘어진다.
+# 원경 시차. 배경은 영웅이 움직인 거리의 이 비율만큼 흐른다.
 #
-# 다만 **Foe.WALK_SPEED(55) 보다는 느려야 한다.** 배경이 더 빠르면 오른쪽에서
-# 걸어오는 몹이 지면에 대해 뒤로 밀려서, 왼쪽을 보며 뒷걸음질하는 것처럼 보인다.
-const SCROLL_SPEED := 45.0
+# **고정 속도 스크롤을 지웠다**(2026-08-06, 사장님: "배경을 고정시키고 캐릭터 움직임에
+# 따라 움직이게 하면 되잖아"). 예전엔 `SCROLL_SPEED` 로 초당 45px 씩 흘렸는데, 영웅은
+# 중앙 고정이라 **화면에는 제자리 걷기만 남았다**(실측: walk 프레임의 95%가 제자리).
+# 게다가 `hero_face` 는 직전 전투의 방향을 들고 있어서, 왼쪽 몹을 마지막에 잡으면
+# 왼쪽을 본 채로 배경이 흘러 뒤로 달리는 그림이 됐다("문워크").
+#
+# 이동량에 묶으면 **둘이 어긋날 수가 없다.** 영웅이 서 있으면 배경도 선다.
+# 전투 중에는 안 흘린다(`_tick_dash`) — 결투 중 앞뒤 발놀림까지 따라가면 배경이
+# 좌우로 흔들린다. 그건 전진이 아니라 제자리 스텝이다.
+const PARALLAX := 0.5
 
 var stage := 1
 var kills := 0
@@ -134,6 +142,9 @@ var _pending_target: Foe
 # 걸어 나온다. 레퍼런스 방치형의 리듬이고, HANDOFF 3장의 잔여 겹침(-8.5, 표적
 # 아닌 몹)도 구조적으로 사라진다: 표적 아닌 몹이 영웅 곁에 설 일 자체가 없다.
 var _engaged: Foe
+# 보스 구간 등장 중. 영웅이 화면 왼쪽 밖에서 앵커까지 걸어 들어오며, 그동안 전투가
+# 열리지 않는다(`_tick_advance`). 잡몹 구간은 서서 맞이하므로 늘 false 다.
+var _boss_entry := false
 var _bg: Sprite2D
 var _hero: Sprite2D
 var _hero_frames: Array = []
@@ -431,6 +442,8 @@ func _ready() -> void:
 		hero_hp = max_hp()
 	_apply_stage_bg()
 	_boss_time = StageDefs.time_limit(stage)
+	# 불러온 자리가 보스 구간이면 켤 때도 왼쪽에서 걸어 들어온다 — 구간 전환과 같은 길.
+	_begin_stage_pose()
 	_start_advance()
 	_refresh_gear_slots()
 	# 보관함도 여기서 한 번 새로 그린다. _build_scene() 은 _load_game() **앞**이라
@@ -3794,8 +3807,13 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	var park: float = front - signf(front - HERO_X) * (target.body_half() + BODY_HALF)
 	_dash_to = clampf(_dash_to, minf(HERO_X, park), maxf(HERO_X, park))
 	# 사거리 밖이면 달려간다. 붙는 동안 공격 쿨다운은 계속 돌아서 도착하면 바로 친다.
+	#
+	# **움직일 때만 대시 모션이다.** 마주 나가는 거리를 `park` 로 제한한 뒤로 "자리에는
+	# 닿았는데 몹이 아직 걸어오는" 구간이 생겼는데, 거기서 dash 를 계속 재생하면
+	# 제자리에서 달리는 그림이 된다 — 실측 dash 프레임의 **62%**가 그랬다
+	# (사장님: "달리는데 앞으로 안 나가고 제자리에서 걷는다").
 	if not _in_front_reach(target):
-		_play("dash")
+		_play("dash" if absf(_dash_to - hero_x) > 1.0 else "idle")
 		return
 	if _attack_t > 0.0:
 		return
@@ -3837,18 +3855,30 @@ func _clear_idle(x: float) -> float:
 func _tick_dash(delta: float) -> void:
 	if _hero_dead:
 		return
-	if _phase != "fight":
-		_dash_to = HERO_X   # 무리를 치웠으면 걷던 자리로 돌아온다
+	var fighting := _phase == "fight"
+	if not fighting:
+		_dash_to = HERO_X   # 자리를 비웠으면 앵커로 돌아온다
 	_dash_to = _clear_idle(_dash_to)
 	# 넉백은 **대시보다 먼저** 자리를 옮긴다. 맞은 순간 뒤로 밀리고, 그 다음 프레임부터
 	# 대시가 다시 파고든다 — 밀림과 되돌아옴이 한 몸이라 "얻어맞았다"가 몸으로 읽힌다.
 	if absf(_knock_vx) > 1.0:
 		hero_x += _knock_vx * delta
 		_knock_vx = move_toward(_knock_vx, 0.0, KNOCK_DECAY * delta)
+	# 전투 밖에서는 **걷는 속도**로 움직인다. 대시(240)로 등장하면 화면을 1.4초에
+	# 지나면서 걷기 모션을 재생하게 되어 발이 겉돈다 — 지금 고치는 그 버그다.
+	var was := hero_x
 	hero_x = move_toward(hero_x, clampf(_dash_to, 24.0, Grid.BG.x - 24.0),
-		DASH_SPEED * delta)
-	hero_x = clampf(hero_x, 24.0, Grid.BG.x - 24.0)
+		(DASH_SPEED if fighting else ENTER_SPEED) * delta)
+	# 화면 안에 묶는다. **등장 중에는 하한을 푼다** — 왼쪽 밖에서 걸어 들어오는데
+	# 여기서 24 로 잡아 버리면 화면 안에서 튀어나온다(실측: -32 로 놨는데 65.7 이 나왔다).
+	hero_x = clampf(hero_x, -float(Grid.SPRITE) if _boss_entry else 24.0,
+		Grid.BG.x - 24.0)
 	_hero.position.x = hero_x
+	# **배경은 영웅이 실제로 움직인 만큼만 흐른다**(PARALLAX 주석 참고). 전투 중에는
+	# 안 흘린다 — 결투의 앞뒤 발놀림까지 따라가면 배경이 좌우로 흔들린다.
+	if not fighting and not is_equal_approx(hero_x, was):
+		_scroll += (hero_x - was) * PARALLAX
+		_apply_scroll()
 	_hero.flip_h = hero_face > 0
 
 
@@ -4387,6 +4417,22 @@ func _kill_hero() -> void:
 	_save_game()
 
 
+# 구간 시작 자세. **보스 구간만 화면 왼쪽 밖에서 걸어 들어온다**(사장님: "보스
+# 스테이지만 왼쪽에서 캐릭터가 나와서 보스 만나서 싸우는 느낌으로"). 잡몹 구간은
+# 서서 맞이하므로 앵커에 세운다.
+#
+# **암전 뒤에서 부른다** — 그래야 자리 이동이 순간이동으로 안 보인다.
+func _begin_stage_pose() -> void:
+	_boss_entry = StageDefs.is_boss_stage(stage)
+	hero_x = -float(Grid.SPRITE) if _boss_entry else HERO_X
+	_dash_to = HERO_X
+	hero_face = 1
+	_knock_vx = 0.0
+	if _hero != null:
+		_hero.position.x = hero_x
+	_play("walk" if _boss_entry else "idle")
+
+
 func _revive_hero() -> void:
 	_hero_dead = false
 	hero_hp = max_hp()
@@ -4402,8 +4448,12 @@ func _revive_hero() -> void:
 	_save_game()
 
 
-# 걷다가 무리를 만나고, 치우면 또 걷는다. 이 리듬이 "군주가 사냥터를 넓힌다"를
-# 숫자가 아니라 그림으로 만든다 — 서서 기다리면 몹이 찾아오는 그림의 반대다.
+# 서서 맞이하다가, 보스 구간에서만 걸어 들어간다.
+#
+# **"걷다가 무리를 만나고 치우면 또 걷는다"를 접었다**(2026-08-06, 사장님). 영웅은
+# 화면 고정이라 그 걷기가 화면에서는 제자리 걷기였고(실측 95%), 배경만 흘러서
+# 어긋났다. 걸어 들어가는 연출은 **보스 구간에만** 남긴다 — 모든 구간에 있으면
+# 흔해지고, 보스에만 있으면 등장이 사건이 된다.
 func _tick_advance(delta: float, foes: Array) -> void:
 	if _phase == "fight":
 		# 칸이 비면 **바로** 채운다. 예전엔 무리를 다 치워야 다음 무리가 나와서,
@@ -4415,9 +4465,17 @@ func _tick_advance(delta: float, foes: Array) -> void:
 			_start_advance()
 		return
 
-	_play("walk")
-	_scroll += SCROLL_SPEED * delta
-	_apply_scroll()
+	# 보스 구간은 영웅이 **화면 왼쪽 밖에서** 걸어 들어온다(`_begin_stage_pose`).
+	# 자리에 들어오기 전에는 전투를 열지 않는다 — 그래야 "찾아가서 만난다"가 된다.
+	# 배경은 `_tick_dash` 가 영웅 이동량만큼만 흘린다(PARALLAX).
+	if _boss_entry:
+		hero_face = 1              # 전진 방향. 이걸 안 잡으면 직전 전투 방향이 남는다
+		_play("walk" if absf(_dash_to - hero_x) > 1.0 else "idle")
+		if absf(hero_x - HERO_X) <= 1.0:
+			_boss_entry = false
+		return
+	# 잡몹 구간은 **서서 맞이한다**(사장님). 몹이 걸어 들어오는 동안 영웅은 가만히 있다.
+	_play("idle")
 	# **선두 한 마리가 닿으면 전투를 시작한다.** 예전엔 무리가 **전부** 제 칸에
 	# 도착해야 넘어갔다 — 그래서 전투가 시작되는 순간엔 이미 여섯이 다 서 있고,
 	# 영웅은 0.14초 만에 중앙을 떠났다(실측). "중앙에 서서 맞이한다"가 화면에 아예
@@ -4714,13 +4772,6 @@ func _advance_stage() -> void:
 	# 배경과 몹이 **암전 뒤에서** 바뀐다. 그냥 갈아 끼우면 화면이 휙 튄다.
 	_fade(func() -> void:
 		kills = 0
-		# **암전 뒤에서 영웅을 중앙에 되돌린다**(사장님). `_tick_dash` 의
-		# `_phase != "fight"` 분기가 어차피 되돌리지만, 그건 부작용이지 보장이 아니다 —
-		# 암전(FADE_OUT)이 복귀(최대 0.53초)보다 짧으면 화면에서 걸어가는 게 보인다.
-		# 암전 중이라 순간이동으로 안 보인다.
-		hero_x = HERO_X
-		_dash_to = HERO_X
-		_hero.position.x = HERO_X
 		var next_stage := mini(stage + 1, StageDefs.total_stages())
 		if next_stage > best_stage:
 			if StageDefs.is_boss_stage(stage):
@@ -4728,6 +4779,7 @@ func _advance_stage() -> void:
 			best_stage = next_stage
 		stage = next_stage
 		_boss_time = StageDefs.time_limit(stage)
+		_begin_stage_pose()   # stage 가 정해진 뒤에 부른다 — 보스인지 여기서 갈린다
 		_start_advance()
 		_apply_stage_bg())
 
@@ -4762,6 +4814,7 @@ func _restart_stage(reason: String) -> void:
 		_hero_dead = false
 		_revive_t = 0.0
 		_revive_hero()
+		_begin_stage_pose()   # _revive_hero 가 앵커에 세운 뒤에 부른다(보스면 왼쪽 밖)
 		_start_advance())
 	_offline_banner.text = "%s — %s 다시" % [reason, StageDefs.label(stage)]
 	_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
