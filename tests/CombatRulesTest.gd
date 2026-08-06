@@ -56,7 +56,22 @@ func _init() -> void:
 		assert(bg != null and bg.get_size() == Vector2(Grid.BG_SRC),
 			"%s 의 배경이 %s 가 아니다 — tools/fit_ground.py 를 안 돌렸다"
 			% [str(act["name"]), str(Grid.BG_SRC)])
-	assert(FileAccess.file_exists("res://assets/anim/valentino_1_heavy/0.png"))
+	# **애니의 프레임은 서로 달라야 한다.** 같은 그림을 9장 깔면 파일 수·크기·사거리
+	# 검사는 전부 통과하는데 화면에서는 동작이 통째로 사라진다 — 실제로 커밋
+	# 7e13672 가 검 든 attack 9장을 전부 같은 스틸로 넣었고(다운로드 URL 의
+	# ?frame= 이 무시돼 같은 이미지를 9번 받았다), 사장님이 "휘두르는 액션이
+	# 있어야 할 것 같은데"로 잡아 줄 때까지 아무 검사도 안 걸렸다.
+	for motion in ["attack", "walk", "dash", "idle", "heavy", "cast"]:
+		var dir := "res://assets/anim/valentino_1_%s" % motion
+		var texs := Assets.frames(dir)
+		assert(texs.size() >= 2, "%s 프레임이 %d장뿐이다" % [motion, texs.size()])
+		var seen := {}
+		for tex in texs:
+			var img: Image = (tex as Texture2D).get_image()
+			seen[Marshalls.raw_to_base64(img.get_data())] = true
+		assert(seen.size() == texs.size(),
+			"%s 의 프레임이 서로 같다 (고유 %d/%d) — 애니가 아니라 스틸이다"
+			% [motion, seen.size(), texs.size()])
 	assert(FileAccess.file_exists("res://assets/anim/valentino_1_cast/0.png"))
 
 	var normal := Foe.new()
@@ -195,7 +210,26 @@ func _init() -> void:
 	# 여기 숫자를 손으로 고치는 게 맞다. 검사가 없으면 그림 교체가 사거리를 조용히
 	# 바꿔서 스킬이 안 나가는 버그로 돌아온다(2026-08-04 에 실제로 그랬다).
 	assert(is_equal_approx(attack_reach, 30.0),
-		"attack 사거리가 30 이 아니다: %.1f — 그림을 다시 뽑았으면 이 숫자를 같이 갱신할 것 (검 도입으로 26→30, 2026-08-06)" % attack_reach)
+		"attack 사거리가 30 이 아니다: %.1f — 그림을 다시 뽑았으면 이 숫자를 같이 갱신할 것 (맨손 26 → 검 30, 2026-08-06)" % attack_reach)
+	# **임팩트 프레임이 가장 오므린 프레임이면 안 된다.** heavy 를 못 쓴 이유가 그것
+	# 이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로 보였다.
+	# 숫자를 손으로 갱신하는 위 검사와 달리 이건 그림이 바뀌어도 늘 참이어야 한다.
+	for motion in ["attack", "heavy"]:
+		var dir := "res://assets/anim/valentino_1_%s" % motion
+		var n := Assets.frames(dir).size()
+		var impact := int(round(float(n) * game.IMPACT_RATIO))
+		var reaches: Array[float] = []
+		for f in n:
+			# flipped=true — 그림이 **왼쪽을 보므로** 무기는 왼쪽으로 뻗는다.
+			# false 로 재면 반대쪽 끝을 봐서 임팩트가 오므린 것처럼 나온다.
+			reaches.append(Assets.frame_reach(dir, f, 2.0, true))
+		var lo: float = reaches.min()
+		var hi: float = reaches.max()
+		assert(hi > lo, "%s 프레임들이 전부 같은 만큼 뻗는다 — 휘두름이 없다" % motion)
+		# 임팩트가 최소~최대 범위의 위쪽 절반에 있어야 한다.
+		assert(reaches[impact] >= lo + (hi - lo) * 0.5,
+			"%s 임팩트(프레임%d)가 오므린 자세다: %.0f (최소 %.0f, 최대 %.0f)"
+			% [motion, impact, reaches[impact], lo, hi])
 	# heavy 18 -> 28 (2026-08-05 재생성). 예전 그림은 **임팩트 프레임이 애니메이션에서
 	# 가장 오므린 순간**이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로
 	# 보였다. 사거리 판정은 max(사거리, BODY_HALF)=30 이라 그대로지만 손맛이 달라진다.
