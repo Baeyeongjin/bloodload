@@ -105,7 +105,7 @@ def autoflip(motion, paths):
     return flipped
 
 
-def check(motion, paths, strict_foot=True):
+def check(motion, paths, strict_foot=True, flipped=None):
     """설치 전에 다 본다. 실패는 assert 로 즉시 멈춘다."""
     digests, boxes, faces = [], [], []
     for i, p in enumerate(paths):
@@ -151,10 +151,14 @@ def check(motion, paths, strict_foot=True):
 
     # (3) 자동 반전이 자세를 어긋나게 붙이지 않았는가. 반전은 캔버스 중심 기준이라
     #     잉크가 한쪽으로 치우친 프레임을 뒤집으면 위치가 튄다.
+    #
+    # **반전이 없었으면 검사하지 않는다.** 무기를 크게 휘두르면 잉크 중심이 정상적으로
+    # 8px 넘게 움직인다(오크 실측 36.3 -> 28.2). 반전을 안 했는데 이 검사가 걸리면
+    # 멀쩡한 그림을 반려하는 것이다 - 이 검사의 대상은 반전 자국뿐이다.
     scale = 2 if Image.open(paths[0]).width == 32 else 1
     centers = [ink_center(Image.open(p).convert("RGBA")) * scale for p in paths]
     jumps = [abs(centers[i + 1] - centers[i]) for i in range(len(centers) - 1)]
-    if jumps:
+    if jumps and flipped:
         worst = max(jumps)
         assert worst <= MAX_JUMP, \
             "%s: 이웃 프레임 사이에 몸이 %.0f 화면px 튄다 (한계 %.0f) - 자동 반전이\n" \
@@ -247,7 +251,7 @@ def main(argv):
         if flips:
             print("%-8s f%s 를 좌우 반전했다 (생성기가 돌려 그린 프레임)"
                   % (motion, ",".join(map(str, flips))))
-        ws, hs, _, faces, ch = check(motion, paths)
+        ws, hs, _, faces, ch = check(motion, paths, flipped=flips)
         dst = os.path.join(ANIM, "%s_%s" % (skin, motion))
         os.makedirs(dst, exist_ok=True)
         for f in os.listdir(dst):

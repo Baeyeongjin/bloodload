@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://805xg4wtghhc"
-path="res://.godot/imported/1.png-d243c4928ad68761a6e7e3da00041f22.ctex"
+uid="uid://0tbkr6ywbfe"
+path="res://.godot/imported/8.png-c5df3c2586bd2842a188248add6cdabc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/orc_attack/1.png"
-dest_files=["res://.godot/imported/1.png-d243c4928ad68761a6e7e3da00041f22.ctex"]
+source_file="res://assets/anim/goblin_attack/8.png"
+dest_files=["res://.godot/imported/8.png-c5df3c2586bd2842a188248add6cdabc.ctex"]
 
 [params]
 
