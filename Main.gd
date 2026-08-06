@@ -880,6 +880,10 @@ const STAGE_BAR_COL := Color(0.72, 0.16, 0.20)
 const BOSS_BAR_COL := Color(0.88, 0.22, 0.16)
 const TIMER_BAR_COL := Color(0.30, 0.62, 0.88)
 const TIMER_LOW_COL := Color(0.92, 0.35, 0.28)   # 5초 남으면
+# 제한 시간이 없는 일반 구간에서 **같은 자리**가 교전 몹 체력이 된다. 시계와 색을
+# 다르게 둔다 — 자리가 같으니 색이 유일한 구분이다. 몹 머리 위 바(0.78,0.14,0.18)와
+# 같은 붉은 계열로 두어 "저 놈의 체력"이 위아래로 같이 읽히게 한다.
+const FOE_BAR_COL := Color(0.80, 0.18, 0.20)
 
 
 func _build_topbar() -> void:
@@ -4458,7 +4462,10 @@ const DMG_POP_DUR := 0.55
 # 동시 표시 상한. 광역기가 여섯을 때려도 화면이 숫자로 막히면 안 된다
 # (이펙트가 플레이 화면을 가리면 안 된다 — 사장님).
 const DMG_POP_MAX := 8
-const DMG_POP_W := 120.0     # 가운데 정렬용 상자 폭. 글자 폭을 재는 것보다 싸다
+# 가운데 정렬용 상자 폭. 글자 폭을 재는 것보다 싸다.
+# 글자를 33px 로 키우면서 같이 넓혔다 — 120 이면 "999.9t"(6자)가 상자를 넘쳐서
+# 가운데 정렬이 어긋난다. 상자는 안 보이므로 넉넉히 잡는 쪽이 안전하다.
+const DMG_POP_W := 200.0
 var _dmg_pops := 0
 
 
@@ -4493,8 +4500,12 @@ func _pop_number(text: String, at_x: float, at_y: float, col: Color,
 	l.text = text
 	l.add_theme_font_override("font", Type.font())
 	# **11의 배수만 쓴다** — 도트 폰트라 그 외 크기는 픽셀이 어긋나 뭉개진다(Type).
+	#
+	# 한 단계씩 올렸다(11/22 -> 22/33). 레퍼런스 영상에서 피해 숫자는 전투 띠 높이의
+	# **8%** 인데 우리는 2.6~5% 였다 — 띠가 416px 이므로 8% 는 33px, 즉 SIZE_TITLE 이
+	# 그대로 그 값이다. 때리는 맛은 숫자가 화면에서 차지하는 크기로 온다.
 	l.add_theme_font_size_override("font_size",
-		Type.SIZE_BODY if big else Type.SIZE_SMALL)
+		Type.SIZE_TITLE if big else Type.SIZE_BODY)
 	l.add_theme_color_override("font_color", col)
 	# 테두리. "깨어난 무덤"은 바닥이 밝은 흙색이라 흰 숫자가 그대로 묻힌다.
 	l.add_theme_constant_override("outline_size", 6)
@@ -5324,18 +5335,33 @@ func _refresh_hud() -> void:
 	var timed := limit > 0.0
 	var left := maxf(0.0, _boss_time)
 	var low := left <= 5.0
+	# **제한 시간이 빠진 자리를 교전 몹 체력이 쓴다**(레퍼런스는 상단에 큰 체력 바가
+	# 있다). 지금 싸우는 놈의 체력이 머리 위 5px 바에만 있어서, 화면을 훑는 눈에는
+	# "얼마나 남았나"가 안 걸렸다. 자리를 새로 만들지 않고 시계 위젯을 그대로 쓴다 —
+	# 둘은 **동시에 뜰 일이 없다**(시계는 보스·중간보스에만 있다).
+	# **죽는 중인 놈도 계속 띄운다.** `_tick_engage` 는 사망 연출(DIE_DUR 0.42초)이
+	# 끝날 때까지 `_engaged` 를 넘기지 않는다 — 죽었다고 감추면 한 마리마다 0.42초
+	# 꺼졌다 0.6초 켜지기를 반복해서 바가 깜빡인다. 0 으로 비는 편이 "잡았다"로 읽힌다.
+	var foe: Foe = _engaged if is_instance_valid(_engaged) else null
+	var show_foe := not timed and foe != null
+	var slot := timed or show_foe
+	var fill := clampf(left / maxf(1.0, limit), 0.0, 1.0) if timed \
+		else (clampf(foe.hp / maxf(1.0, foe.max_hp), 0.0, 1.0) if show_foe else 0.0)
 	if _timer_frame:
-		_timer_frame.visible = timed
+		_timer_frame.visible = slot
 	if _timer_bar:
-		_timer_bar.visible = timed
-		_timer_bar.size.x = _timer_bar_width * clampf(left / maxf(1.0, limit), 0.0, 1.0)
-		_timer_bar.color = TIMER_LOW_COL if low else TIMER_BAR_COL
+		_timer_bar.visible = slot
+		_timer_bar.size.x = _timer_bar_width * fill
+		_timer_bar.color = (TIMER_LOW_COL if low else TIMER_BAR_COL) if timed else FOE_BAR_COL
 	if _lbl_time:
-		_lbl_time.visible = timed
-		_lbl_time.text = "%d초" % int(ceil(left))
+		_lbl_time.visible = slot
+		# 몹 쪽은 **이름만** 적는다. 숫자를 넣으면 바가 이미 말하는 것을 두 번 말하고,
+		# 후반 체력은 자릿수가 길어 260px 칸에서 잘린다.
+		_lbl_time.text = "%d초" % int(ceil(left)) if timed \
+			else (foe.display_name if show_foe else "")
 		# 남은 시간이 얼마 없으면 붉게. 숫자를 안 보고 있어도 색이 먼저 눈에 들어온다.
 		_lbl_time.add_theme_color_override("font_color",
-			Color(1.0, 0.55, 0.5) if low else Color(0.90, 0.95, 1.0))
+			Color(1.0, 0.55, 0.5) if timed and low else Color(0.90, 0.95, 1.0))
 	if _stage_bar:
 		# **바 폭으로 잰다.** 화면 폭(576)을 쓰고 있어서 실제 홈통(324)보다 훨씬
 		# 길게 차올랐다 — 56% 만 잡아도 바가 꽉 찬 것처럼 보였다.
