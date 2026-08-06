@@ -72,21 +72,54 @@ func _init() -> void:
 	assert(Balance.hero_mult(2) > 1.0)
 
 	print("HeroLv: 20단계에서 500마리 -> Lv%d" % lv)
-	# 8) 스탯 해금 — 잠긴 스탯은 스테이지를 넘겨도 impl 이 false 면 안 열린다.
-	#    안 그러면 효과 없는 스탯을 사서 피만 버린다.
+	# 8) 스탯 해금 — 문턱이 둘이다(단계 + 선행 스탯 레벨).
+	#    잠긴 스탯은 스테이지를 넘겨도 impl 이 false 면 안 열린다. 안 그러면 효과 없는
+	#    스탯을 사서 피만 버린다.
+	var maxed := {}          # 선행이 다 채워진 상태
+	for s in StatDefs.STATS:
+		maxed[str(s["key"])] = 99999
 	for s in StatDefs.STATS:
 		var key := str(s["key"])
 		var un := int(s["unlock"])
-		assert(not StatDefs.is_open(key, un - 1) or un <= 1,
+		assert(not StatDefs.is_open(key, un - 1, maxed) or un <= 1,
 			"해금 전인데 열려 있다: " + key)
 		if bool(s.get("impl", true)):
-			assert(StatDefs.is_open(key, un), "해금 단계인데 안 열린다: " + key)
+			assert(StatDefs.is_open(key, un, maxed), "해금 단계인데 안 열린다: " + key)
 		else:
-			assert(not StatDefs.is_open(key, 9999),
+			assert(not StatDefs.is_open(key, 9999, maxed),
 				"구현 안 된 스탯이 열렸다: " + key)
+		# 선행 스탯 문턱. 단계를 다 넘겨도 선행이 모자라면 잠겨 있어야 한다 —
+		# 이게 깨지면 "기다리면 열린다"로 되돌아간 것이다.
+		var need: Array = s.get("need", [])
+		if not need.is_empty():
+			assert(need.size() == 2, "선행 형식이 [키, 레벨] 이 아니다: " + key)
+			var pre := str(need[0])
+			assert(not StatDefs.of(pre).is_empty(), "없는 스탯을 선행으로 걸었다: " + pre)
+			# 선행은 **자기보다 먼저 열려야** 한다. 아니면 영영 못 채운다.
+			assert(int(StatDefs.of(pre)["unlock"]) <= un,
+				"선행이 나중에 열린다: %s <- %s" % [key, pre])
+			var short := maxed.duplicate()
+			short[pre] = int(need[1]) - 1
+			assert(not StatDefs.is_open(key, 9999, short),
+				"선행이 모자란데 열려 있다: %s (%s Lv%d)" % [key, pre, int(need[1])])
+			short[pre] = int(need[1])
+			assert(StatDefs.is_open(key, 9999, short) or not bool(s.get("impl", true)),
+				"선행을 채웠는데 안 열린다: " + key)
 		# 아이콘이 빠지면 빈 칸으로 남는다.
 		assert(FileAccess.file_exists("res://assets/ui/%s.png" % str(s["icon"])),
 			"아이콘 없음: " + str(s["icon"]))
+	# **처음부터 살 수 있는 스탯이 있어야 한다.** 전부 선행에 걸리면 첫 판에 아무것도
+	# 못 사서 게임이 시작되지 않는다. Lv1 상태 = 아무것도 안 산 상태로 확인한다.
+	var fresh := {}
+	var openable := 0
+	for s in StatDefs.STATS:
+		if StatDefs.is_open(str(s["key"]), 1, fresh):
+			openable += 1
+	assert(openable >= 1, "1단계 맨몸에서 살 수 있는 스탯이 없다")
+	# 체력은 **일반 구간의 유일한 게이트**(생존)를 고치는 스탯이다. 단계로 늦게 묶으면
+	# 죽어도 살 게 없는 구간이 생긴다 — 1단계에 있어야 한다.
+	assert(int(StatDefs.of("tough")["unlock"]) <= 1,
+		"체력이 1단계보다 늦게 열린다 — 죽어도 살 게 없다")
 
 	# 9) 상한 — 상한이 있는 스탯은 만렙에서 멈춘다(곱연산은 유한해야 한다).
 	assert(StatDefs.at_cap("crit", 100))

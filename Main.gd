@@ -1581,7 +1581,7 @@ func _refresh_growth() -> void:
 	for s in StatDefs.STATS:
 		var key := str(s["key"])
 		var row: Dictionary = _stat_rows[key]
-		var reason := StatDefs.lock_reason(key, StageDefs.major_stage(stage))
+		var reason := StatDefs.lock_reason(key, StageDefs.major_stage(stage), lv)
 		var open := reason == ""
 		row["lv"].text = "레벨 %d" % stat_lv(key)
 		row["name"].text = str(s["name"])
@@ -3536,7 +3536,7 @@ func _tab_todo(tab: String) -> bool:
 			var major := StageDefs.major_stage(stage)
 			for s in StatDefs.STATS:
 				var key := str(s["key"])
-				if StatDefs.is_open(key, major) \
+				if StatDefs.is_open(key, major, lv) \
 						and not StatDefs.at_cap(key, stat_lv(key)) \
 						and gold >= _buy_cost(key, buy_step):
 					return true
@@ -3563,7 +3563,7 @@ func _refresh_tab_dots() -> void:
 
 
 func _buy(key: String) -> void:
-	if not StatDefs.is_open(key, StageDefs.major_stage(stage)) \
+	if not StatDefs.is_open(key, StageDefs.major_stage(stage), lv) \
 			or StatDefs.at_cap(key, stat_lv(key)):
 		return
 	var cost := _buy_cost(key, buy_step)
