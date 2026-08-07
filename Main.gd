@@ -4107,7 +4107,10 @@ func _skill_data(key: String) -> Dictionary:
 	data["cooldown"] = SkillDefs.cooldown(key, lv)
 	data["power"] = SkillDefs.power(key, lv) * (1.0 + _skill_combo_bonus(key))
 	data["fx"] = SkillDefs.fx_of(key)
-	data["hit_fx"] = SkillDefs.hit_fx_of(key)
+	# 피격 이펙트를 스킬이 끌 수 있다(RULES.no_hit_fx) — 웅덩이는 틱마다 24장이 떠서
+	# 정작 웅덩이가 안 보였다.
+	data["hit_fx"] = "" if bool(SkillDefs.rule_of(key).get("no_hit_fx", false)) \
+		else SkillDefs.hit_fx_of(key)
 	# 가호는 피해가 0이라 위 power 로는 등급이 안 갈린다. 배수·지속을 따로 얹는다 —
 	# 안 하면 레전더리 가호와 커먼 가호가 글자만 다른 같은 스킬이 된다.
 	if str(data["shape"]) == "ward":
@@ -4269,6 +4272,11 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	var puddle := float(rule.get("puddle", 0.0))
 	var cap := int(rule.get("max_targets", 0))
 	var pit := bool(rule.get("pit_kill", false))
+	# 갈라진 대지 — **바닥이 흔들린다**(사장님). 깔릴 때 크게, 틱마다 잔진동.
+	# SHAKE_MIN_GAP 이 겹침을 걸러 주므로 틱마다 불러도 화면이 안 얼어붙는다.
+	var quake := float(rule.get("quake", 0.0))
+	if quake > 0.0:
+		_shake_combat(quake)
 	# 진의 중심은 **첫 표적 자리**다. 아무도 없으면 영웅 앞에.
 	# 웅덩이(비명의 흔적)는 몹마다가 아니라 **무리 가운데**다(사장님: 발밑에 안 놓아도
 	# 된다, 화면 몹 무리의 반~3분의 1 폭 하나).
@@ -4304,6 +4312,8 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 			# 빠져나가 피해가 0 번 들어갔다(실측). 끊는 조건은 사망과 구간 교체뿐이다.
 			if not is_inside_tree() or _hero_dead or gen != _field_gen:
 				return
+			if quake > 0.0:
+				_shake_combat(quake * 0.6)
 			var live := _field_targets()
 			if live.is_empty():
 				return
@@ -4442,7 +4452,11 @@ func _resolve_skill(key: String) -> void:
 			#
 			# 아무도 없으면 영웅 앞에 한 번 띄운다: 쿨다운을 썼는데 화면에 아무 일도
 			# 안 일어나면 "안 나갔다"로 보인다.
-			if struck.is_empty():
+			#
+			# 관통(피의 손길)은 **하나만** 띄운다 — 손바닥 하나가 날아가며 전부를
+			# 꿰뚫는 그림이라, 맞는 놈마다 손바닥이 뜨면 손이 여러 개가 된다.
+			# sweep 전진(190px)이 곧 관통의 몸이다. 피해는 그대로 전부에게 들어갔다.
+			if bool(SkillDefs.rule_of(key).get("pierce", false)) or struck.is_empty():
 				var ahead := hero_x \
 					+ float(hero_face) * (_motion_reach("attack") + 48.0)
 				_anim_fx(fx, Vector2(ahead,

@@ -50,19 +50,32 @@ func _init() -> void:
 	assert(targets.size() > 0, "화면 안에 몹이 있는데 광역 대상이 0이다")
 
 	# ── 2) 이펙트가 맞는 놈마다 뜨는가 ────────────────────────────────────
-	# 파(wave)를 강제로 쏘고, 그 프레임에 생긴 AnimatedSprite2D 수를 센다.
+	# **wave_epic 으로 잰다.** wave_common(피의 손길)은 관통 규칙이라 이펙트가
+	# 하나만 뜬다 — 그건 바로 아래에서 따로 검사한다.
 	scene._skill_action = ""
 	scene._skill_cd.clear()
 	var fx_before := _count_fx(scene)
 	scene._skill_target = targets[0]
-	scene._resolve_skill("wave_common")
+	scene._resolve_skill("wave_epic")
 	await process_frame
 	var fx_after := _count_fx(scene)
 	var made := fx_after - fx_before
 	print("")
-	print("파(wave) 1회 -> 이펙트 %d 개 생성 (대상 %d 마리)" % [made, targets.size()])
+	print("파(wave_epic) 1회 -> 이펙트 %d 개 생성 (대상 %d 마리)" % [made, targets.size()])
 	assert(made >= targets.size(),
 		"맞는 놈보다 이펙트가 적다: %d 개 / %d 마리" % [made, targets.size()])
+	# 피의 손길(관통) — 손바닥 **하나**가 날아간다. 맞는 놈마다 뜨면 규칙이 안 먹은 것.
+	# 위 wave_epic 이 몹을 다 잡았을 수 있으므로 대상 유무와 무관하게 개수만 본다
+	# (관통은 대상이 없어도 하나는 띄운다).
+	scene._skill_action = ""
+	scene._skill_cd.clear()
+	scene._phase = "fight"
+	var pierce_before := _count_fx(scene)
+	scene._resolve_skill("wave_common")
+	await process_frame
+	var pierce_made := _count_fx(scene) - pierce_before
+	print("피의 손길(관통) 1회 -> 이펙트 %d 개 (하나여야 한다)" % pierce_made)
+	assert(pierce_made == 1, "관통인데 이펙트가 %d 개다" % pierce_made)
 
 	# ── 3) 진이 여러 번 때리는가 ──────────────────────────────────────────
 	# **표적을 여기서 다시 뽑는다.** 위의 파(wave)가 1막 몹을 한 방에 죽이므로
