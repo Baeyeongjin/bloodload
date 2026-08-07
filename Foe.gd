@@ -49,6 +49,9 @@ var _attack_anim := -1.0
 var _impact_sent := false
 var dying := false
 var dying_t := 0.0
+# 갈라진 대지(진 언커먼)에 죽었다 — 날아가는 대신 **땅 밑으로 꺼진다.**
+# Main._start_field 가 죽일 틱 직전에 켠다(take_damage 는 출처를 모른다).
+var pit_fall := false
 # 죽는 연출. 0.26 은 스쿼시만 할 때 값이라 날아가는 걸 보기엔 짧다.
 const DIE_DUR := 0.42
 const DIE_FLY := 46.0     # 맞은 쪽 반대로 밀리는 거리
@@ -429,7 +432,17 @@ func _draw() -> void:
 		# 제자리에서 **녹아내린다**. 같은 연출로 다 죽으면 몹이 다 같아 보인다.
 		var f := dying_t / DIE_DUR
 		var ease_out := 1.0 - (1.0 - f) * (1.0 - f)
-		if hp_mult >= 1.5:
+		if pit_fall:
+			# 갈라진 대지에 삼켜진다 — 제자리에서 **밑으로 꺼진다.** 날아가면
+			# "떨어졌다"가 안 읽히므로 x 는 안 민다. 지면 클리핑은 없지만 페이드가
+			# 같이 걸려 "빨려 들어갔다"로 보인다.
+			# ponytail: 지면 라인에서 정말 잘리려면 클립 마스크가 필요하다.
+			# 페이드로 충분히 읽히면 안 붙인다.
+			draw_set_transform(Vector2(0.0, w * 0.6 * ease_out), 0.0,
+				Vector2(float(-face), 1.0))
+			wsc = 1.0 - 0.25 * f
+			hsc = 1.0 - 0.30 * f
+		elif hp_mult >= 1.5:
 			# 날아감: 온 길 반대로 밀리며 살짝 떠올랐다 떨어지고, 기울어진다.
 			draw_set_transform(
 				Vector2(float(-face) * DIE_FLY * ease_out,

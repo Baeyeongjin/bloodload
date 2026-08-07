@@ -95,7 +95,10 @@ func _init() -> void:
 	var want := int(round(float(sk["duration"]) * float(sk["tick_rate"])))
 	var gen0: int = scene._field_gen
 	var world0: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size()
-	scene._resolve_skill("field_common")
+	# **field_rare 로 잰다.** field_common(비명의 흔적)은 2026-08-06 부터 웅덩이 규칙
+	# (RULES.puddle: 문양 하나 + 상한 4)이라 "맞는 놈마다 문양" 검사와 안 맞는다 —
+	# 그 규칙은 아래에서 따로 검사한다. 감시의 눈(rare)이 형태 기본 규칙 그대로다.
+	scene._resolve_skill("field_rare")
 	await process_frame
 	var laid: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size() - world0
 	var marked: int = (scene._field_targets() as Array).size()
@@ -141,6 +144,70 @@ func _init() -> void:
 	print("진 판정 폭 +-%.0f px  ·  몹 간격 %.0f px  ->  한 번에 최대 %d 마리"
 		% [reach, scene.FOE_GAP, mobs])
 	assert(mobs >= 2, "진이 광역이 아니다: 판정 +-%.0f 로 %d 마리" % [reach, mobs])
+
+	# ── 4) 비명의 흔적 웅덩이 규칙 — 문양이 **하나만** 깔린다 ─────────────────
+	# 대상이 몇이든 무리 가운데 웅덩이 하나다(RULES.puddle). 맞는 놈마다 깔리면
+	# 규칙이 안 먹은 것이고, 0장이면 스킬이 통째로 안 나간 것이다.
+	scene._phase = "fight"
+	scene._skill_action = ""
+	scene._skill_cd.clear()
+	var world1: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size()
+	scene._resolve_skill("field_common")
+	await process_frame
+	var puddle_laid: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size() - world1
+	print("")
+	print("비명의 흔적(웅덩이) 1회 -> 문양 %d 장" % puddle_laid)
+	assert(puddle_laid == 1, "웅덩이가 %d장이다 — 무리 가운데 하나여야 한다" % puddle_laid)
+
+	# ── 5) 튀는 피 — 표창처럼 **최대 3명**이 맞는다 ──────────────────────────
+	# 이펙트는 0.13초 간격이라 화면 캡처로는 못 잡는다 — 체력으로 센다.
+	#
+	# **대상을 기다리지 않고 만든다.** 앞 검사들이 phase 를 강제로 만져서 스폰 흐름이
+	# 그대로라는 보장이 없다 — 살아 있는 몹 넷을 화면 안 제 자리에 옮겨 세우면
+	# `_foe_arrived`(fight + 제 자리) 조건이 그대로 차서 `_aoe_targets` 에 든다.
+	var pool: Array = []
+	for f in scene.get_tree().get_nodes_in_group("foes"):
+		if is_instance_valid(f) and not f.dying:
+			pool.append(f)
+	assert(pool.size() >= 2, "살아 있는 몹이 %d 마리뿐이라 튕김을 못 잰다" % pool.size())
+	var bounce_probes: Array = []
+	# 넷 다 **화면 안**에 세운다(80px 간격). 160px 간격으로 넷을 세우면 뒤 둘이
+	# 화면(576px) 밖이라 상한 검사가 안 된다 — 3마리만 맞고 4번째가 남아야
+	# "상한 3" 이 증명된다.
+	for i in mini(4, pool.size()):
+		var f: Foe = pool[i]
+		f.position.x = scene.hero_x + 80.0 + 80.0 * float(i)
+		f.stop_x = f.position.x
+		f.max_hp = 1.0e9
+		f.hp = 1.0e9
+		bounce_probes.append(f)
+	scene._phase = "fight"
+	var bt := bounce_probes
+	# 이미 예약된 평타 임팩트가 끼면 한 마리가 더 깎인 것으로 보인다 — 지운다.
+	scene._hero_hit_t = -1.0
+	scene._pending_target = null
+	scene._skill_action = ""
+	scene._skill_cd.clear()
+	scene._phase = "fight"
+	scene._resolve_skill("wave_uncommon")
+	var btime := 0.0
+	while btime < 0.7:
+		await process_frame
+		btime += scene.get_process_delta_time()
+		# **phase 를 매 프레임 다시 잡는다.** 게임 상태기가 되돌리면 `_foe_arrived` 가
+		# 죽어서 2·3번째 튕김이 표적을 못 찾는다 — 실제로 1마리에서 끊겼다.
+		scene._phase = "fight"
+		scene._attack_t = 99.0
+		for k in scene.skill_equipped:
+			scene._skill_cd[str(k)] = 99.0
+	var struck_n := 0
+	for f in bounce_probes:
+		if is_instance_valid(f) and f.hp < 1.0e9 - 0.5:
+			struck_n += 1
+	print("")
+	print("튀는 피(튕김) 1회 -> %d 마리 깎임 (대상 %d, 상한 3)" % [struck_n, bt.size()])
+	# 대상이 4인데 정확히 3이어야 한다 — 1이면 튕김이 끊긴 것, 4면 상한이 안 걸린 것.
+	assert(struck_n == 3, "튀는 피가 %d 마리를 맞혔다 — 3마리여야 한다" % struck_n)
 	print("")
 	print("AoeCheck OK")
 	quit()

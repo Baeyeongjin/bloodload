@@ -4265,19 +4265,31 @@ var _field_gen := 0        # 구간이 바뀌면 올라간다. 지난 구간의 
 func _start_field(fx: String, fps: float, scale: float, style: String, echo: int,
 		skew: float, per_tick: float, ticks: int, gap: float,
 		skill: Dictionary) -> void:
+	var rule := SkillDefs.rule_of(str(skill.get("key", "")))
+	var puddle := float(rule.get("puddle", 0.0))
+	var cap := int(rule.get("max_targets", 0))
+	var pit := bool(rule.get("pit_kill", false))
 	# 진의 중심은 **첫 표적 자리**다. 아무도 없으면 영웅 앞에.
+	# 웅덩이(비명의 흔적)는 몹마다가 아니라 **무리 가운데**다(사장님: 발밑에 안 놓아도
+	# 된다, 화면 몹 무리의 반~3분의 1 폭 하나).
 	var at := _aoe_targets()
-	_field_x = at[0].position.x if not at.is_empty() \
-		else hero_x + float(hero_face) * (_motion_reach("attack") + 48.0)
+	if puddle > 0.0 and not at.is_empty():
+		var sum := 0.0
+		for f in at:
+			sum += f.position.x
+		_field_x = sum / float(at.size())
+	else:
+		_field_x = at[0].position.x if not at.is_empty() \
+			else hero_x + float(hero_face) * (_motion_reach("attack") + 48.0)
 	var cy := _fx_anchor_y(style, fx, scale, ground_y - float(Grid.SPRITE), 0.0)
 	# **맞는 놈마다 하나씩**, 단 **시전 때 한 번만**. 틱마다 또 깔면 2마리 x 6틱 = 12장이
 	# 전투 화면을 덮는다. 그림 수명은 지속시간과 같게 맞춰 뒀다(SkillDefs 의 fx_fps).
 	# 아무도 없으면 영웅 앞에 하나 — 쿨다운을 썼는데 화면에 아무 일도 없으면
 	# "안 나갔다"로 보인다.
 	var spots := _field_targets()
-	if spots.is_empty():
-		_anim_fx(fx, Vector2(_field_x, cy), fps, scale, style, echo, 1.0,
-			hero_face, skew, true)
+	if puddle > 0.0 or spots.is_empty():
+		_anim_fx(fx, Vector2(_field_x, cy), fps, scale * maxf(1.0, puddle),
+			style, echo, 1.0, hero_face, skew, true)
 	else:
 		for f in spots:
 			_anim_fx(fx, Vector2(f.position.x, cy), fps, scale, style, echo, 1.0,
@@ -4295,8 +4307,17 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 			var live := _field_targets()
 			if live.is_empty():
 				return
+			# 웅덩이는 **가까운 놈부터 상한까지만** 때린다(비명의 흔적: 4마리).
+			if cap > 0 and live.size() > cap:
+				live.sort_custom(func(a: Foe, b: Foe) -> bool:
+					return absf(a.position.x - _field_x) < absf(b.position.x - _field_x))
+				live = live.slice(0, cap)
 			_defer_stage_advance = true
 			for f in live:
+				# 갈라진 대지 — 이 틱으로 죽을 놈은 **밑으로 꺼져** 죽는다(Foe.pit_fall).
+				# take_damage 는 출처를 모르므로 죽기 직전에 표시만 얹는다.
+				if pit and f.hp <= per_tick:
+					f.pit_fall = true
 				f.take_damage(per_tick)
 				_skill_hit_fx(skill, f)
 			_defer_stage_advance = false
@@ -4365,6 +4386,7 @@ func _resolve_skill(key: String) -> void:
 	# 그림이 왼쪽을 향해 그려졌으면 -1. **그림만 뒤집고 진행 방향은 안 건드린다** —
 	# 둘을 묶었더니 sweep 이 등 뒤로 날아갔다(_anim_fx 주석).
 	var fx_flip := int(signf(float(p["flip"])))
+	var fx_flip_v := int(signf(float(p["flip_v"])))
 	# 등급이 높을수록 화면이 더 흔들린다. 레전더리가 커먼과 같은 무게로 터지면 안 된다.
 	if float(p["shake"]) > 0.0:
 		_shake_combat(float(p["shake"]))
@@ -4384,7 +4406,7 @@ func _resolve_skill(key: String) -> void:
 				_anim_fx(fx, Vector2(_skill_target.position.x,
 					_fx_anchor_y(fx_style, fx, fx_scale,
 						_skill_target.body_mid_y(), fx_y)),
-					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip)
+					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
 				_skill_hit_fx(skill, _skill_target)
 		"field":
 			# **다단히트.** 깔아 두고 지속시간 동안 초당 tick_rate 번, 그때 장판 안에
@@ -4398,6 +4420,12 @@ func _resolve_skill(key: String) -> void:
 			if kills >= StageDefs.kills_needed(stage):
 				_advance_stage()
 		"wave":
+			# 튀는 피 — **표창처럼 튕긴다**(RULES.bounce). 전부 동시에 맞으면 광역과
+			# 구분이 안 되므로 한 박자씩 늦춰 순서대로 맞는다. 순서가 곧 "튕겼다"다.
+			var bounce := int(SkillDefs.rule_of(key).get("bounce", 0))
+			if bounce > 0:
+				_start_bounce(skill, hit, bounce, p)
+				return
 			_defer_stage_advance = true
 			var struck := _aoe_targets()
 			for f in struck:
@@ -4420,13 +4448,13 @@ func _resolve_skill(key: String) -> void:
 				_anim_fx(fx, Vector2(ahead,
 					_fx_anchor_y(fx_style, fx, fx_scale,
 						ground_y - float(Grid.SPRITE), fx_y)),
-					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip)
+					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
 			else:
 				for f in struck:
 					_anim_fx(fx, Vector2(f.position.x,
 						_fx_anchor_y(fx_style, fx, fx_scale,
 							f.body_mid_y(), fx_y)),
-						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew, false, fx_flip)
+						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
 			if kills >= StageDefs.kills_needed(stage):
 				_advance_stage()
 		"ward":
@@ -4435,7 +4463,63 @@ func _resolve_skill(key: String) -> void:
 			_anim_fx(fx, Vector2(hero_x,
 				_fx_anchor_y(fx_style, fx, fx_scale,
 					ground_y - float(Grid.SPRITE), fx_y)),
-				fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip)
+				fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
+
+
+# 튀는 피의 튕김 간격. 이펙트 수명(0.56초)보다 짧아야 앞 타격의 그림이 남아 있는
+# 동안 다음이 떠서 "이어졌다"로 읽힌다.
+const BOUNCE_GAP := 0.13
+
+
+# 표창식 순차 타격. 가까운 놈부터, 이미 맞은 놈은 건너뛰고 최대 n 명.
+#
+# **상태를 사전 하나에 담는다.** GDScript 람다는 지역 float 을 값으로 캡처하므로
+# 콜백 안에서 from 을 바꿔도 다음 콜백에는 안 보인다 — 사전(참조)이라야 이어진다.
+# 표적은 튕기는 순간마다 다시 고른다. 시전 때 목록을 굳히면 그 사이 죽은 놈에게
+# 튕긴다(_start_field 의 틱과 같은 이유).
+func _start_bounce(skill: Dictionary, hit: float, count: int, p: Dictionary) -> void:
+	var state := {"from": hero_x, "struck": {}}
+	for i in count:
+		var t := create_tween()
+		t.tween_interval(maxf(0.01, BOUNCE_GAP * float(i)))
+		t.tween_callback(_bounce_hit.bind(skill, hit, state, p))
+
+
+func _bounce_hit(skill: Dictionary, hit: float, state: Dictionary, p: Dictionary) -> void:
+	if not is_inside_tree() or _hero_dead:
+		return
+	# **phase 를 안 본다**(`_aoe_targets` 를 안 쓰는 이유). 첫 튕김이 몹을 죽이면
+	# 영웅은 그 즉시 `advance` 로 넘어가는데, fight 전용 목록을 쓰면 남은 튕김이
+	# 전부 허공에서 사라진다 — 실측: 3연타 설계가 매번 1타로 끝났다. 표창은 이미
+	# 날아가는 것이라 영웅이 걷기 시작해도 계속 튕겨야 한다(진의 틱과 같은 이유).
+	var target: Foe = null
+	var best := INF
+	for f in get_tree().get_nodes_in_group("foes"):
+		if not is_instance_valid(f) or f.dying or not _on_screen(f):
+			continue
+		if state["struck"].has(f.get_instance_id()):
+			continue
+		var d: float = absf(f.position.x - float(state["from"]))
+		if d < best:
+			best = d
+			target = f
+	# 튕길 곳이 없으면 조용히 끝난다 — 표창이 떨어진 것이다.
+	if target == null:
+		return
+	state["struck"][target.get_instance_id()] = true
+	state["from"] = target.position.x
+	_defer_stage_advance = true
+	target.take_damage(hit)
+	_skill_hit_fx(skill, target)
+	_defer_stage_advance = false
+	_anim_fx(str(p["fx"]), Vector2(target.position.x,
+		_fx_anchor_y(str(p["style"]), str(p["fx"]), float(p["scale"]),
+			target.body_mid_y(), float(p["y"]))),
+		float(p["fps"]), float(p["scale"]), str(p["style"]), 0, 1.0,
+		hero_face, float(p["skew"]), false,
+		int(signf(float(p["flip"]))), int(signf(float(p["flip_v"]))))
+	if kills >= StageDefs.kills_needed(stage):
+		_advance_stage()
 
 
 # 맞은 쪽 표시. 때린 이펙트만 있고 이게 없으면 피해가 들어갔는지 화면에서 안 읽힌다.
@@ -5121,7 +5205,7 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 # `sweep` 의 진행 방향까지 같이 뒤집혀 등 뒤로 날아갔다(2026-08-06, 렌더로 잡음).
 func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0,
-		in_world := false, art_flip := 1) -> void:
+		in_world := false, art_flip := 1, art_flip_v := 1) -> void:
 	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
 	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
 	for i in echo:
@@ -5131,14 +5215,16 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			if is_inside_tree():
 				_anim_fx(name, at, fps, draw_scale * shrink, style, 0,
 					alpha * (0.55 - 0.1 * float(i)), face, skew_mul,
-						false, art_flip))
+						false, art_flip, art_flip_v))
 	# 정지 아이콘이 아니라 보유한 프레임 전체를 재생한다. 기본공격과 사망 모두
 	# 같은 작은 도우미를 써서 프레임 수가 달라도 마지막에 정확히 정리된다.
 	var textures := Assets.frames("res://assets/anim/%s" % name)
 	if textures.is_empty():
 		return
 	# 바닥 문양만 세로를 길에 맞춘다. 나머지는 가로세로 같은 배율이다.
+	# 세로 반전(내리꽂는 창)도 부호 하나로 — full 이 이 값을 그대로 쓰므로 곡선이 따라온다.
 	var draw_y := _ground_scale_y(name, draw_scale) if style == "hold" else draw_scale
+	draw_y *= float(signi(art_flip_v))
 	var sprite_frames := SpriteFrames.new()
 	sprite_frames.add_animation("play")
 	sprite_frames.set_animation_loop("play", false)

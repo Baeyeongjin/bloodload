@@ -12,7 +12,12 @@ extends RefCounted
 # "레전더리는 대충 이 정도"라는 감이 한 게임 안에서 일관된다.
 
 # 형태. 쿨다운을 여기서 가른다 — **6칸을 다 껴도 동시에 터지는 게 2개를 안 넘는**
-# 근거가 이 표다. 등급이 올라도 쿨다운은 그대로다(등급은 위력만 올린다).
+# 근거가 이 표다. 등급이 올라도 쿨다운은 그대로다.
+#
+# **형태는 기본값이고, 스킬 고유 규칙(RULES)이 그 위에 얹힌다** (2026-08-06 사장님:
+# "스킬마다 고유 규칙을 줘야 하는 게 맞아"). 같은 날 아침의 "등급은 위력만 올린다"를
+# 이 결정이 덮었다 — 그 원칙대로면 20종이 숫자만 다른 네 스킬이라 뽑는 맛이 없다.
+# 표출(FX_OVERRIDE)과 같은 원리다: 기본값은 형태가, 예외는 스킬이 적는다.
 const SHAPES := {
 	"strike": {
 		# **fx_y 는 몸통 가운데 기준의 미세 조정이다.** -36 은 기준선이 발밑 근처였을 때
@@ -82,6 +87,25 @@ const NAMES := {
 	"ward": {"common": "피의 결계", "uncommon": "진홍 방패", "rare": "붉은 성배",
 		"epic": "혈월", "legend": "불멸의 심장"},
 }
+
+# 스킬 고유 규칙. **형태 기본값을 덮는 것만** 적는다 (2026-08-06 사장님 지시).
+# 여기 없는 스킬은 형태 규칙 그대로다: 격 = 단일 한 방, 파 = 화면 안 전부 한 방,
+# 진 = 맞는 놈마다 문양 + 다단히트, 가호 = 버프.
+const RULES := {
+	# 튀는 피 — 하나에 던지면 **표창처럼 튕겨** 가까운 놈 순서로 최대 3명을 맞힌다.
+	"wave_uncommon": {"bounce": 3},
+	# 비명의 흔적 — 몹마다 까는 대신 **웅덩이 하나**를 무리 가운데에 크게 깔고
+	# 가까운 4마리까지만 때린다. puddle 값이 문양 배율이다(64px x 3 = 화면 몹 무리의
+	# 반~3분의 1 폭, 사장님 지정).
+	"field_common": {"puddle": 3.0, "max_targets": 4},
+	# 갈라진 대지 — 이 장판에 죽은 몹은 갈라진 땅 **밑으로 꺼진다**(Foe.pit_fall).
+	"field_uncommon": {"pit_kill": true},
+}
+
+
+static func rule_of(key: String) -> Dictionary:
+	return RULES.get(key, {})
+
 
 const SLOTS := 6            # 장착 칸
 const LV_POWER := 0.12      # 레벨당 위력 +12%
@@ -176,6 +200,11 @@ const FX_OVERRIDE := {
 	"wave_common": {"flip": -1.0},
 	"wave_uncommon": {"flip": -1.0},
 	"wave_rare": {"style": "fall", "y": -48.0},
+	# 핏빛 창 — **세로로 뒤집는다**(사장님: 찌르는 방향이 반대). 원본은 창끝이 오른쪽
+	# 위라 땅에서 솟는 것으로 읽힌다 — 뒤집으면 위에서 내리꽂는 창이 된다.
+	# fps 를 낮춰 찌른 뒤 **서서히** 사라진다(수명 0.56 → 1.1초. 그림 자체도 후반
+	# 프레임이 어두워지는 페이드라 곡선이 이중으로 걸린다).
+	"strike_uncommon": {"flip_v": -1.0, "fps": 8.0},
 	# skew 0 = 안 기울인다. **정면 대칭인 그림은 기울이면 깊이감이 아니라
 	# 찌그러진 그림이 된다.** 비스듬히 그려진 것(송곳니·창)만 기울여야 산다.
 	"strike_rare": {"skew": 0.0},       # 사혈 발톱 — 교차 베기라 정면이 맞다
@@ -206,7 +235,9 @@ static func fx_profile(key: String) -> Dictionary:
 		"skew": float(over.get("skew", 1.0)),
 		# 1.0 = 그림이 오른쪽을 향한다(기본), -1.0 = 왼쪽을 향해 그려져 뒤집어야 한다
 		"flip": float(over.get("flip", 1.0)),
-		"fps": float(shape["fx_fps"]),
+		# -1.0 = 세로로 뒤집는다 — 솟는 그림을 내리꽂는 그림으로
+		"flip_v": float(over.get("flip_v", 1.0)),
+		"fps": float(over.get("fps", shape["fx_fps"])),
 		"scale": float(tier["scale"]),
 		"echo": int(tier["echo"]),
 		"shake": float(tier["shake"]),
