@@ -167,6 +167,14 @@ const FX_TIER := [
 const FX_OVERRIDE := {
 	# 혈우 — 비는 위에서 내려온다. y 는 **떨어져 도착하는 자리**이고 거기서
 	# FALL_DROP 만큼 위에서 시작한다. -78 은 너무 높아 나무 높이에서 떨어졌다.
+	# **flip -1 = 그림이 왼쪽을 향해 그려졌다.** 코드는 `scale.x = sign(hero_face)` 로만
+	# 뒤집는데, 몹이 전부 오른쪽에 서므로 영웅은 늘 오른쪽을 보고(face +1) 그림이 원본
+	# 그대로 나간다 — 그래서 왼쪽으로 그려진 이펙트는 **등 뒤로 나간다**(사장님 지적).
+	# 2026-08-06 프레임 대조: 피의 손길은 번짐이 왼쪽 아래로, 튀는 피는 물보라가
+	# 왼쪽 위로 흐른다. 뱀의 무리는 무게중심이 왼쪽이지만 **머리는 오른쪽**이라 그대로 둔다
+	# — 무게중심으로만 재면 여기서 틀린다.
+	"wave_common": {"flip": -1.0},
+	"wave_uncommon": {"flip": -1.0},
 	"wave_rare": {"style": "fall", "y": -48.0},
 	# skew 0 = 안 기울인다. **정면 대칭인 그림은 기울이면 깊이감이 아니라
 	# 찌그러진 그림이 된다.** 비스듬히 그려진 것(송곳니·창)만 기울여야 산다.
@@ -196,6 +204,8 @@ static func fx_profile(key: String) -> Dictionary:
 		"y": float(over.get("y", shape["fx_y"])),
 		# 1.0 = 스타일 기본 기울기, 0.0 = 안 기울인다
 		"skew": float(over.get("skew", 1.0)),
+		# 1.0 = 그림이 오른쪽을 향한다(기본), -1.0 = 왼쪽을 향해 그려져 뒤집어야 한다
+		"flip": float(over.get("flip", 1.0)),
 		"fps": float(shape["fx_fps"]),
 		"scale": float(tier["scale"]),
 		"echo": int(tier["echo"]),

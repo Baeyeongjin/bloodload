@@ -526,7 +526,7 @@ func _ready() -> void:
 								float(fp["scale"]), ground_y - float(Grid.SPRITE),
 								float(fp["y"]))),
 						float(fp["fps"]), float(fp["scale"]), str(fp["style"]),
-						int(fp["echo"])))
+						int(fp["echo"]), 1.0, 1, 1.0, false, int(signf(float(fp["flip"])))))
 			add_child(fx_timer)
 		# [개발 도구] --cast=field_common : 교전이 붙고 표적이 둘 이상 설 때까지 기다렸다가
 		# 그 스킬을 **실제 시전 경로로** 한 번 쏜다.
@@ -4362,6 +4362,9 @@ func _resolve_skill(key: String) -> void:
 	var fx_scale := float(p["scale"])
 	var fx_echo := int(p["echo"])
 	var fx_skew := float(p["skew"])
+	# 그림이 왼쪽을 향해 그려졌으면 -1. **그림만 뒤집고 진행 방향은 안 건드린다** —
+	# 둘을 묶었더니 sweep 이 등 뒤로 날아갔다(_anim_fx 주석).
+	var fx_flip := int(signf(float(p["flip"])))
 	# 등급이 높을수록 화면이 더 흔들린다. 레전더리가 커먼과 같은 무게로 터지면 안 된다.
 	if float(p["shake"]) > 0.0:
 		_shake_combat(float(p["shake"]))
@@ -4381,7 +4384,7 @@ func _resolve_skill(key: String) -> void:
 				_anim_fx(fx, Vector2(_skill_target.position.x,
 					_fx_anchor_y(fx_style, fx, fx_scale,
 						_skill_target.body_mid_y(), fx_y)),
-					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
+					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip)
 				_skill_hit_fx(skill, _skill_target)
 		"field":
 			# **다단히트.** 깔아 두고 지속시간 동안 초당 tick_rate 번, 그때 장판 안에
@@ -4417,13 +4420,13 @@ func _resolve_skill(key: String) -> void:
 				_anim_fx(fx, Vector2(ahead,
 					_fx_anchor_y(fx_style, fx, fx_scale,
 						ground_y - float(Grid.SPRITE), fx_y)),
-					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
+					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip)
 			else:
 				for f in struck:
 					_anim_fx(fx, Vector2(f.position.x,
 						_fx_anchor_y(fx_style, fx, fx_scale,
 							f.body_mid_y(), fx_y)),
-						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew)
+						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew, false, fx_flip)
 			if kills >= StageDefs.kills_needed(stage):
 				_advance_stage()
 		"ward":
@@ -4432,7 +4435,7 @@ func _resolve_skill(key: String) -> void:
 			_anim_fx(fx, Vector2(hero_x,
 				_fx_anchor_y(fx_style, fx, fx_scale,
 					ground_y - float(Grid.SPRITE), fx_y)),
-				fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
+				fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip)
 
 
 # 맞은 쪽 표시. 때린 이펙트만 있고 이게 없으면 피해가 들어갔는지 화면에서 안 읽힌다.
@@ -5113,9 +5116,12 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 
 # in_world = 바닥에 놓이는 것. `_advance_world` 가 영웅 전진량만큼 같이 밀어 준다 —
 # 안 밀면 세상이 흐르는데 그림만 화면에 붙어 지면 위를 미끄러진다.
+# `face` 는 **나아가는 쪽**(영웅이 보는 방향), `art_flip` 은 **그림이 그려진 쪽**이다.
+# 둘을 한 값으로 묶으면 안 된다 — 왼쪽으로 그려진 이펙트를 뒤집으려고 face 를 뒤집었더니
+# `sweep` 의 진행 방향까지 같이 뒤집혀 등 뒤로 날아갔다(2026-08-06, 렌더로 잡음).
 func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0,
-		in_world := false) -> void:
+		in_world := false, art_flip := 1) -> void:
 	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
 	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
 	for i in echo:
@@ -5124,7 +5130,8 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		get_tree().create_timer(delay).timeout.connect(func() -> void:
 			if is_inside_tree():
 				_anim_fx(name, at, fps, draw_scale * shrink, style, 0,
-					alpha * (0.55 - 0.1 * float(i)), face, skew_mul))
+					alpha * (0.55 - 0.1 * float(i)), face, skew_mul,
+						false, art_flip))
 	# 정지 아이콘이 아니라 보유한 프레임 전체를 재생한다. 기본공격과 사망 모두
 	# 같은 작은 도우미를 써서 프레임 수가 달라도 마지막에 정확히 정리된다.
 	var textures := Assets.frames("res://assets/anim/%s" % name)
@@ -5144,7 +5151,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	fx.position = at
 	# **좌우 반전은 scale.x 부호 하나로 끝낸다.** 아래 스타일들이 전부 `full` 에서
 	# 크기를 뽑으므로, 여기서 부호를 넣어 두면 모든 연출이 저절로 따라 뒤집힌다.
-	fx.scale = Vector2(draw_scale * float(signi(face)), draw_y)
+	fx.scale = Vector2(draw_scale * float(signi(face) * signi(art_flip)), draw_y)
 	fx.modulate.a = alpha
 	# 잔상은 본체 뒤에 깔린다. 위에 오면 본체가 흐려 보인다.
 	#
@@ -5164,7 +5171,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	if style.is_empty() or not fx.is_inside_tree():
 		return
 	var life := float(textures.size()) / maxf(1.0, fps)
-	var full := Vector2(draw_scale * float(signi(face)), draw_y)
+	var full := Vector2(draw_scale * float(signi(face) * signi(art_flip)), draw_y)
 	# 사라지는 꼬리는 어느 방식이든 공통이다. 마지막 프레임에서 뚝 끊기면
 	# "끝났다"가 아니라 "버그"로 보인다.
 	var fade := fx.create_tween()
