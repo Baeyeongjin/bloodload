@@ -165,6 +165,10 @@ func _init() -> void:
 	# **대상을 기다리지 않고 만든다.** 앞 검사들이 phase 를 강제로 만져서 스폰 흐름이
 	# 그대로라는 보장이 없다 — 살아 있는 몹 넷을 화면 안 제 자리에 옮겨 세우면
 	# `_foe_arrived`(fight + 제 자리) 조건이 그대로 차서 `_aoe_targets` 에 든다.
+	# **앞 검사의 장판을 끊는다.** 웅덩이(테스트 4)의 틱이 3초를 돌므로, 안 끊으면
+	# 그 틱이 여기 프로브까지 때려 4마리가 깎인다 — 실제로 그렇게 한 번 터졌다.
+	# gen 을 올리면 지난 장판의 남은 틱이 전부 빠져나간다(구간 교체와 같은 장치).
+	scene._field_gen += 1
 	var pool: Array = []
 	for f in scene.get_tree().get_nodes_in_group("foes"):
 		if is_instance_valid(f) and not f.dying:
