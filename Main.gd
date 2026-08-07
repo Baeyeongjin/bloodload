@@ -5095,10 +5095,18 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 		return body_mid + nudge
 	var tex: Texture2D = frames[0]
 	var h := float(tex.get_height()) * draw_scale
+	# **바닥 문양(hold)은 그림자와 같은 자리에 눕는다** — 중심이 발밑이다.
+	# `_shadow()` 가 `Vector2(foe.position.x, ground_y)` 에 그리는 그 자리다.
+	#
+	# 예전엔 아래끝을 지면에 붙였다. 그러면 중심이 `ground_y - h*0.5 - 6` = 발밑에서
+	# **32px 위**, 즉 몹 허리 높이에 뜬다(h 52 실측). 검색해 보면 이건 알려진 함정이다 —
+	# 가운데 정렬 스프라이트를 바닥 것에 쓰면 "떠 있다"가 되고, 바닥에 놓이는 것은
+	# 발(bottom) 기준으로 잡아야 한다.
 	if style == "hold":
-		h = float(tex.get_height()) * _ground_scale_y(fx_name, draw_scale)
-	if style == "hold" or style == "fall" or style == "rise":
-		# 아래끝 = 지면. 중심은 그보다 높이 절반만큼 위다.
+		return ground_y - FX_GROUND_LIFT
+	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **서 있는 물건**이라 아래끝이 지면이다.
+	# 제단·왕좌·심연의 손이 여기 해당한다.
+	if style == "fall" or style == "rise":
 		return ground_y - h * 0.5 - FX_GROUND_LIFT
 	return body_mid + nudge
 

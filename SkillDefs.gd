@@ -15,15 +15,20 @@ extends RefCounted
 # 근거가 이 표다. 등급이 올라도 쿨다운은 그대로다(등급은 위력만 올린다).
 const SHAPES := {
 	"strike": {
+		# **fx_y 는 몸통 가운데 기준의 미세 조정이다.** -36 은 기준선이 발밑 근처였을 때
+		# 쓰던 값이라, 기준을 `Foe.body_mid_y()`(진짜 몸통 가운데)로 고친 뒤에는 너무
+		# 크다 — 슬라임(높이 64)이면 `ground_y-32-36 = ground_y-68` 로 **정수리보다 4px 위**다.
+		# 사장님: "발사 이펙트가 약간 위에서 발사되는 느낌." 몸통에 맞춘다.
 		"name": "격", "role": "단일", "cooldown": 7.0, "power": 2.2,
-		"motion": "heavy", "fx_y": -36.0, "fx_fps": 16.0,
+		"motion": "heavy", "fx_y": 0.0, "fx_fps": 16.0,
 		"fx_style": "burst",
 	},
 	"wave": {
 		# heavy(내려치기)를 격과 나눠 쓰다가 sweep(횡베기)을 따로 뽑았다 —
 		# 같은 모션이면 격이 나갔는지 파가 나갔는지 캐릭터 몸으로는 구분이 안 된다.
+		# fx_y 0 — 격과 같은 이유다(위 참고). 몸통 가운데 기준으로 바뀌었다.
 		"name": "파", "role": "광역", "cooldown": 13.0, "power": 1.4,
-		"motion": "sweep", "fx_y": -36.0, "fx_fps": 16.0,
+		"motion": "sweep", "fx_y": 0.0, "fx_fps": 16.0,
 		"fx_style": "sweep",
 	},
 	"field": {
