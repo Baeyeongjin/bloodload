@@ -53,8 +53,12 @@ const SHAPES := {
 	},
 	"ward": {
 		# ward 는 자기한테 거는 동작이라 앞으로 뻗는 cast 와 자세가 다르다.
+		# **fx_y 는 0 이다.** -40 이었는데 그러면 고리 중심이 영웅 몸 가운데가 아니라
+		# `ground_y-72`, 즉 **머리 위 8px** 에 온다(영웅은 ground_y-64~ground_y).
+		# 가호는 몸을 감싸는 것이라 기준점이 곧 영웅 중심이어야 한다 — `_fx_anchor_y` 가
+		# orbit·pulse 에는 지면 보정을 안 하고 `body_mid + fx_y` 를 그대로 쓴다.
 		"name": "가호", "role": "버프", "cooldown": 23.0, "power": 0.0,
-		"motion": "ward", "fx_y": -40.0, "fx_fps": 12.0,
+		"motion": "ward", "fx_y": 0.0, "fx_fps": 12.0,
 		"fx_style": "orbit", "duration": 6.0, "bonus": 0.30,
 	},
 }

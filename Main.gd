@@ -515,8 +515,16 @@ func _ready() -> void:
 					var fx_key := SkillDefs.key_of(fx_shape,
 						str(GachaDefs.RARITIES[i]["key"]))
 					var fp := SkillDefs.fx_profile(fx_key)
+					# **자리는 실제 시전과 같은 식으로 잡는다.** 예전엔 여기서
+					# `ground_y + y` 를 직접 썼는데, 진짜 경로는 `_fx_anchor_y` 로
+					# **몸통 가운데 기준**이라 둘이 갈렸다 — 개발 도구가 실제 화면과
+					# 다른 자리를 보여 주면 그걸로 내린 판단이 전부 틀어진다
+					# (2026-08-06: 가호 fx_y 를 0 으로 고치자 여기서만 지면에 반쯤 묻혔다).
 					_anim_fx(str(fp["fx"]),
-						Vector2(64.0 + float(i) * 112.0, ground_y + float(fp["y"])),
+						Vector2(64.0 + float(i) * 112.0,
+							_fx_anchor_y(str(fp["style"]), str(fp["fx"]),
+								float(fp["scale"]), ground_y - float(Grid.SPRITE),
+								float(fp["y"]))),
 						float(fp["fps"]), float(fp["scale"]), str(fp["style"]),
 						int(fp["echo"])))
 			add_child(fx_timer)
@@ -4372,7 +4380,7 @@ func _resolve_skill(key: String) -> void:
 				gold += dealt * 0.20
 				_anim_fx(fx, Vector2(_skill_target.position.x,
 					_fx_anchor_y(fx_style, fx, fx_scale,
-						_skill_target.position.y - _skill_target.body_half(), fx_y)),
+						_skill_target.body_mid_y(), fx_y)),
 					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew)
 				_skill_hit_fx(skill, _skill_target)
 		"field":
@@ -4414,7 +4422,7 @@ func _resolve_skill(key: String) -> void:
 				for f in struck:
 					_anim_fx(fx, Vector2(f.position.x,
 						_fx_anchor_y(fx_style, fx, fx_scale,
-							f.position.y - f.body_half(), fx_y)),
+							f.body_mid_y(), fx_y)),
 						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew)
 			if kills >= StageDefs.kills_needed(stage):
 				_advance_stage()
