@@ -2680,6 +2680,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if key.keycode == KEY_F11:
 		_dev_toggle_weak()
 		return
+	if key.keycode == KEY_F12:
+		_dev_reset_skill_cd()
+		return
 	if key.keycode != KEY_F9:
 		return
 	gem += CHEAT_GEMS
@@ -2700,6 +2703,23 @@ func _dev_toggle_weak() -> void:
 		_offline_banner.visible = true
 		_offline_t = 2.2
 	_refresh_hud()
+
+
+# [테스트용] F12 — **스킬 쿨다운을 전부 0으로.** 스킬 연출을 보려면 최대 23초를
+# 기다려야 하는데(가호), 여섯 칸을 돌려 보려면 그게 몇 분이 된다(2026-08-10 사장님).
+#
+# **누르는 순간 다 나가지는 않는다.** `_tick_skills` 가 한 번에 하나씩만 시전하므로
+# 쿨다운이 0이어도 순서대로 나간다 — 그게 오히려 하나씩 보기에 낫다.
+#
+# 진행 중인 시전(`_skill_action`)은 안 끊는다. 끊으면 그 스킬의 피해가 영영 안 들어가고
+# (`_skill_impact_sent`), 화면에는 "스킬이 씹혔다"로 보인다.
+func _dev_reset_skill_cd() -> void:
+	_skill_cd.clear()
+	if _offline_banner != null:
+		_offline_banner.text = "스킬 쿨다운 초기화 (%d칸)" % skill_equipped.size()
+		_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.8, 0.45))
+		_offline_banner.visible = true
+		_offline_t = 1.6
 
 
 func _dev_jump_stage() -> void:
