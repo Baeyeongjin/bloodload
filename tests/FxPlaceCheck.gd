@@ -102,12 +102,17 @@ func _init() -> void:
 		var style := str(p["style"])
 		if style != "rise" and style != "fall":
 			continue
+		# 자산별로 더 묻는 값(FX_SINK)이 있으면 그만큼 내려온 자리가 정답이다 —
+		# 흩뿌린 방울이 덩어리 아래까지 그려진 그림에만 붙는다(갈라진 대지).
+		var want: float = gy + float(scene.FX_SINK.get(str(p["fx"]), 0.0))
 		for mul in [0.5, 1.0, 2.5]:
 			var s: float = float(p["scale"]) * mul
 			var cy: float = scene._fx_anchor_y(style, str(p["fx"]), s, 0.0, float(p["y"]))
-			assert(is_equal_approx(cy, gy),
-				"%s 배율 %.1f 에서 기준이 지면선을 벗어났다: %.1f (지면 %.1f)"
-				% [key, s, cy, gy])
-		print("  %-18s %s  배율 0.5/1.0/2.5 전부 지면선 %.0f" % [key, style, gy])
+			assert(is_equal_approx(cy, want),
+				"%s 배율 %.1f 에서 기준이 흔들렸다: %.1f (기대 %.1f)"
+				% [key, s, cy, want])
+		print("  %-18s %s  배율 0.5/1.0/2.5 전부 %.0f (지면 %.0f%s)"
+			% [key, style, want, gy,
+			"" if is_equal_approx(want, gy) else " +묻기 %.0f" % (want - gy)])
 	print("")
 	quit()
