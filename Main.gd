@@ -4745,8 +4745,7 @@ func _resolve_skill(key: String) -> void:
 					* float(signi(hero_face))
 				_anim_fx(fx, Vector2(near_x,
 					_fx_anchor_y(fx_style, fx, fx_scale * wpud,
-						ground_y - float(Grid.SPRITE), fx_y,
-						float(SkillDefs.rule_of(key).get("drop", 0.0)))),
+						ground_y - float(Grid.SPRITE), fx_y)),
 					fx_fps, fx_scale * wpud, fx_style, fx_echo, 1.0, hero_face,
 					fx_skew, false, fx_flip, fx_flip_v)
 			else:
@@ -5461,7 +5460,9 @@ const SQUASH_TILT := 0.88   # 기운 만큼 세로를 눌러 원근을 만든다
 #
 # `fx_y` 는 그 기준선에서의 **미세 조정**으로 남는다. 배율이 바뀌어도 기준선은
 # 안 움직이므로 크기를 키워도 같은 자리에 커진다.
-const FX_GROUND_LIFT := 6.0    # 바닥 이펙트를 지면보다 살짝 띄운다(그림자에 안 묻히게)
+# **기준은 지면선(ground_y) 하나다** (2026-08-10 사장님: "딱 저 초록선에 딱 맞게").
+# 예전엔 6px 띄우기(FX_GROUND_LIFT)에 스킬별 묻기(drop)까지 겹쳐 기준이 여럿이었고,
+# 그래서 스킬마다 뜨거나 묻히는 게 제각각이었다 — 손잡이를 전부 걷어냈다.
 # **길(밝은 흙 띠)의 세로 폭 58px** — 배경 wide_graveyard 의 y117~145(29줄)를 2배로
 # 그린 값이고 실측이다. 그 위는 나무·담이 서 있는 어두운 구역이다.
 #
@@ -5478,33 +5479,27 @@ func _ground_scale_y(fx_name: String, draw_scale: float) -> float:
 	var frames: Array = Assets.frames("res://assets/anim/%s" % fx_name)
 	if frames.is_empty():
 		return draw_scale
-	return minf(draw_scale,
-		(ROAD_H - FX_GROUND_LIFT) / float(frames[0].get_height()))
+	return minf(draw_scale, ROAD_H / float(frames[0].get_height()))
 
 
 func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
-		body_mid: float, nudge: float, drop := 0.0) -> float:
+		body_mid: float, nudge: float) -> float:
 	var frames: Array = Assets.frames("res://assets/anim/%s" % fx_name)
 	if frames.is_empty():
 		return body_mid + nudge
 	var tex: Texture2D = frames[0]
 	var h := float(tex.get_height()) * draw_scale
-	# **바닥 문양(hold)은 그림자와 같은 자리에 눕는다** — 중심이 발밑이다.
+	# **바닥 문양(hold)은 그림자와 같은 자리에 눕는다** — 중심이 지면선이다.
 	# `_shadow()` 가 `Vector2(foe.position.x, ground_y)` 에 그리는 그 자리다.
-	#
-	# 예전엔 아래끝을 지면에 붙였다. 그러면 중심이 `ground_y - h*0.5 - 6` = 발밑에서
-	# **32px 위**, 즉 몹 허리 높이에 뜬다(h 52 실측). 검색해 보면 이건 알려진 함정이다 —
-	# 가운데 정렬 스프라이트를 바닥 것에 쓰면 "떠 있다"가 되고, 바닥에 놓이는 것은
-	# 발(bottom) 기준으로 잡아야 한다.
+	# (아래끝을 지면에 붙이면 중심이 발밑에서 32px 위, 몹 허리 높이에 뜬다 — 눕는
+	# 그림은 발이 아니라 몸통이 땅에 닿는다.)
 	if style == "hold":
-		return ground_y - FX_GROUND_LIFT
-	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **서 있는 물건**이라 아래끝이 지면이다.
-	# 제단·왕좌·심연의 손이 여기 해당한다.
+		return ground_y
+	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **서 있는 물건**이라 **아래끝 = 지면선**
+	# 이다. 띄우기도 묻기도 없다 — 손잡이를 두 번 만들었다가(FX_GROUND_LIFT·drop)
+	# 스킬마다 제각각 떠 보여서 걷어냈다. 제단·왕좌·심연의 손·갈라진 대지가 여기다.
 	if style == "fall" or style == "rise":
-		# `drop` — 지면 기준에서 더 내린다(+아래). 위로 솟는 그림은 잉크가 캔버스
-		# 아래끝까지 차 있어도(여백 0) 무게중심이 높아 떠 보인다 — 스프라이트를
-		# 조금 묻어야 "발밑에서 터졌다"로 읽힌다(2026-08-10 사장님: "좀더 내려줘야함").
-		return ground_y - h * 0.5 - FX_GROUND_LIFT + drop
+		return ground_y - h * 0.5
 	return body_mid + nudge
 
 
