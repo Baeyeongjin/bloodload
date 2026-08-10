@@ -108,9 +108,23 @@ func _init() -> void:
 	# 뻗음이 거의 안 변하고(용암 두꺼비 30~31), 그 잡음에서 최대를 고르면 아직
 	# 들어올리는 중인 f1~f2 가 임팩트가 된다(2026-08-06 실측). 그래서 세로로 잰다.
 	# 거미(spider)는 PixelLab object 가 없어 빠져 있다 — PIXELLAB_ARMOR_IDS 참고.
-	for slam_key in ["slime", "bat", "frost_spider", "ice_wisp", "mushroom",
-			"lava_toad", "fire_imp", "hellhound"]:
+	#
+	# **목록을 손으로 적지 않는다.** 로스터에서 뽑아 `_special` 이 있는 것만 검사한다 —
+	# 손으로 적으면 모션을 새로 넣고 목록에 안 더해서 검사 없이 들어간다(실제로 8종을
+	# 넣은 뒤 13종을 더할 때 그럴 뻔했다). 없는 몹은 평타로 떨어지므로 건너뛴다.
+	var slam_keys: Array = []
+	for act in StageDefs.ACTS:
+		for k in (act["roster"] as Array):
+			if not slam_keys.has(str(k)):
+				slam_keys.append(str(k))
+		if not slam_keys.has(str(act["boss"])):
+			slam_keys.append(str(act["boss"]))
+	var slam_seen := 0
+	for slam_key in slam_keys:
 		var slam_dir := "res://assets/anim/%s_special" % slam_key
+		if Assets.frames(slam_dir).is_empty():
+			continue
+		slam_seen += 1
 		var slam_frames := Assets.frames(slam_dir)
 		assert(slam_frames.size() == 9,
 			"%s 내려찍기가 9프레임이 아니다: %d" % [slam_key, slam_frames.size()])
@@ -124,6 +138,9 @@ func _init() -> void:
 			"%s 내려찍기가 안 눌린다 (높이 %d~%d)" % [slam_key, h_lo, h_hi])
 		assert(int(heights[Assets.slam_peak_frame(slam_dir)]) == h_lo,
 			"%s 임팩트가 가장 눌린 프레임이 아니다" % slam_key)
+	# 하나도 안 걸리면 자산이 통째로 빠진 것이다 — 위 루프가 조용히 0번 돌면
+	# "전부 통과"로 보인다. 8종은 2026-08-06 부터 있다.
+	assert(slam_seen >= 8, "내려찍기 자산이 %d 종밖에 없다" % slam_seen)
 	# 특수 스윙은 평타보다 아프고 멀리 닿는다. 오프라인 평균 배수는 그 사이에 있어야
 	# 한다 — 1.0 이면 특수를 안 세는 것이고, SPECIAL_DMG 면 매번 특수로 치는 셈이다.
 	var avg := Foe.avg_attack_mult(true, false)

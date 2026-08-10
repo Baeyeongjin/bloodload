@@ -293,13 +293,32 @@ EngageCheck   실측 65 / 모델 41      실측 63 / 모델 64
 `DMG_POP_W` 도 120 → 200 으로 같이 넓혔다(33px 로 키우면 "999.9t" 가 상자를 넘쳐
 가운데 정렬이 어긋난다).
 
-## 3-8. 완료 — 중간보스 내려찍기 8종 (2026-08-06)
+## 3-8. 완료 — 중간보스 내려찍기 **로스터 21종 중 20종** (08-06 에 8종, 08-10 에 12종)
 
 `{몹키}_special/` 9프레임. `animate_object(mode="v3", frame_count=8)` — 보스 5종과
 같은 방법이다. object id 는 `PIXELLAB_ARMOR_IDS.md` 아래 표(잡몹 21종).
+프롬프트는 12종 모두 같은 한 줄이다:
 
-**거미(`spider`)는 빠졌다** — PixelLab 에 대응 object 가 없다. 계획에 9종을
-나열하고도 결과가 "8종"인 이유가 이것이다 (8-3 에 열어 뒀다).
+```
+rears up high then slams its whole body straight down onto the ground,
+crouching flat at the lowest point, then rising back up
+```
+
+**8종만 있던 동안 중간보스 여덟에 하나만 전용 모션이 나왔다.** 중간보스는 그 막
+로스터에서 무작위로 뽑히는데(`_spawn_foe`) 나머지는 `_special_frames` 가 비어 평타로
+떨어졌다. 08-10 에 12종을 더해 **거미 하나만 남았다** — PixelLab 에 대응 object 가
+없어서다(8-3).
+
+08-10 실측(높이 span, 클수록 많이 눌린다):
+
+```
+frost_golem 14  zombie 13  skeleton 11  wraith_knight 11  ghoul 9  eye_mass 9
+cultist 8  void_wraith 7  demon 7  goblin 6  dark_knight 5  orc 4
+```
+
+> **가고일은 안 뽑아도 됐다.** 후보를 "보스 포함 전체"로 뽑아서 넣었는데, 가고일은
+> 어느 막 로스터에도 없어서 **보스로만 나오고 그때는 `boss_2_special` 을 쓴다.**
+> 생성 1회를 버렸고 결과도 span 2 로 떨어졌다. 후보는 **로스터에서만** 뽑는다.
 
 ### 임팩트를 **세로로** 잰다 — 영웅 자를 그대로 쓰면 안 된다
 
@@ -520,8 +539,9 @@ boss_2(발밑 충격파)·boss_3(얼음 가시)·boss_4(촉수)는 **세로로 �
 - **진(field) 아트** — hold 3종(비명의 흔적·갈라진 대지·감시의 눈)은 64px 원본이다.
   지금 규칙에서는 **대상마다 깔리므로 넓힐 필요가 없다** — 바꾼다면 폭이 아니라
   색·대비 때문이다. 3-5 의 실패 기록을 먼저 읽을 것
-- **거미(`spider`) 내려찍기** — PixelLab 에 대응 object 가 없어 8종에서 빠졌다(3-8).
-  넣으려면 object 부터 새로 만든다
+- **거미(`spider`) 내려찍기** — 로스터 21종 중 **유일하게 남은 하나**다(3-8).
+  PixelLab 에 대응 object 가 없어서 `create_1_direction_object` 부터 만들어야 한다.
+  기존 `spider_walk` 와 화풍을 맞추는 일이 붙으므로 애니 1회짜리가 아니다
 - **넘어지는 모션** — 넉백(코드)으로 "맞았다"는 읽힌다. 별도 다운 모션은 보류
 - 미사용 자산: `tag_status`(상태 태그), `plate_name`(칭호·닉네임 판)
 - 미요청 자산: 채팅 알약, 광고 원형 버튼, 순위 세로 배너

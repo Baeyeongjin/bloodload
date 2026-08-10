@@ -126,8 +126,12 @@ item_descriptions: [20종 각각의 영문 한 줄]
 | `dark_knight` | 다크 나이트 | `ac30feaa-c641-4f87-8b6a-338fc53dedcd` | imposing dark knight (48px) |
 
 > **`spider`(거미)는 object 가 없다.** `FoeTiers` 에는 있는데 PixelLab 쪽에 대응하는
-> 것이 `frost_spider` 뿐이다. 그래서 내려찍기가 9종이 아니라 **8종**이다.
-> 거미에 모션을 붙이려면 object 부터 새로 만들어야 한다.
+> 것이 `frost_spider` 뿐이다. 그래서 로스터 21종 중 내려찍기가 **20종**이고 거미만
+> 빠져 있다. 거미에 모션을 붙이려면 object 부터 새로 만들어야 한다.
+>
+> **`gargoyle` 은 이 표에 있지만 내려찍기가 필요 없다.** 어느 막 로스터에도 없어
+> 보스로만 나오고, 그때는 `boss_2_special` 을 쓴다. 08-10 에 모르고 한 번 뽑아
+> 생성 1회를 버렸다 — **후보는 `ACTS[].roster` 에서만** 뽑는다.
 
 **주의**: 이 표의 object 는 **보스용과 별개다.** 보스 5종(`boss_1`~`boss_5`)은 같은
 몹의 큰 버전이 아니라 아예 다른 object 다(`HANDOFF.md` 4장). `wraith_knight` ·
