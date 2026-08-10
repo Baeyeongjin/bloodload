@@ -61,21 +61,48 @@ func _init() -> void:
 	var fx_after := _count_fx(scene)
 	var made := fx_after - fx_before
 	print("")
+	# **뱀의 무리는 2026-08-10 부터 무리 가운데 하나다**(RULES.puddle) — 스킬 이펙트는
+	# 1장이고 나머지는 맞는 놈마다 뜨는 **피격** 이펙트다. 둘을 합쳐서 세므로 하한은
+	# "대상 수 이상"이 그대로 성립한다(피격만 해도 대상 수만큼 뜬다).
 	print("파(wave_epic) 1회 -> 이펙트 %d 개 생성 (대상 %d 마리)" % [made, targets.size()])
 	assert(made >= targets.size(),
 		"맞는 놈보다 이펙트가 적다: %d 개 / %d 마리" % [made, targets.size()])
 	# 피의 손길(관통) — 손바닥 **하나**가 날아간다. 맞는 놈마다 뜨면 규칙이 안 먹은 것.
-	# 위 wave_epic 이 몹을 다 잡았을 수 있으므로 대상 유무와 무관하게 개수만 본다
-	# (관통은 대상이 없어도 하나는 띄운다).
+	#
+	# **`== 1` 로는 못 잰다.** `_count_fx` 는 스킬 이펙트와 피격 이펙트를 구분 못 하고,
+	# 피격은 맞는 놈마다 뜬다 — 예전엔 앞의 파가 몹을 다 죽여서 우연히 1이 나왔을
+	# 뿐이다(뱀의 무리를 가운데 하나로 바꾸자 몹이 살아남아 2가 됐다).
+	# 상한을 `1 + 대상 수`로 둔다: 관통이 안 먹으면 스킬 이펙트만 대상 수만큼 떠서
+	# 총 2N 이 되므로 N>=1 이면 반드시 걸린다.
 	scene._skill_action = ""
 	scene._skill_cd.clear()
 	scene._phase = "fight"
+	# **앞 스킬의 이펙트가 다 사라진 뒤에 잰다.** 피격 이펙트는 조금 늦게 뜨는 것이
+	# 있어서, 바로 재면 그게 이번 시전의 것으로 잡힌다(실측: 대상 0인데 2개로 셌다).
+	var settle := 0.0
+	var last := -1
+	while settle < 1.5:
+		await process_frame
+		settle += scene.get_process_delta_time()
+		var now := _count_fx(scene)
+		if now == last and now == 0:
+			break
+		last = now
+	# 기다리는 동안 게임이 돌아 구간이 전진으로 넘어갔을 수 있다 — `_resolve_skill` 은
+	# 첫 줄에서 `_phase != "fight"` 면 통째로 빠져나간다(그래서 0장이 나왔다).
+	scene._phase = "fight"
+	scene._skill_action = ""
+	scene._skill_cd.clear()
+	var live_now: int = (scene._aoe_targets() as Array).size()
 	var pierce_before := _count_fx(scene)
 	scene._resolve_skill("wave_common")
 	await process_frame
 	var pierce_made := _count_fx(scene) - pierce_before
-	print("피의 손길(관통) 1회 -> 이펙트 %d 개 (하나여야 한다)" % pierce_made)
-	assert(pierce_made == 1, "관통인데 이펙트가 %d 개다" % pierce_made)
+	print("피의 손길(관통) 1회 -> 이펙트 %d 개 (스킬 1 + 피격 %d 이하여야 한다)"
+		% [pierce_made, live_now])
+	assert(pierce_made >= 1, "관통인데 이펙트가 하나도 안 떴다")
+	assert(pierce_made <= 1 + live_now,
+		"관통인데 이펙트가 %d 개다 (대상 %d) — 맞는 놈마다 뜬 것" % [pierce_made, live_now])
 
 	# ── 3) 진이 여러 번 때리는가 ──────────────────────────────────────────
 	# **표적을 여기서 다시 뽑는다.** 위의 파(wave)가 1막 몹을 한 방에 죽이므로

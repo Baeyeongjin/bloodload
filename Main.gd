@@ -4366,14 +4366,19 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	else:
 		_field_x = at[0].position.x if not at.is_empty() \
 			else hero_x + float(hero_face) * (_motion_reach("attack") + 48.0)
-	var cy := _fx_anchor_y(style, fx, scale, ground_y - float(Grid.SPRITE), 0.0)
+	# **자리 계산과 그리기가 같은 배율을 봐야 한다.** 가운데 하나로 깔 때는 배율에
+	# puddle 이 곱해지는데 자리만 원래 배율로 잡으면, 아래끝을 지면에 붙이는 스타일
+	# (rise·hold)이 그만큼 뜨거나 파묻힌다. `hold` 는 세로가 길 폭으로 눌려 우연히
+	# 안 어긋났지만 `rise`(제단·왕좌)는 그대로 드러난다.
+	var draw := scale * maxf(1.0, puddle)
+	var cy := _fx_anchor_y(style, fx, draw, ground_y - float(Grid.SPRITE), 0.0)
 	# **맞는 놈마다 하나씩**, 단 **시전 때 한 번만**. 틱마다 또 깔면 2마리 x 6틱 = 12장이
 	# 전투 화면을 덮는다. 그림 수명은 지속시간과 같게 맞춰 뒀다(SkillDefs 의 fx_fps).
 	# 아무도 없으면 영웅 앞에 하나 — 쿨다운을 썼는데 화면에 아무 일도 없으면
 	# "안 나갔다"로 보인다.
 	var spots := _field_targets()
 	if puddle > 0.0 or spots.is_empty():
-		_anim_fx(fx, Vector2(_field_x, cy), fps, scale * maxf(1.0, puddle),
+		_anim_fx(fx, Vector2(_field_x, cy), fps, draw,
 			style, echo, 1.0, hero_face, skew, true)
 	else:
 		# **하나씩 소환된다**(RULES.stagger). 감시의 눈은 눈이 차례로 뜨는 연출이라
