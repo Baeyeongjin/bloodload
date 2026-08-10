@@ -93,14 +93,29 @@ static func frames(dir_path: String) -> Array:
 #
 # **가로로 뻗는 모션에만 쓴다.** 내려찍기는 아래로 눌리지 옆으로 안 뻗으므로 이 자로
 # 재면 잡음에서 최대값을 고른다 — 그쪽은 `slam_peak_frame` 을 쓴다.
+# **되감는 프레임 뒤에서만 고른다**(2026-08-10). 연격(attack2·attack3)은 앞 모션의
+# 마지막 자세를 0번 프레임으로 물려받는다 — 그건 **직전 스윙의 마무리**지 이번 스윙이
+# 아니다. 전체에서 최대를 고르면 attack2 의 임팩트가 f0 으로 잡혀 피해가 그림보다
+# 먼저 들어간다(실측: 가로 뻗음 [46,41,32,25,35,37,37,44,45] -> f0).
+#
+# 휘두르기는 "뒤로 뺐다(최소) → 뻗는다(최대)"라 **최소 이후의 최대**가 곧 임팩트다.
+# 이 규칙은 기존 모션의 값을 안 바꾼다(attack f7, heavy f6 그대로) — 그것들은 이미
+# 최소가 앞에 있다.
 static func reach_peak_frame(dir_path: String, flipped := false) -> int:
 	var key := "peak:%s:%s" % [dir_path, str(flipped)]
 	if _reach_cache.has(key):
 		return int(_reach_cache[key])
 	var n := frames(dir_path).size()
-	var best := 0
-	var best_r := -1.0
+	var low := 0
+	var low_r := INF
 	for f in n:
+		var r := frame_reach(dir_path, f, 1.0, flipped)
+		if r < low_r:
+			low_r = r
+			low = f
+	var best := low
+	var best_r := -1.0
+	for f in range(low, n):
 		var r := frame_reach(dir_path, f, 1.0, flipped)
 		if r > best_r:
 			best_r = r

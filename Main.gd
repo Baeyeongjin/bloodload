@@ -756,8 +756,31 @@ func _attack_swing() -> float:
 	return minf(ATTACK_SWING, maxf(0.08, attack_interval()))
 
 
+# 평타는 **이어지는 연격**이다(2026-08-10 사장님: "기본공격 모션 하나가 아니라
+# 액션성을 위해 이어지는 공격모션 2/3"). 한 그림만 반복하면 자동 전투가 정지 화면처럼
+# 보인다 — 스윙마다 다음 모션으로 넘어간다.
+#
+# **있는 것만 쓴다.** `attack2`·`attack3` 자산이 없는 스킨은 자동으로 1연격이 된다
+# (영웅 스킨이 11종인데 모션이 다 갖춰진 건 `valentino_1` 뿐이다).
+const COMBO_MOTIONS := ["attack", "attack2", "attack3"]
+var _combo := 0
+var _combo_live: Array[String] = []   # 이 스킨에 실제로 있는 연격. 스킨이 바뀌면 비운다
+
+
+func _attack_motion() -> String:
+	if _combo_live.is_empty():
+		for m in COMBO_MOTIONS:
+			if not Assets.frames("res://assets/anim/%s_%s" % [skin, m]).is_empty():
+				_combo_live.append(str(m))
+		if _combo_live.is_empty():
+			_combo_live.append("attack")
+	return _combo_live[_combo % _combo_live.size()]
+
+
 func _motion_fps() -> float:
-	if _motion == "attack":
+	# 연격 전부가 평타 박자를 따른다 — `attack` 만 보면 2·3연격이 기본 주기(0.85초)로
+	# 돌아서 공격속도를 올려도 그림만 느려진다.
+	if _motion in COMBO_MOTIONS:
 		return float(_hero_frames.size()) / _attack_swing()
 	if _motion == "heavy" or _motion == "cast":
 		return float(_hero_frames.size()) / SKILL_DUR
@@ -3844,9 +3867,13 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	_attack_t = interval
 	# 피해는 **스윙 안에서** 들어온다. 주기로 재면 짧게 휘두르고도 피해는 늦게 나가
 	# 그림과 결과가 어긋난다.
-	_hero_hit_t = _impact_time("attack", _attack_swing())
+	# **임팩트는 그 연격의 그림에서 잰다.** "attack" 으로 고정하면 2·3연격의 뻗는
+	# 순간과 피해 시점이 어긋난다 — 모션마다 뻗는 프레임이 다르다.
+	var swing := _attack_motion()
+	_hero_hit_t = _impact_time(swing, _attack_swing())
 	_pending_target = target
-	_play("attack")
+	_play(swing)
+	_combo += 1
 
 
 # 표적이 없을 때도 **몹 몸통 안에는 안 선다.**
@@ -4741,6 +4768,7 @@ func _begin_stage_pose() -> void:
 	# 지난 구간에 깔린 장판의 틱을 끊는다. 구간이 바뀌면 그 땅은 없어진 것이다 —
 	# 안 끊으면 새 구간의 몹이 이전 구간 문양에 맞는다(`_start_field` 의 gen 검사).
 	_field_gen += 1
+	_combo = 0     # 구간은 늘 1연격부터 시작한다
 	_boss_entry = StageDefs.is_boss_stage(stage)
 	hero_x = -float(Grid.SPRITE) if _boss_entry else HERO_X
 	_dash_to = HERO_X
