@@ -13,7 +13,9 @@
 갈린다. 붉지 않은 색(채도 있고 색상환 30~330도)은 기준에서 뺀다: 기존 자산에도
 20% 쯤 섞여 있어서 그대로 두면 "맞출 대상"에 오염된 색이 들어간다.
 
-    python tools/fit_palette.py <입력폴더> <출력폴더>
+    python tools/fit_palette.py [--all] <입력폴더> <출력폴더>
+
+`--all` 은 색조와 무관하게 전부 옮긴다 — 색조는 붉은데 너무 밝은 그림(살구빛)에 쓴다.
 
 같은 폴더를 두 번 주면 제자리에서 바꾼다. 알파는 안 건드린다 — 모양은 생성물 그대로고
 색만 옮긴다.
@@ -38,11 +40,23 @@ def _is_red(rgb):
 
 
 def game_palette(root="."):
-    """기존 스킬 이펙트에서 쓰는 붉은 계열 색 전부."""
+    """기존 스킬 이펙트에서 쓰는 **어두운** 피 계열 색.
+
+    **밝은 파스텔·흰색은 기준에서 뺀다**(min 채널 110 초과). 안 빼면 기준이 오염된다:
+    이 도구가 현재 자산을 읽는데, 밝은 생성물을 자산에 넣고 나면 다음 번 기준에
+    그 색이 들어가서 "맞춰도 그대로"가 된다 — 2026-08-10 검기에서 실제로 그랬다
+    (100% 를 옮겼는데 주된 색이 살구빛 그대로였다).
+
+    게임의 피 톤은 원래 어둡다: 비명의 흔적·감시의 눈 원본이 (72,0,4)·(88,7,14) 대역이다.
+    """
+    # **커먼 4종만 본다.** 전부를 읽으면 이 도구가 제 발등을 찍는다: 밝은 생성물을
+    # 자산에 넣고 나면 다음 번 기준에 그 색이 들어가서 "맞춰도 그대로"가 된다
+    # (2026-08-10 검기에서 실제로 그랬다 — 100% 를 옮겼는데 주된 색이 살구빛이었다).
+    # 커먼 4종은 톤의 기준점이고 등급 연출 실험의 대상이 아니라 잘 안 바뀐다.
     out = set()
     base = os.path.join(root, FX_DIR)
     for name in os.listdir(base):
-        if not name.startswith("fx_sk_"):
+        if not name.startswith("fx_sk_common_"):
             continue
         first = os.path.join(base, name, "0.png")
         if not os.path.exists(first):
@@ -53,12 +67,18 @@ def game_palette(root="."):
         for y in range(h):
             for x in range(w):
                 p = px[x, y]
-                if p[3] >= 128 and _is_red(p[:3]):
+                if p[3] >= 128 and _is_red(p[:3]) and min(p[:3]) <= 110:
                     out.add(p[:3])
     return sorted(out)
 
 
-def fit(src_dir, dst_dir, palette):
+def fit(src_dir, dst_dir, palette, force_all=False):
+    """force_all=True 면 **모든 색**을 팔레트로 옮긴다.
+
+    색조만 보면 못 잡는 것이 있다: 살구빛(248,197,167)은 색상환 22도라 "붉은 계열"을
+    통과하는데, 게임 팔레트는 어두운 진홍이라 화면에서 혼자 밝게 뜬다(검기에서 그랬다).
+    밝기까지 맞추려면 전부 옮기는 수밖에 없다.
+    """
     os.makedirs(dst_dir, exist_ok=True)
     cache = {}
 
@@ -84,7 +104,7 @@ def fit(src_dir, dst_dir, palette):
                 if p[3] == 0:
                     continue
                 total += 1
-                if _is_red(p[:3]):
+                if not force_all and _is_red(p[:3]):
                     op[x, y] = p
                     continue
                 c = near(p[:3])
@@ -95,15 +115,17 @@ def fit(src_dir, dst_dir, palette):
 
 
 def main():
-    if len(sys.argv) != 3:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    force_all = "--all" in sys.argv
+    if len(args) != 2:
         print(__doc__)
         return 1
-    src, dst = sys.argv[1], sys.argv[2]
+    src, dst = args
     palette = game_palette()
     if not palette:
         print("기준 팔레트를 못 읽었다 — 저장소 루트에서 돌려야 한다")
         return 1
-    n, moved, total = fit(src, dst, palette)
+    n, moved, total = fit(src, dst, palette, force_all)
     print("기준 팔레트 %d색 · %d프레임 · 옮긴 픽셀 %d / %d (%.0f%%)"
           % (len(palette), n, moved, total, 100.0 * moved / max(1, total)))
     return 0

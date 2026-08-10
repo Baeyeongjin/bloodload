@@ -198,6 +198,7 @@ var _skill_target: Foe
 var _summon_t := 0.0
 var _summon_bonus := 0.0   # 시전 순간의 가호 배수. 버프 도중 장비를 바꿔도 유지된다
 var _summon_tint := 0.0    # 버프 도중 영웅을 붉게 물들이는 정도(RULES.tint)
+var _summon_cleave := ""   # 버프 도중 평타가 광역이 될 때 쓰는 이펙트(RULES.cleave)
 var _defer_stage_advance := false
 var _hud: CanvasLayer
 var _hud_root: Control   # 테마가 걸린 실제 부모
@@ -2850,6 +2851,9 @@ func _refresh_skill_detail() -> void:
 			var cd := maxf(0.001, float(data["cooldown"]))
 			var eff := float(data["bonus"]) * clampf(float(data["duration"]) / cd, 0.0, 1.0)
 			effect.text = "전 피해 +%.1f%% · 상시" % (eff * 100.0)
+		elif str(SkillDefs.rule_of(key).get("cleave", "")) != "":
+			# 불멸의 심장 — 배수보다 **평타가 광역이 된다**가 이 스킬의 정체다.
+			effect.text = "%.1f초 · 평타가 광역" % float(data["duration"])
 		else:
 			effect.text = "전 피해 +%d%% · %.1f초" % [int(float(data["bonus"]) * 100.0),
 				float(data["duration"])]
@@ -3855,6 +3859,34 @@ func _tick_engage(foes: Array) -> void:
 			_engaged = f
 
 
+# 불멸의 심장 — **버프가 도는 동안 기본공격이 광역이 된다**(2026-08-10 사장님:
+# "기본공격실현시 몬스터를 광역으로 공격하는 붉은검기가 나감").
+#
+# 이미 맞은 놈은 빼고 **나머지**에게 같은 피해를 넣는다. 검기는 무리 가운데 하나만
+# 띄운다 — 오늘 정한 "광역은 가운데 하나" 규칙과 같다.
+#
+# 이건 `dps()` 가 모르는 피해다(평타 한 번이 여러 마리를 때린다). 오프라인 모델은
+# 한 마리씩 세므로 **방치 수익이 늘지 않는다** — 실제로만 빨라진다. 그쪽이 안전한
+# 방향이라 그대로 둔다(반대면 과지급이 된다).
+# ponytail: 버프 가동률까지 오프라인에 넣으려면 Balance 쪽에 축을 하나 더 세워야 한다.
+func _cleave_swing(hit_already: Foe) -> void:
+	if _summon_t <= 0.0 or _summon_cleave.is_empty():
+		return
+	var rest: Array[Foe] = []
+	for f in _aoe_targets():
+		if f != hit_already:
+			rest.append(f)
+	if rest.is_empty():
+		return
+	var mid := 0.0
+	for f in rest:
+		f.take_damage(_combat_damage(f))
+		mid += f.position.x
+	mid /= float(rest.size())
+	_anim_fx(_summon_cleave, Vector2(mid, ground_y - float(Grid.SPRITE)),
+		16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
+
+
 func _tick_hero_attack(delta: float, foes: Array) -> void:
 	if _hero_hit_t >= 0.0:
 		_hero_hit_t -= delta
@@ -3863,6 +3895,7 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 			if _can_hit_foe(_pending_target):
 				_pending_target.take_damage(_combat_damage(_pending_target))
 				_anim_fx("fx_cleave", _pending_target.position + Vector2(0, -28), 18.0, 2.0)
+				_cleave_swing(_pending_target)
 			_pending_target = null
 	if _hero_dead:
 		return
@@ -4178,6 +4211,10 @@ func _tick_hero_state(delta: float) -> void:
 		elif was_buffed:
 			_hero.modulate = Color.WHITE
 			_summon_tint = 0.0
+	# 광역 평타는 **버프가 끝나면 같이 끝난다.** 안 지우면 다음에 다른 가호를 걸었을 때
+	# 그 버프에 검기가 따라붙는다 — `_summon_t` 만 보고 이름을 안 비우면 그렇게 샌다.
+	if _summon_t <= 0.0 and _summon_cleave != "":
+		_summon_cleave = ""
 	hero_hp = minf(max_hp(), hero_hp + regen_per_sec() * delta)
 
 
@@ -4688,6 +4725,7 @@ func _resolve_skill(key: String) -> void:
 			# 물들이는 정도도 **시전 순간에 잡아 둔다** — 배수와 같은 이유다(장비를
 			# 바꿔도 버프가 안 흔들린다). 0 이면 안 물든다(기존 가호 4종).
 			_summon_tint = float(SkillDefs.rule_of(key).get("tint", 0.0))
+			_summon_cleave = str(SkillDefs.rule_of(key).get("cleave", ""))
 			if _summon_tint <= 0.0 and _hero != null:
 				_hero.modulate = Color.WHITE
 			_anim_fx(fx, Vector2(hero_x,
