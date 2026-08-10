@@ -154,7 +154,17 @@ const RULES := {
 	# (field_rare)은 "눈이 하나씩 소환된다"가 사장님이 지시한 설계 그 자체다.
 	"wave_epic": {"puddle": 1.0},
 	"wave_legend": {"puddle": 1.0},
-	"field_epic": {"puddle": 1.25},
+	# 피의 제단 — **자기 버프다**(2026-08-10 사장님: "스킬사용하면 캐릭터주변에 검은
+	# 오오라 이펙트 발현 후 캐릭터가 든 칼이 붉게 물드는 이펙트후 공격력 50% 버프").
+	# 이름은 진(field)이지만 동작은 가호(ward)다.
+	#
+	# 배수 0.50 은 등급표(WARD_BONUS)가 아니라 **사장님이 지정한 값**이라 직접 적는다.
+	# 지속 6초는 가호 형태 기본과 같게 뒀다 — 쿨다운 19초 대비 가동률 32% 로,
+	# 상시가 아니라 "터뜨리는" 버프다.
+	# `tint` 는 버프 도중 영웅을 붉게 물들이는 정도다(칼만 따로 못 물들인다 —
+	# 스프라이트가 한 장이다. 몸 전체가 붉어지면 "피를 뒤집어썼다"로 읽힌다).
+	# 표출(style: orbit)은 아래 FX_OVERRIDE 에 있다 — 규칙과 표출은 표를 나눠 쓴다.
+	"field_epic": {"as": "ward", "bonus": 0.50, "duration": 6.0, "tint": 0.45},
 	"field_legend": {"puddle": 1.25},
 }
 
@@ -301,7 +311,9 @@ const FX_OVERRIDE := {
 	# 심연의 손 — **바닥에서 손이 올라와 몹을 끌고 내려간다.** 격인데도 rise 를 쓰는
 	# 유일한 스킬이다. 몹 발밑에서 시작해야 "끌려간다"가 읽히므로 y 도 지면 가까이 둔다.
 	"strike_legend": {"style": "rise", "y": -16.0, "skew": 0.0},
-	"field_epic": {"style": "rise"},                   # 피의 제단 — 솟아오른다
+	# 피의 제단 — **몸에 두르는 오오라**로 바뀌었다(2026-08-10). 솟아오르는 제단이
+	# 아니라 영웅을 감싸는 고리다: `orbit` 은 영웅 뒤(z=2)에 깔려 후광으로 읽힌다.
+	"field_epic": {"style": "orbit"},
 	"field_legend": {"style": "rise"},                 # 피의 왕좌 — 솟아오른다
 	"ward_common": {"style": "pulse"},                 # 피의 결계 — 돔은 안 돈다
 	"ward_uncommon": {"style": "pulse"},               # 진홍 방패 — 세워져 있어야 한다
@@ -383,13 +395,19 @@ const WARD_LV_DURATION := 0.3    # 레벨당 지속 +0.3초
 
 
 static func ward_bonus(key: String) -> float:
+	# 스킬이 직접 적을 수 있다(RULES.bonus) — 피의 제단은 진(field)인데 버프로
+	# 동작하므로 등급표(WARD_BONUS)의 "가호 에픽" 값이 아니라 제 값을 쓴다.
+	var rule := rule_of(key)
+	if rule.has("bonus"):
+		return float(rule["bonus"])
 	var idx := clampi(GachaDefs.rarity_index(str(split(key)[1])), 0, WARD_BONUS.size() - 1)
 	return float(WARD_BONUS[idx])
 
 
 static func ward_duration(key: String, lv: int) -> float:
-	return float(shape_of(key).get("duration", 0.0)) \
-		+ WARD_LV_DURATION * float(maxi(0, lv))
+	# 형태에 duration 이 없으면(격·파) 스킬이 적은 값을 쓴다.
+	return float(rule_of(key).get("duration",
+		shape_of(key).get("duration", 0.0))) + WARD_LV_DURATION * float(maxi(0, lv))
 
 
 # 다음 레벨에 드는 조각. 레벨이 오를수록 무거워진다.

@@ -197,6 +197,7 @@ var _skill_impact_sent := false
 var _skill_target: Foe
 var _summon_t := 0.0
 var _summon_bonus := 0.0   # 시전 순간의 가호 배수. 버프 도중 장비를 바꿔도 유지된다
+var _summon_tint := 0.0    # 버프 도중 영웅을 붉게 물들이는 정도(RULES.tint)
 var _defer_stage_advance := false
 var _hud: CanvasLayer
 var _hud_root: Control   # 테마가 걸린 실제 부모
@@ -2822,7 +2823,8 @@ func _refresh_skill_detail() -> void:
 	# 무엇을 하는 스킬인지 한 줄. 가호만 피해가 0이라 다른 문장을 쓴다.
 	var effect := _panel_label(_skill_detail, Vector2(234.0, 86.0), Type.SIZE_MID,
 		Color(0.96, 0.82, 0.56), 306.0, 24.0)
-	if str(data["shape"]) == "ward":
+	# **동작이 버프인가**를 본다 — 피의 제단은 진(field)인데 버프다.
+	if str(data["act"]) == "ward":
 		# 패시브는 지속시간을 쓰면 거짓말이 된다 — 상시이고, 표시값도 실제로 붙는
 		# 값(가동률 환산분)이어야 화면과 전투가 안 갈린다.
 		if bool(SkillDefs.rule_of(key).get("passive", false)):
@@ -4143,7 +4145,20 @@ func _tick_hero_state(delta: float) -> void:
 		_hero_flash_t -= delta
 		if _hero_flash_t <= 0.0:
 			_hero.self_modulate = Color.WHITE
+	# **버프가 도는 동안 영웅이 붉게 물든다**(RULES.tint — 피의 제단). 칼만 따로는
+	# 못 물들인다: 영웅이 스프라이트 한 장이라 부위를 못 가른다. 몸 전체가 붉어지면
+	# "피를 뒤집어썼다"로 읽혀서 오히려 맞는다.
+	#
+	# `modulate` 를 쓴다 — 피격 번쩍임은 `self_modulate` 라 서로 안 덮는다(둘은 곱해진다).
+	var was_buffed := _summon_t > 0.0
 	_summon_t = maxf(0.0, _summon_t - delta)
+	if _summon_tint > 0.0 and _hero != null:
+		if _summon_t > 0.0:
+			var g := 1.0 - _summon_tint
+			_hero.modulate = Color(1.0, g, g)
+		elif was_buffed:
+			_hero.modulate = Color.WHITE
+			_summon_tint = 0.0
 	hero_hp = minf(max_hp(), hero_hp + regen_per_sec() * delta)
 
 
@@ -4188,7 +4203,9 @@ func _skill_data(key: String) -> Dictionary:
 		else SkillDefs.hit_fx_of(key)
 	# 가호는 피해가 0이라 위 power 로는 등급이 안 갈린다. 배수·지속을 따로 얹는다 —
 	# 안 하면 레전더리 가호와 커먼 가호가 글자만 다른 같은 스킬이 된다.
-	if str(data["shape"]) == "ward":
+	# **동작이 버프면** 배수·지속을 얹는다 — 형태가 아니다. 피의 제단은 진(field)인데
+	# 버프로 동작하므로(RULES.as = ward) 여기서 형태를 보면 값이 안 붙는다.
+	if SkillDefs.behavior_of(key) == "ward":
 		data["bonus"] = SkillDefs.ward_bonus(key)
 		data["duration"] = SkillDefs.ward_duration(key, lv)
 	# **동작이 곧 대상 규칙이다** — 형태가 아니다. 스킬이 형태를 덮어쓰면(RULES.as)
@@ -4649,6 +4666,11 @@ func _resolve_skill(key: String) -> void:
 		"ward":
 			_summon_t = float(skill["duration"])
 			_summon_bonus = float(skill.get("bonus", 0.0))
+			# 물들이는 정도도 **시전 순간에 잡아 둔다** — 배수와 같은 이유다(장비를
+			# 바꿔도 버프가 안 흔들린다). 0 이면 안 물든다(기존 가호 4종).
+			_summon_tint = float(SkillDefs.rule_of(key).get("tint", 0.0))
+			if _summon_tint <= 0.0 and _hero != null:
+				_hero.modulate = Color.WHITE
 			_anim_fx(fx, Vector2(hero_x,
 				_fx_anchor_y(fx_style, fx, fx_scale,
 					ground_y - float(Grid.SPRITE), fx_y)),
