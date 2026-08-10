@@ -4452,10 +4452,18 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 된다, 화면 몹 무리의 반~3분의 1 폭 하나).
 	var at := _aoe_targets()
 	if puddle > 0.0 and not at.is_empty():
-		var sum := 0.0
+		# **가장 가까운 몹 발밑**(2026-08-10 사장님). 무리 한가운데로 잡았더니 몹이
+		# 둘 이상일 때 아무도 없는 몹과 몹 사이에 떴다.
+		#
+		# 판정 중심(`_field_x`)도 같이 옮긴다 — 그림만 옮기면 그림 없는 자리에서
+		# 피해가 나간다. 그 대가로 판정 창이 영웅 쪽으로 당겨져서, 줄 맨 뒤 놈이
+		# 사거리(FIELD_REACH)를 벗어날 수 있다. 그게 맞는 그림이다: 앞에 깔린 장판이
+		# 저 뒤까지 닿을 이유가 없다.
+		var near_f: Foe = at[0]
 		for f in at:
-			sum += f.position.x
-		_field_x = sum / float(at.size())
+			if absf(f.position.x - hero_x) < absf(near_f.position.x - hero_x):
+				near_f = f
+		_field_x = near_f.position.x
 	else:
 		_field_x = at[0].position.x if not at.is_empty() \
 			else hero_x + float(hero_face) * (_motion_reach("attack") + 48.0)
@@ -4722,11 +4730,14 @@ func _resolve_skill(key: String) -> void:
 						ground_y - float(Grid.SPRITE), fx_y)),
 					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
 			elif wpud > 0.0:
-				var mid := 0.0
+				# **가장 가까운 몹 발밑**(2026-08-10 사장님). 무리 한가운데로 잡으면
+				# 몹 사이 빈 자리에 뜬다. 파는 판정이 `_aoe_targets`(화면 안 전부)라
+				# 그림 자리를 옮겨도 맞는 놈이 안 바뀐다 — 진 쪽과 다른 점이다.
+				var near_x := struck[0].position.x
 				for f in struck:
-					mid += f.position.x
-				mid /= float(struck.size())
-				_anim_fx(fx, Vector2(mid,
+					if absf(f.position.x - hero_x) < absf(near_x - hero_x):
+						near_x = f.position.x
+				_anim_fx(fx, Vector2(near_x,
 					_fx_anchor_y(fx_style, fx, fx_scale * wpud,
 						ground_y - float(Grid.SPRITE), fx_y)),
 					fx_fps, fx_scale * wpud, fx_style, fx_echo, 1.0, hero_face,
