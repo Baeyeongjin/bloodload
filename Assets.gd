@@ -155,6 +155,29 @@ static func slam_peak_frame(dir_path: String) -> int:
 	return best
 
 
+# 그림 아래끝과 캔버스 아래끝 사이의 여백(원본 px). **프레임 전체의 최솟값**이다 —
+# 바닥 이펙트를 지면선에 붙일 때 캔버스가 아니라 이 값만큼 내려서 **잉크**를 붙인다.
+#
+# 왜 필요한가(2026-08-10 실측): 피의 왕좌는 전 프레임 여백 4px, 심연의 손은 6px 라
+# 캔버스를 지면에 붙여도 그림이 배율 x4~x12 만큼 떠 보였다. 서는 자리를 상자에서
+# 잉크로 옮긴 것(인계 3장)과 같은 교훈이다 — 캔버스는 상자다.
+# 최솟값인 이유: 분출(갈라진 대지)은 중반 프레임에서 피가 땅을 떠난다. 그 프레임에
+# 맞추면 시작 프레임이 땅에 파묻힌다 — 가장 낮게 닿는 프레임이 지면에 닿으면 된다.
+static func bottom_pad(dir_path: String) -> float:
+	var key := "bpad:%s" % dir_path
+	if _reach_cache.has(key):
+		return float(_reach_cache[key])
+	var pad := 1 << 30
+	for texture in frames(dir_path):
+		var used: Rect2i = (texture as Texture2D).get_image().get_used_rect()
+		if used.size.x <= 0:
+			continue
+		pad = mini(pad, texture.get_height() - used.end.y)
+	var out := float(pad) if pad < (1 << 30) else 0.0
+	_reach_cache[key] = out
+	return out
+
+
 static func frame_reach(dir_path: String, frame: int, draw_scale: float = 1.0,
 		flipped: bool = false) -> float:
 	var key := "%s:%d:%f:%s" % [dir_path, frame, draw_scale, str(flipped)]

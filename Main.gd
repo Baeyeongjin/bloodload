@@ -5495,11 +5495,13 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 	# 그림은 발이 아니라 몸통이 땅에 닿는다.)
 	if style == "hold":
 		return ground_y
-	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **서 있는 물건**이라 **아래끝 = 지면선**
-	# 이다. 띄우기도 묻기도 없다 — 손잡이를 두 번 만들었다가(FX_GROUND_LIFT·drop)
-	# 스킬마다 제각각 떠 보여서 걷어냈다. 제단·왕좌·심연의 손·갈라진 대지가 여기다.
+	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **잉크 아래끝 = 지면선**이다.
+	# 캔버스가 아니라 잉크다 — 왕좌는 전 프레임 아래 여백이 4px, 심연의 손은 6px 라
+	# 캔버스를 붙여도 그림이 떠 보였다(`Assets.bottom_pad`). 띄우기·묻기 손잡이는
+	# 없다 — 두 번 만들었다가(FX_GROUND_LIFT·drop) 스킬마다 제각각이 되어 걷어냈다.
 	if style == "fall" or style == "rise":
-		return ground_y - h * 0.5
+		return ground_y - h * 0.5 + Assets.bottom_pad("res://assets/anim/%s" % fx_name) \
+			* absf(draw_scale)
 	return body_mid + nudge
 
 
@@ -5643,11 +5645,12 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			fx.scale = Vector2(full.x * 0.75, full.y * 0.2)
 			t.tween_property(fx, "scale", full, life * 0.42) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			# **끝에서 지면에 붙는다.** 예전엔 -16 을 더 올려서 다 자란 뒤에도 공중에
-			# 떠 있었다 — 솟는 것은 아래끝이 땅에 박혀 있어야 한다.
+			# **끝에서 지면에 붙는다.** 위치는 BACK 을 안 쓴다 — 목표를 지나쳤다
+			# 돌아오는 이징이라 중간에 아래끝이 지면선 **위로** 떴다(튕김은 scale 이
+			# 이미 준다). 솟는 것은 올라오는 내내 땅에 박혀 있어야 한다.
 			t.parallel().tween_property(fx, "position:y",
 				fx.position.y - half * 0.8, life * 0.42) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		"fall":
 			# 위에서 내려온다. 비(혈우)처럼 **하늘에서 떨어지는** 것에 쓴다.
 			# 시작 위치를 위로 올려 두고 내린다 — 제자리에서 커지면 비가 아니다.
