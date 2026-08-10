@@ -4610,6 +4610,12 @@ func _resolve_skill(key: String) -> void:
 			# 관통(피의 손길)은 **하나만** 띄운다 — 손바닥 하나가 날아가며 전부를
 			# 꿰뚫는 그림이라, 맞는 놈마다 손바닥이 뜨면 손이 여러 개가 된다.
 			# sweep 전진(190px)이 곧 관통의 몸이다. 피해는 그대로 전부에게 들어갔다.
+			#
+			# **웅덩이(RULES.puddle)는 무리 가운데 하나로 크게 깐다** — 사장님:
+			# "각 몬스터 밑에 있으면 너무 지저분해보임". 넓은 그림일수록 그렇다.
+			# 이 규칙이 장판 쪽에만 있어서 갈라진 대지를 파로 옮기자 못 쓰게 됐다 —
+			# `as` 로 옮길 수 있는 규칙은 두 길에 다 있어야 한다.
+			var wpud := float(SkillDefs.rule_of(key).get("puddle", 0.0))
 			if bool(SkillDefs.rule_of(key).get("pierce", false)) or struck.is_empty():
 				var ahead := hero_x \
 					+ float(hero_face) * (_motion_reach("attack") + 48.0)
@@ -4617,6 +4623,16 @@ func _resolve_skill(key: String) -> void:
 					_fx_anchor_y(fx_style, fx, fx_scale,
 						ground_y - float(Grid.SPRITE), fx_y)),
 					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
+			elif wpud > 0.0:
+				var mid := 0.0
+				for f in struck:
+					mid += f.position.x
+				mid /= float(struck.size())
+				_anim_fx(fx, Vector2(mid,
+					_fx_anchor_y(fx_style, fx, fx_scale * wpud,
+						ground_y - float(Grid.SPRITE), fx_y)),
+					fx_fps, fx_scale * wpud, fx_style, fx_echo, 1.0, hero_face,
+					fx_skew, false, fx_flip, fx_flip_v)
 			else:
 				for f in struck:
 					_anim_fx(fx, Vector2(f.position.x,
