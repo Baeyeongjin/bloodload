@@ -5619,13 +5619,18 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			# **땅에서 밀고 올라온다**(제단·왕좌). 원점이 가운데라 그냥 키우면 아래로도
 			# 같이 자라서 바닥을 뚫고 내려간다 — **커지는 만큼 위치를 올려** 아래끝을
 			# 지면에 붙여 둔다. 그래야 "솟았다"로 읽힌다.
-			var half := 32.0 * absf(draw_scale)      # 64px 스프라이트의 절반
+			# **높이는 그림에서 읽는다.** 32 로 박아 뒀더니 48칸 그림(갈라진 대지)이
+			# 지면에서 22px 떠서 "몹 중간에서 터진다"가 됐다(사장님 지적). 자리 계산
+			# (`_fx_anchor_y`)은 진짜 높이를 쓰는데 여기만 64px 를 가정하고 있었다.
+			var half := float(textures[0].get_height()) * 0.5 * absf(draw_scale)
 			fx.position.y += half * 0.8
 			fx.scale = Vector2(full.x * 0.75, full.y * 0.2)
 			t.tween_property(fx, "scale", full, life * 0.42) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			# **끝에서 지면에 붙는다.** 예전엔 -16 을 더 올려서 다 자란 뒤에도 공중에
+			# 떠 있었다 — 솟는 것은 아래끝이 땅에 박혀 있어야 한다.
 			t.parallel().tween_property(fx, "position:y",
-				fx.position.y - half * 0.8 - 16.0, life * 0.42) \
+				fx.position.y - half * 0.8, life * 0.42) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		"fall":
 			# 위에서 내려온다. 비(혈우)처럼 **하늘에서 떨어지는** 것에 쓴다.
