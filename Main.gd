@@ -578,6 +578,10 @@ func _ready() -> void:
 				# 시전 조건만 비운다. 쿨다운과 진행 중 동작이 남아 있으면 조용히 빠진다.
 				_skill_action = ""
 				_skill_cd.clear()
+				# **격(strike)은 표적이 있어야 나간다.** `_can_hit_foe(null)` 이 false 라
+				# 표적을 안 잡으면 아무 일도 안 일어나고 화면에는 "이펙트가 없다"로
+				# 보인다 — 아가리·핏빛 창을 찍다가 그렇게 헛돌았다.
+				_skill_target = _aoe_targets()[0]
 				_resolve_skill(cast_key)
 				# 시각을 찍는다. `--wait` 이 이보다 이르면 아직 안 쐈고, 늦으면 세상이
 				# 전진한 뒤라 문양이 화면 왼쪽으로 밀려 있다 — 둘 다 화면만 보면
@@ -1453,7 +1457,9 @@ func _build_skill_view(root: Control) -> void:
 	_skill_grid.add_theme_constant_override("v_separation", 8)
 	sc.add_child(_skill_grid)
 
-	var bw := (CONTENT_W - 24.0) / 3.0
+	# 버튼이 넷이다(2026-08-10 "전체 해제" 추가). 간격 12 x 3 = 36 을 빼고 넷으로 나눈다 —
+	# 3개 기준(24)을 그대로 두면 마지막 버튼이 창 밖으로 나간다.
+	var bw := (CONTENT_W - 36.0) / 4.0
 	var by := CONTENT_BOTTOM - 38.0
 	# 토글이다. 켜 두면 새 스킬·레벨업·조합 때마다 알아서 다시 낀다 — 방치형에서
 	# "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
@@ -1480,6 +1486,19 @@ func _build_skill_view(root: Control) -> void:
 		Vector2(bw, 38.0), Type.SIZE_SMALL)
 	_skill_synth_btn.pressed.connect(_ask_skill_synth)
 	_skill_view.add_child(_skill_synth_btn)
+	# 전체 해제 — 여섯 칸을 하나씩 빼는 건 방치형에서 할 짓이 아니다(2026-08-10 사장님).
+	# **자동 장착도 같이 끈다**: 안 끄면 다음 레벨업·조합 때 그대로 다시 껴서
+	# "해제가 안 된다"로 보인다.
+	var off_btn := Ui.button("전체 해제", Vector2(PAD + (bw + 12.0) * 3.0, by),
+		Vector2(bw, 38.0), Type.SIZE_SMALL)
+	off_btn.pressed.connect(func() -> void:
+		if skill_equipped.is_empty():
+			return
+		skill_auto_equip = false
+		skill_equipped.clear()
+		_refresh_skills()
+		_save_game())
+	_skill_view.add_child(off_btn)
 
 
 # 한 행은 ROW_H 높이의 띠다. 그 안에서 아이콘·글자·버튼이 전부 세로 중앙에 온다.
