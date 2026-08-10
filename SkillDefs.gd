@@ -102,13 +102,18 @@ const RULES := {
 	# 반~3분의 1 폭, 사장님 지정). 틱마다 뜨던 피격 이펙트는 뺐다(no_hit_fx) —
 	# 4마리 x 6틱 = 24장이 웅덩이를 가렸다.
 	"field_common": {"puddle": 3.0, "max_targets": 4, "no_hit_fx": true},
-	# 갈라진 대지 — **한 번 쿵 하고 끝이다**(2026-08-10 사장님: "몬스터 3명을 한번에
-	# 큰 데미지 ... 한번 쿵 지진 이펙트후 몬스터 사망"). 머무는 장판이 아니므로
-	# 틱을 1로 접고(one_shot) 대신 흔들림을 키웠다 — 6틱으로 나눠 흔들면 잔진동이
-	# 되고, 한 번에 몰아야 "쿵"이 된다. 죽은 몹은 갈라진 땅 밑으로 꺼진다(Foe.pit_fall).
-	# 총 피해는 그대로다 — 나눠 넣던 것을 한 번에 넣을 뿐이다.
-	"field_uncommon": {"pit_kill": true, "quake": 7.0, "one_shot": true,
-		"max_targets": 3},
+	# 갈라진 대지 — **장판이 아니다**(2026-08-10 사장님: "갈라진대지 장판아니고 그냥
+	# 넓은 범위에 단일로 한번 타격하고 끝이고 이펙트가 오래 머무르는거아니야").
+	#
+	# 이름은 진(field)이지만 **동작은 파(wave)** 다: 한 번에 3명까지 때리고 끝난다.
+	# 그전에는 이름이 진이라는 이유로 장판 기계(3초 머무는 문양 + 틱)를 타고 있었다 —
+	# `as` 가 그 매듭을 끊는다.
+	#
+	# `fps 12` 로 이펙트 수명이 0.75초다(진 기본 3fps = 3초). 땅이 갈라졌다 닫히는
+	# 그림이라 오래 남으면 갈라진 채로 굳는다.
+	# 죽은 몹은 갈라진 땅 밑으로 꺼진다(Foe.pit_fall). 흔들림은 한 번에 몬다.
+	"field_uncommon": {"as": "wave", "pit_kill": true, "quake": 7.0,
+		"max_targets": 3, "fps": 12.0},
 	# 감시의 눈 — **3명에게 3연타**(2026-08-10 사장님: "눈들이 하나하나 소환되는
 	# 애니메이션 연출 뒤 몬스터 3명 3번 다단히트"). 진의 기본 6틱을 3틱으로 줄이고
 	# 대상을 3으로 묶는다. 소환 연출은 이펙트 프레임이 맡는다(눈이 하나씩 늘어난다).
@@ -135,16 +140,27 @@ static func rule_of(key: String) -> Dictionary:
 	return RULES.get(key, {})
 
 
+# 그 스킬이 **실제로 어떻게 동작하는가**. 형태(shape)는 기본값일 뿐이고 스킬이
+# 덮어쓸 수 있다(RULES.as).
+#
+# 2026-08-10 사장님: "각 스킬별 타입이 정해지는게 아니라 고유로 가야해".
+# 그전에는 `_resolve_skill` 이 형태로 분기해서, 진(field)에 든 스킬은 **무조건**
+# 바닥에 머무는 장판이어야 했다 — 갈라진 대지는 "넓은 범위 단일 타격"인데 이름이
+# 진이라는 이유로 장판 기계를 타고 있었다. 이름(형태)과 동작을 갈라 둔다.
+#
+# 형태는 여전히 남는다: 쿨다운·기본 위력·모션·조합 표가 형태 단위이고, 그건
+# 20종을 한 눈에 재는 틀이라 유지된다. 바뀌는 건 **무엇을 하는가**뿐이다.
+static func behavior_of(key: String) -> String:
+	return str(rule_of(key).get("as", split(key)[0]))
+
+
 # 진(field)이 실제로 때리는 횟수. **여기 하나만 본다** — Main 과 검사가 각자
 # `duration x tick_rate` 를 다시 계산하면 규칙(one_shot·ticks)을 얹는 순간 갈린다.
 static func ticks_of(key: String) -> int:
 	var shape := shape_of(key)
 	if not shape.has("duration") or not shape.has("tick_rate"):
 		return 1
-	var rule := rule_of(key)
-	if bool(rule.get("one_shot", false)):
-		return 1
-	return maxi(1, int(rule.get("ticks",
+	return maxi(1, int(rule_of(key).get("ticks",
 		int(round(float(shape["duration"]) * float(shape["tick_rate"]))))))
 
 

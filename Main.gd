@@ -2812,8 +2812,13 @@ func _refresh_skill_detail() -> void:
 	var role := _panel_label(_skill_detail, Vector2(234.0, 58.0), Type.SIZE_SMALL,
 		Color(0.82, 0.80, 0.86), 306.0, 20.0)
 	# data["name"] 은 스킬 이름이라 바로 위 줄과 겹친다 — 여기는 **형태**를 적는다.
-	role.text = "%s · %s · 쿨타임 %.1f초" % [str(SkillDefs.shape_of(key)["name"]),
-		str(data["role"]), float(data["cooldown"])]
+	# **패시브에 쿨타임을 적으면 거짓말이다** — 시전을 안 하므로 돌 쿨다운이 없다.
+	# 그 자리에 "패시브"를 적어야 액티브와 한눈에 갈린다(2026-08-10 사장님).
+	if bool(SkillDefs.rule_of(key).get("passive", false)):
+		role.text = "%s · 패시브 · 장착하면 상시" % str(SkillDefs.shape_of(key)["name"])
+	else:
+		role.text = "%s · %s · 쿨타임 %.1f초" % [str(SkillDefs.shape_of(key)["name"]),
+			str(data["role"]), float(data["cooldown"])]
 	# 무엇을 하는 스킬인지 한 줄. 가호만 피해가 0이라 다른 문장을 쓴다.
 	var effect := _panel_label(_skill_detail, Vector2(234.0, 86.0), Type.SIZE_MID,
 		Color(0.96, 0.82, 0.56), 306.0, 24.0)
@@ -4186,9 +4191,11 @@ func _skill_data(key: String) -> Dictionary:
 	if str(data["shape"]) == "ward":
 		data["bonus"] = SkillDefs.ward_bonus(key)
 		data["duration"] = SkillDefs.ward_duration(key, lv)
-	# 형태가 곧 대상 규칙이다. 표에 target 을 또 적으면 둘이 어긋난다.
+	# **동작이 곧 대상 규칙이다** — 형태가 아니다. 스킬이 형태를 덮어쓰면(RULES.as)
+	# 조준 규칙도 같이 따라가야 한다. 표에 target 을 또 적으면 둘이 어긋난다.
+	data["act"] = SkillDefs.behavior_of(key)
 	data["target"] = {"strike": "melee", "wave": "area", "field": "area",
-		"ward": "self"}[str(data["shape"])]
+		"ward": "self"}[str(data["act"])]
 	return data
 
 
@@ -4515,11 +4522,13 @@ func _resolve_skill(key: String) -> void:
 	var hit := _combat_damage() * Balance.skill_hit_mult(attack_interval(), SKILL_DUR) \
 		* float(skill["power"]) / 2.2
 	# **쏘기 전에 표적 쪽으로 돈다.** 가호(ward)는 제 몸에 두르는 것이라 방향이 없다.
-	if str(skill["shape"]) == "strike":
+	# 형태가 아니라 **동작**을 본다 — 스킬이 형태를 덮어썼으면 조준도 따라가야 한다.
+	var act := str(skill["act"])
+	if act == "strike":
 		_face_toward(_skill_target)
-	elif str(skill["shape"]) != "ward":
+	elif act != "ward":
 		_face_toward(_nearest_foe())
-	match str(skill["shape"]):
+	match act:
 		"strike":
 			if _can_hit_foe(_skill_target, str(skill["motion"])):
 				# **연타는 총 피해를 나눠 넣는다**(RULES.hits). 위력을 그대로 여러 번
@@ -4564,9 +4573,26 @@ func _resolve_skill(key: String) -> void:
 			if bounce > 0:
 				_start_bounce(skill, hit, bounce, p)
 				return
+			# **상한과 흔들림·구덩이는 파에도 붙는다**(RULES). 갈라진 대지가 장판에서
+			# 파로 옮겨 오면서 필요해졌다 — 규칙이 형태에 묶여 있으면 `as` 로 옮긴
+			# 순간 규칙이 조용히 사라진다.
+			var wrule := SkillDefs.rule_of(key)
+			var wcap := int(wrule.get("max_targets", 0))
+			var wquake := float(wrule.get("quake", 0.0))
+			var wpit := bool(wrule.get("pit_kill", false))
+			if wquake > 0.0:
+				_shake_combat(wquake)
 			_defer_stage_advance = true
 			var struck := _aoe_targets()
+			# 가까운 놈부터 상한까지만. 안 자르면 "3명"이 화면 전부가 된다.
+			if wcap > 0 and struck.size() > wcap:
+				struck.sort_custom(func(a: Foe, b: Foe) -> bool:
+					return absf(a.position.x - hero_x) < absf(b.position.x - hero_x))
+				struck = struck.slice(0, wcap)
 			for f in struck:
+				# 이 타로 죽을 놈은 **밑으로 꺼져** 죽는다(갈라진 대지).
+				if wpit and f.hp <= hit:
+					f.pit_fall = true
 				f.take_damage(hit)
 				_skill_hit_fx(skill, f)
 			_defer_stage_advance = false
