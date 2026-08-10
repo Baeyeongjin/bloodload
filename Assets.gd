@@ -155,24 +155,47 @@ static func slam_peak_frame(dir_path: String) -> int:
 	return best
 
 
-# 그림 아래끝과 캔버스 아래끝 사이의 여백(원본 px). **프레임 전체의 최솟값**이다 —
-# 바닥 이펙트를 지면선에 붙일 때 캔버스가 아니라 이 값만큼 내려서 **잉크**를 붙인다.
+# 그림 **덩어리**의 아래끝과 캔버스 아래끝 사이의 여백(원본 px). 바닥 이펙트를
+# 지면선에 붙일 때 이 값만큼 내려서 붙인다.
 #
-# 왜 필요한가(2026-08-10 실측): 피의 왕좌는 전 프레임 여백 4px, 심연의 손은 6px 라
-# 캔버스를 지면에 붙여도 그림이 배율 x4~x12 만큼 떠 보였다. 서는 자리를 상자에서
-# 잉크로 옮긴 것(인계 3장)과 같은 교훈이다 — 캔버스는 상자다.
-# 최솟값인 이유: 분출(갈라진 대지)은 중반 프레임에서 피가 땅을 떠난다. 그 프레임에
-# 맞추면 시작 프레임이 땅에 파묻힌다 — 가장 낮게 닿는 프레임이 지면에 닿으면 된다.
+# **튄 방울 한 점이 아니라 덩어리를 본다.** 잉크가 있는 가장 낮은 줄로 재면
+# 갈라진 대지가 캔버스 바닥에 "닿은" 것으로 나오는데(bbox 밑단 48/48), 그건 흩뿌려진
+# 핏방울이고 눈에 보이는 덩어리는 5~7px 위에 있다 — 배율 2.24 를 곱하면 화면에서
+# 11~16px 떠 보인다. 사장님이 네 번째로 "안 닿아 있다"고 한 것이 이것이다.
+# 그래서 **그 프레임에서 가장 넓은 줄의 20% 이상**이 찬 줄을 밑단으로 본다.
+#
+# 프레임 전체의 **최솟값**을 쓴다: 분출은 중반에 피가 땅을 떠나는 게 정상이라,
+# 거기 맞추면 시작 프레임이 파묻힌다. 가장 낮게 닿는 프레임이 지면에 닿으면 된다.
+#
+# 서는 자리를 상자에서 잉크로 옮긴 것(인계 3장)과 같은 교훈이다 — 캔버스는 상자다.
+const _DENSE_ROW := 0.20
+
+
 static func bottom_pad(dir_path: String) -> float:
 	var key := "bpad:%s" % dir_path
 	if _reach_cache.has(key):
 		return float(_reach_cache[key])
 	var pad := 1 << 30
 	for texture in frames(dir_path):
-		var used: Rect2i = (texture as Texture2D).get_image().get_used_rect()
-		if used.size.x <= 0:
+		var img := (texture as Texture2D).get_image()
+		var w := img.get_width()
+		var h := img.get_height()
+		var rows: Array[int] = []
+		var widest := 0
+		for y in h:
+			var n := 0
+			for x in w:
+				if img.get_pixel(x, y).a >= 0.5:
+					n += 1
+			rows.append(n)
+			widest = maxi(widest, n)
+		if widest <= 0:
 			continue
-		pad = mini(pad, texture.get_height() - used.end.y)
+		var need := maxi(2, int(float(widest) * _DENSE_ROW))
+		for y in range(h - 1, -1, -1):
+			if rows[y] >= need:
+				pad = mini(pad, h - 1 - y)
+				break
 	var out := float(pad) if pad < (1 << 30) else 0.0
 	_reach_cache[key] = out
 	return out
