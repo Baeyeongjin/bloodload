@@ -4737,9 +4737,16 @@ func _resolve_skill(key: String) -> void:
 				for f in struck:
 					if absf(f.position.x - hero_x) < absf(near_x - hero_x):
 						near_x = f.position.x
+				# **몹 너머로 민다**(RULES.push). 임팩트 순간 영웅과 몹은 59px 밖에
+				# 안 떨어져 있어서(몹 잉크 29 + BODY_HALF 30) 몹에 정확히 놓아도
+				# 폭이 크면 영웅을 덮는다. 간격 자체는 못 벌린다 — 벌리면 영웅이
+				# 그만큼 따라 나가 때리므로 화면상 거리는 그대로고 왕복만 생긴다.
+				near_x += float(SkillDefs.rule_of(key).get("push", 0.0)) \
+					* float(signi(hero_face))
 				_anim_fx(fx, Vector2(near_x,
 					_fx_anchor_y(fx_style, fx, fx_scale * wpud,
-						ground_y - float(Grid.SPRITE), fx_y)),
+						ground_y - float(Grid.SPRITE), fx_y,
+						float(SkillDefs.rule_of(key).get("drop", 0.0)))),
 					fx_fps, fx_scale * wpud, fx_style, fx_echo, 1.0, hero_face,
 					fx_skew, false, fx_flip, fx_flip_v)
 			else:
@@ -5476,7 +5483,7 @@ func _ground_scale_y(fx_name: String, draw_scale: float) -> float:
 
 
 func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
-		body_mid: float, nudge: float) -> float:
+		body_mid: float, nudge: float, drop := 0.0) -> float:
 	var frames: Array = Assets.frames("res://assets/anim/%s" % fx_name)
 	if frames.is_empty():
 		return body_mid + nudge
@@ -5494,7 +5501,10 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **서 있는 물건**이라 아래끝이 지면이다.
 	# 제단·왕좌·심연의 손이 여기 해당한다.
 	if style == "fall" or style == "rise":
-		return ground_y - h * 0.5 - FX_GROUND_LIFT
+		# `drop` — 지면 기준에서 더 내린다(+아래). 위로 솟는 그림은 잉크가 캔버스
+		# 아래끝까지 차 있어도(여백 0) 무게중심이 높아 떠 보인다 — 스프라이트를
+		# 조금 묻어야 "발밑에서 터졌다"로 읽힌다(2026-08-10 사장님: "좀더 내려줘야함").
+		return ground_y - h * 0.5 - FX_GROUND_LIFT + drop
 	return body_mid + nudge
 
 
