@@ -367,18 +367,24 @@ func gold_mult() -> float:
 
 func dps() -> float:
 	# 버프 스킬은 장착돼 있을 때만 계산에 넣는다. 없으면 시전 손실도 지속 이득도 없다.
-	var ward := _equipped_shape("ward")
+	# **패시브 가호는 여기 안 넣는다** — 시전이 없으니 `auto_dps` 의 가동률 회계가
+	# 안 맞는다. 상시 배수라 밖에서 한 번 곱하는 게 맞고, 실제 피해(_combat_damage)와
+	# 같은 식이라 화면 DPS 와 전투 결과가 안 갈린다.
+	var ward := _equipped_shape("ward", true)
 	return Balance.auto_dps(_base_hit_damage() * (1.0 + _codex_act_bonus()),
 		attack_interval(), SKILL_DUR,
 		float(ward.get("cooldown", 999.0)), float(ward.get("duration", 0.0)),
-		float(ward.get("bonus", 0.0)))
+		float(ward.get("bonus", 0.0))) * (1.0 + _passive_ward_bonus())
 
 
 # 장착 중인 것 가운데 그 형태의 첫 스킬. 없으면 빈 사전.
-func _equipped_shape(shape: String) -> Dictionary:
+func _equipped_shape(shape: String, active_only := false) -> Dictionary:
 	for key in skill_equipped:
-		if str(SkillDefs.split(str(key))[0]) == shape:
-			return _skill_data(str(key))
+		if str(SkillDefs.split(str(key))[0]) != shape:
+			continue
+		if active_only and bool(SkillDefs.rule_of(str(key)).get("passive", false)):
+			continue
+		return _skill_data(str(key))
 	return {}
 
 
@@ -395,7 +401,27 @@ func _combat_damage(target: Foe = null) -> float:
 	# SHAPES["ward"]["bonus"] 와 두 군데가 되어 한쪽만 고쳤을 때 화면 DPS(dps())와
 	# 실제 피해가 갈린다. 들고 있으면 버프 도중에 장비를 바꿔도 안 사라진다.
 	return _base_hit_damage() * (1.0 + _summon_bonus if _summon_t > 0.0 else 1.0) \
-		* (1.0 + known) * _dev_weak
+		* (1.0 + _passive_ward_bonus()) * (1.0 + known) * _dev_weak
+
+
+# 패시브 가호(RULES.passive)가 상시로 주는 피해 배수.
+#
+# 2026-08-10 사장님: "진홍 방패는 패시브로 돌리자 / 붉은 성배도 패시브처리 / 혈월은
+# 패시브 처리". 시전을 없애면 **가동률이 곧 100%** 가 되므로, 표에 적힌 `bonus` 를
+# 그대로 상시로 주면 같은 스킬이 3배 세진다(가동률 duration/cooldown = 6/20 = 30%).
+# 그래서 **효과값을 가동률로 환산**해서 준다 — 세기는 그대로고 시전만 사라진다.
+# 세기를 올릴 거면 `bonus` 를 올리는 게 맞지, 여기서 슬쩍 올릴 일이 아니다.
+func _passive_ward_bonus() -> float:
+	var sum := 0.0
+	for key in skill_equipped:
+		if not bool(SkillDefs.rule_of(str(key)).get("passive", false)):
+			continue
+		var d := _skill_data(str(key))
+		if d.is_empty():
+			continue
+		var cd := maxf(0.001, float(d["cooldown"]))
+		sum += float(d.get("bonus", 0.0)) * clampf(float(d["duration"]) / cd, 0.0, 1.0)
+	return sum
 
 
 # 지금 막 로스터의 지식 보너스 평균. 전투력 표시와 오프라인 판정이 쓴다 —
@@ -2792,8 +2818,15 @@ func _refresh_skill_detail() -> void:
 	var effect := _panel_label(_skill_detail, Vector2(234.0, 86.0), Type.SIZE_MID,
 		Color(0.96, 0.82, 0.56), 306.0, 24.0)
 	if str(data["shape"]) == "ward":
-		effect.text = "전 피해 +%d%% · %.1f초" % [int(float(data["bonus"]) * 100.0),
-			float(data["duration"])]
+		# 패시브는 지속시간을 쓰면 거짓말이 된다 — 상시이고, 표시값도 실제로 붙는
+		# 값(가동률 환산분)이어야 화면과 전투가 안 갈린다.
+		if bool(SkillDefs.rule_of(key).get("passive", false)):
+			var cd := maxf(0.001, float(data["cooldown"]))
+			var eff := float(data["bonus"]) * clampf(float(data["duration"]) / cd, 0.0, 1.0)
+			effect.text = "전 피해 +%.1f%% · 상시" % (eff * 100.0)
+		else:
+			effect.text = "전 피해 +%d%% · %.1f초" % [int(float(data["bonus"]) * 100.0),
+				float(data["duration"])]
 	else:
 		effect.text = "피해 x%.2f" % float(data["power"])
 	var combo := _panel_label(_skill_detail, Vector2(234.0, 114.0), Type.SIZE_MID,
@@ -4113,6 +4146,10 @@ func _tick_hero_state(delta: float) -> void:
 func _ready_skills() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for key in skill_equipped:
+		# **패시브는 시전 목록에 안 든다.** 효과는 `_passive_ward_bonus` 가 상시로
+		# 준다 — 여기 남겨 두면 쿨마다 모션까지 나가서 "패시브"가 아니게 된다.
+		if bool(SkillDefs.rule_of(str(key)).get("passive", false)):
+			continue
 		if float(_skill_cd.get(key, 0.0)) > 0.0:
 			continue
 		var data := _skill_data(str(key))
@@ -4397,6 +4434,23 @@ func _on_screen(f: Foe) -> bool:
 	return f.position.x - f.body_half() <= float(Grid.BG.x)
 
 
+# 격 한 타. 연타(RULES.hits)가 같은 것을 여러 번 부른다 — 늦게 도는 타는 그 사이에
+# 표적이 죽었을 수 있으므로 **매번 살아 있는지 다시 본다.**
+func _strike_once(who: Foe, dmg: float, skill: Dictionary, fx: String, fx_y: float,
+		fx_fps: float, fx_style: String, fx_scale: float, fx_echo: int,
+		fx_skew: float, fx_flip: int, fx_flip_v: int, fx_rot: float) -> void:
+	if not is_instance_valid(who) or who.dying:
+		return
+	var dealt := minf(who.hp, dmg)
+	who.take_damage(dmg)
+	gold += dealt * 0.20
+	_anim_fx(fx, Vector2(who.position.x,
+		_fx_anchor_y(fx_style, fx, fx_scale, who.body_mid_y(), fx_y)),
+		fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew,
+		false, fx_flip, fx_flip_v, fx_rot)
+	_skill_hit_fx(skill, who)
+
+
 func _aoe_targets() -> Array[Foe]:
 	var out: Array[Foe] = []
 	if not is_inside_tree():
@@ -4430,6 +4484,7 @@ func _resolve_skill(key: String) -> void:
 	# 둘을 묶었더니 sweep 이 등 뒤로 날아갔다(_anim_fx 주석).
 	var fx_flip := int(signf(float(p["flip"])))
 	var fx_flip_v := int(signf(float(p["flip_v"])))
+	var fx_rot := float(p["rot"])
 	# 등급이 높을수록 화면이 더 흔들린다. 레전더리가 커먼과 같은 무게로 터지면 안 된다.
 	if float(p["shake"]) > 0.0:
 		_shake_combat(float(p["shake"]))
@@ -4443,14 +4498,25 @@ func _resolve_skill(key: String) -> void:
 	match str(skill["shape"]):
 		"strike":
 			if _can_hit_foe(_skill_target, str(skill["motion"])):
-				var dealt := minf(_skill_target.hp, hit)
-				_skill_target.take_damage(hit)
-				gold += dealt * 0.20
-				_anim_fx(fx, Vector2(_skill_target.position.x,
-					_fx_anchor_y(fx_style, fx, fx_scale,
-						_skill_target.body_mid_y(), fx_y)),
-					fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
-				_skill_hit_fx(skill, _skill_target)
+				# **연타는 총 피해를 나눠 넣는다**(RULES.hits). 위력을 그대로 여러 번
+				# 넣으면 등급 사다리가 뒤집힌다 — 사혈 발톱(레어) 하나가 에픽보다 세진다.
+				var hits := maxi(1, int(SkillDefs.rule_of(key).get("hits", 1)))
+				var gap := float(SkillDefs.rule_of(key).get("hit_gap", 0.15))
+				var each := hit / float(hits)
+				for i in hits:
+					if i == 0:
+						_strike_once(_skill_target, each, skill, fx, fx_y, fx_fps,
+							fx_style, fx_scale, fx_echo, fx_skew, fx_flip, fx_flip_v, fx_rot)
+						continue
+					# 남은 타는 조금씩 늦게 — 같은 프레임에 겹치면 한 번으로 보인다.
+					var t := create_tween()
+					var who := _skill_target
+					t.tween_interval(gap * float(i))
+					t.tween_callback(func() -> void:
+						if is_inside_tree() and not _hero_dead:
+							_strike_once(who, each, skill, fx, fx_y, fx_fps,
+								fx_style, fx_scale, fx_echo, fx_skew,
+								fx_flip, fx_flip_v, fx_rot))
 		"field":
 			# **다단히트.** 깔아 두고 지속시간 동안 초당 tick_rate 번, 그때 장판 안에
 			# 서 있는 놈에게 넣는다 — 들어오는 순간에만 발화하는 `body_entered` 식이
@@ -5253,7 +5319,7 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 # `sweep` 의 진행 방향까지 같이 뒤집혀 등 뒤로 날아갔다(2026-08-06, 렌더로 잡음).
 func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0,
-		in_world := false, art_flip := 1, art_flip_v := 1) -> void:
+		in_world := false, art_flip := 1, art_flip_v := 1, rot_deg := 0.0) -> void:
 	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
 	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
 	for i in echo:
@@ -5263,7 +5329,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			if is_inside_tree():
 				_anim_fx(name, at, fps, draw_scale * shrink, style, 0,
 					alpha * (0.55 - 0.1 * float(i)), face, skew_mul,
-						false, art_flip, art_flip_v))
+						false, art_flip, art_flip_v, rot_deg))
 	# 정지 아이콘이 아니라 보유한 프레임 전체를 재생한다. 기본공격과 사망 모두
 	# 같은 작은 도우미를 써서 프레임 수가 달라도 마지막에 정확히 정리된다.
 	var textures := Assets.frames("res://assets/anim/%s" % name)
@@ -5286,6 +5352,10 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	# **좌우 반전은 scale.x 부호 하나로 끝낸다.** 아래 스타일들이 전부 `full` 에서
 	# 크기를 뽑으므로, 여기서 부호를 넣어 두면 모든 연출이 저절로 따라 뒤집힌다.
 	fx.scale = Vector2(draw_scale * float(signi(face) * signi(art_flip)), draw_y)
+	# **표적 쪽으로 돌린다.** 부호를 보는 쪽에 묶어야 왼쪽을 볼 때 반대로 안 기운다.
+	# `orbit` 은 스스로 회전을 트윈으로 돌리므로 건드리지 않는다.
+	if not is_zero_approx(rot_deg) and style != "orbit":
+		fx.rotation = deg_to_rad(rot_deg * float(signi(face)))
 	fx.modulate.a = alpha
 	# 잔상은 본체 뒤에 깔린다. 위에 오면 본체가 흐려 보인다.
 	#
