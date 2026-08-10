@@ -4369,13 +4369,37 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 		_anim_fx(fx, Vector2(_field_x, cy), fps, scale * maxf(1.0, puddle),
 			style, echo, 1.0, hero_face, skew, true)
 	else:
+		# **하나씩 소환된다**(RULES.stagger). 감시의 눈은 눈이 차례로 뜨는 연출이라
+		# (2026-08-10 사장님) 대상마다 조금씩 늦게 깐다 — 한꺼번에 뜨면 그냥 세 개가
+		# 동시에 나타난 그림이다. 새 아트가 필요 없다: 진은 이미 맞는 놈마다 하나씩
+		# 깔리므로, **시간차가 곧 소환 연출**이다.
+		var stagger := float(rule.get("stagger", 0.0))
+		var n := 0
 		for f in spots:
-			_anim_fx(fx, Vector2(f.position.x, cy), fps, scale, style, echo, 1.0,
-				hero_face, skew, true)
+			var at_x := f.position.x
+			if stagger <= 0.0 or n == 0:
+				_anim_fx(fx, Vector2(at_x, cy), fps, scale, style, echo, 1.0,
+					hero_face, skew, true)
+			else:
+				# 늦게 뜨는 문양은 **그 사이 세상이 움직인 만큼** 어긋난다. 땅에
+				# 놓이는 것이라 몹을 다시 찾지 않고 그때의 몹 자리를 그대로 쓴다.
+				var who := f
+				var t2 := create_tween()
+				t2.tween_interval(stagger * float(n))
+				t2.tween_callback(func() -> void:
+					if not is_inside_tree() or not is_instance_valid(who):
+						return
+					_anim_fx(fx, Vector2(who.position.x, cy), fps, scale, style,
+						echo, 1.0, hero_face, skew, true))
+			n += 1
+	# **소환이 끝난 뒤에 때린다.** 시간차로 까는 동안 피해가 먼저 들어가면 아직 문양이
+	# 없는 자리에서 피해가 나간다 — `tests/AoeCheck` 의 "맞는 놈보다 문양이 적다"가
+	# 그걸 잡았다. 사장님 지시도 "소환되는 연출 **뒤** 3번 다단히트"다.
+	var lead := float(rule.get("stagger", 0.0)) * float(maxi(0, spots.size() - 1))
 	var gen := _field_gen
 	for i in ticks:
 		var t := create_tween()
-		t.tween_interval(gap * float(i))
+		t.tween_interval(lead + gap * float(i))
 		t.tween_callback(func() -> void:
 			# **phase 는 안 본다.** 문양은 땅에 있는 것이라 영웅이 다음 놈에게 달려가는
 			# 동안에도 남아 있어야 한다 — phase 를 보게 뒀더니 전진 구간에서 모든 틱이
@@ -4522,10 +4546,15 @@ func _resolve_skill(key: String) -> void:
 			# 서 있는 놈에게 넣는다 — 들어오는 순간에만 발화하는 `body_entered` 식이
 			# 아니라 "지금 겹친 놈들"을 매 틱 다시 본다(Godot 커뮤니티 표준 패턴).
 			# 이펙트는 이미 머무는 그림이라 한 번만 띄우고 그대로 둔다.
-			var ticks := maxi(1, int(round(
-				float(skill["duration"]) * float(skill["tick_rate"]))))
+			# 틱 수는 `SkillDefs.ticks_of` 하나만 본다 — 규칙(one_shot·ticks)을
+			# 여기서 다시 얹으면 검사와 갈린다.
+			var ticks := SkillDefs.ticks_of(key)
+			# **간격은 지속시간에서 나온다.** `1/tick_rate` 로 고정하면 틱 수를 바꾼
+			# 스킬(감시의 눈 3틱)이 절반 시간에 끝나고 그림만 남는다 — 그림이 있는데
+			# 피해가 없는 구간은 이미 한 번 고친 부류다(3-5).
 			_start_field(fx, fx_fps, fx_scale, fx_style, fx_echo, fx_skew,
-				hit / float(ticks), ticks, 1.0 / float(skill["tick_rate"]), skill)
+				hit / float(ticks), ticks,
+				float(skill["duration"]) / float(ticks), skill)
 			if kills >= StageDefs.kills_needed(stage):
 				_advance_stage()
 		"wave":
@@ -5362,8 +5391,16 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	# **몸에 두르는 것(pulse·orbit)은 영웅 뒤에 깔린다.** 앞에 오면 방패·성배·심장처럼
 	# 꽉 찬 그림이 영웅을 통째로 가려서 "버프가 걸렸다"가 아니라 "캐릭터가 사라졌다"로
 	# 보인다. 뒤에 두면 영웅이 그 앞에 선 것이 되어 후광으로 읽힌다. (영웅은 z=3)
+	#
+	# **바닥에 깔리는 것(hold)은 그 위에 선 놈 아래로 간다**(2026-08-10). 지금까지
+	# 문양이 z=5 로 몹(z=1) 위에 그려져서, 밟고 선 놈의 다리를 덮고 있었다 — 땅에
+	# 놓인 그림이 사람을 가리면 "땅"으로 안 읽힌다. 갈라진 대지를 불투명 70% 짜리
+	# 균열로 바꾸면서 이게 눈에 띄게 커졌다(기존 문양은 27~49%).
+	# 배경은 z=-20 이라 그 위, 몹은 z=1 이라 그 아래다.
 	var wraps_hero := style == "pulse" or style == "orbit"
-	if wraps_hero:
+	if style == "hold":
+		fx.z_index = 0 if alpha >= 1.0 else -1
+	elif wraps_hero:
 		fx.z_index = 2 if alpha >= 1.0 else 1
 	else:
 		fx.z_index = 5 if alpha >= 1.0 else 4

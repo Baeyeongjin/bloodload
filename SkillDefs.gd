@@ -102,9 +102,18 @@ const RULES := {
 	# 반~3분의 1 폭, 사장님 지정). 틱마다 뜨던 피격 이펙트는 뺐다(no_hit_fx) —
 	# 4마리 x 6틱 = 24장이 웅덩이를 가렸다.
 	"field_common": {"puddle": 3.0, "max_targets": 4, "no_hit_fx": true},
-	# 갈라진 대지 — 이 장판에 죽은 몹은 갈라진 땅 **밑으로 꺼지고**(Foe.pit_fall),
-	# 틱마다 화면이 흔들린다(quake — 사장님: 바닥이 흔들리는 느낌).
-	"field_uncommon": {"pit_kill": true, "quake": 4.5},
+	# 갈라진 대지 — **한 번 쿵 하고 끝이다**(2026-08-10 사장님: "몬스터 3명을 한번에
+	# 큰 데미지 ... 한번 쿵 지진 이펙트후 몬스터 사망"). 머무는 장판이 아니므로
+	# 틱을 1로 접고(one_shot) 대신 흔들림을 키웠다 — 6틱으로 나눠 흔들면 잔진동이
+	# 되고, 한 번에 몰아야 "쿵"이 된다. 죽은 몹은 갈라진 땅 밑으로 꺼진다(Foe.pit_fall).
+	# 총 피해는 그대로다 — 나눠 넣던 것을 한 번에 넣을 뿐이다.
+	"field_uncommon": {"pit_kill": true, "quake": 7.0, "one_shot": true,
+		"max_targets": 3},
+	# 감시의 눈 — **3명에게 3연타**(2026-08-10 사장님: "눈들이 하나하나 소환되는
+	# 애니메이션 연출 뒤 몬스터 3명 3번 다단히트"). 진의 기본 6틱을 3틱으로 줄이고
+	# 대상을 3으로 묶는다. 소환 연출은 이펙트 프레임이 맡는다(눈이 하나씩 늘어난다).
+	# 총 피해는 그대로다 — 틱 수가 줄면 틱당 피해가 그만큼 커진다.
+	"field_rare": {"ticks": 3, "max_targets": 3, "stagger": 0.14},
 	# 사혈 발톱 — **한 놈을 두 번 긁는다**(2026-08-10 사장님 지시). 총 피해는 그대로
 	# 두고 반씩 나눠 두 박자에 넣는다 — 위력을 그대로 두 번 넣으면 격 레어 하나가
 	# 에픽보다 세진다. 이펙트는 그대로 쓰되(사장님: "이펙트는 그냥 냅둬") 두 번 뜬다.
@@ -124,6 +133,19 @@ const RULES := {
 
 static func rule_of(key: String) -> Dictionary:
 	return RULES.get(key, {})
+
+
+# 진(field)이 실제로 때리는 횟수. **여기 하나만 본다** — Main 과 검사가 각자
+# `duration x tick_rate` 를 다시 계산하면 규칙(one_shot·ticks)을 얹는 순간 갈린다.
+static func ticks_of(key: String) -> int:
+	var shape := shape_of(key)
+	if not shape.has("duration") or not shape.has("tick_rate"):
+		return 1
+	var rule := rule_of(key)
+	if bool(rule.get("one_shot", false)):
+		return 1
+	return maxi(1, int(rule.get("ticks",
+		int(round(float(shape["duration"]) * float(shape["tick_rate"]))))))
 
 
 const SLOTS := 6            # 장착 칸
@@ -221,11 +243,15 @@ const FX_OVERRIDE := {
 	# (임팩트 스플래시 → 핏방울이 오른쪽 위로 튕겨 나감) — flip 을 빼야 진행 방향과
 	# 맞는다. 옛 물보라(왼쪽 향함)로 되돌리면 flip -1 도 같이 되돌릴 것.
 	"wave_rare": {"style": "fall", "y": -48.0},
-	# 핏빛 창 — **세로로 뒤집는다**(사장님: 찌르는 방향이 반대). 원본은 창끝이 오른쪽
-	# 위라 땅에서 솟는 것으로 읽힌다 — 뒤집으면 위에서 내리꽂는 창이 된다.
-	# fps 를 낮춰 찌른 뒤 **서서히** 사라진다(수명 0.56 → 1.1초. 그림 자체도 후반
-	# 프레임이 어두워지는 페이드라 곡선이 이중으로 걸린다).
-	"strike_uncommon": {"flip_v": -1.0, "fps": 8.0},
+	# 핏빛 창 — **날아와서 꽂힌다**(2026-08-10 사장님: "이펙트 위아래 반전만 시켜주고
+	# 창이 날라와서 몬스터한테 관통하는 이펙트로"). 그림을 가로로 날아가는 창으로
+	# 다시 뽑았으므로 `flip_v` 를 뺀다 — 그건 옛 그림(창끝이 오른쪽 위)을 내리꽂는
+	# 창으로 세우려던 보정이고, 새 그림에 걸면 창이 뒤집힌다.
+	#
+	# `sweep` 은 **앞으로 나아가며 늘어나는** 스타일이다(190px 전진). 격은 단일이라
+	# 표적 하나에 꽂히고, 나아가는 궤적이 곧 "날아왔다"가 된다.
+	# fps 는 낮게 둬서 꽂힌 뒤 서서히 사라진다(수명 0.56 → 1.1초).
+	"strike_uncommon": {"style": "sweep", "fps": 8.0, "skew": 0.0},
 	# skew 0 = 안 기울인다. **정면 대칭인 그림은 기울이면 깊이감이 아니라
 	# 찌그러진 그림이 된다.** 비스듬히 그려진 것(송곳니·창)만 기울여야 산다.
 	"strike_rare": {"skew": 0.0},       # 사혈 발톱 — 교차 베기라 정면이 맞다

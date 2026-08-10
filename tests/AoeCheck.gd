@@ -105,7 +105,10 @@ func _init() -> void:
 	# 재서 "피해 0 번"이 나왔다. 장판 자체는 phase 를 안 보지만 시전은 본다.
 	scene._phase = "fight"
 	var sk := SkillDefs.SHAPES["field"]
-	var want := int(round(float(sk["duration"]) * float(sk["tick_rate"])))
+	# **설계 틱 수를 여기서 다시 계산하지 않는다.** 스킬 고유 규칙(RULES.ticks·
+	# one_shot)이 얹히므로 `duration x tick_rate` 로 재면 규칙을 얹는 순간 갈린다 —
+	# 감시의 눈을 3틱으로 바꿨을 때 실제로 그렇게 걸렸다.
+	var want := SkillDefs.ticks_of("field_rare")
 	var gen0: int = scene._field_gen
 	var world0: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size()
 	# **field_rare 로 잰다.** field_common(비명의 흔적)은 2026-08-06 부터 웅덩이 규칙
@@ -113,6 +116,14 @@ func _init() -> void:
 	# 그 규칙은 아래에서 따로 검사한다. 감시의 눈(rare)이 형태 기본 규칙 그대로다.
 	scene._resolve_skill("field_rare")
 	await process_frame
+	# **시간차 소환(RULES.stagger)을 기다린다.** 감시의 눈은 문양이 차례로 뜨므로
+	# 한 프레임 뒤에 세면 첫 장밖에 안 보인다. 첫 피해도 소환이 끝난 뒤에 들어가므로
+	# (`_start_field` 의 lead) 여기서 기다려도 "문양 없이 맞았다"를 놓치지 않는다.
+	var lead: float = float(SkillDefs.rule_of("field_rare").get("stagger", 0.0)) * 4.0
+	var waited := 0.0
+	while waited < lead:
+		await process_frame
+		waited += scene.get_process_delta_time()
 	var laid: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size() - world0
 	var marked: int = (scene._field_targets() as Array).size()
 	print("   깔린 뒤: _field_x %.1f  판정반폭 %.0f  gen %d->%d  문양 %d장  대상 %d"
