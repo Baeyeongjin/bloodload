@@ -5515,6 +5515,14 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		in_world := false, art_flip := 1, art_flip_v := 1, rot_deg := 0.0) -> void:
 	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
 	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
+	#
+	# **바닥에 놓이는 것(hold·rise·fall)은 잔상을 안 띄운다**(2026-08-10). 잔상은
+	# 같은 중심에 0.87배로 뜨므로 아래끝이 ~8px **떠서**, 본체가 사라진 마지막
+	# 0.045초 동안 그 뜬 복사본만 남는다 — 화면에서는 "끝 프레임에 이펙트가
+	# 올라간다"로 보였다(사장님이 잡았다). 서 있는 물건의 잔상은 유령 분신으로도
+	# 읽힌다(왕좌 잔상 4개 = 왕좌 5개). 등급은 크기·흔들림으로 이미 읽힌다.
+	if style == "hold" or style == "rise" or style == "fall":
+		echo = 0
 	for i in echo:
 		var delay := 0.045 * float(i + 1)
 		var shrink := 1.0 - 0.13 * float(i + 1)
