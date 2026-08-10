@@ -489,8 +489,14 @@ func _ready() -> void:
 			chest_minutes = 143.0
 			_refresh_chest()
 		# [개발 도구] 스킬 상세보기를 띄운 채로 캡처한다.
-		if arg == "--skill-detail" and not skill_owned.is_empty():
-			_open_skill_detail(str(skill_owned.keys()[0]))
+		# `--skill-detail=field_epic` 처럼 **키를 지정할 수 있다.** 지정 안 하면 보유
+		# 목록의 첫 칸인데, `--skills=N` 이 무작위로 채우므로 매번 다른 스킬이 열려
+		# "이 스킬의 상세창"을 못 찍는다 — 아이콘이 이름과 맞는지 확인할 때 그게 걸림돌이다.
+		if arg.begins_with("--skill-detail") and not skill_owned.is_empty():
+			var want := arg.trim_prefix("--skill-detail=") if "=" in arg else ""
+			if want != "" and not skill_owned.has(want):
+				skill_owned[want] = 1     # 안 가진 것도 열어 볼 수 있게 준다
+			_open_skill_detail(want if want != "" else str(skill_owned.keys()[0]))
 		# [개발 도구] --skillfx[=strike|wave|field|ward] : 그 형태의 **5등급을 나란히**
 		# 실제 프로필(스타일·잔상·크기)로 얹는다. 크기와 가림 정도는 288px 띠에
 		# 올려 봐야만 판단할 수 있다.

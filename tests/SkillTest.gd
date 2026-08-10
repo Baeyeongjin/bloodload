@@ -113,6 +113,43 @@ func _init() -> void:
 		assert(SkillDefs.shard_cost(l + 1) > SkillDefs.shard_cost(l),
 			"조각 비용이 안 오른다: Lv%d" % l)
 
+	# ── 아이콘이 **화면에서** 이름과 맞는가 ────────────────────────────────────
+	# 2026-08-10: 사장님 화면에서 "피의 제단"에 감시의 눈 아이콘이 떴다. 파일도 코드도
+	# 정상이었고 **`.godot/imported` 캐시가 낡아** 한 등급씩 밀려 나왔다(캐시 안에
+	# `sk_blood_field.png` 라는 지금 없는 이름이 남아 있었다 — 이름을 바꾼 이력이다).
+	#
+	# `.godot` 는 git 에 안 올라가므로 **PC 마다 따로 생긴다.** 파일을 아무리 확인해도
+	# 안 잡히고, 고칠 사람이 엉뚱하게 파일을 맞바꾸면 그때 진짜로 어긋난다.
+	#
+	# 원본 PNG 를 **임포트를 거치지 않고** 직접 디코드해서 맞춰 본다. 투명 픽셀의 RGB 는
+	# `fix_alpha_border` 가 건드리므로 **불투명 픽셀만** 본다.
+	var icon_checked := 0
+	for key in keys:
+		var icon_p: String = SkillDefs.icon_path(key)
+		var tex: Texture2D = load(icon_p)
+		assert(tex != null, "%s 아이콘을 못 읽는다: %s" % [key, icon_p])
+		var shown := tex.get_image()
+		var bytes := FileAccess.get_file_as_bytes(icon_p)
+		if bytes.is_empty():
+			continue          # 내보낸 빌드에는 원본 PNG 가 없다 — 그때는 건너뛴다
+		var raw := Image.new()
+		assert(raw.load_png_from_buffer(bytes) == OK, "원본 PNG 디코드 실패: %s" % icon_p)
+		assert(shown.get_size() == raw.get_size(),
+			"%s 아이콘 크기가 원본과 다르다" % key)
+		var diff := 0
+		for y in raw.get_height():
+			for x in raw.get_width():
+				var src := raw.get_pixel(x, y)
+				if src.a < 0.5:
+					continue
+				if not src.is_equal_approx(shown.get_pixel(x, y)):
+					diff += 1
+		assert(diff == 0,
+			"%s 아이콘이 원본과 다르다 (%d px). `.godot/imported` 를 지우고 다시 임포트할 것"
+			% [key, diff])
+		icon_checked += 1
+	print("아이콘 %d종 원본 대조 통과" % icon_checked)
+
 	print("스킬 %d종 · 쿨다운 격 %.0f 파 %.0f 진 %.0f 가호 %.0f 초"
 		% [keys.size(), SkillDefs.cooldown("strike_common", 0),
 		SkillDefs.cooldown("wave_common", 0), SkillDefs.cooldown("field_common", 0),
