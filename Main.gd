@@ -5495,13 +5495,11 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 	# 그림은 발이 아니라 몸통이 땅에 닿는다.)
 	if style == "hold":
 		return ground_y
-	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **잉크 아래끝 = 지면선**이다.
-	# 캔버스가 아니라 잉크다 — 왕좌는 전 프레임 아래 여백이 4px, 심연의 손은 6px 라
-	# 캔버스를 붙여도 그림이 떠 보였다(`Assets.bottom_pad`). 띄우기·묻기 손잡이는
-	# 없다 — 두 번 만들었다가(FX_GROUND_LIFT·drop) 스킬마다 제각각이 되어 걷어냈다.
+	# 솟아오르는 것(rise)·떨어지는 것(fall)은 **원점이 곧 잉크 아래끝**이다
+	# (`_anim_fx` 가 offset 으로 옮겨 둔다). 그래서 여기서는 지면선을 그대로 준다 —
+	# 높이·배율이 안 들어간다. 크기가 어떻게 변하든 밑단이 이 선에 못박힌다.
 	if style == "fall" or style == "rise":
-		return ground_y - h * 0.5 + Assets.bottom_pad("res://assets/anim/%s" % fx_name) \
-			* absf(draw_scale)
+		return ground_y
 	return body_mid + nudge
 
 
@@ -5549,6 +5547,22 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	var fx := AnimatedSprite2D.new()
 	fx.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	fx.sprite_frames = sprite_frames
+	# **바닥에 서는 것은 원점을 잉크 아래끝에 둔다** (2026-08-10 사장님: "뜨지 않게").
+	#
+	# 가운데 원점이면 밑단이 `중심 + 높이/2` 라 **크기가 변할 때마다 밑단이 움직인다.**
+	# 그래서 지금까지 자리 계산·트윈·잔상마다 "절반만큼 올리고 내리는" 보정을 따로
+	# 넣었고, 하나 고칠 때마다 다른 데서 떴다(띄우기 상수 -> 묻기 값 -> BACK 이징 ->
+	# 잔상). 원점을 밑단에 두면 **배율이 뭘 하든 밑단은 안 움직인다** — 보정이 필요
+	# 없어지므로 뜰 방법 자체가 사라진다.
+	#
+	# `offset` 은 스프라이트 로컬 좌표라 scale 이 그대로 곱해진다: 위로 h/2 올리고
+	# 잉크 여백(bottom_pad)만큼 다시 내리면 원점이 정확히 잉크 아래끝이다.
+	# `centered` 는 안 끈다 — 껐다가는 좌우 반전(scale.x 부호)이 그림을 옆으로 밀어낸다.
+	var foot := style == "rise" or style == "fall"
+	if foot:
+		var tex0: Texture2D = textures[0]
+		fx.offset = Vector2(0.0, -float(tex0.get_height()) * 0.5
+			+ Assets.bottom_pad("res://assets/anim/%s" % name))
 	fx.position = at
 	# **좌우 반전은 scale.x 부호 하나로 끝낸다.** 아래 스타일들이 전부 `full` 에서
 	# 크기를 뽑으므로, 여기서 부호를 넣어 두면 모든 연출이 저절로 따라 뒤집힌다.
@@ -5642,23 +5656,16 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 				.set_trans(Tween.TRANS_LINEAR)
 			t.tween_property(fx, "scale", full, life * 0.3)
 		"rise":
-			# **땅에서 밀고 올라온다**(제단·왕좌). 원점이 가운데라 그냥 키우면 아래로도
-			# 같이 자라서 바닥을 뚫고 내려간다 — **커지는 만큼 위치를 올려** 아래끝을
-			# 지면에 붙여 둔다. 그래야 "솟았다"로 읽힌다.
-			# **높이는 그림에서 읽는다.** 32 로 박아 뒀더니 48칸 그림(갈라진 대지)이
-			# 지면에서 22px 떠서 "몹 중간에서 터진다"가 됐다(사장님 지적). 자리 계산
-			# (`_fx_anchor_y`)은 진짜 높이를 쓰는데 여기만 64px 를 가정하고 있었다.
-			var half := float(textures[0].get_height()) * 0.5 * absf(draw_scale)
-			fx.position.y += half * 0.8
+			# **땅에서 밀고 올라온다**(제단·왕좌·갈라진 대지). 원점이 잉크 아래끝이라
+			# (`_anim_fx` 위쪽 offset) **위치를 아예 안 건드린다** — 세로로만 자라면
+			# 밑단은 그 자리에 박힌 채 위로 솟는다.
+			#
+			# 예전엔 원점이 가운데라 "커지는 만큼 올렸다 내리는" 보정을 했고, 그 보정이
+			# 어긋날 때마다 그림이 떴다(높이를 32로 박음 -> BACK 이징이 지나침 ->
+			# 잔상이 작게 떠서 남음). 보정을 없애니 뜰 방법이 사라진다.
 			fx.scale = Vector2(full.x * 0.75, full.y * 0.2)
 			t.tween_property(fx, "scale", full, life * 0.42) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			# **끝에서 지면에 붙는다.** 위치는 BACK 을 안 쓴다 — 목표를 지나쳤다
-			# 돌아오는 이징이라 중간에 아래끝이 지면선 **위로** 떴다(튕김은 scale 이
-			# 이미 준다). 솟는 것은 올라오는 내내 땅에 박혀 있어야 한다.
-			t.parallel().tween_property(fx, "position:y",
-				fx.position.y - half * 0.8, life * 0.42) \
-				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		"fall":
 			# 위에서 내려온다. 비(혈우)처럼 **하늘에서 떨어지는** 것에 쓴다.
 			# 시작 위치를 위로 올려 두고 내린다 — 제자리에서 커지면 비가 아니다.

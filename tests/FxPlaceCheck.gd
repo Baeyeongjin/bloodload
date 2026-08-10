@@ -88,5 +88,26 @@ func _init() -> void:
 			print("%-22s %-7.0f %-6.1f %-6.0f %s %.0f~%.0f  %s"
 				% [key, float(p["y"]), float(p["scale"]), h, where, y0, y1,
 				verdict if verdict != "" else "OK"])
+
+	# ── 바닥에 서는 것은 **어떤 배율에서도** 밑단이 지면선이어야 한다 ──────────
+	# 2026-08-10 사장님이 "뜨지 않게"를 네 번 말했다. 그때마다 원인이 달랐고
+	# (띄우기 상수 -> 묻기 값 -> BACK 이징 -> 잔상) 전부 "가운데 원점 + 절반 보정"에서
+	# 나왔다. 원점을 잉크 아래끝으로 옮겨 보정을 없앴으니, **보정이 되살아나면
+	# 여기서 걸린다.** 배율을 흔들어 보는 것이 요점이다 — 밑단이 배율에 안 흔들려야
+	# 원점이 제자리에 있다는 뜻이다.
+	print("")
+	print("바닥에 서는 이펙트 — 배율을 바꿔도 밑단이 지면선인가")
+	for key in ["field_uncommon", "field_legend", "strike_legend", "wave_rare"]:
+		var p: Dictionary = SkillDefs.fx_profile(key)
+		var style := str(p["style"])
+		if style != "rise" and style != "fall":
+			continue
+		for mul in [0.5, 1.0, 2.5]:
+			var s: float = float(p["scale"]) * mul
+			var cy: float = scene._fx_anchor_y(style, str(p["fx"]), s, 0.0, float(p["y"]))
+			assert(is_equal_approx(cy, gy),
+				"%s 배율 %.1f 에서 기준이 지면선을 벗어났다: %.1f (지면 %.1f)"
+				% [key, s, cy, gy])
+		print("  %-18s %s  배율 0.5/1.0/2.5 전부 지면선 %.0f" % [key, style, gy])
 	print("")
 	quit()
