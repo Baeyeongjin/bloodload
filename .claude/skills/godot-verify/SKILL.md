@@ -21,13 +21,26 @@ heredoc이 없다(`<<'EOF'`는 파서 에러) — 커밋 메시지 같은 여러
 & $g --headless --path $p --import        # 자산을 새로 넣었을 때
 ```
 
-## 2. 테스트 5종
+## 2. 테스트 묶음
+
+**테스트도 렌더처럼 APPDATA 를 격리한다** (2026-08-11). 씬을 띄우는 테스트
+(Aoe·Dungeon·Trait·FxPlace…)는 `_load_game` 으로 실저장본을 읽고
+`_save_game` 으로 **실저장본에 쓴다** — 격리 없이 돌리면 사장님 저장본에
+테스트가 벌어 둔 혈정·구간이 섞인다. 그리고 씬 테스트는 **자기 저장본에도
+결백해야 한다**(시작할 때 재는 값을 0으로 리셋) — 격리 폴더가 남아 있는
+두 번째 실행에서 절대값 비교가 전부 어긋난 사고가 있었다.
+
+느린 계측기(CurveCheck·NoAttackProbe·CurveSweep)는 묶음에서 뺀다 —
+곡선을 건드렸을 때만 따로 돌린다.
 
 ```powershell
-Get-ChildItem "$p\tests\*.gd" | ForEach-Object {
-  $o = & $g --headless --path $p --script "tests/$($_.Name)" 2>&1 | Out-String
-  if ($o -match "Assertion") { "FAIL $($_.Name)" } else { "OK $($_.Name)" }
-}
+$env:APPDATA = "<scratchpad>\iso_test"
+Get-ChildItem "$p\tests\*.gd" |
+  Where-Object { $_.Name -notin @("CurveCheck.gd","NoAttackProbe.gd","CurveSweep.gd") } |
+  ForEach-Object {
+    $o = & $g --headless --path $p --script "tests/$($_.Name)" 2>&1 | Out-String
+    if ($o -match "Assertion") { "FAIL $($_.Name)" } else { "OK $($_.Name)" }
+  }
 ```
 
 **exit 0 을 믿지 말 것.** `assert` 가 실패해도 실행이 이어져서 아래 `print("... OK")`

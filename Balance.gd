@@ -35,46 +35,42 @@ static func buy_cost(level: int, n: int, base := UP_BASE, e := UP_EXP) -> float:
 # 확률을 굴리지 않고 기댓값을 곱하는 이유: 전투에 난수가 끼면 오프라인 보상을
 # 같은 공식으로 계산할 수 없다(DESIGN 1장). 평균을 곱하면 결정론이 유지되면서
 # 성장 체감은 똑같다.
-static func crit_mult(chance_lv: int, dmg_lv: int) -> float:
+# `dmg_bonus` 는 혈맥(TraitDefs.critdmg)이 치명 피해 배수에 **더하는** 몫이다.
+# 확률이 0이면 여전히 아무 효과가 없다 — 치명타 두 축의 성질은 그대로다.
+static func crit_mult(chance_lv: int, dmg_lv: int, dmg_bonus := 0.0) -> float:
 	var chance := minf(1.0, 0.01 * float(chance_lv - 1))
-	var dmg := 1.5 + 0.05 * float(dmg_lv - 1)
+	var dmg := 1.5 + 0.05 * float(dmg_lv - 1) + maxf(0.0, dmg_bonus)
 	return 1.0 + chance * (dmg - 1.0)
 
 
-# 공격력. **레벨당 x1.03 곱연산**이다 (2026-08-11 사장님 결정).
+# 공격력. **레벨당 +3.5% 합연산**이다 (2026-08-11, 혈맥 도입과 동시 이관).
 #
-# 전에는 레벨당 +2% 합연산이었다. STATS.md 4장의 검산표를 역산해서 나온 값이고
-# 1장의 "합연산은 무한, 곱연산은 유한" 규칙에도 맞았다 — **그런데 비용이 지수다.**
+# 오늘 하루의 여정을 기록한다 — 같은 날 두 번 뒤집혔고 둘 다 이유가 있다:
 #
-#     레벨    누적 비용배수    피해(합연산)
-#      60       3.8K           x2.18
-#     100       1.0M           x2.98
-#     150       1.1B           x3.98
+#   아침  +2% 합연산     비용(x1.15)이 지수인데 피해가 합이라 아무도 안 샀다
+#   낮    x1.03 곱연산   투자에 값을 붙였다(벽 250 -> 500). **단 곱연산 축이
+#                        게임에 하나도 없던 동안의 임시 자리**라고 적어 뒀다
+#   저녁  +3.5% 합연산   혈맥(TraitDefs)이 그 곱연산 자리를 가져갔다. 공격력이
+#                        곱연산을 유지하면 두 겹이 쌓여 후반이 터진다
+#                        (EXPANSION 8장의 이관 절차 그대로)
 #
-# 값은 백만 배인데 피해는 세 배라 아무도 안 사고, 안 사도 되고, 대신 스킬이 전부를
-# 짊어졌다(사장님: "공격력을 하나도 안 찍어도 엄청 진행이 많이 됨". 스킬만 끼면
-# 공격력 없이 100구간까지 간다 — `tests/NoAttackProbe` 실측).
+# +2% 가 아니라 +3.5% 인 이유: 혈맥 공격 가지 완주가 ≈x2.0 인데, 그건 **혈정을
+# 몇 주 모아야 닿는 자리**다. 스탯 쪽 기울기를 조금 세워 두어야 그 사이(혈맥 전)
+# 구간에서 투자가 계속 값을 한다 — `tests/CurveSweep` 재측정으로 확정한 값.
 #
-# **x1.03 은 비용 x1.15 보다 훨씬 완만하다.** 곱연산이라도 한 레벨당 이득이 값보다
-# 작으므로 "곱연산은 유한"의 취지(무한 성장 방지)는 비용 쪽이 계속 지킨다.
-# 100레벨 x18.7 / 150레벨 x81.8 — 백만 배 비용에 걸맞은 자리다.
-#
-# **장비를 안에서 곱한다.** 밖에서 더하면 기본값이 지수로 커지는 만큼 장비가
-# 상대적으로 죽는다 — 공격력 레벨은 "내가 든 무기를 몇 배로 쓰는가"여야
-# 두 축이 같이 산다.
+# 1장의 "합연산은 무한, 곱연산은 유한"이 다시 지켜진다: 무한 축(스탯)은 합,
+# 곱연산 %는 전부 유한한 혈맥 노드에만 산다.
 #
 # 기준값 14.0 은 60마리/60초 구간에서 역산한 값이다. 마리당 쓸 수 있는 시간이
 # 1초인데 **그중 0.55초는 다음 몹에게 달려가는 데 쓴다**(APPROACH_SECONDS) —
 # 실제로 때리는 시간은 0.45초뿐이라 그 안에 몹을 눕힐 만큼 세야 한다.
 const DMG_BASE := 14.0
-# `static var` 인 이유: `tests/CurveSweep` 이 후보를 넣어 보고 벽이 어디 서는지
-# 표로 뽑는다. 게임 코드는 이 값을 안 바꾼다.
-static var DMG_STEP := 1.03
+const DMG_PER_LEVEL := 0.035
 
 
 static func hero_damage(damage_level: int, gear_damage: float, hero_level: int) -> float:
-	return (DMG_BASE + maxf(0.0, gear_damage)) \
-		* pow(DMG_STEP, float(maxi(1, damage_level) - 1)) * hero_mult(hero_level)
+	return (DMG_BASE * (1.0 + DMG_PER_LEVEL * float(maxi(1, damage_level) - 1))
+		+ maxf(0.0, gear_damage)) * hero_mult(hero_level)
 
 
 # 몹 한 대의 피해. `enemy_power × 4` 였는데 그러면 적 강화를 **그대로** 타서

@@ -133,6 +133,16 @@ var best_stage := 1
 var dungeon_on := false
 var dungeon_floor := 1
 var dungeon_best := 0
+# 혈맥(TraitDefs) — 산 노드의 집합 {id: true}. 곱연산 %는 게임 전체에서 여기뿐이다.
+var traits := {}
+
+
+func _trait_mult(kind: String) -> float:
+	return TraitDefs.mult(kind, traits)
+
+
+func _trait_add(kind: String) -> float:
+	return TraitDefs.add(kind, traits)
 var play_time := 0.0
 
 # 성장 스탯 (골드로 올린다). 방치형은 이 숫자가 오르는 것 자체가 보상이다.
@@ -375,7 +385,8 @@ func attack_interval() -> float:
 func gold_mult() -> float:
 	return (1.0 + 0.15 * float(stat_lv("gold") - 1) + _gear_stat("gold") * 0.02) \
 		* Balance.hero_mult(hero_lv) \
-		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold"))
+		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
+		* _trait_mult("gold")
 
 
 func dps() -> float:
@@ -434,7 +445,8 @@ func _skill_dps() -> float:
 		if bool(SkillDefs.rule_of(k).get("passive", false)):
 			continue      # 패시브는 배수라 밖에서 곱한다
 		var lv := int(skill_owned.get(k, 0))
-		var power := SkillDefs.power(k, lv) * (1.0 + _skill_combo_bonus(k))
+		var power := SkillDefs.power(k, lv) * (1.0 + _skill_combo_bonus(k)) \
+			* _trait_mult("skill")
 		var cd := maxf(0.001, SkillDefs.cooldown(k, lv))
 		var gain := power / SkillDefs.POWER_NORM * _skill_targets(k) - 1.0
 		out += hit * mult * maxf(0.0, gain) / cd
@@ -453,7 +465,10 @@ func _equipped_shape(shape: String, active_only := false) -> Dictionary:
 
 
 func _base_hit_damage() -> float:
-	return damage() * Balance.crit_mult(stat_lv("crit"), stat_lv("critdmg"))
+	# 혈맥: 공격 배수(살육 I~III)와 치명 피해 가산(사혈)이 여기서 붙는다 —
+	# 화면 DPS(dps())와 실제 피해(_combat_damage)가 같은 함수를 지나므로 안 갈린다.
+	return damage() * _trait_mult("attack") \
+		* Balance.crit_mult(stat_lv("crit"), stat_lv("critdmg"), _trait_add("critdmg"))
 
 
 # 실제 타격 피해. 대상을 주면 그 몹의 **지식 레벨**만큼 더 아프게 때린다.
@@ -503,11 +518,12 @@ func _codex_act_bonus() -> float:
 
 func max_hp() -> float:
 	return Balance.hero_max_hp(stat_lv("tough"), _gear_stat("tough")) \
-		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough"))
+		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough")) \
+		* _trait_mult("hp")
 
 
 func regen_per_sec() -> float:
-	return Balance.hero_regen_per_sec(max_hp(), stat_lv("regen"))
+	return Balance.hero_regen_per_sec(max_hp(), stat_lv("regen")) * _trait_mult("regen")
 
 
 # 최대 체력이 늘 때 늘어난 몫만큼 현재 체력도 채운다. 강해졌는데 즉시 체력 비율이
@@ -553,6 +569,17 @@ func _ready() -> void:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
 		if arg.begins_with("--tab="):
 			_select_tab(arg.trim_prefix("--tab="))
+		# [개발 도구] --traits : 혈맥 화면을 연 채로 캡처한다. 잠금 대부분을 풀고
+		# 앞 노드 몇 개를 사 둔 상태 — 보유/구매 가능/잠김 세 상태가 다 보이게.
+		if arg == "--traits":
+			hero_lv = maxi(hero_lv, 60)
+			dungeon_best = maxi(dungeon_best, 40)
+			crystal = maxf(crystal, 5000.0)
+			traits["attack_1"] = true
+			traits["attack_2"] = true
+			traits["life_1"] = true
+			_select_tab("growth")
+			_set_growth_mode("trait")
 		# [개발 도구] --dungeon[=N] : 미궁 N층에 바로 들어간 채로 캡처한다.
 		# 잠금(본편 30구간)과 개방 상한을 그 층에 맞게 같이 풀어 준다.
 		if arg.begins_with("--dungeon"):
@@ -1401,12 +1428,13 @@ const STEP_H := 40.0
 
 
 func _build_growth(root: Control) -> void:
-	# 탭바가 4칸으로 꽉 차서 스킬을 새 탭으로 못 낸다. 성장 창 안에서 나눈다 —
-	# 스탯도 스킬도 "무엇을 키울까"라서 자리가 맞는다.
-	var mode_w := (CONTENT_W - 12.0) * 0.5
-	for i in 2:
-		var mode := "stat" if i == 0 else "skill"
-		var mb := Ui.button("스탯" if i == 0 else "스킬",
+	# 탭바가 꽉 차서 새 탭으로 못 낸다. 성장 창 안에서 나눈다 —
+	# 스탯도 스킬도 혈맥도 "무엇을 키울까"라서 자리가 맞다.
+	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"]]
+	var mode_w := (CONTENT_W - 12.0 * float(modes.size() - 1)) / float(modes.size())
+	for i in modes.size():
+		var mode: String = modes[i][0]
+		var mb := Ui.button(str(modes[i][1]),
 			Vector2(PAD + float(i) * (mode_w + 12.0), PAD - 4.0),
 			Vector2(mode_w, 34.0), Type.SIZE_SMALL)
 		mb.toggle_mode = true
@@ -1445,6 +1473,7 @@ func _build_growth(root: Control) -> void:
 		col.add_child(_stat_row(str(s["key"]), str(s["name"]), str(s["icon"])))
 
 	_build_skill_view(root)
+	_build_trait_view(root)
 	_set_step(buy_step)   # 처음 열었을 때도 선택된 배수가 보이게
 	_set_growth_mode("stat")
 
@@ -1453,12 +1482,107 @@ func _set_growth_mode(mode: String) -> void:
 	_growth_mode = mode
 	_stat_view.visible = mode == "stat"
 	_skill_view.visible = mode == "skill"
+	_trait_view.visible = mode == "trait"
 	for key in _growth_mode_buttons:
 		_growth_mode_buttons[key].set_pressed_no_signal(key == mode)
 	if mode == "skill":
 		_refresh_skills()
+	elif mode == "trait":
+		_refresh_traits()
 	else:
 		_refresh_growth()
+
+
+# ── 혈맥 화면 ──────────────────────────────────────────────────────────────
+# 가지 3열 x 노드 6줄. 노드 버튼 하나에 이름·효과·비용(또는 잠긴 이유)을 다 적는다 —
+# 왜 안 되는지가 안 보이면 잠긴 축은 없는 축이다(TraitDefs.lock_reason).
+var _trait_view: Control
+var _trait_btns := {}
+var _trait_head: Label
+
+
+func _build_trait_view(root: Control) -> void:
+	_trait_view = Control.new()
+	_trait_view.size = Vector2(PANEL_W, PANEL_H)
+	_trait_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_trait_view.visible = false
+	root.add_child(_trait_view)
+	var top := PAD + 38.0
+	_trait_head = _panel_label(_trait_view, Vector2(PAD, top), Type.SIZE_SMALL,
+		Color(1.0, 0.55, 0.62), CONTENT_W, 20.0)
+	_trait_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var col_gap := 10.0
+	var col_w := (CONTENT_W - col_gap * 2.0) / 3.0
+	for b in TraitDefs.BRANCHES.size():
+		var branch: String = TraitDefs.BRANCHES[b]
+		var x := PAD + float(b) * (col_w + col_gap)
+		var head := _panel_label(_trait_view, Vector2(x, top + 22.0),
+			Type.SIZE_SMALL, Color(0.88, 0.78, 0.82), col_w, 20.0)
+		head.text = "%s · 미궁 %d층" % [str(TraitDefs.BRANCH_NAMES[branch]),
+			TraitDefs.branch_floor(branch)]
+		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var nodes := TraitDefs.nodes_of(branch)
+		for i in nodes.size():
+			var id := str(nodes[i]["id"])
+			var nb := Ui.button("", Vector2(x, top + 46.0 + float(i) * 34.0),
+				Vector2(col_w, 32.0), Type.SIZE_SMALL)
+			nb.pressed.connect(func() -> void: _buy_trait(id))
+			_trait_view.add_child(nb)
+			_trait_btns[id] = nb
+
+
+func _refresh_traits() -> void:
+	if _trait_view == null:
+		return
+	_trait_head.text = "혈정 %s — 노드는 위에서 아래로, 가지는 미궁 층이 연다" \
+		% _n(crystal)
+	for id in _trait_btns:
+		var n := TraitDefs.node(str(id))
+		var b: Button = _trait_btns[id]
+		var reason := TraitDefs.lock_reason(str(id), traits, hero_lv, dungeon_best)
+		# 버튼에는 **효과와 비용만** 적는다. 이름까지 넣으면 열 폭(169px)에서 잘려
+		# 정작 "몇 %인지·얼마인지"가 안 보였다(실측). 이름은 표(TraitDefs)의 것이고
+		# 화면의 일은 고르게 하는 것이다.
+		var eff := _trait_effect_text(n)
+		if reason == "보유":
+			b.text = "%s  ✓" % eff
+			b.disabled = true
+		elif reason != "":
+			b.text = "%s — %s" % [eff, reason]
+			b.disabled = true
+		else:
+			var c := TraitDefs.cost(int(n["tier"]))
+			# 비용은 _n 으로 줄인다 — "1950" 이 폭에 잘려 "195" 로 보이는 것보다
+			# "2.0K" 가 낫다. 잘린 가격은 거짓말이다.
+			b.text = "%s — %s" % [eff, _n(c)]
+			b.disabled = crystal < c
+
+
+static func _trait_effect_text(n: Dictionary) -> String:
+	var v := float(n["value"])
+	match str(n["kind"]):
+		"attack": return "공격 +%d%%" % int(v * 100.0)
+		"critdmg": return "치명 피해 +%d%%" % int(v * 100.0)
+		"skill": return "스킬 피해 +%d%%" % int(v * 100.0)
+		"hp": return "체력 +%d%%" % int(v * 100.0)
+		"regen": return "회복 +%d%%" % int(v * 100.0)
+		"guard": return "받는 피해 -%d%%" % int(v * 100.0)
+		"gold": return "혈액 +%d%%" % int(v * 100.0)
+		"hours": return "방치 상한 +%d시간" % int(v)
+		"sweep": return "소탕 +%d%%" % int(v * 100.0)
+	return ""
+
+
+func _buy_trait(id: String) -> void:
+	if TraitDefs.lock_reason(id, traits, hero_lv, dungeon_best) != "":
+		return
+	var c := TraitDefs.cost(int(TraitDefs.node(id)["tier"]))
+	if crystal < c:
+		return
+	crystal -= c
+	traits[id] = true
+	_refresh_traits()
+	_save_game()
 
 
 # ── 스킬 화면 ──────────────────────────────────────────────────────────────
@@ -3944,7 +4068,8 @@ func _process(delta: float) -> void:
 	# (EXPANSION 6장). 초당으로 나누면 값이 작아 화면 숫자는 몇 분에 1씩 는다 —
 	# 그게 맞다: 소탕은 배경 수입이고, 목돈은 첫 돌파가 준다.
 	if dungeon_best > 0:
-		crystal += DungeonDefs.sweep_per_hour(dungeon_best) / 3600.0 * delta
+		crystal += DungeonDefs.sweep_per_hour(dungeon_best) * _trait_mult("sweep") \
+			/ 3600.0 * delta
 	if _power_toast_t > 0.0:
 		_power_toast_t -= delta
 		if _power_toast_t <= 0.0:
@@ -4434,7 +4559,8 @@ func _skill_data(key: String) -> Dictionary:
 	data["name"] = SkillDefs.name_of(key)
 	data["shape"] = SkillDefs.split(key)[0]
 	data["cooldown"] = SkillDefs.cooldown(key, lv)
-	data["power"] = SkillDefs.power(key, lv) * (1.0 + _skill_combo_bonus(key))
+	data["power"] = SkillDefs.power(key, lv) * (1.0 + _skill_combo_bonus(key)) \
+		* _trait_mult("skill")
 	data["fx"] = SkillDefs.fx_of(key)
 	# 피격 이펙트를 스킬이 끌 수 있다(RULES.no_hit_fx) — 웅덩이는 틱마다 24장이 떠서
 	# 정작 웅덩이가 안 보였다.
@@ -5242,7 +5368,8 @@ func on_foe_attack(_foe: Foe) -> void:
 		return
 	# 특수 패턴은 훨씬 아프다. 대신 예고 원 밖으로 나가면(대시) 위 사거리 검사에서
 	# 통째로 빗나가므로, 예고를 보고 빠지는 것이 곧 회피다.
-	var incoming := Balance.foe_damage(_c_enemy_power()) * _foe.attack_mult()
+	var incoming := Balance.foe_damage(_c_enemy_power()) * _foe.attack_mult() \
+		* _trait_mult("guard")
 	hero_hp = maxf(0.0, hero_hp - incoming)
 	_pop_hero_damage(incoming)
 	_hero_flash_t = 0.10
@@ -6290,6 +6417,7 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
+	cfg.set_value("run", "traits", traits)
 	cfg.set_value("run", "hero_lv", hero_lv)
 	cfg.set_value("run", "hero_exp", hero_exp)
 	cfg.set_value("run", "hero_hp", hero_hp)
@@ -6332,6 +6460,12 @@ func _load_game() -> void:
 		StageDefs.total_stages())
 	dungeon_best = clampi(int(cfg.get_value("run", "dungeon_best", 0)), 0,
 		DungeonDefs.FLOOR_CAP)
+	# 없는 노드 id 는 버린다 — 표가 바뀐 옛 저장본이 유령 배수를 들고 오면 안 된다.
+	traits = {}
+	var saved_traits: Dictionary = cfg.get_value("run", "traits", {})
+	for id in saved_traits:
+		if not TraitDefs.node(str(id)).is_empty():
+			traits[str(id)] = true
 	hero_lv = int(cfg.get_value("run", "hero_lv", 1))
 	hero_exp = float(cfg.get_value("run", "hero_exp", 0.0))
 	lv = cfg.get_value("up", "lv", {})
@@ -6507,7 +6641,8 @@ func _grant_offline(left_at: float) -> void:
 	var away := Time.get_unix_time_from_system() - left_at
 	if away < 60.0:
 		return
-	away = minf(away, 8.0 * 3600.0)   # 8시간 상한: 그 이상은 접속할 이유가 사라진다
+	# 8시간 상한 + 혈맥 "긴 잠"(hours)이 늘리는 몫. 그 이상은 접속할 이유가 사라진다.
+	away = minf(away, (8.0 + _trait_add("hours")) * 3600.0)
 	# **한 구간에 걸린 시간을 예산에서 뺀다.** 일반 구간의 제한 시간이 없어진 뒤로는
 	# "넘을 수 있나"만 보면 1분만 비워도 생존이 버티는 한 끝없이 올라간다 — 예전엔
 	# 100초 제한이 우연히 그 상한 역할을 했다. 실제로는 한 구간에 몇십 초씩 걸리므로
@@ -6537,7 +6672,8 @@ func _grant_offline(left_at: float) -> void:
 	# 혈정은 상자에 안 담는다: 상자는 혈액 그릇이고, 혈정은 미궁 기록의 배당이라
 	# 조용히 지갑에 쌓이는 쪽이 맞다(접속 중 소탕과 같은 길).
 	if dungeon_best > 0:
-		crystal += (away / 3600.0) * DungeonDefs.sweep_per_hour(dungeon_best) * 0.5
+		crystal += (away / 3600.0) * DungeonDefs.sweep_per_hour(dungeon_best) \
+			* _trait_mult("sweep") * 0.5
 	hero_hp = max_hp()
 	_refresh_chest()
 	if climbed > 0:

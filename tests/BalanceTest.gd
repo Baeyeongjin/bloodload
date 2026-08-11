@@ -244,30 +244,34 @@ func _init() -> void:
 		"첫 보스가 맨몸에도 너무 쉽다: %.0f초" % starter_ttk)
 	assert(trained_ttk < StageDefs.TIME_BOSS * 0.6,
 		"첫 보스가 훈련하고도 안 열린다: %.0f초" % trained_ttk)
-	# 공격력은 **레벨당 x1.03 곱연산**이다(2026-08-11 사장님 결정. Balance.DMG_STEP).
+	# 공격력은 **레벨당 +3.5% 합연산**이다(2026-08-11 저녁, 혈맥 도입과 동시 이관 —
+	# 같은 날 낮에 x1.03 곱연산이었다. 여정 전체는 Balance.DMG_PER_LEVEL 주석).
 	#
-	# **STATS 4장의 검산표(x3 / x15 / x180 / x4000)는 여기서 못 박지 않는다.**
-	# 그 표는 공격력 600·1500 레벨을 전제로 하는데, 강화 비용이 x1.15/레벨이라
-	# 1500 레벨은 10^90 골드다 — 어떤 곡선을 쓰든 도달할 수 없는 자리를 못 박고
-	# 있었다. 실제로 도달하는 자리는 50~120 레벨이다(`tests/NoAttackProbe` 실측:
-	# 500구간 벽에서 56레벨).
-	#
-	# 대신 **곱연산이 안전한 이유 자체**를 못 박는다: 한 레벨의 이득이 그 값보다
-	# 작아야 한다. 그러면 골드가 곧 상한이라 "곱연산은 무한"이 안 된다.
+	# **곱연산 %는 이제 혈맥(TraitDefs)에만 산다.** 이 검사가 그 분담을 못 박는다:
+	# 스탯 쪽이 다시 곱연산이 되거나(아래 배수 상한 초과로 걸린다), 혈맥 노드가
+	# 예산을 넘게 부풀면(가지 배수 상한) EXPANSION 8장의 예산표가 무효가 된다.
 	var base_dps := _build_dps(1, 1, 1, 1)
-	assert(Balance.DMG_STEP < Balance.UP_EXP,
-		"레벨당 피해(x%.3f)가 비용(x%.3f)보다 빨리 큰다 — 사면 살수록 싸지는 셈이라 터진다"
-		% [Balance.DMG_STEP, Balance.UP_EXP])
-	# 도달 가능한 범위에서 **투자가 값을 하는가.** 아래를 밑돌면 아무도 안 사고
-	# (그게 고치기 전 증상이다), 웃돌면 한 스탯이 게임을 통째로 먹는다.
-	for probe in [{"lv": 30, "lo": 2.0, "hi": 4.0}, {"lv": 60, "lo": 4.0, "hi": 9.0},
-			{"lv": 120, "lo": 20.0, "hi": 60.0}]:
+	# 도달 가능한 범위(30~120레벨)에서 합연산 기울기가 설계값(+3.5%)인가.
+	for probe in [{"lv": 30, "lo": 1.8, "hi": 2.3}, {"lv": 60, "lo": 2.6, "hi": 3.5},
+			{"lv": 120, "lo": 4.5, "hi": 6.0}]:
 		var got := _build_dps(int(probe["lv"]), 1, 1, 1) / base_dps
 		assert(got > float(probe["lo"]) and got < float(probe["hi"]),
-			"공격력 %d레벨 DPS 배수 x%.1f — %.0f~%.0f 사이여야 한다"
+			"공격력 %d레벨 DPS 배수 x%.1f — %.1f~%.1f 사이여야 한다 (합연산 +3.5%%)"
 			% [int(probe["lv"]), got, float(probe["lo"]), float(probe["hi"])])
-		print("공격력 %3d레벨 -> DPS x%.1f (비용 누적 x%s)"
-			% [int(probe["lv"]), got, "%.0f" % pow(Balance.UP_EXP, float(int(probe["lv"]) - 1))])
+		print("공격력 %3d레벨 -> DPS x%.2f (합연산)" % [int(probe["lv"]), got])
+	# 혈맥 예산 — 공격 가지를 다 찍어도 공격 배수는 x1.2~1.4, 스킬은 x1.05~1.2.
+	# 이 상한 안이어야 "스탯 합연산 + 혈맥 곱연산"의 합이 8장 예산표(x2.0)에 든다.
+	var all_traits := {}
+	for n in TraitDefs.NODES:
+		all_traits[str(n["id"])] = true
+	var t_atk := TraitDefs.mult("attack", all_traits)
+	var t_skill := TraitDefs.mult("skill", all_traits)
+	assert(t_atk > 1.2 and t_atk < 1.4,
+		"혈맥 공격 배수 x%.2f — 예산(x1.2~1.4)을 벗어났다" % t_atk)
+	assert(t_skill > 1.05 and t_skill < 1.2,
+		"혈맥 스킬 배수 x%.2f — 예산(x1.05~1.2)을 벗어났다" % t_skill)
+	print("혈맥 완주 배수  공격 x%.2f · 스킬 x%.2f · 치명피해 +%.0f%%"
+		% [t_atk, t_skill, TraitDefs.add("critdmg", all_traits) * 100.0])
 	var design := [
 		{"name": "첫날", "stage": 50, "build": [60, 40, 10, 10]},
 		{"name": "1주", "stage": 500, "build": [200, 150, 35, 40]},

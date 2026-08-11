@@ -68,6 +68,10 @@ func _init() -> void:
 	# ── 3) 입장·등반·이탈 ─────────────────────────────────────────────────
 	scene.stage = 41
 	scene.best_stage = 100          # 40층 개방
+	# **지난 실행의 저장본을 지운다.** 이 테스트는 혈정을 벌고 저장까지 타므로,
+	# 남은 저장본 위에서 다시 돌면 절대값 비교가 전부 어긋난다 — 시작을 늘 0 으로.
+	scene.crystal = 0.0
+	scene.traits = {}
 	scene._restart_stage("측정")
 	# **암전 꼬리까지 기다린다.** 전투(phase fight)가 페이드 인이 끝나기 전에
 	# 열리는데(실측 0.51초 남음), 입장·등반은 전환 중 연타를 막으려고
@@ -106,6 +110,7 @@ func _init() -> void:
 	var got_crystal: float = scene.crystal
 	assert(got_crystal >= 30.0 and got_crystal < 31.0,
 		"3층 첫 돌파 혈정이 30이 아니다: %.2f" % got_crystal)
+	# (30.0 딱이 아닌 이유: 소탕이 그 사이 몇 초 쌓인다 — 기록 2층이면 무시할 크기)
 	# **다시 돌면 안 준다.** 층을 기록 아래로 되돌려 놓고 한 층 더 밀어 본다 —
 	# 같은 층 재돌파는 소탕 시급이 이미 값을 치르고 있다.
 	scene.dungeon_floor = 2

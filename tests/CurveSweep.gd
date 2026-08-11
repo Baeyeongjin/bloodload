@@ -39,21 +39,21 @@ func _init() -> void:
 	var keep_power: float = StageDefs.POWER_STEP
 	var keep_gold: float = StageDefs.GOLD_SLOPE
 	print("")
-	print("%-16s %-8s %-10s %-14s %-10s %s"
-		% ["곡선", "전부", "공격제외", "스킬+공격제외", "무투자", "1000구간 적/보상"])
+	print("%-16s %-8s %-10s %-10s %-14s %-10s %s"
+		% ["곡선", "전부", "전부+혈맥", "공격제외", "스킬+공격제외", "무투자", "1000구간 적/보상"])
 	print("-".repeat(84))
 	for c in CANDIDATES:
 		StageDefs.POWER_STEP = float(c[0])
 		StageDefs.GOLD_SLOPE = float(c[1])
 		var cells: Array = []
-		for policy in ["전부", "공격 제외", "스킬+공격제외", "무투자"]:
+		for policy in ["전부", "전부+혈맥", "공격 제외", "스킬+공격제외", "무투자"]:
 			var r := _walk(policy)
 			cells.append("%s" % str(r["wall"]))
 		var tag := "적 x%.3f 돈 %.2f" % [float(c[0]), float(c[1])]
 		if is_equal_approx(float(c[0]), keep_power) and is_equal_approx(float(c[1]), keep_gold):
 			tag += "*"
-		print("%-16s %-8s %-10s %-14s %-10s x%.0f / x%.0f"
-			% [tag, cells[0], cells[1], cells[2], cells[3],
+		print("%-16s %-8s %-10s %-10s %-14s %-10s x%.0f / x%.0f"
+			% [tag, cells[0], cells[1], cells[2], cells[3], cells[4],
 			StageDefs.enemy_power(1000), StageDefs.gold_per_kill(1000)])
 	StageDefs.POWER_STEP = keep_power
 	StageDefs.GOLD_SLOPE = keep_gold
@@ -87,19 +87,22 @@ func _hp_table() -> void:
 	StageDefs.POWER_STEP = keep_power
 
 
-# **공격력 스탯이 값을 하는가.** 비용은 지수(x1.15/레벨)다 — 피해도 지수라야
-# 뒤로 갈수록 안 죽는다. 옛 합연산(+2%)과 나란히 놓아 기울기를 본다.
+# 공격력은 합연산(+3.5%)으로 돌아갔다 — 곱연산 자리는 혈맥이 가져갔다(2026-08-11
+# 저녁 이관). 스탯 단독과 혈맥 완주(공격 x1.26)를 나란히 놓아 두 축의 분담을 본다.
 func _damage_table() -> void:
-	print("공격력 레벨당 — 비용도 피해도 지수여야 한다")
-	print("%-8s %-14s %-16s %-14s %s"
-		% ["레벨", "누적 비용배수", "피해(지금 x%.2f)" % Balance.DMG_STEP,
-		"옛 합연산(+2%)", "x1.05 였다면"])
+	var all_traits := {}
+	for tn in TraitDefs.NODES:
+		all_traits[str(tn["id"])] = true
+	var t_atk := TraitDefs.mult("attack", all_traits)
+	print("공격력 레벨당 — 스탯은 합연산, 곱연산은 혈맥(완주 공격 x%.2f)" % t_atk)
+	print("%-8s %-14s %-16s %s"
+		% ["레벨", "누적 비용배수", "스탯만(+3.5%)", "스탯+혈맥"])
 	for lv in [1, 10, 30, 60, 100, 150]:
 		var n := float(lv - 1)
-		print("%-8d %-14s %-16s %-14s %s"
+		var stat_only := 1.0 + Balance.DMG_PER_LEVEL * n
+		print("%-8d %-14s %-16s %s"
 			% [lv, _n(pow(Balance.UP_EXP, n)),
-			"x%.2f" % pow(Balance.DMG_STEP, n),
-			"x%.2f" % (1.0 + 0.02 * n), "x%.2f" % pow(1.05, n)])
+			"x%.2f" % stat_only, "x%.2f" % (stat_only * t_atk)])
 
 
 func _walk(policy: String) -> Dictionary:
@@ -108,12 +111,18 @@ func _walk(policy: String) -> Dictionary:
 		for k in LOADOUT:
 			game.skill_owned[k] = 1
 			game.skill_equipped.append(k)
+	# 혈맥 완주를 가정한 길 — 이관(합연산 +3.5%) 뒤의 "전부"가 곱연산 시절의
+	# 벽(500)을 유지하는지 보는 자다(EXPANSION 8장). 실제로는 혈정을 몇 주 모아야
+	# 닿는 자리라, "전부"와 이것 사이가 혈맥이 실제로 주는 폭이다.
+	if policy == "전부+혈맥":
+		for n in TraitDefs.NODES:
+			game.traits[str(n["id"])] = true
 	var gold := 0.0
 	var last := StageDefs.total_stages()
 	for st in range(1, last + 1):
 		game.stage = st
 		if policy != "무투자":
-			gold = _shop(game, gold, st, policy != "전부")
+			gold = _shop(game, gold, st, not policy.begins_with("전부"))
 		var need := StageDefs.kills_needed(st)
 		var tries := 0
 		while true:
@@ -128,7 +137,7 @@ func _walk(policy: String) -> Dictionary:
 				return {"wall": st}
 			gold += _reward(game, back, StageDefs.kills_needed(back))
 			if policy != "무투자":
-				gold = _shop(game, gold, st, policy != "전부")
+				gold = _shop(game, gold, st, not policy.begins_with("전부"))
 	return {"wall": "끝"}
 
 
