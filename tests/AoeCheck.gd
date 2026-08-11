@@ -291,13 +291,18 @@ func _init() -> void:
 	high.max_hp = 1.0e9
 	high.hp = high.max_hp * (exec_at + 0.30)
 	var high_before: float = high.hp
+	var exec_fx0: int = _count_fx(scene)
 	scene._skill_cd.clear()
 	scene._phase = "fight"
 	scene._resolve_skill("field_legend")
 	var etime := 0.0
+	# **가장 많이 떠 있던 순간을 기억한다.** 왕관은 0.45초짜리라 끝에서 세면 이미
+	# 사라진 뒤다 — 처음에 그렇게 재서 0장이 나왔다.
+	var exec_peak := 0
 	while etime < 1.2:
 		await process_frame
 		etime += scene.get_process_delta_time()
+		exec_peak = maxi(exec_peak, _count_fx(scene) - exec_fx0)
 		scene._phase = "fight"
 		scene._attack_t = 99.0
 		for k in scene.skill_equipped:
@@ -311,6 +316,15 @@ func _init() -> void:
 		high.hp if is_instance_valid(high) else 0.0])
 	assert(low_dead, "문턱 아래인데 안 죽었다 — 처형이 안 걸렸다")
 	assert(high_alive, "문턱 위인데 죽었다 — 처형 문턱이 안 먹었다")
+	# **처형이 화면에 보이는가.** 규칙만 있고 연출이 없으면 사장님 화면에서는
+	# 몹이 그냥 사라진다 — "왜 죽었지"가 된다. 왕관(그림)과 무너지는 자세(exec_fall)
+	# 둘 다 본다. 왕관은 문양 1장 + 왕관 1장이므로 최소 2장이 늘어야 한다.
+	var exec_fx: int = exec_peak
+	var marked_exec := (not is_instance_valid(low)) or low.exec_fall
+	print("   처형 연출: 이펙트 +%d장 (문양+왕관, 2장 이상)  ·  무너지는 자세 %s"
+		% [exec_fx, "켜짐" if marked_exec else "꺼짐"])
+	assert(marked_exec, "처형인데 exec_fall 이 안 켜졌다 — 그냥 맞아 죽은 것과 똑같이 보인다")
+	assert(exec_fx >= 2, "처형인데 이펙트가 %d장뿐이다 — 왕관이 안 떴다" % exec_fx)
 
 	print("")
 	print("AoeCheck OK")

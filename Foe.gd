@@ -52,6 +52,9 @@ var dying_t := 0.0
 # 갈라진 대지(진 언커먼)에 죽었다 — 날아가는 대신 **땅 밑으로 꺼진다.**
 # Main._start_field 가 죽일 틱 직전에 켠다(take_damage 는 출처를 모른다).
 var pit_fall := false
+# 처형당해 죽는가(피의 왕좌). `pit_fall` 과 같은 자리에서 죽기 직전에 표시만 얹는다 —
+# `take_damage` 는 출처를 모른다.
+var exec_fall := false
 # 죽는 연출. 0.26 은 스쿼시만 할 때 값이라 날아가는 걸 보기엔 짧다.
 const DIE_DUR := 0.42
 const DIE_FLY := 46.0     # 맞은 쪽 반대로 밀리는 거리
@@ -442,6 +445,18 @@ func _draw() -> void:
 				Vector2(float(-face), 1.0))
 			wsc = 1.0 - 0.25 * f
 			hsc = 1.0 - 0.30 * f
+		elif exec_fall:
+			# **처형**(피의 왕좌). 무릎 꿇듯 **앞으로 접히며** 무너진다 — 날아가지도
+			# 녹지도 않는다. 맞아 죽은 것과 처형당한 것이 화면에서 갈려야 규칙이
+			# 보인다(그 규칙은 피해가 아니라 체력 비율이 정한다).
+			# 아래 tint 가 같이 걸려 붉게 물든다.
+			draw_set_transform(
+				Vector2(float(face) * DIE_FLY * 0.35 * ease_out,
+					DIE_DROP * 0.5 * f * f),
+				deg_to_rad(float(face) * 55.0 * ease_out),
+				Vector2(float(-face), 1.0))
+			wsc = 1.0 - 0.10 * f
+			hsc = 1.0 - 0.35 * f
 		elif hp_mult >= 1.5:
 			# 날아감: 온 길 반대로 밀리며 살짝 떠올랐다 떨어지고, 기울어진다.
 			draw_set_transform(
@@ -478,9 +493,14 @@ func _draw() -> void:
 		var drop := Assets.bottom_gap(tex) \
 			* (dw * hsc / float(maxi(1, tex.get_height())))
 		# 몹은 왼쪽(플레이어)을 본다. 원본이 왼쪽 향함이라 그대로 그린다.
+		# 처형당한 놈은 **붉게 물들며** 무너진다. 자세만으로는 죽음 종류가 셋이라
+		# 안 갈리는데, 색이 붙으면 한눈에 갈린다.
+		var tint := Color(1, 1, 1, alpha)
+		if dying and exec_fall:
+			tint = Color(1.0, 0.35, 0.32, alpha)
 		draw_texture_rect(tex,
 			Rect2(Vector2(-dw * wsc * 0.5, -dw * hsc + drop), Vector2(dw * wsc, dw * hsc)),
-			false, Color(1, 1, 1, alpha))
+			false, tint)
 	else:
 		draw_circle(Vector2(0, -w * 0.4), w * 0.4, Color(0.8, 0.35, 0.35, alpha))
 	draw_set_transform(Vector2.ZERO)

@@ -4527,8 +4527,11 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 아무도 없으면 영웅 앞에 하나 — 쿨다운을 썼는데 화면에 아무 일도 없으면
 	# "안 나갔다"로 보인다.
 	var spots := _field_targets()
+	# 틱마다 붉게 맥동시킬 문양. 하나짜리일 때만 잡는다 — 여러 장이면 어느 것을
+	# 흔들지 정할 수 없고, 여러 장이 동시에 번쩍이면 그게 곧 화면을 가린다.
+	var beat: AnimatedSprite2D = null
 	if puddle > 0.0 or screen or spots.is_empty():
-		_anim_fx(fx, Vector2(_field_x, cy), fps, draw,
+		beat = _anim_fx(fx, Vector2(_field_x, cy), fps, draw,
 			style, echo, 1.0, hero_face, skew, not _field_fixed)
 	else:
 		# **하나씩 소환된다**(RULES.stagger). 감시의 눈은 눈이 차례로 뜨는 연출이라
@@ -4570,6 +4573,14 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 				return
 			if quake > 0.0:
 				_shake_combat(quake * 0.6)
+			# **문양이 틱마다 한 번 붉게 맥동한다**(2026-08-11 사장님). 3초를 가만히
+			# 서 있기만 하면 "저것 때문에 깎인다"가 안 읽힌다. 색조만 흔드는 것이라
+			# 자산도 크기도 안 건드린다 — 커지면 그게 곧 화면을 가린다.
+			if is_instance_valid(beat):
+				beat.modulate = Color(1.6, 0.65, 0.6)
+				var bt := create_tween()
+				bt.tween_property(beat, "modulate", Color(1, 1, 1), 0.22) \
+					.set_trans(Tween.TRANS_QUAD)
 			var live := _field_targets()
 			if live.is_empty():
 				return
@@ -4592,6 +4603,16 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 				# 있어서(Balance), 마지막 15%를 건너뛰면 그 설계가 통째로 무너진다.
 				if exec_at > 0.0 and not f.is_boss and not f.is_midboss \
 						and f.hp <= f.max_hp * exec_at:
+					# **선고 -> 집행.** 왕관이 머리 위에 한 번 터지고(그림 하나),
+					# 몸은 무릎 꿇듯 접히며 붉게 물든다(Foe.exec_fall — 자산 0).
+					# 피격 이펙트를 전부 꺼 둔 화면이라(HIT_FX_ON) 이것만 뜬다 —
+					# 처형은 체력 15% 아래일 때만이라 드물게 터진다.
+					f.exec_fall = true
+					# **fps 가 곧 수명이다** — 왕관은 한 장짜리라 10fps 면 0.1초 만에
+					# 사라진다(실측: 검사에서 0장으로 잡혔다). 2.2fps = 0.45초.
+					_anim_fx("fx_exec_crown",
+						Vector2(f.position.x, f.body_mid_y() - f.body_half() - 14.0),
+						2.2, 1.3, "burst", 0, 1.0, 1, 0.0)
 					f.take_damage(f.hp)
 					continue
 				f.take_damage(per_tick)
@@ -5607,7 +5628,10 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 # `sweep` 의 진행 방향까지 같이 뒤집혀 등 뒤로 날아갔다(2026-08-06, 렌더로 잡음).
 func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0,
-		in_world := false, art_flip := 1, art_flip_v := 1, rot_deg := 0.0) -> void:
+		in_world := false, art_flip := 1, art_flip_v := 1,
+		rot_deg := 0.0) -> AnimatedSprite2D:
+	# 만든 노드를 돌려준다 — 부르는 쪽이 나중에 손댈 일이 있을 때만 쓴다
+	# (왕좌: 틱마다 붉게 맥동). 대부분의 호출부는 값을 안 받는다.
 	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
 	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
 	#
@@ -5630,7 +5654,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	# 같은 작은 도우미를 써서 프레임 수가 달라도 마지막에 정확히 정리된다.
 	var textures := Assets.frames("res://assets/anim/%s" % name)
 	if textures.is_empty():
-		return
+		return null
 	# 바닥 문양만 세로를 길에 맞춘다. 나머지는 가로세로 같은 배율이다.
 	# 세로 반전(내리꽂는 창)도 부호 하나로 — full 이 이 값을 그대로 쓰므로 곡선이 따라온다.
 	var draw_y := _ground_scale_y(name, draw_scale) if style == "hold" else draw_scale
@@ -5693,7 +5717,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	fx.animation_finished.connect(fx.queue_free)
 	fx.play("play")
 	if style.is_empty() or not fx.is_inside_tree():
-		return
+		return fx
 	var life := float(textures.size()) / maxf(1.0, fps)
 	var full := Vector2(draw_scale * float(signi(face) * signi(art_flip)), draw_y)
 	# 사라지는 꼬리는 어느 방식이든 공통이다. 마지막 프레임에서 뚝 끊기면
@@ -5786,6 +5810,7 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 				.set_trans(Tween.TRANS_SINE)
 			t.tween_property(fx, "scale", full, life * 0.3) \
 				.set_trans(Tween.TRANS_SINE)
+	return fx
 
 
 # 전투력이 오른 순간을 띄운다. 스탯 훈련·장비 장착·강화·레벨업이 전부 이 한 곳을
