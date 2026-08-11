@@ -4432,6 +4432,10 @@ const WORLD_FX_GROUP := "world_fx"
 # 세 칸까지 늘리면 커먼 광역 하나가 화면에 보이는 몹을 전부 쓸어서 평타가 할 일이 없다.
 const FIELD_REACH := 180.0
 var _field_x := 0.0        # 진의 중심 x. _advance_world 가 같이 민다
+# 이번 진의 판정 반폭. 기본은 FIELD_REACH 이고 `screen` 규칙이면 화면 폭이다.
+# **상수를 직접 읽지 않고 이 값을 읽는다** — 두 군데가 각자 상수를 보면 규칙을 얹는
+# 순간 그림과 판정이 갈린다(이 저장소가 여러 번 밟은 부류다).
+var _field_reach := FIELD_REACH
 var _field_gen := 0        # 구간이 바뀌면 올라간다. 지난 구간의 틱을 끊는 표
 
 
@@ -4450,8 +4454,17 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 진의 중심은 **첫 표적 자리**다. 아무도 없으면 영웅 앞에.
 	# 웅덩이(비명의 흔적)는 몹마다가 아니라 **무리 가운데**다(사장님: 발밑에 안 놓아도
 	# 된다, 화면 몹 무리의 반~3분의 1 폭 하나).
+	# **화면 하나짜리 진**(RULES.screen — 감시의 눈). 몹을 안 따라가고 화면 가운데에
+	# 뜨며, 판정도 화면 전부다. 눈은 땅에 놓이는 문양이 아니라 떠서 내려다보는
+	# 것이라 자리를 몹에게 맞출 이유가 없다 — 사장님: "화면 중앙쯤에 나오고 화면에
+	# 나와 있는 몬스터".
+	# `_on_screen` 이 오른쪽 끝을 이미 잘라 주므로 반폭은 화면 폭이면 충분하다.
+	var screen := bool(rule.get("screen", false))
+	_field_reach = float(Grid.BG.x) if screen else FIELD_REACH
 	var at := _aoe_targets()
-	if puddle > 0.0 and not at.is_empty():
+	if screen:
+		_field_x = float(Grid.BG.x) * 0.5
+	elif puddle > 0.0 and not at.is_empty():
 		# **가장 가까운 몹 발밑**(2026-08-10 사장님). 무리 한가운데로 잡았더니 몹이
 		# 둘 이상일 때 아무도 없는 몹과 몹 사이에 떴다.
 		#
@@ -4473,12 +4486,21 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 안 어긋났지만 `rise`(제단·왕좌)는 그대로 드러난다.
 	var draw := scale * maxf(1.0, puddle)
 	var cy := _fx_anchor_y(style, fx, draw, ground_y - float(Grid.SPRITE), 0.0)
+	if screen:
+		# **몹 머리 위 하늘에 뜬다.** 몸통 높이(기본값)에 두면 130px 짜리 눈이 전투를
+		# 통째로 가린다 — 이펙트가 플레이 화면을 가리면 안 된다는 원칙은 크기를 키운
+		# 순간 가장 먼저 깨진다. 아래끝을 머리선에 맞추면 위로는 전투 띠 천장
+		# (VIEW_TOP 96)까지 거의 딱 찬다.
+		var eframes: Array = Assets.frames("res://assets/anim/%s" % fx)
+		var eh := 64.0 if eframes.is_empty() \
+			else float((eframes[0] as Texture2D).get_height()) * draw
+		cy = ground_y - float(Grid.SPRITE) * 2.0 - eh * 0.5
 	# **맞는 놈마다 하나씩**, 단 **시전 때 한 번만**. 틱마다 또 깔면 2마리 x 6틱 = 12장이
 	# 전투 화면을 덮는다. 그림 수명은 지속시간과 같게 맞춰 뒀다(SkillDefs 의 fx_fps).
 	# 아무도 없으면 영웅 앞에 하나 — 쿨다운을 썼는데 화면에 아무 일도 없으면
 	# "안 나갔다"로 보인다.
 	var spots := _field_targets()
-	if puddle > 0.0 or spots.is_empty():
+	if puddle > 0.0 or screen or spots.is_empty():
 		_anim_fx(fx, Vector2(_field_x, cy), fps, draw,
 			style, echo, 1.0, hero_face, skew, true)
 	else:
@@ -4554,7 +4576,7 @@ func _field_targets() -> Array[Foe]:
 	for f in get_tree().get_nodes_in_group("foes"):
 		if not is_instance_valid(f) or f.dying or not _on_screen(f):
 			continue
-		if absf(f.position.x - _field_x) <= FIELD_REACH + f.body_half():
+		if absf(f.position.x - _field_x) <= _field_reach + f.body_half():
 			out.append(f)
 	return out
 
