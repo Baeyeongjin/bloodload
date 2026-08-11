@@ -351,6 +351,12 @@ func body_mid_y() -> float:
 	return position.y - _size() * 0.5
 
 
+# 정수리(화면 y). **`body_half()` 로 대신하면 안 된다** — 그건 가로 반폭이다
+# (2026-08-11 에 왕관을 그걸로 올렸다가 엉뚱한 높이에 떴다).
+func head_y() -> float:
+	return position.y - _size()
+
+
 # 맞으면 **온 길 쪽으로** 밀린다. 부호를 고정하면 왼쪽에서 온 몹이 맞을 때
 # 영웅 쪽으로 파고들어 때린 게 아니라 달려든 것처럼 보인다.
 func hit_offset() -> float:

@@ -4483,12 +4483,15 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 자리를 뒤로 뺐으므로 **판정 폭은 화면 전부로 넓힌다.** 안 넓히면 반폭 180 이
 	# 뒤에서부터 재어져 앞줄 몹이 빠진다 — 그림만 옮기고 판정을 두면 "그림 없는
 	# 자리에서 피해가 나간다"의 반대쪽 고장이 난다.
-	var behind := float(rule.get("behind", 0.0))
-	_field_reach = float(Grid.BG.x) if (screen or behind > 0.0) else FIELD_REACH
-	_field_fixed = screen or behind > 0.0 or bool(rule.get("fixed", false))
+	# `aura` — **그림을 땅에 안 깐다.** 영웅 머리 위에 표식 하나가 떠서 "지금 이
+	# 스킬이 돌고 있다"만 알린다(2026-08-11 사장님: 기존 이펙트는 안 나오게 하고
+	# 오오라만). 판정은 화면 전부다 — 왕의 권한에는 자리가 없다.
+	var aura := bool(rule.get("aura", false))
+	_field_reach = float(Grid.BG.x) if (screen or aura) else FIELD_REACH
+	_field_fixed = screen or aura or bool(rule.get("fixed", false))
 	var at := _aoe_targets()
-	if behind > 0.0:
-		_field_x = hero_x - behind * float(signi(hero_face))
+	if aura:
+		_field_x = hero_x
 	elif screen:
 		_field_x = float(Grid.BG.x) * 0.5
 	elif puddle > 0.0 and not at.is_empty():
@@ -4513,7 +4516,10 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 안 어긋났지만 `rise`(제단·왕좌)는 그대로 드러난다.
 	var draw := scale * maxf(1.0, puddle)
 	var cy := _fx_anchor_y(style, fx, draw, ground_y - float(Grid.SPRITE), 0.0)
-	if screen:
+	if aura:
+		# 영웅 정수리 위. 영웅은 32px 도트를 2배로 그리므로 키가 화면 64px 이다.
+		cy = ground_y - float(Grid.SPRITE) * 2.0 - 12.0
+	elif screen:
 		# **몹 머리 위 하늘에 뜬다.** 몸통 높이(기본값)에 두면 130px 짜리 눈이 전투를
 		# 통째로 가린다 — 이펙트가 플레이 화면을 가리면 안 된다는 원칙은 크기를 키운
 		# 순간 가장 먼저 깨진다. 아래끝을 머리선에 맞추면 위로는 전투 띠 천장
@@ -4530,7 +4536,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 틱마다 붉게 맥동시킬 문양. 하나짜리일 때만 잡는다 — 여러 장이면 어느 것을
 	# 흔들지 정할 수 없고, 여러 장이 동시에 번쩍이면 그게 곧 화면을 가린다.
 	var beat: AnimatedSprite2D = null
-	if puddle > 0.0 or screen or spots.is_empty():
+	if puddle > 0.0 or screen or aura or spots.is_empty():
 		beat = _anim_fx(fx, Vector2(_field_x, cy), fps, draw,
 			style, echo, 1.0, hero_face, skew, not _field_fixed)
 	else:
@@ -4611,7 +4617,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 					# **fps 가 곧 수명이다** — 왕관은 한 장짜리라 10fps 면 0.1초 만에
 					# 사라진다(실측: 검사에서 0장으로 잡혔다). 2.2fps = 0.45초.
 					_anim_fx("fx_exec_crown",
-						Vector2(f.position.x, f.body_mid_y() - f.body_half() - 14.0),
+						Vector2(f.position.x, f.head_y() - 12.0),
 						2.2, 1.3, "burst", 0, 1.0, 1, 0.0)
 					f.take_damage(f.hp)
 					continue

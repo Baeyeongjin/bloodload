@@ -237,9 +237,14 @@ const RULES := {
 	# 사장님 선택). 왕의 처형이다. 피해로는 못 만드는 결과라 "전설"이 붙을 자격이
 	# 있다 — 숫자를 키우는 특수효과는 특수효과가 아니라는 원칙 그대로다.
 	# **보스·중간보스는 제외한다**(Main 주석 참고).
-	# `behind` — 영웅 **뒤 46px** 에 세운다. 몹 자리에 깔면 그림이 겹쳐 지저분하다.
-	# `fixed` 는 `behind` 가 이미 켠다(Main 주석).
-	"field_legend": {"puddle": 1.25, "execute": 0.15, "behind": 46.0},
+	# `aura` — **왕좌 그림을 안 깐다**(2026-08-11 사장님: "기존 이펙트는 안 나오게
+	# 하고 스킬이 실행됐다는 오오라만"). 영웅 머리 위에 **왕관**이 떠서 돌고 있음을
+	# 알리고, 판정은 화면 전부다.
+	#
+	# 왕관은 처형 표식과 **같은 그림**이다. 그게 요점이다 — 영웅이 왕관을 쓰면
+	# 처형할 권한이 생기고, 처형당하는 놈 머리 위에 같은 왕관이 찍힌다.
+	# 그림을 하나 더 안 뽑고 뜻이 이어진다.
+	"field_legend": {"execute": 0.15, "aura": true},
 }
 
 
@@ -431,7 +436,12 @@ const FX_OVERRIDE := {
 	# 피의 제단 — **몸에 두르는 오오라**로 바뀌었다(2026-08-10). 솟아오르는 제단이
 	# 아니라 영웅을 감싸는 고리다: `orbit` 은 영웅 뒤(z=2)에 깔려 후광으로 읽힌다.
 	"field_epic": {"style": "orbit"},
-	"field_legend": {"style": "rise"},                 # 피의 왕좌 — 솟아오른다
+	# 피의 왕좌 — 왕좌 그림 대신 **머리 위 왕관**이다(RULES.aura 주석).
+	# `fps 0.34` = 한 장짜리 그림을 지속시간(3초) 내내 띄운다 — 한 장에서는
+	# **fps 가 곧 수명**이다(왕관 표식이 0.1초 만에 사라져 검사에 걸린 그 값이다).
+	# `pulse` 는 제자리에서 커졌다 작아진다. 지면 보정을 안 받으므로 머리 위에 뜬다.
+	"field_legend": {"style": "pulse", "fx": "fx_exec_crown",
+		"fps": 0.34, "scale": 0.62, "skew": 0.0},
 	"ward_common": {"style": "pulse"},                 # 피의 결계 — 돔은 안 돈다
 	"ward_uncommon": {"style": "pulse"},               # 진홍 방패 — 세워져 있어야 한다
 	"ward_rare": {"style": "pulse"},                   # 붉은 성배 — 세워져 있어야 한다
@@ -446,7 +456,9 @@ static func fx_profile(key: String) -> Dictionary:
 		GachaDefs.rarity_index(str(split(key)[1])), 0, FX_TIER.size() - 1)]
 	var over: Dictionary = FX_OVERRIDE.get(key, {})
 	return {
-		"fx": fx_of(key),
+		# 그림도 덮을 수 있다(FX_OVERRIDE.fx). 형태·등급으로 이름이 정해지지만,
+		# 왕좌처럼 **자기 그림을 안 쓰는** 스킬이 있다.
+		"fx": str(over.get("fx", fx_of(key))),
 		"style": str(over.get("style", shape.get("fx_style", "burst"))),
 		"y": float(over.get("y", shape["fx_y"])),
 		# 1.0 = 스타일 기본 기울기, 0.0 = 안 기울인다
