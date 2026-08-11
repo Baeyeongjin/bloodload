@@ -166,6 +166,50 @@ func _sweep_per_hour() -> float:
 func _offline_cap_hours() -> float:
 	return 8.0 + _trait_add("hours") \
 		+ (4.0 if MasteryDefs.has("hours", best_stage) else 0.0)
+
+
+# ── 칭호(TitleDefs) ────────────────────────────────────────────────────────
+# 딴 칭호의 집합. 조건은 기록의 순수 함수지만, "새로 땄다" 배너를 위해 저장한다.
+var titles_got := {}
+var _title_check_t := 0.0
+
+
+# 조건이 보는 기록 스냅샷 — TitleDefs.cond_met 이 이것만 본다.
+func _title_state() -> Dictionary:
+	var kill_sum := 0
+	for k in codex:
+		kill_sum += int(codex[k])
+	return {"stage": best_stage, "floor": dungeon_best, "hero": hero_lv,
+		"kills": kill_sum, "species": codex_found, "knowledge": codex_knowledge,
+		"skills": skill_owned.size(), "traits": traits.size()}
+
+
+# 스탯의 **효과 레벨** = 산 레벨 + 칭호 공짜 레벨. 효과 계산(피해·체력·회복·수입·
+# 치명·속도)만 이걸 쓰고, **비용·화면의 레벨 표시는 stat_lv 그대로다** — 공짜
+# 레벨이 비용에 붙으면 칭호를 딸수록 다음 강화가 비싸지는 벌이 된다.
+func _stat_eff(key: String) -> int:
+	return stat_lv(key) + TitleDefs.bonus(key, titles_got)
+
+
+# 1초에 한 번 새 칭호를 확인한다. 조건 12종 x 2 비교라 매 프레임도 싸지만,
+# 처치 합계 합산(도감 순회)이 있어 굳이 60fps 로 돌 이유가 없다.
+func _tick_titles(delta: float) -> void:
+	_title_check_t -= delta
+	if _title_check_t > 0.0:
+		return
+	_title_check_t = 1.0
+	var state := _title_state()
+	for t in TitleDefs.TITLES:
+		var id := str(t["id"])
+		if titles_got.has(id) or not TitleDefs.earned(id, state):
+			continue
+		titles_got[id] = true
+		_offline_banner.text = "칭호 획득 — %s (%s +%d)" % [str(t["name"]),
+			TitleDefs.stat_name(str(t["stat"])), int(t["levels"])]
+		_offline_banner.add_theme_color_override("font_color", Color(0.92, 0.82, 0.62))
+		_offline_banner.visible = true
+		_offline_t = 5.0
+		_save_game()
 var play_time := 0.0
 
 # 성장 스탯 (골드로 올린다). 방치형은 이 숫자가 오르는 것 자체가 보상이다.
@@ -380,7 +424,7 @@ func stat_lv(key: String) -> int:
 
 
 func damage() -> float:
-	return Balance.hero_damage(stat_lv("damage"), _gear_stat("damage"), hero_lv) \
+	return Balance.hero_damage(_stat_eff("damage"), _gear_stat("damage"), hero_lv) \
 		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage"))
 
 
@@ -402,11 +446,11 @@ func _collection_bonus(stat: String) -> float:
 
 
 func attack_interval() -> float:
-	return Balance.attack_interval(stat_lv("speed"))
+	return Balance.attack_interval(_stat_eff("speed"))
 
 
 func gold_mult() -> float:
-	return (1.0 + 0.15 * float(stat_lv("gold") - 1) + _gear_stat("gold") * 0.02) \
+	return (1.0 + 0.15 * float(_stat_eff("gold") - 1) + _gear_stat("gold") * 0.02) \
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
 		* _trait_mult("gold")
@@ -491,7 +535,7 @@ func _base_hit_damage() -> float:
 	# 혈맥: 공격 배수(살육 I~III)와 치명 피해 가산(사혈)이 여기서 붙는다 —
 	# 화면 DPS(dps())와 실제 피해(_combat_damage)가 같은 함수를 지나므로 안 갈린다.
 	return damage() * _trait_mult("attack") \
-		* Balance.crit_mult(stat_lv("crit"), stat_lv("critdmg"), _trait_add("critdmg"))
+		* Balance.crit_mult(_stat_eff("crit"), _stat_eff("critdmg"), _trait_add("critdmg"))
 
 
 # 실제 타격 피해. 대상을 주면 그 몹의 **지식 레벨**만큼 더 아프게 때린다.
@@ -540,13 +584,13 @@ func _codex_act_bonus() -> float:
 
 
 func max_hp() -> float:
-	return Balance.hero_max_hp(stat_lv("tough"), _gear_stat("tough")) \
+	return Balance.hero_max_hp(_stat_eff("tough"), _gear_stat("tough")) \
 		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough")) \
 		* _trait_mult("hp")
 
 
 func regen_per_sec() -> float:
-	return Balance.hero_regen_per_sec(max_hp(), stat_lv("regen")) * _trait_mult("regen")
+	return Balance.hero_regen_per_sec(max_hp(), _stat_eff("regen")) * _trait_mult("regen")
 
 
 # 최대 체력이 늘 때 늘어난 몫만큼 현재 체력도 채운다. 강해졌는데 즉시 체력 비율이
@@ -592,6 +636,11 @@ func _ready() -> void:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
 		if arg.begins_with("--tab="):
 			_select_tab(arg.trim_prefix("--tab="))
+		# [개발 도구] --titles : 도감 탭의 칭호 목록을 연 채로 캡처한다.
+		if arg == "--titles":
+			_select_tab("codex")
+			_title_view.visible = true
+			_refresh_titles()
 		# [개발 도구] --traits : 혈맥 화면을 연 채로 캡처한다. 잠금 대부분을 풀고
 		# 앞 노드 몇 개를 사 둔 상태 — 보유/구매 가능/잠김 세 상태가 다 보이게.
 		if arg == "--traits":
@@ -3658,9 +3707,20 @@ func _build_codex(root: Control) -> void:
 		Vector2(100.0, 36.0), Type.SIZE_SMALL)
 	status_btn.pressed.connect(func() -> void:
 		_status_view.visible = not _status_view.visible
+		_title_view.visible = false
 		if _status_view.visible:
 			_refresh_status())
 	root.add_child(status_btn)
+	# 칭호 — 조건 두 개 짝을 채우면 스스로 딴다(EXPANSION 5장). 도감 탭에 사는
+	# 이유: 조건 대부분이 도감·기록이고, 이 탭이 "모은 것"의 집이다.
+	var title_btn := Ui.button("칭호", Vector2(CONTENT_W + PAD - 208.0, PAD - 6.0),
+		Vector2(100.0, 36.0), Type.SIZE_SMALL)
+	title_btn.pressed.connect(func() -> void:
+		_title_view.visible = not _title_view.visible
+		_status_view.visible = false
+		if _title_view.visible:
+			_refresh_titles())
+	root.add_child(title_btn)
 
 	var body_y := PAD + CODEX_HEAD_H + 8.0
 	var body_h := CONTENT_BOTTOM - body_y
@@ -3699,6 +3759,7 @@ func _build_codex(root: Control) -> void:
 	_codex_detail["bar"] = bar
 	_codex_selected = str(keys[0])
 	_build_status(root)
+	_build_titles(root)
 
 
 # 지식 합계가 실제로 무슨 능력치가 됐는지 한 장에 편다.
@@ -3707,6 +3768,61 @@ func _build_codex(root: Control) -> void:
 # 닫기 버튼을 목록 아래에 두면 마지막 줄을 덮는다(실제로 덮었다). 그래서 오른쪽 위,
 # "능력치" 버튼이 있던 바로 그 자리에 둔다.
 const STATUS_ROW_H := 28.0
+
+
+# ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
+var _title_view: Control
+var _title_rows: Array[Label] = []
+
+
+func _build_titles(root: Control) -> void:
+	_title_view = Control.new()
+	_title_view.size = Vector2(PANEL_W, PANEL_H)
+	_title_view.visible = false
+	root.add_child(_title_view)
+	var back := ColorRect.new()
+	back.color = Color(0.055, 0.05, 0.065)
+	back.position = Vector2(PAD * 0.5, PAD * 0.5)
+	back.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
+	_title_view.add_child(back)
+	var head := _panel_label(_title_view, Vector2(PAD, PAD), Type.SIZE_BODY,
+		Color(0.92, 0.82, 0.62), CONTENT_W, 28.0)
+	head.text = "칭호 — 조건 둘을 채우면 스스로 딴다"
+	var sc := Ui.scroll(Vector2(PAD, PAD + 36.0),
+		Vector2(CONTENT_W, CONTENT_BOTTOM - PAD - 36.0))
+	_title_view.add_child(sc)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	col.custom_minimum_size.x = CONTENT_W - Ui.SCROLL_W
+	sc.add_child(col)
+	for i in TitleDefs.TITLES.size():
+		var row := Label.new()
+		row.add_theme_font_size_override("font_size", Type.SIZE_SMALL)
+		row.add_theme_color_override("font_color", Color(0.72, 0.70, 0.76))
+		row.add_theme_constant_override("outline_size", 4)
+		row.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.05, 0.95))
+		row.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W, 44.0)
+		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		col.add_child(row)
+		_title_rows.append(row)
+
+
+func _refresh_titles() -> void:
+	var state := _title_state()
+	for i in TitleDefs.TITLES.size():
+		var t: Dictionary = TitleDefs.TITLES[i]
+		var got: bool = titles_got.has(str(t["id"]))
+		var conds: Array = t["conds"]
+		var cond_str := ""
+		for c in conds:
+			cond_str += "%s %s   " % ["✓" if TitleDefs.cond_met(c, state) else "─",
+				TitleDefs.cond_text(c)]
+		_title_rows[i].text = "%s %s — %s +%d
+	  %s" % ["✓" if got else "─",
+			str(t["name"]), TitleDefs.stat_name(str(t["stat"])), int(t["levels"]),
+			cond_str]
+		_title_rows[i].add_theme_color_override("font_color",
+			Color(0.92, 0.82, 0.62) if got else Color(0.62, 0.60, 0.68))
 
 
 func _build_status(root: Control) -> void:
@@ -3943,6 +4059,7 @@ var _dungeon_info: Label
 var _dungeon_sub: Label
 var _dungeon_btn: Button
 var _dungeon_mastery: Array[Label] = []
+var _dungeon_badges: Array[TextureRect] = []
 
 
 func _build_dungeon(root: Control) -> void:
@@ -3961,8 +4078,13 @@ func _build_dungeon(root: Control) -> void:
 		Color(1.0, 0.78, 0.45), CONTENT_W, 20.0)
 	mt.text = "군림 — 본편 돌파가 스스로 연다"
 	for i in MasteryDefs.RANKS.size():
-		var row := _panel_label(root, Vector2(PAD, my + 24.0 + float(i) * 22.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W, 20.0)
+		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
+		var bd := Ui.icon("res://assets/ui/badge_mastery.png",
+			Vector2(PAD, my + 24.0 + float(i) * 22.0), 18.0)
+		root.add_child(bd)
+		_dungeon_badges.append(bd)
+		var row := _panel_label(root, Vector2(PAD + 24.0, my + 24.0 + float(i) * 22.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 24.0, 20.0)
 		_dungeon_mastery.append(row)
 	_dungeon_btn = Ui.button("도전", Vector2(PAD, CONTENT_BOTTOM - 52.0),
 		Vector2(180.0, 48.0), Type.SIZE_MID)
@@ -3982,11 +4104,13 @@ func _refresh_dungeon() -> void:
 	for i in _dungeon_mastery.size():
 		var r: Dictionary = MasteryDefs.RANKS[i]
 		var got := best_stage > int(r["stage"])
-		_dungeon_mastery[i].text = "%s  %s — %s%s" % ["✓" if got else "─",
-			str(r["name"]), str(r["desc"]),
+		_dungeon_mastery[i].text = "%s — %s%s" % [str(r["name"]), str(r["desc"]),
 			"" if got else "  (본편 %d 돌파)" % int(r["stage"])]
 		_dungeon_mastery[i].add_theme_color_override("font_color",
 			Color(0.92, 0.82, 0.62) if got else Color(0.55, 0.53, 0.6))
+		if i < _dungeon_badges.size():
+			_dungeon_badges[i].modulate = Color(1, 1, 1) if got \
+				else Color(0.4, 0.38, 0.45)
 	var open := DungeonDefs.open_floors(best_stage)
 	if open <= 0:
 		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
@@ -4120,6 +4244,7 @@ func _process(delta: float) -> void:
 	# 그게 맞다: 소탕은 배경 수입이고, 목돈은 첫 돌파가 준다.
 	if dungeon_best > 0:
 		crystal += _sweep_per_hour() / 3600.0 * delta
+	_tick_titles(delta)
 	if _power_toast_t > 0.0:
 		_power_toast_t -= delta
 		if _power_toast_t <= 0.0:
@@ -6511,6 +6636,7 @@ func _save_game() -> void:
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
 	cfg.set_value("run", "traits", traits)
+	cfg.set_value("run", "titles", titles_got)
 	cfg.set_value("run", "hero_lv", hero_lv)
 	cfg.set_value("run", "hero_exp", hero_exp)
 	cfg.set_value("run", "hero_hp", hero_hp)
@@ -6559,6 +6685,11 @@ func _load_game() -> void:
 	for id in saved_traits:
 		if not TraitDefs.node(str(id)).is_empty():
 			traits[str(id)] = true
+	titles_got = {}
+	var saved_titles: Dictionary = cfg.get_value("run", "titles", {})
+	for id in saved_titles:
+		if not TitleDefs.title(str(id)).is_empty():
+			titles_got[str(id)] = true
 	hero_lv = int(cfg.get_value("run", "hero_lv", 1))
 	hero_exp = float(cfg.get_value("run", "hero_exp", 0.0))
 	lv = cfg.get_value("up", "lv", {})
