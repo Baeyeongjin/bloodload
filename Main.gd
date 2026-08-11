@@ -143,6 +143,29 @@ func _trait_mult(kind: String) -> float:
 
 func _trait_add(kind: String) -> float:
 	return TraitDefs.add(kind, traits)
+
+
+# ── 군림(MasteryDefs) 훅 — 기능 해금이 걸리는 자리를 헬퍼로 모은다 ──────────
+# 흩어 놓으면 하나를 빠뜨린 자리가 조용히 옛 규칙으로 돈다(래퍼 _c_* 와 같은 이유).
+func _equip_cap() -> int:
+	return SkillDefs.SLOTS + (1 if MasteryDefs.has("slot", best_stage) else 0)
+
+
+# 처형 문턱 가산(군림 II). 처형이 있는 스킬에만 얹는다.
+func _exec_bonus() -> float:
+	return 0.05 if MasteryDefs.has("execute", best_stage) else 0.0
+
+
+# 소탕 시급 — 기록 x 혈맥(탐욕) x 군림 V. 접속 중·오프라인 둘 다 이걸 쓴다.
+func _sweep_per_hour() -> float:
+	return DungeonDefs.sweep_per_hour(dungeon_best) * _trait_mult("sweep") \
+		* (2.0 if MasteryDefs.has("sweep2", best_stage) else 1.0)
+
+
+# 방치 상한(시간) — 기본 8 + 혈맥 긴 잠 + 군림 IV.
+func _offline_cap_hours() -> float:
+	return 8.0 + _trait_add("hours") \
+		+ (4.0 if MasteryDefs.has("hours", best_stage) else 0.0)
 var play_time := 0.0
 
 # 성장 스탯 (골드로 올린다). 방치형은 이 숫자가 오르는 것 자체가 보상이다.
@@ -1603,9 +1626,11 @@ func _build_skill_view(root: Control) -> void:
 	_skill_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_skill_view)
 	var top := PAD + 38.0
-	var gap := (CONTENT_W - SK_SLOT * float(SkillDefs.SLOTS)) \
-		/ float(SkillDefs.SLOTS - 1)
-	for i in SkillDefs.SLOTS:
+	# 칸은 **최대치(7)로 깔아 둔다.** 군림 I 전에는 7번째가 잠긴 칸으로 보인다 —
+	# 숨기면 "칸이 늘 수 있다"는 사실 자체가 안 보인다(참고작도 잠긴 칸을 보여 준다).
+	var slot_n := SkillDefs.SLOTS + 1
+	var gap := (CONTENT_W - SK_SLOT * float(slot_n)) / float(slot_n - 1)
+	for i in slot_n:
 		var cell := Control.new()
 		cell.position = Vector2(PAD + float(i) * (SK_SLOT + gap), top)
 		cell.size = Vector2(SK_SLOT, 72.0)
@@ -1634,7 +1659,9 @@ func _build_skill_view(root: Control) -> void:
 		hit.size = Vector2(SK_SLOT, 72.0)
 		hit.focus_mode = Control.FOCUS_NONE
 		var idx := i
-		hit.pressed.connect(func() -> void: _unequip_skill(idx))
+		hit.pressed.connect(func() -> void:
+			if idx < _equip_cap():
+				_unequip_skill(idx))
 		cell.add_child(hit)
 		_skill_slots.append({"frame": frame, "icon": ic, "lv": lv,
 			"shade": shade, "cd": cd})
@@ -1752,11 +1779,11 @@ func _toggle_skill(key: String) -> void:
 	skill_auto_equip = false
 	if skill_equipped.has(key):
 		skill_equipped.erase(key)
-	elif skill_equipped.size() < SkillDefs.SLOTS:
+	elif skill_equipped.size() < _equip_cap():
 		skill_equipped.append(key)
 	else:
 		# 칸이 다 찼으면 **맨 뒤를 밀어낸다.** 순서가 발동 우선순위라 뒤가 제일 덜 급하다.
-		skill_equipped[SkillDefs.SLOTS - 1] = key
+		skill_equipped[_equip_cap() - 1] = key
 	var lv := int(skill_owned.get(key, 0))
 	_skill_info.text = "%s  ·  %s  ·  %d레벨" % [SkillDefs.name_of(key),
 		SkillDefs.role_of(key), lv]
@@ -1807,6 +1834,11 @@ func _refresh_skills(rebuild_info := true) -> void:
 		return
 	for i in _skill_slots.size():
 		var slot: Dictionary = _skill_slots[i]
+		if i >= _equip_cap():
+			slot["icon"].texture = null
+			slot["frame"].modulate = Color(0.18, 0.16, 0.2)
+			slot["lv"].text = "군림 I"
+			continue
 		if i >= skill_equipped.size():
 			slot["icon"].texture = null
 			slot["frame"].modulate = Color(0.34, 0.32, 0.38)
@@ -3910,6 +3942,7 @@ func _build_tabbar() -> void:
 var _dungeon_info: Label
 var _dungeon_sub: Label
 var _dungeon_btn: Button
+var _dungeon_mastery: Array[Label] = []
 
 
 func _build_dungeon(root: Control) -> void:
@@ -3921,6 +3954,16 @@ func _build_dungeon(root: Control) -> void:
 	_dungeon_sub = _panel_label(root, Vector2(PAD, PAD + 72.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.76), CONTENT_W, 48.0)
 	_dungeon_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# 군림 — 본편 돌파가 자동으로 여는 기능 5개. 창은 미궁 탭을 빌린다:
+	# 교차 잠금의 다른 축들(가지·상한)이 다 이 창에 적혀 있어서 자리가 맞다.
+	var my := PAD + 128.0
+	var mt := _panel_label(root, Vector2(PAD, my), Type.SIZE_SMALL,
+		Color(1.0, 0.78, 0.45), CONTENT_W, 20.0)
+	mt.text = "군림 — 본편 돌파가 스스로 연다"
+	for i in MasteryDefs.RANKS.size():
+		var row := _panel_label(root, Vector2(PAD, my + 24.0 + float(i) * 22.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W, 20.0)
+		_dungeon_mastery.append(row)
 	_dungeon_btn = Ui.button("도전", Vector2(PAD, CONTENT_BOTTOM - 52.0),
 		Vector2(180.0, 48.0), Type.SIZE_MID)
 	_dungeon_btn.pressed.connect(func() -> void:
@@ -3936,6 +3979,14 @@ func _build_dungeon(root: Control) -> void:
 func _refresh_dungeon() -> void:
 	if _dungeon_info == null:
 		return
+	for i in _dungeon_mastery.size():
+		var r: Dictionary = MasteryDefs.RANKS[i]
+		var got := best_stage > int(r["stage"])
+		_dungeon_mastery[i].text = "%s  %s — %s%s" % ["✓" if got else "─",
+			str(r["name"]), str(r["desc"]),
+			"" if got else "  (본편 %d 돌파)" % int(r["stage"])]
+		_dungeon_mastery[i].add_theme_color_override("font_color",
+			Color(0.92, 0.82, 0.62) if got else Color(0.55, 0.53, 0.6))
 	var open := DungeonDefs.open_floors(best_stage)
 	if open <= 0:
 		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
@@ -3954,7 +4005,7 @@ func _refresh_dungeon() -> void:
 	var next := clampi(dungeon_best + 1, 1, open)
 	_dungeon_sub.text = "%d층 도전(첫 돌파 혈정 %d) — 본편 %d구간 수준 · 소탕 시간당 %.1f" \
 		% [next, int(DungeonDefs.first_clear_reward(next)), DungeonDefs.eq_stage(next),
-		DungeonDefs.sweep_per_hour(dungeon_best)]
+		_sweep_per_hour()]
 	_dungeon_btn.text = "도전"
 
 
@@ -4068,8 +4119,7 @@ func _process(delta: float) -> void:
 	# (EXPANSION 6장). 초당으로 나누면 값이 작아 화면 숫자는 몇 분에 1씩 는다 —
 	# 그게 맞다: 소탕은 배경 수입이고, 목돈은 첫 돌파가 준다.
 	if dungeon_best > 0:
-		crystal += DungeonDefs.sweep_per_hour(dungeon_best) * _trait_mult("sweep") \
-			/ 3600.0 * delta
+		crystal += _sweep_per_hour() / 3600.0 * delta
 	if _power_toast_t > 0.0:
 		_power_toast_t -= delta
 		if _power_toast_t <= 0.0:
@@ -4165,6 +4215,29 @@ func _tick_engage(foes: Array) -> void:
 # 한 마리씩 세므로 **방치 수익이 늘지 않는다** — 실제로만 빨라진다. 그쪽이 안전한
 # 방향이라 그대로 둔다(반대면 과지급이 된다).
 # ponytail: 버프 가동률까지 오프라인에 넣으려면 Balance 쪽에 축을 하나 더 세워야 한다.
+# 군림 III — 3연격 마무리 광역. 불멸의 심장 검기(fx_cleave_wave)를 그대로 쓴다:
+# 버프 기준(_summon_*)을 잠깐 세워 `_cleave_swing` 을 지나가게 하는 게 아니라,
+# 같은 몸통을 공유하는 별도 진입로를 둔다 — 버프 상태를 흉내 내면 만료 코드가
+# 그 가짜 상태를 밟는다.
+var _pending_finisher := false
+
+
+func _mastery_cleave(hit_already: Foe) -> void:
+	var rest: Array[Foe] = []
+	for f in _aoe_targets():
+		if f != hit_already:
+			rest.append(f)
+	if rest.is_empty():
+		return
+	var mid := 0.0
+	for f in rest:
+		f.take_damage(_combat_damage(f))
+		mid += f.position.x
+	mid /= float(rest.size())
+	_anim_fx("fx_cleave_wave", Vector2(mid, ground_y - float(Grid.SPRITE)),
+		16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
+
+
 func _cleave_swing(hit_already: Foe) -> void:
 	if _summon_t <= 0.0 or _summon_cleave.is_empty():
 		return
@@ -4192,6 +4265,11 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 				_pending_target.take_damage(_combat_damage(_pending_target))
 				_anim_fx("fx_cleave", _pending_target.position + Vector2(0, -28), 18.0, 2.0)
 				_cleave_swing(_pending_target)
+				# 군림 III — 3연격 마무리는 불멸의 심장과 같은 검기로 광역이 된다.
+				# 새 기계 없음: 버프 광역(_cleave_swing)의 기준을 잠깐 세워 재사용한다.
+				if _pending_finisher and MasteryDefs.has("cleave3", best_stage) \
+						and (_summon_t <= 0.0 or _summon_cleave.is_empty()):
+					_mastery_cleave(_pending_target)
 			_pending_target = null
 	if _hero_dead:
 		return
@@ -4260,6 +4338,9 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	var swing := _attack_motion()
 	_hero_hit_t = _impact_time(swing, _attack_swing())
 	_pending_target = target
+	# 군림 III(파도베기) — 이 스윙이 3연격 마무리인지 **시작할 때** 기억한다.
+	# 명중 시점에는 _combo 가 이미 다음으로 넘어가 있어 그때 물으면 늘 틀린다.
+	_pending_finisher = swing == "attack3"
 	_play(swing)
 	_combo += 1
 
@@ -4608,11 +4689,11 @@ func _auto_equip_skills() -> void:
 		picked.append(str(key))
 	# 2순위: 남은 칸은 그냥 센 것부터.
 	for key in owned:
-		if picked.size() >= SkillDefs.SLOTS:
+		if picked.size() >= _equip_cap():
 			break
 		if not picked.has(str(key)):
 			picked.append(str(key))
-	skill_equipped = picked.slice(0, mini(picked.size(), SkillDefs.SLOTS))
+	skill_equipped = picked.slice(0, mini(picked.size(), _equip_cap()))
 
 
 func _tick_skills(delta: float, foes: Array) -> void:
@@ -4739,6 +4820,8 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	var cap := int(rule.get("max_targets", 0))
 	var pit := bool(rule.get("pit_kill", false))
 	var exec_at := float(rule.get("execute", 0.0))   # 처형 문턱 (최대 체력 비율)
+	if exec_at > 0.0:
+		exec_at += _exec_bonus()   # 군림 II — 왕의 선고
 	# 갈라진 대지 — **바닥이 흔들린다**(사장님). 깔릴 때 크게, 틱마다 잔진동.
 	# SHAKE_MIN_GAP 이 겹침을 걸러 주므로 틱마다 불러도 화면이 안 얼어붙는다.
 	var quake := float(rule.get("quake", 0.0))
@@ -5836,7 +5919,17 @@ func _advance_stage() -> void:
 		if next_stage > best_stage:
 			if StageDefs.is_boss_stage(stage):
 				gem += GachaDefs.COST
+			# 군림 — 돌파가 해금 문턱을 넘는 순간 배너로 알린다. 자동 해금은
+			# 알리지 않으면 없는 기능과 같다.
+			var mastery0 := MasteryDefs.unlocked_count(best_stage)
 			best_stage = next_stage
+			if MasteryDefs.unlocked_count(best_stage) > mastery0:
+				var r: Dictionary = MasteryDefs.RANKS[mastery0]
+				_offline_banner.text = "%s 해금 — %s" % [str(r["name"]), str(r["desc"])]
+				_offline_banner.add_theme_color_override("font_color",
+					Color(1.0, 0.78, 0.45))
+				_offline_banner.visible = true
+				_offline_t = 5.0
 		stage = next_stage
 		_boss_time = StageDefs.time_limit(stage)
 		_begin_stage_pose()   # stage 가 정해진 뒤에 부른다 — 보스인지 여기서 갈린다
@@ -6641,8 +6734,8 @@ func _grant_offline(left_at: float) -> void:
 	var away := Time.get_unix_time_from_system() - left_at
 	if away < 60.0:
 		return
-	# 8시간 상한 + 혈맥 "긴 잠"(hours)이 늘리는 몫. 그 이상은 접속할 이유가 사라진다.
-	away = minf(away, (8.0 + _trait_add("hours")) * 3600.0)
+	# 상한 = 기본 8시간 + 혈맥 긴 잠 + 군림 IV. 그 이상은 접속할 이유가 사라진다.
+	away = minf(away, _offline_cap_hours() * 3600.0)
 	# **한 구간에 걸린 시간을 예산에서 뺀다.** 일반 구간의 제한 시간이 없어진 뒤로는
 	# "넘을 수 있나"만 보면 1분만 비워도 생존이 버티는 한 끝없이 올라간다 — 예전엔
 	# 100초 제한이 우연히 그 상한 역할을 했다. 실제로는 한 구간에 몇십 초씩 걸리므로
@@ -6672,8 +6765,7 @@ func _grant_offline(left_at: float) -> void:
 	# 혈정은 상자에 안 담는다: 상자는 혈액 그릇이고, 혈정은 미궁 기록의 배당이라
 	# 조용히 지갑에 쌓이는 쪽이 맞다(접속 중 소탕과 같은 길).
 	if dungeon_best > 0:
-		crystal += (away / 3600.0) * DungeonDefs.sweep_per_hour(dungeon_best) \
-			* _trait_mult("sweep") * 0.5
+		crystal += (away / 3600.0) * _sweep_per_hour() * 0.5
 	hero_hp = max_hp()
 	_refresh_chest()
 	if climbed > 0:
