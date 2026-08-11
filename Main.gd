@@ -4457,6 +4457,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	var puddle := float(rule.get("puddle", 0.0))
 	var cap := int(rule.get("max_targets", 0))
 	var pit := bool(rule.get("pit_kill", false))
+	var exec_at := float(rule.get("execute", 0.0))   # 처형 문턱 (최대 체력 비율)
 	# 갈라진 대지 — **바닥이 흔들린다**(사장님). 깔릴 때 크게, 틱마다 잔진동.
 	# SHAKE_MIN_GAP 이 겹침을 걸러 주므로 틱마다 불러도 화면이 안 얼어붙는다.
 	var quake := float(rule.get("quake", 0.0))
@@ -4475,10 +4476,20 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 그대로 두고 고정만 필요하다(2026-08-11 사장님). 하나로 묶었으면 웅덩이가
 	# 화면 가운데로 끌려 나갔을 것이다.
 	var screen := bool(rule.get("screen", false))
-	_field_reach = float(Grid.BG.x) if screen else FIELD_REACH
-	_field_fixed = screen or bool(rule.get("fixed", false))
+	# `behind` — **영웅 뒤에 세운다**(피의 왕좌). 몹 자리에 깔면 몹·영웅과 그림이
+	# 겹쳐서 지저분하다(2026-08-11 사장님: "캐릭터랑 이미지 겹치는 건 좀 짜치네").
+	# 왕좌는 왕 뒤에 서 있는 물건이다.
+	#
+	# 자리를 뒤로 뺐으므로 **판정 폭은 화면 전부로 넓힌다.** 안 넓히면 반폭 180 이
+	# 뒤에서부터 재어져 앞줄 몹이 빠진다 — 그림만 옮기고 판정을 두면 "그림 없는
+	# 자리에서 피해가 나간다"의 반대쪽 고장이 난다.
+	var behind := float(rule.get("behind", 0.0))
+	_field_reach = float(Grid.BG.x) if (screen or behind > 0.0) else FIELD_REACH
+	_field_fixed = screen or behind > 0.0 or bool(rule.get("fixed", false))
 	var at := _aoe_targets()
-	if screen:
+	if behind > 0.0:
+		_field_x = hero_x - behind * float(signi(hero_face))
+	elif screen:
 		_field_x = float(Grid.BG.x) * 0.5
 	elif puddle > 0.0 and not at.is_empty():
 		# **가장 가까운 몹 발밑**(2026-08-10 사장님). 무리 한가운데로 잡았더니 몹이
@@ -4573,6 +4584,16 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 				# take_damage 는 출처를 모르므로 죽기 직전에 표시만 얹는다.
 				if pit and f.hp <= per_tick:
 					f.pit_fall = true
+				# **처형**(RULES.execute — 피의 왕좌). 문양 안에서 체력이 그 비율
+				# 아래로 떨어진 놈은 남은 체력에 상관없이 죽는다. 피해로는 못 만드는
+				# 결과라 "전설"이 붙을 자격이 있다 — 숫자를 키우는 것과 다르다.
+				#
+				# **보스는 제외한다.** 보스 체력은 구간 시간을 맞추려고 따로 설계돼
+				# 있어서(Balance), 마지막 15%를 건너뛰면 그 설계가 통째로 무너진다.
+				if exec_at > 0.0 and not f.is_boss and not f.is_midboss \
+						and f.hp <= f.max_hp * exec_at:
+					f.take_damage(f.hp)
+					continue
 				f.take_damage(per_tick)
 				_skill_hit_fx(skill, f)
 			_defer_stage_advance = false

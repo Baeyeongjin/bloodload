@@ -140,10 +140,13 @@ func _init() -> void:
 	# 감시의 눈을 3틱으로 바꿨을 때 실제로 그렇게 걸렸다.
 	var want := SkillDefs.ticks_of("field_rare")
 	var gen0: int = scene._field_gen
-	var world0: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size()
-	# **field_rare 로 잰다.** field_common(비명의 흔적)은 2026-08-06 부터 웅덩이 규칙
-	# (RULES.puddle: 문양 하나 + 상한 4)이라 "맞는 놈마다 문양" 검사와 안 맞는다 —
-	# 그 규칙은 아래에서 따로 검사한다. 감시의 눈(rare)이 형태 기본 규칙 그대로다.
+	# **world_fx 로 세면 안 된다**(2026-08-11). `fixed`·`screen` 인 진은 화면에 붙어서
+	# 일부러 그 그룹에 안 들어간다 — 그룹으로 세면 그려도 0장으로 잡힌다.
+	var world0: int = _count_fx(scene)
+	# **`field_rare` 로 잰다** — 다만 이제 감시의 눈도 규칙을 달았다(screen + puddle:
+	# 큰 문양 하나). 그래서 기대값은 "맞는 놈마다 한 장"이 아니라 아래 `want_marks`
+	# 가 정한다. 2026-08-11 에 다섯 형태가 전부 규칙을 갖게 돼서, "형태 기본 그대로인
+	# 진"이라는 기준 자체가 사라졌다.
 	scene._resolve_skill("field_rare")
 	await process_frame
 	# **시간차 소환(RULES.stagger)을 기다린다.** 감시의 눈은 문양이 차례로 뜨므로
@@ -154,16 +157,21 @@ func _init() -> void:
 	while waited < lead:
 		await process_frame
 		waited += scene.get_process_delta_time()
-	var laid: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size() - world0
+	var laid: int = _count_fx(scene) - world0
 	var marked: int = (scene._field_targets() as Array).size()
-	print("   깔린 뒤: _field_x %.1f  판정반폭 %.0f  gen %d->%d  문양 %d장  대상 %d"
-		% [scene._field_x, scene.FIELD_REACH, gen0, scene._field_gen, laid, marked])
+	# 큰 문양 하나로 덮는 규칙(puddle·screen)이면 1장이 정답이고, 아니면 맞는 놈마다다.
+	var rr: Dictionary = SkillDefs.rule_of("field_rare")
+	var one_mark := float(rr.get("puddle", 0.0)) > 0.0 or bool(rr.get("screen", false))
+	var want_marks: int = 1 if one_mark else marked
+	print("   깔린 뒤: _field_x %.1f  판정반폭 %.0f  gen %d->%d  문양 %d장  대상 %d (기대 %d)"
+		% [scene._field_x, scene._field_reach, gen0, scene._field_gen,
+		laid, marked, want_marks])
 	# **피해가 들어가는 자리에는 문양이 있어야 한다.** 판정 폭을 아트 폭에서 떼어 낸
-	# 대가가 이것이다 - 이 검사가 없으면 FIELD_REACH 를 키우는 순간 아무것도 안 그려진
-	# 자리에서 피해가 나가고, 그게 오늘 고친 "안 보이는 데서 때리기"다.
-	assert(laid >= marked,
-		"맞는 놈보다 문양이 적다: %d장 / %d마리 - 안 보이는 자리에서 피해가 난다"
-		% [laid, marked])
+	# 대가가 이것이다 - 이 검사가 없으면 판정 반폭을 키우는 순간 아무것도 안 그려진
+	# 자리에서 피해가 나간다. 큰 문양 하나로 덮는 규칙에서는 그 한 장이 폭을 맡는다.
+	assert(laid >= want_marks,
+		"문양이 모자라다: %d장 / 기대 %d (대상 %d마리) - 안 보이는 자리에서 피해가 난다"
+		% [laid, want_marks, marked])
 	print("   probe x %.1f  잉크반폭 %.1f  거리 %.1f  dying %s"
 		% [probe.position.x, probe.body_half(),
 		absf(probe.position.x - scene._field_x), str(probe.dying)])
@@ -205,10 +213,11 @@ func _init() -> void:
 	scene._phase = "fight"
 	scene._skill_action = ""
 	scene._skill_cd.clear()
-	var world1: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size()
+	# world_fx 로 세면 안 된다 — 비명의 흔적은 `fixed` 라 그 그룹에 안 들어간다(위 참고).
+	var world1: int = _count_fx(scene)
 	scene._resolve_skill("field_common")
 	await process_frame
-	var puddle_laid: int = (scene.get_tree().get_nodes_in_group("world_fx") as Array).size() - world1
+	var puddle_laid: int = _count_fx(scene) - world1
 	print("")
 	print("비명의 흔적(웅덩이) 1회 -> 문양 %d 장" % puddle_laid)
 	assert(puddle_laid == 1, "웅덩이가 %d장이다 — 무리 가운데 하나여야 한다" % puddle_laid)
@@ -266,6 +275,43 @@ func _init() -> void:
 	print("튀는 피(튕김) 1회 -> %d 마리 깎임 (대상 %d, 상한 3)" % [struck_n, bt.size()])
 	# 대상이 4인데 정확히 3이어야 한다 — 1이면 튕김이 끊긴 것, 4면 상한이 안 걸린 것.
 	assert(struck_n == 3, "튀는 피가 %d 마리를 맞혔다 — 3마리여야 한다" % struck_n)
+	# ── 처형(RULES.execute) — 왕좌 안에서 체력이 문턱 아래면 즉사한다 ────────────
+	# 이건 **피해가 아니라 규칙**이라 위력을 바꿔도 안 잡힌다. 문턱 위/아래 두 놈을
+	# 나란히 세워, 아래만 죽고 위는 사는지를 본다. 하나만 두면 "그냥 피해로 죽었다"와
+	# 구분이 안 된다.
+	var exec_at: float = float(SkillDefs.rule_of("field_legend").get("execute", 0.0))
+	assert(exec_at > 0.0, "field_legend 에 execute 규칙이 없다")
+	var et: Array = scene._aoe_targets()
+	assert(et.size() >= 2, "처형 검사에 몹이 둘 이상 필요하다 (%d)" % et.size())
+	var low: Foe = et[0]
+	var high: Foe = et[1]
+	# 피해로는 절대 안 죽을 만큼 체력을 키워 두고, 비율만 문턱 위아래로 갈라 놓는다.
+	low.max_hp = 1.0e9
+	low.hp = low.max_hp * (exec_at * 0.5)
+	high.max_hp = 1.0e9
+	high.hp = high.max_hp * (exec_at + 0.30)
+	var high_before: float = high.hp
+	scene._skill_cd.clear()
+	scene._phase = "fight"
+	scene._resolve_skill("field_legend")
+	var etime := 0.0
+	while etime < 1.2:
+		await process_frame
+		etime += scene.get_process_delta_time()
+		scene._phase = "fight"
+		scene._attack_t = 99.0
+		for k in scene.skill_equipped:
+			scene._skill_cd[str(k)] = 99.0
+	var low_dead := not is_instance_valid(low) or low.dying or low.hp <= 0.0
+	var high_alive := is_instance_valid(high) and not high.dying and high.hp > 0.0
+	print("")
+	print("처형 문턱 %d%% — 문턱 아래(%s) / 문턱 위(%s, %.0f -> %.0f)"
+		% [int(exec_at * 100.0), "죽음" if low_dead else "살아남음",
+		"살아남음" if high_alive else "죽음", high_before,
+		high.hp if is_instance_valid(high) else 0.0])
+	assert(low_dead, "문턱 아래인데 안 죽었다 — 처형이 안 걸렸다")
+	assert(high_alive, "문턱 위인데 죽었다 — 처형 문턱이 안 먹었다")
+
 	print("")
 	print("AoeCheck OK")
 	quit()
