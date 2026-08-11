@@ -244,23 +244,38 @@ func _init() -> void:
 		"첫 보스가 맨몸에도 너무 쉽다: %.0f초" % starter_ttk)
 	assert(trained_ttk < StageDefs.TIME_BOSS * 0.6,
 		"첫 보스가 훈련하고도 안 열린다: %.0f초" % trained_ttk)
-	# 공격력은 **레벨당 +2% 합연산**이다. STATS 4장 검산표(DPS 배수)를 그대로 못 박는다 —
-	# 이 검사가 곱연산으로 되돌리는 실수를 잡는다(곱연산이면 x70 / x479 / x8212 가 나온다).
+	# 공격력은 **레벨당 x1.03 곱연산**이다(2026-08-11 사장님 결정. Balance.DMG_STEP).
+	#
+	# **STATS 4장의 검산표(x3 / x15 / x180 / x4000)는 여기서 못 박지 않는다.**
+	# 그 표는 공격력 600·1500 레벨을 전제로 하는데, 강화 비용이 x1.15/레벨이라
+	# 1500 레벨은 10^90 골드다 — 어떤 곡선을 쓰든 도달할 수 없는 자리를 못 박고
+	# 있었다. 실제로 도달하는 자리는 50~120 레벨이다(`tests/NoAttackProbe` 실측:
+	# 500구간 벽에서 56레벨).
+	#
+	# 대신 **곱연산이 안전한 이유 자체**를 못 박는다: 한 레벨의 이득이 그 값보다
+	# 작아야 한다. 그러면 골드가 곧 상한이라 "곱연산은 무한"이 안 된다.
 	var base_dps := _build_dps(1, 1, 1, 1)
+	assert(Balance.DMG_STEP < Balance.UP_EXP,
+		"레벨당 피해(x%.3f)가 비용(x%.3f)보다 빨리 큰다 — 사면 살수록 싸지는 셈이라 터진다"
+		% [Balance.DMG_STEP, Balance.UP_EXP])
+	# 도달 가능한 범위에서 **투자가 값을 하는가.** 아래를 밑돌면 아무도 안 사고
+	# (그게 고치기 전 증상이다), 웃돌면 한 스탯이 게임을 통째로 먹는다.
+	for probe in [{"lv": 30, "lo": 2.0, "hi": 4.0}, {"lv": 60, "lo": 4.0, "hi": 9.0},
+			{"lv": 120, "lo": 20.0, "hi": 60.0}]:
+		var got := _build_dps(int(probe["lv"]), 1, 1, 1) / base_dps
+		assert(got > float(probe["lo"]) and got < float(probe["hi"]),
+			"공격력 %d레벨 DPS 배수 x%.1f — %.0f~%.0f 사이여야 한다"
+			% [int(probe["lv"]), got, float(probe["lo"]), float(probe["hi"])])
+		print("공격력 %3d레벨 -> DPS x%.1f (비용 누적 x%s)"
+			% [int(probe["lv"]), got, "%.0f" % pow(Balance.UP_EXP, float(int(probe["lv"]) - 1))])
 	var design := [
-		{"name": "첫날", "stage": 50, "build": [60, 40, 10, 10], "dps_mult": 3.0},
-		{"name": "1주", "stage": 500, "build": [200, 150, 35, 40], "dps_mult": 15.0},
-		{"name": "1개월", "stage": 1000, "build": [600, 450, 80, 120], "dps_mult": 180.0},
-		{"name": "3개월", "stage": 1000, "build": [1500, 1000, 100, 400], "dps_mult": 4000.0},
+		{"name": "첫날", "stage": 50, "build": [60, 40, 10, 10]},
+		{"name": "1주", "stage": 500, "build": [200, 150, 35, 40]},
 	]
 	for point in design:
 		var build: Array = point["build"]
 		var build_dps := _build_dps(build[0], build[1], build[2], build[3])
 		var mult := build_dps / base_dps
-		var want := float(point["dps_mult"])
-		# 설계표와 25% 안에서 맞아야 한다. 곱연산이면 20배 넘게 벌어져 바로 걸린다.
-		assert(mult > want * 0.75 and mult < want * 1.25,
-			"%s DPS 배수가 설계표와 다르다: x%.0f (설계 x%.0f)" % [point["name"], mult, want])
 		var stage: int = point["stage"]
 		var normal_ttk := _foe_hp(stage, "normal") / build_dps
 		var mid_ttk := _foe_hp(stage, "midboss") / build_dps
