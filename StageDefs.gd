@@ -123,13 +123,26 @@ static func midboss_prefix(stage: int) -> String:
 # 첫 일주일에만 벽이 몰리고 그 뒤로는 성장 체감이 0이었다 — DESIGN 13-1 의
 # "초반 폭발 → 중반 해금 → 후반 누적"과 정반대였고 하필 D+1~D+7 구간이다.
 # 큰 단계마다 ×1.038 이면 100단계 누적 ×40 으로, STATS 4장의 DPS 곡선과 나란히 간다.
+#
+# **두 값은 `static var` 다** — 곡선을 고르는 계측기(`tests/CurveSweep.gd`)가 여러
+# 값을 넣어 보고 벽이 어디 서는지 표로 뽑는다. 게임 코드는 절대 안 바꾼다.
+# 눈으로 고르는 값이라 후보를 넣어 볼 수 있어야 한다.
+static var POWER_STEP := 1.038      # 큰 단계(10구간)마다 적이 세지는 배수
+static var GOLD_SLOPE := 0.55       # 큰 단계마다 처치 보상에 더해지는 몫
+
+
 static func enemy_power(stage: int) -> float:
-	return pow(1.038, float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE))
+	return pow(POWER_STEP, float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE))
 
 
 # 처치로 얻는 피. 적 강화보다 조금 느리게 올려 후반에 방치가 필요해지게 한다.
+#
+# **지수로 바꿔 봤다가 되돌렸다**(2026-08-11). 1000구간에서 같은 값(x56)이 되게
+# 지수를 잡으면 **중반이 훨씬 가난해진다** — 500구간에서 선형 28.5 vs 지수 7.4.
+# 그래서 벽이 250 -> 150 으로 당겨졌다(`tests/CurveSweep` 실측). 선형이 중반을
+# 받쳐 주고 있었다.
 static func gold_per_kill(stage: int) -> float:
-	return 1.0 + float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE) * 0.55
+	return 1.0 + float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE) * GOLD_SLOPE
 
 
 # 첫 보스가 일반 장비 첫 강화 1회를 열고, 이후 큰 단계마다 5씩 오른다.
