@@ -373,10 +373,61 @@ func dps() -> float:
 	# 안 맞는다. 상시 배수라 밖에서 한 번 곱하는 게 맞고, 실제 피해(_combat_damage)와
 	# 같은 식이라 화면 DPS 와 전투 결과가 안 갈린다.
 	var ward := _equipped_shape("ward", true)
-	return Balance.auto_dps(_base_hit_damage() * (1.0 + _codex_act_bonus()),
+	var base := Balance.auto_dps(_base_hit_damage() * (1.0 + _codex_act_bonus()),
 		attack_interval(), SKILL_DUR,
 		float(ward.get("cooldown", 999.0)), float(ward.get("duration", 0.0)),
-		float(ward.get("bonus", 0.0))) * (1.0 + _passive_ward_bonus())
+		float(ward.get("bonus", 0.0)))
+	return (base + _skill_dps()) * (1.0 + _passive_ward_bonus())
+
+
+# 몇 마리에게 닿는가 — DPS 계산용. 화면 안에 실제로 서 있는 수를 셀 수 없으므로
+# (계산할 때는 전투 중이 아니다) 광역은 **2마리로 잡는다.** 전투 띠에 보통 2~3이
+# 서고(`tests/AoeCheck` 실측 2), 적게 잡아야 잠금이 헐거워지지 않는다.
+# ponytail: 막마다 평균 동시 등장 수가 생기면 그 값을 쓴다.
+const DPS_AOE_FOES := 2.0
+
+
+func _skill_targets(key: String) -> float:
+	var r := SkillDefs.rule_of(key)
+	var bounce := int(r.get("bounce", 0))
+	if bounce > 0:
+		return float(bounce)
+	var cap := int(r.get("max_targets", 0))
+	if cap > 0:
+		return minf(float(cap), DPS_AOE_FOES)
+	return 1.0 if SkillDefs.behavior_of(key) == "strike" else DPS_AOE_FOES
+
+
+# **장착한 공격 스킬이 얹는 초당 피해.**
+#
+# 2026-08-11 까지 `dps()` 는 스킬을 아예 안 셌다 — `auto_dps` 주석의 "피해 스킬은
+# 기본공격을 대체한다"가 전제였는데, 그건 **스킬 한 방이 평타 한 방과 같다**는 뜻이다.
+# 지금은 아니다: 피의 왕좌가 평타의 272% 를 한 명당 넣고, 여럿을 동시에 때린다.
+# 그래서 화면의 전투력·오프라인 수입·해금 문턱이 전부 실제보다 낮은 DPS 를 보고
+# 있었다(사장님: "공격력을 하나도 안 찍어도 엄청 진행이 많이 됨").
+#
+# 모델은 **교대**다: 시전하는 동안 평타를 못 치므로, 스킬이 버는 것은
+# "제 피해 - 밀려난 평타"다. 그래서 격 커먼(평타의 100%, 1명)은 정확히 0을 더한다 —
+# 그게 맞다. 평타와 똑같은 스킬은 DPS 를 안 올린다.
+#
+#     한 번 시전 = 평타 `mult` 번어치 시간
+#     버는 것    = 평타피해 x mult x (위력배수 x 대상수 - 1) / 쿨타임
+func _skill_dps() -> float:
+	var hit := _base_hit_damage() * (1.0 + _codex_act_bonus())
+	var mult := Balance.skill_hit_mult(attack_interval(), SKILL_DUR)
+	var out := 0.0
+	for key in skill_equipped:
+		var k := str(key)
+		if SkillDefs.behavior_of(k) == "ward":
+			continue      # 버프는 위 auto_dps 가 이미 센다
+		if bool(SkillDefs.rule_of(k).get("passive", false)):
+			continue      # 패시브는 배수라 밖에서 곱한다
+		var lv := int(skill_owned.get(k, 0))
+		var power := SkillDefs.power(k, lv) * (1.0 + _skill_combo_bonus(k))
+		var cd := maxf(0.001, SkillDefs.cooldown(k, lv))
+		var gain := power / SkillDefs.POWER_NORM * _skill_targets(k) - 1.0
+		out += hit * mult * maxf(0.0, gain) / cd
+	return out
 
 
 # 장착 중인 것 가운데 그 형태의 첫 스킬. 없으면 빈 사전.

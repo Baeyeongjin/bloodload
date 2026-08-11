@@ -23,7 +23,7 @@ func _init() -> void:
 	print("%-10s %-8s %-10s %-12s %s"
 		% ["정책", "벽 구간", "총 시간", "그때 전투력", "공격력 레벨"])
 	print("-".repeat(64))
-	for policy in ["전부", "공격 제외", "무투자"]:
+	for policy in ["전부", "공격 제외", "무투자", "스킬+공격제외"]:
 		var r := _walk(policy)
 		print("%-10s %-8s %-10s %-12s %s"
 			% [policy, str(r["wall"]), "%.0f분" % (float(r["time"]) / 60.0),
@@ -35,15 +35,26 @@ func _init() -> void:
 	quit()
 
 
+# 스킬을 끼고 걷는 정책에 쓰는 기본 한 벌. **뽑기는 모델 밖이라** 적당한 한 벌을
+# 가정한다 — 네 형태를 커먼으로 하나씩, 그중 둘만 언커먼. 실제 플레이는 이보다
+# 좋으므로 여기서 벽이 안 서면 실제로도 안 선다.
+const LOADOUT := ["strike_common", "wave_common", "field_common", "ward_common",
+	"strike_uncommon", "wave_uncommon"]
+
+
 func _walk(policy: String) -> Dictionary:
 	var game = load("res://Main.gd").new()
+	if policy == "스킬+공격제외":
+		for k in LOADOUT:
+			game.skill_owned[k] = 1
+			game.skill_equipped.append(k)
 	var gold := 0.0
 	var total := 0.0
 	var last := StageDefs.total_stages()
 	for st in range(1, last + 1):
 		game.stage = st
 		if policy != "무투자":
-			gold = _shop(game, gold, st, policy == "공격 제외")
+			gold = _shop(game, gold, st, policy != "전부")
 		var need := StageDefs.kills_needed(st)
 		var farmed := 0.0
 		var tries := 0
@@ -70,7 +81,7 @@ func _walk(policy: String) -> Dictionary:
 			farmed += bt
 			gold += _reward(game, back, StageDefs.kills_needed(back))
 			if policy != "무투자":
-				gold = _shop(game, gold, st, policy == "공격 제외")
+				gold = _shop(game, gold, st, policy != "전부")
 	return {"wall": "끝까지", "time": total,
 		"power": Balance.combat_power(game.dps(), game.max_hp(), game.regen_per_sec()),
 		"dmg_lv": game.stat_lv("damage")}
@@ -140,6 +151,15 @@ func _breakdown() -> void:
 			print("   %-8s %2d레벨 -> DPS %8.1f  (x%.2f)"
 				% [key, want, game.dps(), game.dps() / maxf(0.001, _base_dps())])
 		game.lv[key] = 1
+	print("")
+	print("스킬을 끼면 DPS 가 얼마나 오르나 (스탯 1레벨)")
+	var g2 = load("res://Main.gd").new()
+	var bare: float = g2.dps()
+	for k in LOADOUT:
+		g2.skill_owned[k] = 1
+		g2.skill_equipped.append(k)
+		print("   +%-16s DPS %8.1f  (맨몸의 x%.2f)" % [k, g2.dps(), g2.dps() / bare])
+
 	print("")
 	print("몹 체력 곡선")
 	for st in [1, 50, 100, 200, 300, 450, 600, 1000]:
