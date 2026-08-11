@@ -226,7 +226,10 @@ const RULES := {
 	# 스프라이트가 한 장이다. 몸 전체가 붉어지면 "피를 뒤집어썼다"로 읽힌다).
 	# 표출(style: orbit)은 아래 FX_OVERRIDE 에 있다 — 규칙과 표출은 표를 나눠 쓴다.
 	"field_epic": {"as": "ward", "bonus": 0.50, "duration": 6.0, "tint": 0.45},
-	"field_legend": {"puddle": 1.25},
+	# 피의 왕좌 — `fixed` 로 **전진해도 안 밀린다**(2026-08-11 사장님: "바닥에 고정만").
+	# 왕좌는 세워 놓는 물건이라 뒤로 흘러가면 "저기 두고 온 가구"가 된다.
+	# 그림은 그대로다 — 다시 안 뽑는다.
+	"field_legend": {"puddle": 1.25, "fixed": true},
 }
 
 
