@@ -60,6 +60,19 @@ static func label(floor: int) -> String:
 	return "미궁 %d층" % maxi(1, floor)
 
 
+# ── 혈정 수급 (EXPANSION 6장 초안 그대로) ──────────────────────────────────
+# 첫 돌파: 10 x 층수 — 100층 전부 돌면 누적 50,500. 혈맥(3단계) 완주 비용을
+# 이 값의 1.5배로 잡아 "첫 돌파로 절반, 나머지는 방치 며칠"이 나오게 한다.
+static func first_clear_reward(floor: int) -> float:
+	return 10.0 * float(maxi(1, floor))
+
+
+# 소탕: 시간당 최고층 x 0.2 — 50층이면 10/h, 하루 240. 어디에 있든 쌓인다
+# (미궁 최고 기록이 곧 광산이다). 값을 바꾸면 위 완주 기간 계산도 다시 한다.
+static func sweep_per_hour(best_floor: int) -> float:
+	return 0.2 * float(maxi(0, best_floor))
+
+
 # 깊이 색 — 깊을수록 어둡고 붉게. 몹에 씌운다(modulate). 배경을 새로 뽑지 않고
 # "깊어졌다"를 읽히는 가장 싼 수단이다. 끝(100층)도 0.78 까지만 — 더 어두우면
 # 체력 바·피해 숫자와 대비가 죽는다.

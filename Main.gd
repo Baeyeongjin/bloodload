@@ -121,6 +121,9 @@ var kills := 0
 var gold := 0.0
 var essence := 0.0
 var gem := 0.0
+# 혈정 — 미궁 전용 재화(EXPANSION 6장). 획득은 미궁(첫 돌파 + 소탕)뿐이고
+# 쓰는 곳은 3단계의 혈맥뿐이다. 혈액과 상호 교환 불가 — 인플레 격리.
+var crystal := 0.0
 var mileage := 0
 var best_stage := 1
 # ── 핏빛 미궁 (DungeonDefs, EXPANSION 7장) ────────────────────────────────
@@ -213,6 +216,7 @@ var _lbl_stage: Label
 var _lbl_gold: Label
 var _lbl_essence: Label
 var _lbl_gem: Label
+var _lbl_crystal: Label
 var _lbl_prog: Label
 var _lbl_power: Label
 var _lbl_hero: Label
@@ -1046,6 +1050,7 @@ func _build_topbar() -> void:
 		["res://assets/ui/res_blood.png", Color(1.0, 0.45, 0.45)],   # 혈액
 		["res://assets/items/gem.png", Color(0.74, 0.84, 1.0)],      # 정수
 		["res://assets/ui/res_gem.png", Color(0.88, 0.74, 1.0)],     # 보석
+		["res://assets/ui/res_crystal.png", Color(1.0, 0.55, 0.62)], # 혈정 (미궁)
 	]
 	var labels: Array[Label] = []
 	_currency_pills.clear()
@@ -1069,6 +1074,7 @@ func _build_topbar() -> void:
 	_lbl_gold = labels[0]
 	_lbl_essence = labels[1]
 	_lbl_gem = labels[2]
+	_lbl_crystal = labels[3]
 	# ── 가운데: 막이름 + 단계 -> 진행바. 한 덩어리로 **화면 가운데에** 붙인다.
 	# 예전엔 초상화 오른쪽(148)부터 남는 폭을 다 썼는데, 그러면 덩어리 가운데가
 	# 352 라 화면 가운데(288)에서 64px 오른쪽으로 밀려 있었다(사장님 지적).
@@ -3819,10 +3825,12 @@ func _refresh_dungeon() -> void:
 		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 본편으로 돌아온다 — 기록은 남는다"
 		_dungeon_btn.text = "돌아가기"
 		return
-	_dungeon_info.text = "최고 %d층  ·  개방 %d층" % [dungeon_best, open]
+	_dungeon_info.text = "최고 %d층  ·  개방 %d층  ·  혈정 %s" \
+		% [dungeon_best, open, _n(crystal)]
 	var next := clampi(dungeon_best + 1, 1, open)
-	_dungeon_sub.text = "%d층 도전 — 본편 %d구간 수준. 본편을 밀면 상한이 열린다" \
-		% [next, DungeonDefs.eq_stage(next)]
+	_dungeon_sub.text = "%d층 도전(첫 돌파 혈정 %d) — 본편 %d구간 수준 · 소탕 시간당 %.1f" \
+		% [next, int(DungeonDefs.first_clear_reward(next)), DungeonDefs.eq_stage(next),
+		DungeonDefs.sweep_per_hour(dungeon_best)]
 	_dungeon_btn.text = "도전"
 
 
@@ -3932,6 +3940,11 @@ func _process(delta: float) -> void:
 			_offline_banner.visible = false
 	_boss_pan_t = maxf(0.0, _boss_pan_t - delta)
 	_fade_t = maxf(0.0, _fade_t - delta)
+	# 소탕 — 미궁 최고 기록이 곧 광산이다. 어디에 있든 시간당 최고층x0.2 로 쌓인다
+	# (EXPANSION 6장). 초당으로 나누면 값이 작아 화면 숫자는 몇 분에 1씩 는다 —
+	# 그게 맞다: 소탕은 배경 수입이고, 목돈은 첫 돌파가 준다.
+	if dungeon_best > 0:
+		crystal += DungeonDefs.sweep_per_hour(dungeon_best) / 3600.0 * delta
 	if _power_toast_t > 0.0:
 		_power_toast_t -= delta
 		if _power_toast_t <= 0.0:
@@ -5662,6 +5675,18 @@ func _advance_stage() -> void:
 	if dungeon_on:
 		_fade(func() -> void:
 			kills = 0
+			# **첫 돌파에만 혈정이 나온다.** 같은 층을 다시 돌면(개방 상한에 닿아
+			# 제자리를 돌 때) 기록 비교가 거짓이라 안 준다 — 도는 것의 값은
+			# 소탕 시급이 이미 치르고 있다.
+			if dungeon_floor > dungeon_best:
+				var reward := DungeonDefs.first_clear_reward(dungeon_floor)
+				crystal += reward
+				_offline_banner.text = "%s 첫 돌파 — 혈정 +%d" \
+					% [DungeonDefs.label(dungeon_floor), int(reward)]
+				_offline_banner.add_theme_color_override("font_color",
+					Color(1.0, 0.55, 0.62))
+				_offline_banner.visible = true
+				_offline_t = 3.0
 			dungeon_best = maxi(dungeon_best, dungeon_floor)
 			var open := DungeonDefs.open_floors(best_stage)
 			if dungeon_floor >= open:
@@ -6117,18 +6142,20 @@ func _notify_power(now: float) -> void:
 # 1단계에서 쓸 수 있는 건 피뿐인데 정수 0 · 보석 0 이 나란히 놓여 있으면
 # "저건 언제 쓰나"가 계속 걸린다. **한 번이라도 얻으면 그때부터 계속 보인다** —
 # 다 쓰고 0이 됐다고 다시 사라지면 그게 더 이상하다.
-var _currency_seen := {"essence": false, "gem": false}
+var _currency_seen := {"essence": false, "gem": false, "crystal": false}
 var _currency_pills: Array[Panel] = []
 
 
 # 잠긴 재화는 알약째로 숨기고, 남은 것을 **오른쪽 끝부터** 다시 붙인다.
 # 자리를 고정해 두면 가운데가 잠겼을 때 그 자리가 빈 구멍으로 남는다.
 func _refresh_currency_visibility() -> void:
-	if _currency_pills.size() < 3:
+	if _currency_pills.size() < 4:
 		return
 	_currency_seen["essence"] = _currency_seen["essence"] or essence > 0.0
 	_currency_seen["gem"] = _currency_seen["gem"] or gem > 0.0
-	var open := [true, bool(_currency_seen["essence"]), bool(_currency_seen["gem"])]
+	_currency_seen["crystal"] = _currency_seen["crystal"] or crystal > 0.0
+	var open := [true, bool(_currency_seen["essence"]), bool(_currency_seen["gem"]),
+		bool(_currency_seen["crystal"])]
 	var x := float(Grid.BG.x) - 8.0
 	for i in range(_currency_pills.size() - 1, -1, -1):
 		_currency_pills[i].visible = open[i]
@@ -6225,6 +6252,7 @@ func _refresh_hud() -> void:
 	_lbl_gold.text = _n(gold)
 	_lbl_essence.text = _n(essence)
 	_lbl_gem.text = _n(gem)
+	_lbl_crystal.text = _n(crystal)
 	_refresh_currency_visibility()
 	var power := Balance.combat_power(dps(), max_hp(), regen_per_sec())
 	_lbl_power.text = _n(power)
@@ -6257,6 +6285,7 @@ func _save_game() -> void:
 	cfg.set_value("run", "gold", gold)
 	cfg.set_value("wallet", "essence", essence)
 	cfg.set_value("wallet", "gem", gem)
+	cfg.set_value("wallet", "crystal", crystal)
 	cfg.set_value("wallet", "mileage", mileage)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
@@ -6292,11 +6321,13 @@ func _load_game() -> void:
 	gold = float(cfg.get_value("run", "gold", 0.0))
 	essence = maxf(0.0, float(cfg.get_value("wallet", "essence", 0.0)))
 	gem = maxf(0.0, float(cfg.get_value("wallet", "gem", 0.0)))
+	crystal = maxf(0.0, float(cfg.get_value("wallet", "crystal", 0.0)))
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})
 	_currency_seen["essence"] = bool(seen.get("essence", essence > 0.0))
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))
+	_currency_seen["crystal"] = bool(seen.get("crystal", crystal > 0.0))
 	best_stage = clampi(int(cfg.get_value("run", "best_stage", stage)), stage,
 		StageDefs.total_stages())
 	dungeon_best = clampi(int(cfg.get_value("run", "dungeon_best", 0)), 0,
@@ -6502,6 +6533,11 @@ func _grant_offline(left_at: float) -> void:
 	# **지갑이 아니라 상자에 담는다.** 눌러서 여는 게 방치 보상의 보상이다.
 	chest_gold += earned
 	chest_minutes += away / 60.0
+	# 소탕도 같은 원칙으로 절반 효율 — 방치가 접속보다 이득이면 게임을 안 켠다.
+	# 혈정은 상자에 안 담는다: 상자는 혈액 그릇이고, 혈정은 미궁 기록의 배당이라
+	# 조용히 지갑에 쌓이는 쪽이 맞다(접속 중 소탕과 같은 길).
+	if dungeon_best > 0:
+		crystal += (away / 3600.0) * DungeonDefs.sweep_per_hour(dungeon_best) * 0.5
 	hero_hp = max_hp()
 	_refresh_chest()
 	if climbed > 0:

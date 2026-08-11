@@ -43,6 +43,12 @@ func _init() -> void:
 	var t100 := DungeonDefs.depth_tint(100)
 	assert(t100.r <= t1.r and t100.g < t1.g, "깊은 층이 더 밝다")
 	assert(t100.g >= 0.5, "100층 색이 너무 어둡다 — 체력 바 대비가 죽는다")
+	# 혈정 수급 표 (EXPANSION 6장 초안 값 그대로).
+	assert(is_equal_approx(DungeonDefs.first_clear_reward(3), 30.0))
+	assert(is_equal_approx(DungeonDefs.first_clear_reward(100), 1000.0))
+	assert(is_equal_approx(DungeonDefs.sweep_per_hour(50), 10.0))
+	assert(is_equal_approx(DungeonDefs.sweep_per_hour(0), 0.0),
+		"미궁을 한 층도 안 돌았는데 소탕이 나온다")
 
 	# ── 2) 본편 모드에서 래퍼 == StageDefs ─────────────────────────────────
 	var scene: Node = load("res://Main.tscn").instantiate()
@@ -95,6 +101,25 @@ func _init() -> void:
 	assert(scene.dungeon_best == 3, "층 기록이 안 남았다: %d" % scene.dungeon_best)
 	assert(scene.dungeon_floor == 4, "다음 층으로 안 올랐다: %d" % scene.dungeon_floor)
 	assert(scene.stage == home_stage, "등반이 본편 stage 를 건드렸다")
+	# **첫 돌파 혈정.** 3층 = +30. 소탕이 그 사이 몇 초 쌓였을 수 있어 딱값이 아니라
+	# 구간으로 본다(기록 2층 -> 시간당 0.4, 몇 초면 0.001 미만).
+	var got_crystal: float = scene.crystal
+	assert(got_crystal >= 30.0 and got_crystal < 31.0,
+		"3층 첫 돌파 혈정이 30이 아니다: %.2f" % got_crystal)
+	# **다시 돌면 안 준다.** 층을 기록 아래로 되돌려 놓고 한 층 더 밀어 본다 —
+	# 같은 층 재돌파는 소탕 시급이 이미 값을 치르고 있다.
+	scene.dungeon_floor = 2
+	while scene._phase != "fight" or scene._fade_t > 0.0:
+		await process_frame
+	scene.kills = scene._c_kills_needed()
+	scene._advance_stage()
+	var waited2 := 0.0
+	while scene._fade_t > 0.0 and waited2 < 5.0:
+		await process_frame
+		waited2 += scene.get_process_delta_time()
+	assert(scene.crystal < got_crystal + 1.0,
+		"재돌파인데 혈정이 또 나왔다: %.2f -> %.2f" % [got_crystal, scene.crystal])
+	assert(scene.dungeon_best == 3, "재돌파가 기록을 깎았다")
 	# 이탈 — 본편 그 자리로. (등반 직후라 암전이 돌고 있다)
 	while scene._fade_t > 0.0:
 		await process_frame
@@ -108,6 +133,7 @@ func _init() -> void:
 		% DungeonDefs.FLOOR_CAP)
 	print("래퍼: 본편 모드에서 StageDefs 와 일치 · 미궁 모드에서 등가 구간 값 OK")
 	print("등반: 3층 클리어 -> 기록 3, 다음 4층, 본편 stage 불변 OK")
+	print("혈정: 첫 돌파 +30 · 재돌파 0 · 소탕 시급표 OK")
 	print("")
 	print("DungeonCheck OK")
 	quit()
