@@ -306,6 +306,14 @@ img2img 가 하는 일이다.
 
 - `init_image_strength` 는 **남기는 양**이다(보통 API 와 반대). 200 = 형태·색 유지하고
   다듬기, 110 = 실루엣만 남기고 다시 그림
+- **씨앗은 아이콘만이 아니다.** 방향만 틀렸으면 **지금 쓰는 그림을 좌우 반전**해
+  물리는 것이 제일 확실하다(아가리 2026-08-11: 옆모습·이빨·화풍이 이미 맞았고
+  왼쪽을 볼 뿐이었다). 아이콘을 씨앗으로 옆모습을 뽑아 보면 정면이 나오거나
+  다른 짐승이 나온다 — 실측으로 둘 다 나왔다
+- **`color_image_*` 로 아이콘 색을 물려도 안 바뀌는 경우가 있다.** 아이콘 자체에
+  밝은 뼈색(이빨·하이라이트)이 많으면 강제 팔레트에 그 색이 들어 있어서
+  결과가 그대로 뼈색으로 간다. `forced_palette: yes` 가 찍혀도 그렇다.
+  코드로 명도 램프를 다시 매핑해도 같은 이유로 안 바뀐다(실측)
 - **`init_image_base64` 는 1560자가 그대로 통과했다.** 5-6 의 "620자 넘으면 깨진다"는
   `create_1_direction_object` 의 `style_images` 와 `color_image_base64` 얘기고,
   `create_image_pixflux` 의 `init_image_base64` 에는 안 옮겨진다
@@ -415,7 +423,7 @@ action: {아래 표의 action}
 | 커먼 | 피의 송곳니 | 붉은 입 + 송곳니 | 몹을 물어뜯고 피가 튄다 | `pair of sharp vampire fangs biting, blood splatter` | `fangs snapping shut, blood spraying outward, then fading` |
 | 언커먼 | 핏빛 창 | 붉은 창 | 창이 날아와 관통한다 | 아이콘 회전 + `init_image` (5-4). job `2e26087b` | `thrusting forward to the right, shaft vibrating, seamless loop` |
 | 레어 | 사혈 발톱 | 세 갈래 발톱 | 세 줄기 발톱 자국 | `three curved blood claw slashes crossing` | `claws raking across, slash marks tearing open then fading` |
-| 에픽 | 처형자의 아가리 | 악마 턱 | 아가리가 물고 닫힌다 | `demonic executioner maw with jagged teeth, jaws open` | `jaws snapping shut and biting down, then dissolving` |
+| 에픽 | 처형자의 아가리 | 악마 턱 | 앞으로 나아가며 문다 | 옛 그림 **좌우 반전** + `init_image` (5-4). job `c196df98` | `snapping shut and opening wide again, lunging forward to the right, seamless loop` |
 | 레전더리 | 심연의 손 | 심연 구멍 + 손 | 구멍에서 손이 튀어나와 움켜쥔다 | `pale hand bursting out of a dark abyss portal, grasping` | `hand lunging out and clenching, portal collapsing after` |
 
 ### 파 (wave) — 광역, 영웅 앞에서 가로로 날아간다
