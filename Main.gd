@@ -123,6 +123,13 @@ var essence := 0.0
 var gem := 0.0
 var mileage := 0
 var best_stage := 1
+# ── 핏빛 미궁 (DungeonDefs, EXPANSION 7장) ────────────────────────────────
+# 미궁에 있는 동안에도 `stage` 는 본편 위치 그대로다 — 나가면 그 자리로 돌아온다.
+# 미궁 "진행 중" 상태는 저장하지 않는다: 다시 켜면 본편에서 시작하고, 남는 것은
+# 기록(dungeon_best)뿐이다. 그 기록이 3단계 혈맥의 열쇠가 된다.
+var dungeon_on := false
+var dungeon_floor := 1
+var dungeon_best := 0
 var play_time := 0.0
 
 # 성장 스탯 (골드로 올린다). 방치형은 이 숫자가 오르는 것 자체가 보상이다.
@@ -542,6 +549,15 @@ func _ready() -> void:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
 		if arg.begins_with("--tab="):
 			_select_tab(arg.trim_prefix("--tab="))
+		# [개발 도구] --dungeon[=N] : 미궁 N층에 바로 들어간 채로 캡처한다.
+		# 잠금(본편 30구간)과 개방 상한을 그 층에 맞게 같이 풀어 준다.
+		if arg.begins_with("--dungeon"):
+			var floor_want := maxi(1, int(arg.trim_prefix("--dungeon="))) \
+				if "=" in arg else 1
+			best_stage = maxi(best_stage,
+				DungeonDefs.OPEN_STAGE + (floor_want / 5) * 10 + 10)
+			dungeon_best = floor_want - 1
+			_dungeon_enter()
 		# [개발 도구] --skills[=N] : 스킬 화면을 연다. N 을 주면 그만큼 무작위로 보유시킨다.
 		if arg.begins_with("--skills"):
 			var give := int(arg.trim_prefix("--skills=")) if "=" in arg else 0
@@ -1332,7 +1348,7 @@ const CONTENT_BOTTOM := PANEL_H - PAD     # 296
 func _build_panels() -> void:
 	# 콘텐츠와 탭바는 별도 판이다. 한 장으로 덮으면 하단 메뉴가 콘텐츠에 붙어 보인다.
 	_hud_root.add_child(Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24)))
-	for name in ["growth", "gear", "summon", "codex"]:
+	for name in ["growth", "gear", "summon", "dungeon", "codex"]:
 		var c := Control.new()
 		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, PANEL_AT.y))
 		c.size = Grid.uv(PANEL_SIZE.x, PANEL_SIZE.y)
@@ -1342,6 +1358,7 @@ func _build_panels() -> void:
 	_build_growth(_panels["growth"])
 	_build_gear(_panels["gear"])
 	_build_gacha(_panels["summon"])
+	_build_dungeon(_panels["dungeon"])
 	_build_codex(_panels["codex"])
 
 
@@ -3707,7 +3724,8 @@ func _refresh_codex_detail() -> void:
 # 탭 3개. 창을 닫는 "전투" 탭은 없앴다 — 레이아웃이 고정이라 닫아도 화면이 안 넓어지고
 # 그 자리가 검게 비기만 한다.
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
-	["summon", "tab_battle", "소환"], ["codex", "tab_codex", "도감"]]
+	["summon", "tab_battle", "소환"], ["dungeon", "tab_dungeon", "미궁"],
+	["codex", "tab_codex", "도감"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
 # 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
@@ -3717,26 +3735,30 @@ const TAB_DOT_AT := Vector2(42.0, 2.0)   # 아이콘(48,6)의 왼쪽 위 모서�
 
 
 func _build_tabbar() -> void:
+	# 칸 폭은 탭 수가 정한다 — 36유닛(화면 폭)을 고르게 나눈다. 5탭이면 7.2유닛.
+	# 아이콘·점 자리도 칸 폭에서 계산한다: 상수로 두면 탭을 넣을 때마다 어긋난다.
+	var w := 36.0 / float(TABS.size())
+	var cell := Grid.uv(w, 6)
+	var icon_x := (cell.x - 48.0) * 0.5
 	for i in TABS.size():
 		var name: String = TABS[i][0]
 		var b := Button.new()
 		b.flat = true
-		# 4칸을 화면 폭에 고르게 나눈다(칸 9유닛, 아이콘 4유닛짜리를 가운데에).
-		b.position = Grid.uv(i * 9, 50.0)
-		b.size = Grid.uv(9, 6)
+		b.position = Grid.uv(i * w, 50.0)
+		b.size = cell
 		b.pressed.connect(func() -> void: _select_tab(name))
 		_hud_root.add_child(b)
 		var marker := Control.new()
-		marker.position = Grid.uv(i * 9, 50.0)
-		marker.size = Grid.uv(9, 6)
+		marker.position = Grid.uv(i * w, 50.0)
+		marker.size = cell
 		marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_hud_root.add_child(marker)
-		marker.add_child(Ui.image("res://assets/ui/tab_cell.png", Vector2.ZERO, Grid.uv(9, 6)))
+		marker.add_child(Ui.image("res://assets/ui/tab_cell.png", Vector2.ZERO, cell))
 		var ic := Ui.icon("res://assets/ui/%s.png" % TABS[i][1],
-			Vector2(48.0, 6.0), 48.0)
+			Vector2(icon_x, 6.0), 48.0)
 		marker.add_child(ic)
 		var label := _panel_label(marker, Vector2(0.0, 54.0), Type.SIZE_SMALL,
-			Color(0.82, 0.78, 0.82), 144.0, 24.0)
+			Color(0.82, 0.78, 0.82), cell.x, 24.0)
 		label.text = TABS[i][2]
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -3746,10 +3768,62 @@ func _build_tabbar() -> void:
 		# 탭이야말로 점을 봐야 하는 탭이라 그러면 기능이 통째로 뒤집힌다.
 		if name in TAB_DOT_ON:
 			var dot := Ui.icon("res://assets/ui/dot_alert.png",
-				Grid.uv(i * 9, 50.0) + TAB_DOT_AT, TAB_DOT)
+				Grid.uv(i * w, 50.0) + Vector2(icon_x - 6.0, 2.0), TAB_DOT)
 			dot.visible = false
 			_hud_root.add_child(dot)
 			_tab_dots[name] = dot
+
+
+# ── 미궁 탭 ─────────────────────────────────────────────────────────────────
+# 창은 셋뿐이다: 상태 두 줄 + 버튼 하나. 미궁의 본체는 전투 띠에서 벌어지고,
+# 이 창은 들어가는 문이다 — 참고작도 미궁 UI 는 "도전하기" 버튼 하나다.
+var _dungeon_info: Label
+var _dungeon_sub: Label
+var _dungeon_btn: Button
+
+
+func _build_dungeon(root: Control) -> void:
+	var title := _panel_label(root, Vector2(PAD, PAD), Type.SIZE_MID,
+		Color(0.92, 0.62, 0.62), CONTENT_W, 28.0)
+	title.text = "핏빛 미궁"
+	_dungeon_info = _panel_label(root, Vector2(PAD, PAD + 40.0), Type.SIZE_MID,
+		Color(0.88, 0.84, 0.88), CONTENT_W, 26.0)
+	_dungeon_sub = _panel_label(root, Vector2(PAD, PAD + 72.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.76), CONTENT_W, 48.0)
+	_dungeon_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dungeon_btn = Ui.button("도전", Vector2(PAD, CONTENT_BOTTOM - 52.0),
+		Vector2(180.0, 48.0), Type.SIZE_MID)
+	_dungeon_btn.pressed.connect(func() -> void:
+		if dungeon_on:
+			_dungeon_exit("미궁 이탈")
+		else:
+			_dungeon_enter()
+		_refresh_dungeon())
+	root.add_child(_dungeon_btn)
+	_refresh_dungeon()
+
+
+func _refresh_dungeon() -> void:
+	if _dungeon_info == null:
+		return
+	var open := DungeonDefs.open_floors(best_stage)
+	if open <= 0:
+		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
+		_dungeon_sub.text = "층을 오른 기록이 남고, 그 기록이 다음 성장(혈맥)의 열쇠가 된다"
+		_dungeon_btn.text = "잠김"
+		_dungeon_btn.disabled = true
+		return
+	_dungeon_btn.disabled = false
+	if dungeon_on:
+		_dungeon_info.text = "%s 도전 중" % DungeonDefs.label(dungeon_floor)
+		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 본편으로 돌아온다 — 기록은 남는다"
+		_dungeon_btn.text = "돌아가기"
+		return
+	_dungeon_info.text = "최고 %d층  ·  개방 %d층" % [dungeon_best, open]
+	var next := clampi(dungeon_best + 1, 1, open)
+	_dungeon_sub.text = "%d층 도전 — 본편 %d구간 수준. 본편을 밀면 상한이 열린다" \
+		% [next, DungeonDefs.eq_stage(next)]
+	_dungeon_btn.text = "도전"
 
 
 func _select_tab(name: String) -> void:
@@ -3763,6 +3837,8 @@ func _select_tab(name: String) -> void:
 		_refresh_codex()
 	elif name == "summon":
 		_refresh_gacha()
+	elif name == "dungeon":
+		_refresh_dungeon()
 
 
 # 지금 올릴 수 있는 게 있는 탭인가. 방치형에서 "뭘 눌러야 하나"를 탭을 하나씩 열어
@@ -4281,6 +4357,10 @@ func _tick_hero_state(delta: float) -> void:
 		if _revive_t <= 0.0:
 			# 그 자리에서 되살아나지 않는다. 쓰러졌으면 그 구간을 못 넘은 것이라
 			# 시간 초과와 같은 길로 보내 구간을 처음부터 다시 한다.
+			# 미궁에서 쓰러지면 **본편으로 나온다** — 층 기록은 그대로 남는다.
+			if dungeon_on:
+				_dungeon_exit("미궁에서 쓰러짐")
+				return
 			_restart_stage("쓰러짐")
 		return
 	if _hero_flash_t > 0.0:
@@ -4692,7 +4772,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 				f.take_damage(per_tick)
 				_skill_hit_fx(skill, f)
 			_defer_stage_advance = false
-			if kills >= StageDefs.kills_needed(stage):
+			if kills >= _c_kills_needed():
 				_advance_stage())
 
 
@@ -4837,7 +4917,7 @@ func _resolve_skill(key: String) -> void:
 			_start_field(fx, fx_fps, fx_scale, fx_style, fx_echo, fx_skew,
 				hit / float(ticks), ticks,
 				float(skill["duration"]) / float(ticks), skill)
-			if kills >= StageDefs.kills_needed(stage):
+			if kills >= _c_kills_needed():
 				_advance_stage()
 		"wave":
 			# 튀는 피 — **표창처럼 튕긴다**(RULES.bounce). 전부 동시에 맞으면 광역과
@@ -4932,7 +5012,7 @@ func _resolve_skill(key: String) -> void:
 						_fx_anchor_y(fx_style, fx, fx_scale,
 							f.body_mid_y(), fx_y)),
 						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
-			if kills >= StageDefs.kills_needed(stage):
+			if kills >= _c_kills_needed():
 				_advance_stage()
 		"ward":
 			_summon_t = float(skill["duration"])
@@ -5001,7 +5081,7 @@ func _bounce_hit(skill: Dictionary, hit: float, state: Dictionary, p: Dictionary
 		float(p["fps"]), float(p["scale"]), str(p["style"]), 0, 1.0,
 		hero_face, float(p["skew"]), false,
 		int(signf(float(p["flip"]))), int(signf(float(p["flip_v"]))))
-	if kills >= StageDefs.kills_needed(stage):
+	if kills >= _c_kills_needed():
 		_advance_stage()
 
 
@@ -5149,7 +5229,7 @@ func on_foe_attack(_foe: Foe) -> void:
 		return
 	# 특수 패턴은 훨씬 아프다. 대신 예고 원 밖으로 나가면(대시) 위 사거리 검사에서
 	# 통째로 빗나가므로, 예고를 보고 빠지는 것이 곧 회피다.
-	var incoming := Balance.foe_damage(StageDefs.enemy_power(stage)) * _foe.attack_mult()
+	var incoming := Balance.foe_damage(_c_enemy_power()) * _foe.attack_mult()
 	hero_hp = maxf(0.0, hero_hp - incoming)
 	_pop_hero_damage(incoming)
 	_hero_flash_t = 0.10
@@ -5205,7 +5285,7 @@ func _begin_stage_pose() -> void:
 	# 안 끊으면 새 구간의 몹이 이전 구간 문양에 맞는다(`_start_field` 의 gen 검사).
 	_field_gen += 1
 	_combo = 0     # 구간은 늘 1연격부터 시작한다
-	_boss_entry = StageDefs.is_boss_stage(stage)
+	_boss_entry = _c_is_boss()
 	hero_x = -float(Grid.SPRITE) if _boss_entry else HERO_X
 	_dash_to = HERO_X
 	hero_face = 1
@@ -5320,10 +5400,85 @@ func _apply_scroll() -> void:
 
 # 구간을 열 때 사냥터에 몹을 세워 둔다. **줄이지 이 아니라 줄이다** — 앞의 놈이
 # 전열 근처에, 뒤로 FOE_GAP 씩 물러서서. 영웅이 달리면 그 줄이 차례로 다가온다.
+# ── 전투가 읽는 "지금 어디인가" — 분기는 여기 한 곳뿐이다 ────────────────────
+# 본편이면 StageDefs, 미궁이면 DungeonDefs 를 본다. 호출부마다 if 를 심으면
+# 하나를 빠뜨린 자리가 조용히 본편 값을 읽는다 — 이 저장소가 여러 번 밟은 부류라
+# (틱 수·판정 폭·자리) 갈래를 이 여덟 함수로 모은다.
+# **오프라인·도감·경험치는 일부러 본편 기준 그대로다** — 미궁은 기록만 남긴다.
+func _c_is_boss() -> bool:
+	return DungeonDefs.is_boss_floor(dungeon_floor) if dungeon_on \
+		else StageDefs.is_boss_stage(stage)
+
+
+func _c_is_midboss() -> bool:
+	return DungeonDefs.is_midboss_floor(dungeon_floor) if dungeon_on \
+		else StageDefs.is_midboss_stage(stage)
+
+
+func _c_kills_needed() -> int:
+	return DungeonDefs.kills_needed(dungeon_floor) if dungeon_on \
+		else StageDefs.kills_needed(stage)
+
+
+func _c_time_limit() -> float:
+	return DungeonDefs.time_limit(dungeon_floor) if dungeon_on \
+		else StageDefs.time_limit(stage)
+
+
+func _c_enemy_power() -> float:
+	return StageDefs.enemy_power(DungeonDefs.eq_stage(dungeon_floor)) if dungeon_on \
+		else StageDefs.enemy_power(stage)
+
+
+func _c_act_data() -> Dictionary:
+	return StageDefs.act_data(DungeonDefs.eq_stage(dungeon_floor) if dungeon_on else stage)
+
+
+func _c_gold_per_kill() -> float:
+	# 미궁 처치도 혈액은 **본편 시세**다. 등가 구간(더 깊은 곳) 시세로 주면 미궁이
+	# 본편보다 나은 혈액 사냥터가 되어 재화 격리(EXPANSION 6장)가 깨진다.
+	return StageDefs.gold_per_kill(stage)
+
+
+func _c_label() -> String:
+	return DungeonDefs.label(dungeon_floor) if dungeon_on else StageDefs.label(stage)
+
+
+func _c_midboss_prefix() -> String:
+	return "미궁 " if dungeon_on else StageDefs.midboss_prefix(stage)
+
+
+# ── 미궁 입장·이탈 ──────────────────────────────────────────────────────────
+func _dungeon_enter() -> void:
+	if dungeon_on or _fade_t > 0.0:
+		return
+	var open := DungeonDefs.open_floors(best_stage)
+	if open <= 0:
+		return
+	dungeon_on = true
+	# 늘 최고 기록 다음 층에 도전한다. 개방 상한에 닿았으면 상한 층을 다시 돈다 —
+	# 지금은 기록만 남지만 2단계에서 소탕 기준층이 되므로 도는 것 자체는 무의미하지 않다.
+	dungeon_floor = clampi(dungeon_best + 1, 1, open)
+	_restart_stage("미궁 입장")
+	_refresh_dungeon()
+
+
+func _dungeon_exit(reason: String) -> void:
+	# **암전 중엔 안 나간다.** 깃발만 내리면 `_restart_stage` 가 조용히 빠져서(아래),
+	# 미궁 몹이 서 있는데 래퍼는 본편 값을 읽는 반쪽 상태가 된다 — 깃발과 재시작은
+	# 한 몸으로만 움직여야 한다.
+	if not dungeon_on or _fade_t > 0.0:
+		return
+	dungeon_on = false
+	# `stage` 는 건드린 적이 없으므로 재시작만 하면 본편 그 자리다.
+	_restart_stage(reason)
+	_refresh_dungeon()
+
+
 func _spawn_wave() -> void:
 	if _walk_only:
 		return
-	if StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage):
+	if _c_is_boss() or _c_is_midboss():
 		_spawn_foe()
 		return
 	for _i in _wave_size(stage):
@@ -5351,9 +5506,9 @@ func _forget_foe(f: Foe) -> void:
 # 사냥터에 한 마리 세운다. **줄 맨 뒤에** 선다 — 첫 마리는 전열 바로 뒤(FRONT_X),
 # 그 뒤로 FOE_GAP 씩 물러난다. 영웅이 전진하면 이 줄이 차례로 다가온다.
 func _spawn_foe() -> void:
-	var act: Dictionary = StageDefs.act_data(stage)
-	var boss := StageDefs.is_boss_stage(stage)
-	var midboss := StageDefs.is_midboss_stage(stage)
+	var act: Dictionary = _c_act_data()
+	var boss := _c_is_boss()
+	var midboss := _c_is_midboss()
 	var key: String = str(act["boss"]) if boss else \
 		str((act["roster"] as Array)[randi() % (act["roster"] as Array).size()])
 	var tier := FoeTiers.get_tier(key)
@@ -5362,10 +5517,12 @@ func _spawn_foe() -> void:
 		tier["anim_key"] = str(act["boss_anim"])
 	elif midboss:
 		tier["midboss"] = true
-		tier["name_prefix"] = StageDefs.midboss_prefix(stage) + " "
+		tier["name_prefix"] = _c_midboss_prefix() + " "
 	var f := Foe.new()
-	f.setup(tier, StageDefs.enemy_power(stage),
-		StageDefs.gold_per_kill(stage) * gold_mult(), boss)
+	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
+	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
+	if dungeon_on:
+		f.modulate = DungeonDefs.depth_tint(dungeon_floor)
 	# 줄 맨 뒤. 빈 사냥터면 전열에, 아니면 마지막 놈에서 FOE_GAP 뒤에 선다.
 	# **화면 밖까지 나가도 된다** — 그게 "저 앞에 더 있다"이고, 영웅이 달려가 만난다.
 	var tail := _queue_tail_x(get_tree().get_nodes_in_group("foes")) \
@@ -5442,7 +5599,9 @@ func _shake_combat(amount: float) -> void:
 
 func on_foe_killed(f: Foe) -> void:
 	gold += f.gold
-	if f.is_boss:
+	# 미궁 보스는 정수를 안 준다 — 정수는 장비 축의 재화이고 수도꼭지는 본편 보스
+	# 하나다(EXPANSION 6장의 재화 격리). 미궁의 보상은 2단계의 혈정이다.
+	if f.is_boss and not dungeon_on:
 		essence += StageDefs.boss_essence(stage)
 	kills += 1
 	var prev_kills := int(codex.get(f.key, 0))
@@ -5463,7 +5622,7 @@ func on_foe_killed(f: Foe) -> void:
 	# 전투 드랍은 없앴다(2026-08-04). 장비가 나오는 곳은 **소환 하나**다 —
 	# 드랍이 알아서 장착까지 해 주면 소환으로 뽑은 장비를 고를 이유가 사라지고,
 	# 보관함에서 하는 선택이 전부 무의미해진다.
-	if not _defer_stage_advance and kills >= StageDefs.kills_needed(stage):
+	if not _defer_stage_advance and kills >= _c_kills_needed():
 		_advance_stage()
 	_save_game()
 
@@ -5499,6 +5658,25 @@ func _advance_stage() -> void:
 		return
 	_clear_foes()
 	_phase = "advance"
+	# ── 미궁: 층을 하나 오른다. 본편(stage)은 안 건드린다 ──────────────────
+	if dungeon_on:
+		_fade(func() -> void:
+			kills = 0
+			dungeon_best = maxi(dungeon_best, dungeon_floor)
+			var open := DungeonDefs.open_floors(best_stage)
+			if dungeon_floor >= open:
+				# 개방 상한까지 다 올랐다 — 본편을 밀어야 다음 층이 열린다
+				# (EXPANSION 7장의 교차 잠금). 나가는 길은 재시작과 같다.
+				dungeon_on = false
+			else:
+				dungeon_floor += 1
+			_boss_time = _c_time_limit()
+			_begin_stage_pose()
+			_start_advance()
+			_apply_stage_bg())
+		_refresh_dungeon()
+		_save_game()
+		return
 	# 배경과 몹이 **암전 뒤에서** 바뀐다. 그냥 갈아 끼우면 화면이 휙 튄다.
 	_fade(func() -> void:
 		kills = 0
@@ -5524,6 +5702,11 @@ func _tick_boss_timer(delta: float) -> bool:
 	_boss_time -= delta
 	if _boss_time > 0.0:
 		return false
+	# 미궁에서 시간을 넘기면 그 층을 다시 도는 게 아니라 **본편으로 나온다** —
+	# 미궁은 실패 페널티가 없는 대신 재도전은 다시 들어와서 한다(EXPANSION 7장).
+	if dungeon_on:
+		_dungeon_exit("미궁 시간 초과")
+		return true
 	_restart_stage("시간 초과")
 	return true
 
@@ -5539,14 +5722,17 @@ func _restart_stage(reason: String) -> void:
 	_phase = "advance"
 	_fade(func() -> void:
 		kills = 0
-		_boss_time = StageDefs.time_limit(stage)
+		_boss_time = _c_time_limit()
 		hero_hp = max_hp()
 		_hero_dead = false
 		_revive_t = 0.0
 		_revive_hero()
 		_begin_stage_pose()   # _revive_hero 가 앵커에 세운 뒤에 부른다(보스면 왼쪽 밖)
-		_start_advance())
-	_offline_banner.text = "%s — %s 다시" % [reason, StageDefs.label(stage)]
+		_start_advance()
+		# 같은 구간 재시작이면 같은 그림이 다시 깔릴 뿐이지만, 미궁 입장·이탈은
+		# 이 길로 배경이 바뀐다 — 여기서 안 갈면 미궁에 본편 배경이 남는다.
+		_apply_stage_bg())
+	_offline_banner.text = "%s — %s 다시" % [reason, _c_label()]
 	_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
 	_offline_banner.visible = true
 	_offline_t = 2.2
@@ -5579,8 +5765,13 @@ func _fade(action: Callable) -> void:
 
 
 func _apply_stage_bg() -> void:
-	var act: Dictionary = StageDefs.act_data(stage)
-	var t := Assets.tex(str(act["bg"]))
+	var act: Dictionary = _c_act_data()
+	# 미궁 전용 배경(사장님이 후보에서 고르면 이 이름으로 설치한다). 아직 없으면
+	# 등가 구간의 본편 배경으로 떨어진다 — 몹 tint 가 깊이를 대신 읽힌다.
+	var bg_path := "res://assets/bg/wide_maze.png" if dungeon_on else str(act["bg"])
+	var t := Assets.tex(bg_path)
+	if t == null:
+		t = Assets.tex(str(act["bg"]))
 	_bg.texture = t
 	_bg2.texture = t
 	_bg2.visible = t != null
@@ -5964,23 +6155,27 @@ static func stage_progress_text(at_stage: int, done: int, need: int) -> String:
 
 
 func _refresh_hud() -> void:
-	var act: Dictionary = StageDefs.act_data(stage)
-	# 레퍼런스의 "미궁 54층-4" 자리.
-	_lbl_stage.text = "스테이지 %s" % StageDefs.label(stage)
-	var need := StageDefs.kills_needed(stage)
+	var act: Dictionary = _c_act_data()
+	# 레퍼런스의 "미궁 54층-4" 자리. 미궁에서는 "미궁 N층"이 그대로 그 자리다.
+	_lbl_stage.text = _c_label() if dungeon_on \
+		else "스테이지 %s" % StageDefs.label(stage)
+	var need := _c_kills_needed()
 	# 보스 구간은 처치 수가 0 아니면 1이라 진행바가 끝까지 비어 있다가 갑자기 찼다.
 	# **남은 체력을 대신 보여 준다** — 그게 이 구간의 진행도다.
-	var boss_stage := StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage)
+	var boss_stage := _c_is_boss() or _c_is_midboss()
 	var lone := _lone_foe() if boss_stage else null
 	var ratio := clampf(float(kills) / maxf(1.0, float(need)), 0.0, 1.0)
 	if boss_stage:
 		ratio = clampf(lone.hp / maxf(1.0, lone.max_hp), 0.0, 1.0) if lone else 1.0
 	# 초는 **타이머 바로 옮겼다.** 진행바에 같이 적으면 한 줄에 두 가지를 재게 된다.
-	_lbl_prog.text = lone.display_name if lone \
+	# 미궁은 static 진행 문구 함수(본편 구간을 본다)를 못 쓰므로 여기서 가른다.
+	var prog := ("보스" if _c_is_boss() else "중간보스" if _c_is_midboss()
+		else "처치 %d / %d" % [kills, need]) if dungeon_on \
 		else stage_progress_text(stage, kills, need)
+	_lbl_prog.text = lone.display_name if lone else prog
 	# 제한 시간이 없는 일반 구간에서는 **시계를 아예 감춘다.** 0초로 멈춰 있으면
 	# 고장으로 보이고, 채워진 채로 두면 곧 줄어들 것처럼 거짓 신호를 준다.
-	var limit := StageDefs.time_limit(stage)
+	var limit := _c_time_limit()
 	var timed := limit > 0.0
 	var left := maxf(0.0, _boss_time)
 	var low := left <= 5.0
@@ -6062,6 +6257,7 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "mileage", mileage)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
+	cfg.set_value("run", "dungeon_best", dungeon_best)
 	cfg.set_value("run", "hero_lv", hero_lv)
 	cfg.set_value("run", "hero_exp", hero_exp)
 	cfg.set_value("run", "hero_hp", hero_hp)
@@ -6100,6 +6296,8 @@ func _load_game() -> void:
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))
 	best_stage = clampi(int(cfg.get_value("run", "best_stage", stage)), stage,
 		StageDefs.total_stages())
+	dungeon_best = clampi(int(cfg.get_value("run", "dungeon_best", 0)), 0,
+		DungeonDefs.FLOOR_CAP)
 	hero_lv = int(cfg.get_value("run", "hero_lv", 1))
 	hero_exp = float(cfg.get_value("run", "hero_exp", 0.0))
 	lv = cfg.get_value("up", "lv", {})
