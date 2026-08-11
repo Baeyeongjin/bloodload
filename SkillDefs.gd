@@ -387,7 +387,9 @@ const FX_OVERRIDE := {
 	# 처형자의 아가리 — **입을 벌렸다 닫으며 앞으로 나아간다**(2026-08-11 사장님).
 	# `sweep` 이 190px 전진을 맡고 그림이 무는 동작을 맡는다 — 핏빛 창과 같은 분담이다.
 	# 옆모습이라 `rot` 은 안 쓴다(기울이면 턱이 어긋난다).
-	"strike_epic": {"style": "sweep", "fps": 10.0, "skew": 0.0},
+	# 크기는 0.75배 — 아가리 그림이 64px 캔버스를 꽉 채워서 등급 배율 1.42 를 그대로
+	# 쓰면 91px 이라 몹을 통째로 덮었다(2026-08-11 사장님: "크기를 좀 줄여줘도").
+	"strike_epic": {"style": "sweep", "fps": 10.0, "skew": 0.0, "scale": 0.75},
 	# 심연의 손 — **바닥에서 손이 올라와 몹을 끌고 내려간다.** 격인데도 rise 를 쓰는
 	# 유일한 스킬이다. 몹 발밑에서 시작해야 "끌려간다"가 읽히므로 y 도 지면 가까이 둔다.
 	"strike_legend": {"style": "rise", "y": -16.0, "skew": 0.0},
@@ -422,7 +424,10 @@ static func fx_profile(key: String) -> Dictionary:
 		# 볼 때 반대로 기운다. `skew`(찌그러뜨리기)와 다르다: 이건 그림 전체를 돌린다.
 		"rot": float(over.get("rot", 0.0)),
 		"fps": float(over.get("fps", shape["fx_fps"])),
-		"scale": float(tier["scale"]),
+		# 등급 배율에 **그림별 보정**을 곱한다(FX_OVERRIDE.scale, 1.0 = 그대로).
+		# 등급 사다리는 크기로도 읽히므로 tier 값 자체는 안 건드린다 — 그림이
+		# 캔버스를 얼마나 채우느냐가 자산마다 다를 뿐이다.
+		"scale": float(tier["scale"]) * float(over.get("scale", 1.0)),
 		"echo": int(tier["echo"]),
 		"shake": float(tier["shake"]),
 	}
