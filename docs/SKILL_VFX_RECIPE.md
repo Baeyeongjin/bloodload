@@ -409,6 +409,31 @@ action: {아래 표의 action}
 > **되돌아오는 이펙트는 `last_frame` 을 첫 프레임과 같게 준다.** 가호만의 규칙이
 > 아니다 — 창처럼 날아가는 동안 **모양이 유지돼야 하는** 것도 같다. 끝을 안 묶으면
 > 후반 프레임이 자유롭게 표류한다.
+>
+> 대신 **양 끝을 같게 묶으면 중간이 거의 안 움직인다.** 아가리를 그렇게 걸었더니
+> 9장이 다 비슷해서 "무는 게 안 보인다"가 됐다(2026-08-11 사장님). 모양은
+> 유지하되 **동작이 보여야 하는** 것은 아래 5-2-1 로 간다.
+
+### 5-2-1. 관절 동작은 **코드로 접는다** (2026-08-11, 아가리)
+
+턱·날개처럼 **한 축으로 접히는 동작**은 생성으로 잘 안 나온다. 다문 입을 따로
+뽑아 끝 프레임으로 쓰려 했더니 모델이 그냥 벌린 입을 다시 그렸다(1 generation 낭비).
+
+그림을 힌지에서 잘라 **회전만 시키면** 확실하고 공짜다. 픽셀은 고른 그림 그대로 남는다.
+
+```python
+CUT, HX, HY = 33, 17, 33          # 자를 줄 y, 힌지 (x, y) — 그림마다 실측
+low  = 원본에서 y >= CUT 만 남긴 판
+top  = 원본에서 y <  CUT 만 남긴 판
+frame(a) = top + low.rotate(a, NEAREST, center=(HX, HY))
+```
+
+- **닫는 쪽(양수 각)만 쓴다.** 벌리는 쪽으로 돌리면 자른 선에 틈이 생기고
+  윗니가 떨어져 나와 공중에 뜬다(실측)
+- 각도는 눈으로 고른다. 아가리는 **0도 활짝 / 26도 다뭄**이고 36도는 턱이 겹쳐
+  뭉갠다
+- 9장을 `[0,13,26,13,0,13,26,13,0]` 으로 깔면 **0.9초에 두 번 문다**
+- 힌지·자를 줄은 그림마다 다르다. 가로줄·세로줄을 그려 얹은 판을 한 번 보고 정한다
 
 ---
 
@@ -423,7 +448,7 @@ action: {아래 표의 action}
 | 커먼 | 피의 송곳니 | 붉은 입 + 송곳니 | 몹을 물어뜯고 피가 튄다 | `pair of sharp vampire fangs biting, blood splatter` | `fangs snapping shut, blood spraying outward, then fading` |
 | 언커먼 | 핏빛 창 | 붉은 창 | 창이 날아와 관통한다 | 아이콘 회전 + `init_image` (5-4). job `2e26087b` | `thrusting forward to the right, shaft vibrating, seamless loop` |
 | 레어 | 사혈 발톱 | 세 갈래 발톱 | 세 줄기 발톱 자국 | `three curved blood claw slashes crossing` | `claws raking across, slash marks tearing open then fading` |
-| 에픽 | 처형자의 아가리 | 악마 턱 | 앞으로 나아가며 문다 | 옛 그림 **좌우 반전** + `init_image` (5-4). job `c196df98` | `snapping shut and opening wide again, lunging forward to the right, seamless loop` |
+| 에픽 | 처형자의 아가리 | 악마 턱 | 앞으로 나아가며 문다 | 옛 그림 **좌우 반전** + `init_image` (5-4). job `c196df98` | 생성 안 씀 — **아래턱 힌지 회전**(5-2-1) |
 | 레전더리 | 심연의 손 | 심연 구멍 + 손 | 구멍에서 손이 튀어나와 움켜쥔다 | `pale hand bursting out of a dark abyss portal, grasping` | `hand lunging out and clenching, portal collapsing after` |
 
 ### 파 (wave) — 광역, 영웅 앞에서 가로로 날아간다
