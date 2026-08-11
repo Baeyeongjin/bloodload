@@ -4192,9 +4192,13 @@ func _advance_world(dx: float) -> void:
 	for n in get_tree().get_nodes_in_group(WORLD_FX_GROUP):
 		if is_instance_valid(n):
 			n.position.x -= dx
-	# **화면에 고정된 진은 안 민다**(RULES.screen — 감시의 눈). 하늘에 뜬 눈은 땅의
-	# 한 자리가 아니라 화면의 한 자리다 — 밀면 전진할 때 왼쪽으로 흘러 나간다
-	# (2026-08-11 사장님). 그림도 WORLD_FX_GROUP 에 안 넣으므로 위 반복문도 안 탄다.
+	# **고정된 진은 안 민다**(RULES.screen / RULES.fixed). 밀면 전진하는 동안 왼쪽으로
+	# 흘러 나가서, 문양은 저 뒤에 남고 몹은 눈앞에 있는 그림이 된다(2026-08-11 사장님).
+	# 그림도 WORLD_FX_GROUP 에 안 넣으므로 위 반복문도 안 탄다 — **둘 중 하나만 하면
+	# 그림과 판정이 갈린다.**
+	#
+	# 대가: 지면에 깔리는 웅덩이는 전진하는 동안 땅 위를 미끄러진다. 문양이 뒤로
+	# 밀려나 안 맞는 것보다 이쪽이 낫다는 판단이다.
 	if not _field_fixed:
 		_field_x -= dx
 	_scroll += dx * PARALLAX
@@ -4466,9 +4470,13 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# 것이라 자리를 몹에게 맞출 이유가 없다 — 사장님: "화면 중앙쯤에 나오고 화면에
 	# 나와 있는 몬스터".
 	# `_on_screen` 이 오른쪽 끝을 이미 잘라 주므로 반폭은 화면 폭이면 충분하다.
+	# **두 규칙을 갈라 둔다.** `screen` 은 "가운데에 뜨고 화면 전부를 때린다"이고
+	# `fixed` 는 "안 밀린다"만이다. 비명의 흔적은 몹 발밑에 깔리는 웅덩이라 자리는
+	# 그대로 두고 고정만 필요하다(2026-08-11 사장님). 하나로 묶었으면 웅덩이가
+	# 화면 가운데로 끌려 나갔을 것이다.
 	var screen := bool(rule.get("screen", false))
 	_field_reach = float(Grid.BG.x) if screen else FIELD_REACH
-	_field_fixed = screen
+	_field_fixed = screen or bool(rule.get("fixed", false))
 	var at := _aoe_targets()
 	if screen:
 		_field_x = float(Grid.BG.x) * 0.5
@@ -4510,7 +4518,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	var spots := _field_targets()
 	if puddle > 0.0 or screen or spots.is_empty():
 		_anim_fx(fx, Vector2(_field_x, cy), fps, draw,
-			style, echo, 1.0, hero_face, skew, not screen)
+			style, echo, 1.0, hero_face, skew, not _field_fixed)
 	else:
 		# **하나씩 소환된다**(RULES.stagger). 감시의 눈은 눈이 차례로 뜨는 연출이라
 		# (2026-08-10 사장님) 대상마다 조금씩 늦게 깐다 — 한꺼번에 뜨면 그냥 세 개가
