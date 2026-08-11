@@ -1561,7 +1561,7 @@ func _toggle_skill(key: String) -> void:
 		skill_equipped[SkillDefs.SLOTS - 1] = key
 	var lv := int(skill_owned.get(key, 0))
 	_skill_info.text = "%s  ·  %s  ·  %d레벨" % [SkillDefs.name_of(key),
-		str(SkillDefs.shape_of(key)["role"]), lv]
+		SkillDefs.role_of(key), lv]
 	_refresh_skills(false)
 	_save_game()
 
@@ -2859,7 +2859,7 @@ func _refresh_skill_detail() -> void:
 		role.text = "%s · 패시브 · 장착하면 상시" % str(SkillDefs.shape_of(key)["name"])
 	else:
 		role.text = "%s · %s · 쿨타임 %.1f초" % [str(SkillDefs.shape_of(key)["name"]),
-			str(data["role"]), float(data["cooldown"])]
+			SkillDefs.role_of(key), float(data["cooldown"])]
 	# 무엇을 하는 스킬인지 한 줄. 가호만 피해가 0이라 다른 문장을 쓴다.
 	var effect := _panel_label(_skill_detail, Vector2(234.0, 86.0), Type.SIZE_MID,
 		Color(0.96, 0.82, 0.56), 306.0, 24.0)
