@@ -5790,7 +5790,10 @@ func _apply_stage_bg() -> void:
 	for f in get_tree().get_nodes_in_group("foes"):
 		f.position.y = ground_y
 	# 위아래로 1~2px 틈이 생길 수 있어 화면 바탕을 막 색으로 깔아 둔다.
-	RenderingServer.set_default_clear_color(BACKDROP[StageDefs.act_of(stage) % BACKDROP.size()])
+	# 미궁은 막 색이 아니라 미궁 배경(wide_maze) 맨 아랫줄의 최빈색이다 —
+	# BACKDROP 과 같은 방법으로 실측한 값(33,33,29).
+	RenderingServer.set_default_clear_color(Color(0.129, 0.129, 0.114) if dungeon_on \
+		else BACKDROP[StageDefs.act_of(stage) % BACKDROP.size()])
 	_bg.visible = t != null
 
 

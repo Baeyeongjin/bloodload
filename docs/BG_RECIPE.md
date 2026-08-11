@@ -129,6 +129,24 @@ distant tall arched windows glowing violet behind, dark violet and black stone p
 flat muted colors, plain retro game pixel art
 ```
 
+### 핏빛 미궁(던전) — `wide_maze.png`
+`0049c514-04e1-4947-a2fc-62734ad3cc66` (2026-08-11, 320줄 · 지면 202행)
+막이 아니라 **던전 전용**이다: `StageDefs.ACTS` 에 안 들어가고 `Main._apply_stage_bg`
+가 미궁 모드에서 직접 이 이름을 집는다. 틈 바탕색도 BACKDROP 배열이 아니라
+같은 자리의 미궁 분기(33,33,29 실측)다. 후보 셋 중 사장님이 A(철창 미궁)를 골랐다
+(심연 회랑 `57fda9d1`, 혈정 동굴 `db65a75b` 은 폐기).
+```
+wide horizontal side-scrolling game background, dark underground blood labyrinth
+dungeon interior, flat walkable dark flagstone floor running along the whole width
+with the ground line about three quarters down the image, below the ground line a deep
+vertical bank of stacked dark stone blocks filling the entire bottom quarter, one tall
+dark iron-banded pillar at the far left edge and one identical tall dark iron-banded
+pillar at the far right edge, rusty iron cage gates and hanging chains and iron
+braziers with crimson flame standing on the ground, distant dark maze corridors fading
+into black shadow behind, dark crimson and charcoal black palette, flat muted colors,
+plain retro game pixel art
+```
+
 ---
 
 ## 받은 다음 — **반드시 이음매 처리**
