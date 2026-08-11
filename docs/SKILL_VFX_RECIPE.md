@@ -135,7 +135,7 @@
 | 스킬 | 스타일 | `fx_y` | 왜 |
 |---|---|---|---|
 | 피의 송곳니 | `burst` | −36 | 물어뜯고 피가 튄다 |
-| 핏빛 창 | `burst` | −36 | 꽂히며 터진다 |
+| 핏빛 창 | `sweep` | −36 | 날아와 관통한다 (2026-08-10 에 `burst` 에서 바뀜) |
 | 사혈 발톱 | `burst` | −36 | 베기 자국이 확 나타난다 |
 | 처형자의 아가리 | `burst` | −36 | 아가리가 닫힌다 |
 | 심연의 손 | `burst` | −36 | 구멍에서 튀어나온다 |
@@ -389,6 +389,19 @@ action: {아래 표의 action}
 **`action` 은 움직임만 적는다.** 생김새를 다시 적으면 모델이 그림을 바꾼다
 (도구 설명에 명시돼 있다: *"Describe movement, not appearance"*).
 
+> **한 단어면 충분히 깨진다** (2026-08-10, 핏빛 창). `"spear driving forward to the
+> right, blood spraying backwards off the blade, shaft vibrating"` 로 걸었더니
+> 9프레임 중 **3장(2·3·5)에서 창날이 통째로 핏덩어리로 뭉개졌다.** 창이 뭉개졌다
+> 돌아왔다 하니 깜빡임으로만 읽힌다.
+> `"thrusting forward to the right, shaft vibrating, seamless loop"` 로 **명사를
+> 다 빼고** 다시 거니 9장 전부 창 모양을 유지했다.
+> `blood` 는 이 게임에서 늘 쓰는 말이라 안전해 보이지만, action 에 들어가면
+> **그리라는 지시**가 된다. 첫 프레임 프롬프트의 어휘를 action 에 재활용하지 말 것.
+
+> **되돌아오는 이펙트는 `last_frame` 을 첫 프레임과 같게 준다.** 가호만의 규칙이
+> 아니다 — 창처럼 날아가는 동안 **모양이 유지돼야 하는** 것도 같다. 끝을 안 묶으면
+> 후반 프레임이 자유롭게 표류한다.
+
 ---
 
 ## 6. 20종 표 — 아이콘 · 공격 방식 · 프롬프트
@@ -400,7 +413,7 @@ action: {아래 표의 action}
 | 등급 | 이름 | 아이콘 | 화면에서 일어나는 일 | first-frame 프롬프트 | action |
 |---|---|---|---|---|---|
 | 커먼 | 피의 송곳니 | 붉은 입 + 송곳니 | 몹을 물어뜯고 피가 튄다 | `pair of sharp vampire fangs biting, blood splatter` | `fangs snapping shut, blood spraying outward, then fading` |
-| 언커먼 | 핏빛 창 | 붉은 창 | 창이 꽂히고 피가 솟는다 | `crimson blood spear impaling, sharp point` | `spear driving in and blood bursting from the wound` |
+| 언커먼 | 핏빛 창 | 붉은 창 | 창이 날아와 관통한다 | 아이콘 회전 + `init_image` (5-4). job `2e26087b` | `thrusting forward to the right, shaft vibrating, seamless loop` |
 | 레어 | 사혈 발톱 | 세 갈래 발톱 | 세 줄기 발톱 자국 | `three curved blood claw slashes crossing` | `claws raking across, slash marks tearing open then fading` |
 | 에픽 | 처형자의 아가리 | 악마 턱 | 아가리가 물고 닫힌다 | `demonic executioner maw with jagged teeth, jaws open` | `jaws snapping shut and biting down, then dissolving` |
 | 레전더리 | 심연의 손 | 심연 구멍 + 손 | 구멍에서 손이 튀어나와 움켜쥔다 | `pale hand bursting out of a dark abyss portal, grasping` | `hand lunging out and clenching, portal collapsing after` |
