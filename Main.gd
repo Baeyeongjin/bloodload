@@ -4192,7 +4192,11 @@ func _advance_world(dx: float) -> void:
 	for n in get_tree().get_nodes_in_group(WORLD_FX_GROUP):
 		if is_instance_valid(n):
 			n.position.x -= dx
-	_field_x -= dx
+	# **화면에 고정된 진은 안 민다**(RULES.screen — 감시의 눈). 하늘에 뜬 눈은 땅의
+	# 한 자리가 아니라 화면의 한 자리다 — 밀면 전진할 때 왼쪽으로 흘러 나간다
+	# (2026-08-11 사장님). 그림도 WORLD_FX_GROUP 에 안 넣으므로 위 반복문도 안 탄다.
+	if not _field_fixed:
+		_field_x -= dx
 	_scroll += dx * PARALLAX
 	_apply_scroll()
 
@@ -4436,6 +4440,9 @@ var _field_x := 0.0        # 진의 중심 x. _advance_world 가 같이 민다
 # **상수를 직접 읽지 않고 이 값을 읽는다** — 두 군데가 각자 상수를 보면 규칙을 얹는
 # 순간 그림과 판정이 갈린다(이 저장소가 여러 번 밟은 부류다).
 var _field_reach := FIELD_REACH
+# 이번 진이 **화면에 고정**인가(RULES.screen). 그러면 `_advance_world` 가 중심을
+# 안 밀고 그림도 월드 그룹에 안 들어간다 — 둘 중 하나만 하면 그림과 판정이 갈린다.
+var _field_fixed := false
 var _field_gen := 0        # 구간이 바뀌면 올라간다. 지난 구간의 틱을 끊는 표
 
 
@@ -4461,6 +4468,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	# `_on_screen` 이 오른쪽 끝을 이미 잘라 주므로 반폭은 화면 폭이면 충분하다.
 	var screen := bool(rule.get("screen", false))
 	_field_reach = float(Grid.BG.x) if screen else FIELD_REACH
+	_field_fixed = screen
 	var at := _aoe_targets()
 	if screen:
 		_field_x = float(Grid.BG.x) * 0.5
@@ -4502,7 +4510,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	var spots := _field_targets()
 	if puddle > 0.0 or screen or spots.is_empty():
 		_anim_fx(fx, Vector2(_field_x, cy), fps, draw,
-			style, echo, 1.0, hero_face, skew, true)
+			style, echo, 1.0, hero_face, skew, not screen)
 	else:
 		# **하나씩 소환된다**(RULES.stagger). 감시의 눈은 눈이 차례로 뜨는 연출이라
 		# (2026-08-10 사장님) 대상마다 조금씩 늦게 깐다 — 한꺼번에 뜨면 그냥 세 개가
