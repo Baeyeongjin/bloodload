@@ -3773,6 +3773,7 @@ const STATUS_ROW_H := 28.0
 # ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
 var _title_view: Control
 var _title_rows: Array[Label] = []
+var _title_badges: Array[TextureRect] = []
 
 
 func _build_titles(root: Control) -> void:
@@ -3796,14 +3797,25 @@ func _build_titles(root: Control) -> void:
 	col.custom_minimum_size.x = CONTENT_W - Ui.SCROLL_W
 	sc.add_child(col)
 	for i in TitleDefs.TITLES.size():
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		col.add_child(line)
+		# 배지(badge_title, 사장님 선택 A — 핏방울 인장). 딴 것만 밝다(_refresh).
+		var bd := TextureRect.new()
+		bd.texture = Assets.tex("res://assets/ui/badge_title.png")
+		bd.custom_minimum_size = Vector2(28.0, 28.0)
+		bd.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		bd.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		line.add_child(bd)
+		_title_badges.append(bd)
 		var row := Label.new()
 		row.add_theme_font_size_override("font_size", Type.SIZE_SMALL)
 		row.add_theme_color_override("font_color", Color(0.72, 0.70, 0.76))
 		row.add_theme_constant_override("outline_size", 4)
 		row.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.05, 0.95))
-		row.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W, 44.0)
+		row.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W - 36.0, 44.0)
 		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		col.add_child(row)
+		line.add_child(row)
 		_title_rows.append(row)
 
 
@@ -3817,12 +3829,13 @@ func _refresh_titles() -> void:
 		for c in conds:
 			cond_str += "%s %s   " % ["✓" if TitleDefs.cond_met(c, state) else "─",
 				TitleDefs.cond_text(c)]
-		_title_rows[i].text = "%s %s — %s +%d
-	  %s" % ["✓" if got else "─",
-			str(t["name"]), TitleDefs.stat_name(str(t["stat"])), int(t["levels"]),
-			cond_str]
+		_title_rows[i].text = "%s — %s +%d\n%s" % [str(t["name"]),
+			TitleDefs.stat_name(str(t["stat"])), int(t["levels"]), cond_str]
 		_title_rows[i].add_theme_color_override("font_color",
 			Color(0.92, 0.82, 0.62) if got else Color(0.62, 0.60, 0.68))
+		if i < _title_badges.size():
+			_title_badges[i].modulate = Color(1, 1, 1) if got \
+				else Color(0.4, 0.38, 0.45)
 
 
 func _build_status(root: Control) -> void:
