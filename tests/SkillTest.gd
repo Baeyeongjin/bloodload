@@ -156,6 +156,38 @@ func _init() -> void:
 		SkillDefs.cooldown("ward_common", 0)])
 	print("위력  커먼 %.1f -> 레전더리 %.1f (같은 형태, 0레벨)"
 		% [SkillDefs.power("strike_common", 0), SkillDefs.power("strike_legend", 0)])
+
+	# ── 규칙이 상세 창에 적히는가 ──────────────────────────────────────────
+	# **규칙을 넣고 설명을 안 적으면 화면에 안 보이는 규칙이 된다.** 사장님은
+	# 몇 명을 때리는지·몇 연타인지를 창에서 읽는데, 표(RULES)만 고치고 문장을
+	# 안 고치면 창은 옛말을 계속 한다.
+	#
+	# **말로 옮겨야 하는 키**를 여기 적어 두고, 그 키가 붙은 스킬의 문장이
+	# 비어 있지 않은지 본다. 새 규칙을 표에 넣으면 이 목록에도 넣어야 하고,
+	# 넣는 순간 문장이 없으면 여기서 걸린다.
+	var must_say := ["max_targets", "bounce", "hits", "ticks", "execute",
+		"pierce", "cleave", "pit_kill"]
+	print("")
+	for key in keys:
+		var line := SkillDefs.rule_text(str(key))
+		var r: Dictionary = SkillDefs.rule_of(str(key))
+		var loud := false
+		for k in must_say:
+			if r.has(k):
+				loud = true
+		print("  %-16s %s" % [str(key), line if line != "" else "(없음)"])
+		if loud:
+			assert(line != "",
+				"%s 에 규칙이 있는데 상세 창에 적을 문장이 없다 — 화면에 안 보이는 규칙이다"
+				% str(key))
+	# 위력 표시가 전투 식과 같은 자를 쓰는가. 창에 "평타의 N%" 를 적는데 그 N 은
+	# `power / POWER_NORM` 이다 — 격 커먼이 정확히 100% 여야 기준이 선다.
+	var base_pct := SkillDefs.power("strike_common", 0) / SkillDefs.POWER_NORM * 100.0
+	print("")
+	print("격 커먼 0레벨 = 평타의 %.0f%% (기준)" % base_pct)
+	assert(is_equal_approx(base_pct, 100.0),
+		"격 커먼이 평타의 %.0f%% 다 — 기준이 100%% 가 아니면 창의 숫자를 못 읽는다"
+		% base_pct)
 	print("SkillTest OK")
 	quit()
 

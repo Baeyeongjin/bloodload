@@ -252,6 +252,64 @@ static func rule_of(key: String) -> Dictionary:
 	return RULES.get(key, {})
 
 
+# 스킬 위력을 **평타 몇 배**로 환산할 때 나누는 값. 격 커먼(2.2)이 평타 1배다.
+# Main 의 피해 식과 상세 창이 **같은 값을 봐야** 화면이 전투와 안 갈린다 —
+# 한쪽에 숫자를 적어 두면 다른 쪽을 고칠 때 조용히 어긋난다.
+const POWER_NORM := 2.2
+
+
+# 상세 창에 적을 **규칙 한 줄**. 표(RULES)를 사람 말로 옮긴다.
+#
+# **여기 하나만 본다.** 규칙을 넣고 설명을 안 적으면 화면에는 안 보이는 스킬이
+# 되는데, 그건 규칙이 없는 것과 같다 — `tests/SkillTest` 가 빠진 것을 잡는다.
+static func rule_text(key: String) -> String:
+	var r := rule_of(key)
+	var act := behavior_of(key)
+	var parts: PackedStringArray = []
+	# 1) 몇 명을 때리는가
+	if act == "ward":
+		parts.append("자신")
+	elif bool(r.get("passive", false)):
+		pass
+	else:
+		var cap := int(r.get("max_targets", 0))
+		var bounce := int(r.get("bounce", 0))
+		if bounce > 0:
+			parts.append("튕겨서 %d명" % bounce)
+		elif cap > 0:
+			parts.append("최대 %d명" % cap)
+		elif act == "strike":
+			parts.append("1명")
+		else:
+			parts.append("화면 전부")
+		if bool(r.get("pierce", false)):
+			parts.append("관통")
+	# 2) 몇 번 때리는가
+	var hits := int(r.get("hits", 1))
+	# **틱은 동작이 진(field)일 때이거나 규칙이 직접 적었을 때만 있다.**
+	# `ticks_of` 는 형태에 duration·tick_rate 가 있으면 값을 내주는데, `as` 로
+	# 파·가호로 옮긴 스킬(갈라진 대지·피의 제단)은 그 틱을 안 쓴다 —
+	# 그대로 적었더니 한 방짜리 스킬이 "6연타"로 적혔다(실측).
+	var ticks := ticks_of(key) if (act == "field" or r.has("ticks")) else 1
+	if hits > 1:
+		parts.append("%d연타" % hits)
+	elif ticks > 1:
+		parts.append("%d연타" % ticks)
+	# 3) 고유 규칙
+	var ex := float(r.get("execute", 0.0))
+	if ex > 0.0:
+		parts.append("체력 %d%% 이하 즉사(보스 제외)" % int(ex * 100.0))
+	if bool(r.get("pit_kill", false)):
+		parts.append("죽으면 땅속으로")
+	if str(r.get("cleave", "")) != "":
+		parts.append("평타가 광역")
+	if float(r.get("tint", 0.0)) > 0.0 and act == "ward":
+		parts.append("검이 붉게 물든다")
+	if parts.is_empty():
+		return ""
+	return " · ".join(parts)
+
+
 # 그 스킬이 **실제로 어떻게 동작하는가**. 형태(shape)는 기본값일 뿐이고 스킬이
 # 덮어쓸 수 있다(RULES.as).
 #

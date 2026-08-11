@@ -2878,7 +2878,14 @@ func _refresh_skill_detail() -> void:
 			effect.text = "전 피해 +%d%% · %.1f초" % [int(float(data["bonus"]) * 100.0),
 				float(data["duration"])]
 	else:
-		effect.text = "피해 x%.2f" % float(data["power"])
+		# **"x2.36" 은 무엇의 2.36배인지 안 적혀 있다.** 전투 식이 위력을 2.2 로
+		# 나눠 쓰므로(SkillDefs.POWER_NORM) 실제로는 **평타의 몇 %** 다 —
+		# 그 숫자여야 다른 스킬·평타와 견줄 수 있다(2026-08-11 사장님).
+		# 여러 명을 때리는 스킬은 **한 명당**이라고 밝힌다.
+		var per := float(data["power"]) / SkillDefs.POWER_NORM * 100.0
+		var many := str(data["act"]) != "strike" \
+			or int(SkillDefs.rule_of(key).get("max_targets", 0)) > 1
+		effect.text = "%s 평타의 %d%%" % ["한 명당" if many else "", int(per)]
 	var combo := _panel_label(_skill_detail, Vector2(234.0, 114.0), Type.SIZE_MID,
 		Color(0.62, 0.88, 0.70), 306.0, 24.0)
 	var bonus := _skill_combo_bonus(key)
@@ -2901,7 +2908,11 @@ func _refresh_skill_detail() -> void:
 		r.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var note := _panel_label(_skill_detail, Vector2(22.0, 232.0), Type.SIZE_SMALL,
 		Color(0.72, 0.72, 0.78), 532.0, 24.0)
-	note.text = "레벨은 위력을, 등급은 한 칸 위를 연다"
+	# **규칙을 여기 적는다**(2026-08-11 사장님: 몇 명을 때리는지·몇 초짜리 버프인지·
+	# 몇 %로 때리는지가 보여야 한다). 문장은 `SkillDefs.rule_text` 하나가 만든다 —
+	# 규칙을 넣고 설명을 안 적으면 화면에 안 보이는 규칙이 되고, 그건 없는 것과 같다.
+	var rule_line := SkillDefs.rule_text(key)
+	note.text = rule_line if rule_line != "" else "레벨은 위력을, 등급은 한 칸 위를 연다"
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var equipped_now := skill_equipped.has(key)
 	var equip := Ui.button("해제" if equipped_now else "장착", Vector2(22.0, 264.0),
@@ -4731,7 +4742,7 @@ func _resolve_skill(key: String) -> void:
 	if float(p["shake"]) > 0.0:
 		_shake_combat(float(p["shake"]))
 	var hit := _combat_damage() * Balance.skill_hit_mult(attack_interval(), SKILL_DUR) \
-		* float(skill["power"]) / 2.2
+		* float(skill["power"]) / SkillDefs.POWER_NORM
 	# **쏘기 전에 표적 쪽으로 돈다.** 가호(ward)는 제 몸에 두르는 것이라 방향이 없다.
 	# 형태가 아니라 **동작**을 본다 — 스킬이 형태를 덮어썼으면 조준도 따라가야 한다.
 	var act := str(skill["act"])
