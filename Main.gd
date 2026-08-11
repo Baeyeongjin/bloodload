@@ -4626,6 +4626,19 @@ func _strike_once(who: Foe, dmg: float, skill: Dictionary, fx: String, fx_y: flo
 	_skill_hit_fx(skill, who)
 
 
+# 파 한 타. 다단히트(RULES.ticks)가 같은 것을 여러 번 부른다 — 늦게 도는 타는
+# 그 사이 표적이 죽었을 수 있으므로 **매번 살아 있는지 다시 본다**(`_strike_once` 와 같다).
+func _wave_hit(targets: Array[Foe], dmg: float, pit: bool, skill: Dictionary) -> void:
+	for f in targets:
+		if not is_instance_valid(f) or f.dying:
+			continue
+		# 이 타로 죽을 놈은 **밑으로 꺼져** 죽는다(갈라진 대지).
+		if pit and f.hp <= dmg:
+			f.pit_fall = true
+		f.take_damage(dmg)
+		_skill_hit_fx(skill, f)
+
+
 func _aoe_targets() -> Array[Foe]:
 	var out: Array[Foe] = []
 	if not is_inside_tree():
@@ -4733,12 +4746,23 @@ func _resolve_skill(key: String) -> void:
 				struck.sort_custom(func(a: Foe, b: Foe) -> bool:
 					return absf(a.position.x - hero_x) < absf(b.position.x - hero_x))
 				struck = struck.slice(0, wcap)
-			for f in struck:
-				# 이 타로 죽을 놈은 **밑으로 꺼져** 죽는다(갈라진 대지).
-				if wpit and f.hp <= hit:
-					f.pit_fall = true
-				f.take_damage(hit)
-				_skill_hit_fx(skill, f)
+			# **파도 다단히트를 한다**(RULES.ticks — 뱀의 무리). 머리가 하나씩 나와
+			# 무는 그림이라 한 방으로 끝나면 그림과 규칙이 어긋난다.
+			# **총 피해는 그대로다** — 틱 수로 나눠 넣는다. 안 나누면 위력이 곱해져서
+			# 등급 사다리가 뒤집힌다(RULES.hits 주석과 같은 이유).
+			# 틱 수는 `SkillDefs.ticks_of` 하나만 본다 — 진(field)과 같은 자를 쓴다.
+			var wticks := SkillDefs.ticks_of(key)
+			var each := hit / float(wticks)
+			for i in wticks:
+				if i == 0:
+					_wave_hit(struck, each, wpit, skill)
+					continue
+				# 늦게 도는 타는 그 사이 죽은 놈을 거른다(`_wave_hit` 안에서).
+				var t := create_tween()
+				t.tween_interval(float(i) * 0.12)
+				t.tween_callback(func() -> void:
+					if is_inside_tree() and not _hero_dead:
+						_wave_hit(struck, each, wpit, skill))
 			_defer_stage_advance = false
 			# **맞는 놈마다 하나씩 띄운다.** 예전엔 fall(혈우)만 그렇게 했고 나머지
 			# 19종은 영웅 앞 한 자리에 64px 하나였다 — 800px 를 때리면서 64px 를

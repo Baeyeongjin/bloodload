@@ -209,7 +209,11 @@ const RULES := {
 	#
 	# 두 종은 **일부러 뺐다**: 혈우(wave_rare)는 비라서 여러 방울이 맞고, 감시의 눈
 	# (field_rare)은 "눈이 하나씩 소환된다"가 사장님이 지시한 설계 그 자체다.
-	"wave_epic": {"puddle": 1.0},
+	# 뱀의 무리 — **머리가 하나씩 나와 앞으로 쏟아지며 4연타**(2026-08-11 사장님:
+	# "뱀의 머리가 소환되어 앞에 적을 다단히트 시키면서 앞으로 발사되는 느낌").
+	# 소환 연출은 그림이 맡고(머리가 1 -> 3), 전진은 `sweep` 이, 연타는 `ticks` 가 맡는다.
+	# 총 피해는 그대로다 — 4로 나눠 넣는다.
+	"wave_epic": {"puddle": 1.0, "ticks": 4},
 	"wave_legend": {"puddle": 1.0},
 	# 피의 제단 — **자기 버프다**(2026-08-10 사장님: "스킬사용하면 캐릭터주변에 검은
 	# 오오라 이펙트 발현 후 캐릭터가 든 칼이 붉게 물드는 이펙트후 공격력 50% 버프").
@@ -247,11 +251,16 @@ static func behavior_of(key: String) -> String:
 # 진(field)이 실제로 때리는 횟수. **여기 하나만 본다** — Main 과 검사가 각자
 # `duration x tick_rate` 를 다시 계산하면 규칙(one_shot·ticks)을 얹는 순간 갈린다.
 static func ticks_of(key: String) -> int:
+	var rule := rule_of(key)
+	# **규칙이 적어 뒀으면 형태를 안 본다.** 파(wave)에도 다단히트가 붙었는데
+	# (뱀의 무리), 파 형태에는 duration·tick_rate 가 없어서 형태부터 보면 늘 1이
+	# 나온다 — 규칙이 있는데 조용히 무시되는 쪽이 제일 나쁘다.
+	if rule.has("ticks"):
+		return maxi(1, int(rule["ticks"]))
 	var shape := shape_of(key)
 	if not shape.has("duration") or not shape.has("tick_rate"):
 		return 1
-	return maxi(1, int(rule_of(key).get("ticks",
-		int(round(float(shape["duration"]) * float(shape["tick_rate"]))))))
+	return maxi(1, int(round(float(shape["duration"]) * float(shape["tick_rate"]))))
 
 
 const SLOTS := 6            # 장착 칸
@@ -379,6 +388,9 @@ const FX_OVERRIDE := {
 	# `pulse` 는 제자리에서 커졌다 작아지고 지면 보정을 안 받는다. 몹 몸통 위에 떠서
 	# 노려보는 그림이 된다.
 	"field_rare": {"style": "pulse", "y": -18.0},
+	# 뱀의 무리 — 파 기본 16fps 면 9장이 0.56초라 **머리가 하나씩 나오는 구간이
+	# 0.25초**로 지나가 안 보인다. 10fps(0.9초)로 늦춰 소환이 읽히게 한다.
+	"wave_epic": {"fps": 10.0},
 	"strike_rare": {"skew": 0.0},       # 사혈 발톱 — 교차 베기라 정면이 맞다
 	# 처형자의 아가리 — **옆모습으로 다시 뽑았다**(2026-08-10 사장님: "몬스터 방향이어야
 	# 해"). 정면으로 벌린 입은 아무리 기울여도 관객을 무는 그림이라 `rot` 로는 못 고친다.
