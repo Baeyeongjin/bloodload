@@ -4616,9 +4616,15 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 					f.exec_fall = true
 					# **fps 가 곧 수명이다** — 왕관은 한 장짜리라 10fps 면 0.1초 만에
 					# 사라진다(실측: 검사에서 0장으로 잡혔다). 2.2fps = 0.45초.
-					_anim_fx("fx_exec_crown",
+					# **머리 위 왕관(권한)과 색을 갈라 놓는다**(2026-08-11 사장님).
+					# 같은 그림이라 뜻은 이어지되, 이쪽은 **하얗게 타오른다** —
+					# 3초 내내 떠 있는 오오라와 달리 0.45초짜리 선고라 튀어야 한다.
+					# 새 자산을 안 뽑는다: `modulate` 한 줄이면 된다.
+					var mark := _anim_fx("fx_exec_crown",
 						Vector2(f.position.x, f.head_y() - 12.0),
 						2.2, 1.3, "burst", 0, 1.0, 1, 0.0)
+					if mark != null:
+						mark.modulate = Color(2.6, 2.3, 2.1)
 					f.take_damage(f.hp)
 					continue
 				f.take_damage(per_tick)
