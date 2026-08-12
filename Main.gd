@@ -198,11 +198,9 @@ func _tick_titles(delta: float) -> void:
 	if _title_check_t > 0.0:
 		return
 	_title_check_t = 1.0
-	# 임무의 자정 넘김도 이 1초 틱이 잡는다 — 날이 바뀌면 진행표가 새로 열린다.
-	var q_day := quest_date
-	_quest_roll_day()
-	if q_day != quest_date and _tab == "quest":
-		_refresh_quests()
+	# 임무도 이 1초 틱을 탄다 — 자정 넘김과 알림점(처치가 50에 닿는 순간 등)을
+	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
+	_refresh_quests()
 	var state := _title_state()
 	for t in TitleDefs.TITLES:
 		var id := str(t["id"])
@@ -645,6 +643,11 @@ func _ready() -> void:
 			_select_tab("codex")
 			_title_view.visible = true
 			_refresh_titles()
+		# [개발 도구] --quest : 일일 임무판을 연 채로 캡처한다.
+		if arg == "--quest":
+			_quest_view.visible = true
+			_quest_bump("kills", 30)
+			_refresh_quests()
 		# [개발 도구] --traits : 혈맥 화면을 연 채로 캡처한다. 잠금 대부분을 풀고
 		# 앞 노드 몇 개를 사 둔 상태 — 보유/구매 가능/잠김 세 상태가 다 보이게.
 		if arg == "--traits":
@@ -910,6 +913,8 @@ func _build_scene() -> void:
 	_build_goal_widget()
 	_build_chest()
 	_build_tabbar()
+	# 임무판은 맨 나중 — 팝업이라 모든 창 위에 그려져야 한다.
+	_build_quests()
 	_build_dialogs()
 	_select_tab("growth")
 
@@ -1458,7 +1463,7 @@ const CONTENT_BOTTOM := PANEL_H - PAD     # 358
 func _build_panels() -> void:
 	# 콘텐츠와 탭바는 별도 판이다. 한 장으로 덮으면 하단 메뉴가 콘텐츠에 붙어 보인다.
 	_hud_root.add_child(Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24)))
-	for name in ["growth", "gear", "summon", "dungeon", "quest", "codex"]:
+	for name in ["growth", "gear", "summon", "dungeon", "codex"]:
 		var c := Control.new()
 		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, PANEL_AT.y))
 		c.size = Grid.uv(PANEL_SIZE.x, PANEL_SIZE.y)
@@ -1469,7 +1474,6 @@ func _build_panels() -> void:
 	_build_gear(_panels["gear"])
 	_build_gacha(_panels["summon"])
 	_build_dungeon(_panels["dungeon"])
-	_build_quests(_panels["quest"])
 	_build_codex(_panels["codex"])
 
 
@@ -4085,13 +4089,15 @@ func _refresh_codex_detail() -> void:
 # 쓸 곳이 그것뿐이라 따로 창을 만들 이유가 없다.
 # 탭 3개. 창을 닫는 "전투" 탭은 없앴다 — 레이아웃이 고정이라 닫아도 화면이 안 넓어지고
 # 그 자리가 검게 비기만 한다.
+# 일일 임무는 탭이 아니라 **전투 화면 오른쪽 가장자리 버튼**이다(사장님 + 레퍼런스:
+# 오른쪽 세로 원형 바로가기 줄). 탭은 "머무는 곳", 임무판은 "들러서 받는 곳"이다.
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
 	["summon", "tab_battle", "소환"], ["dungeon", "tab_dungeon", "미궁"],
-	["quest", "tab_quest", "임무"], ["codex", "tab_codex", "도감"]]
+	["codex", "tab_codex", "도감"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
 # 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
-const TAB_DOT_ON := ["growth", "gear", "summon", "quest"]
+const TAB_DOT_ON := ["growth", "gear", "summon"]
 const TAB_DOT := 18.0
 const TAB_DOT_AT := Vector2(42.0, 2.0)   # 아이콘(48,6)의 왼쪽 위 모서리에 걸친다
 
@@ -4145,6 +4151,10 @@ var _dungeon_btn: Button
 var _dungeon_mastery: Array[Label] = []
 var _dungeon_badges: Array[TextureRect] = []
 var _dungeon_chips: Array[Label] = []
+var _raid_info := {}
+var _raid_reward := {}
+var _raid_btn := {}
+var _mastery_view: Control
 
 
 func _build_dungeon(root: Control) -> void:
@@ -4186,23 +4196,63 @@ func _build_dungeon(root: Control) -> void:
 		_dungeon_chips.append(_panel_label(root, Vector2(x + 34.0, 122.0),
 			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), chip_w - 40.0, 30.0))
 	_dungeon_sub = _panel_label(root, Vector2(PAD, 156.0), Type.SIZE_SMALL,
-		Color(0.72, 0.70, 0.76), CONTENT_W, 18.0)
-	# 군림 판 — 본편 돌파가 자동으로 여는 기능 5개. 창은 미궁 탭을 빌린다:
-	# 교차 잠금의 다른 축들(가지·상한)이 다 이 창에 적혀 있어서 자리가 맞다.
-	root.add_child(Ui.card(Vector2(PAD - 8.0, 178.0),
-		Vector2(CONTENT_W + 16.0, CONTENT_BOTTOM - 178.0)))
-	var mt := _panel_label(root, Vector2(PAD + 6.0, 182.0), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.45), CONTENT_W, 18.0)
+		Color(0.72, 0.70, 0.76), CONTENT_W - 116.0, 30.0)
+	# 군림은 팝업으로 이사 — 재화 던전 2종이 이 창의 아랫자리를 가져갔다.
+	var mastery_btn := Ui.button("군림", Vector2(PAD + CONTENT_W - 108.0, 150.0),
+		Vector2(108.0, 34.0), Type.SIZE_SMALL)
+	mastery_btn.pressed.connect(func() -> void:
+		_mastery_view.visible = not _mastery_view.visible)
+	root.add_child(mastery_btn)
+	# ── 재화 던전 2종 (RaidDefs) — 참고작의 "재화마다 전용 던전". 하루 한 번 ──
+	var kinds := ["blood", "essence"]
+	for i in kinds.size():
+		var kind: String = kinds[i]
+		var y := 190.0 + float(i) * 86.0
+		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 80.0)))
+		root.add_child(Ui.icon(str(RaidDefs.RAIDS[kind]["icon"]),
+			Vector2(PAD + 12.0, y + 20.0), 40.0))
+		var nm := _panel_label(root, Vector2(PAD + 64.0, y + 12.0), Type.SIZE_MID,
+			Color(0.92, 0.72, 0.72), CONTENT_W - 200.0, 20.0)
+		nm.text = str(RaidDefs.RAIDS[kind]["name"])
+		_raid_info[kind] = _panel_label(root, Vector2(PAD + 64.0, y + 36.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 200.0, 14.0)
+		_raid_reward[kind] = _panel_label(root, Vector2(PAD + 64.0, y + 54.0),
+			Type.SIZE_SMALL, Color(0.88, 0.80, 0.70), CONTENT_W - 200.0, 14.0)
+		var eb := Ui.button("입장", Vector2(PAD + CONTENT_W - 118.0, y + 18.0),
+			Vector2(110.0, 44.0), Type.SIZE_MID)
+		eb.pressed.connect(func() -> void:
+			if raid_on == kind:
+				_raid_exit("이탈 — 빈손")
+			else:
+				_raid_enter(kind)
+			_refresh_dungeon())
+		root.add_child(eb)
+		_raid_btn[kind] = eb
+	# ── 군림 팝업 — 본편 돌파가 자동으로 여는 기능 5개 ─────────────────────
+	_mastery_view = Control.new()
+	_mastery_view.visible = false
+	root.add_child(_mastery_view)
+	var mback := ColorRect.new()
+	mback.color = Color(0.055, 0.05, 0.065)
+	mback.position = Vector2(PAD * 0.5, PAD * 0.5)
+	mback.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
+	_mastery_view.add_child(mback)
+	var mt := _panel_label(_mastery_view, Vector2(PAD, PAD), Type.SIZE_BODY,
+		Color(1.0, 0.78, 0.45), CONTENT_W - 108.0, 28.0)
 	mt.text = "군림 — 본편 돌파가 스스로 연다"
+	var mclose := Ui.button("닫기", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
+		Vector2(100.0, 36.0), Type.SIZE_SMALL)
+	mclose.pressed.connect(func() -> void: _mastery_view.visible = false)
+	_mastery_view.add_child(mclose)
 	for i in MasteryDefs.RANKS.size():
 		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
 		var bd := Ui.icon("res://assets/ui/badge_mastery.png",
-			Vector2(PAD + 8.0, 206.0 + float(i) * 28.0), 20.0)
-		root.add_child(bd)
+			Vector2(PAD + 8.0, 76.0 + float(i) * 40.0), 24.0)
+		_mastery_view.add_child(bd)
 		_dungeon_badges.append(bd)
-		_dungeon_mastery.append(_panel_label(root,
-			Vector2(PAD + 34.0, 206.0 + float(i) * 28.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 40.0, 20.0))
+		_dungeon_mastery.append(_panel_label(_mastery_view,
+			Vector2(PAD + 40.0, 76.0 + float(i) * 40.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 46.0, 24.0))
 	_refresh_dungeon()
 
 
@@ -4223,6 +4273,27 @@ func _refresh_dungeon() -> void:
 	_dungeon_chips[0].text = "최고 %d층" % dungeon_best
 	_dungeon_chips[1].text = "개방 %d층" % open
 	_dungeon_chips[2].text = "혈정 %s" % _n(crystal)
+	# 재화 던전 카드 — 도전 단계·보상 미리보기·오늘 표.
+	_raid_roll_day()
+	for kind in _raid_btn:
+		var n := int(raid_best.get(kind, 0)) + 1
+		_raid_info[kind].text = "도전 %d단계 — 본편 %d구간 수준" \
+			% [n, RaidDefs.eq_stage(n)]
+		_raid_reward[kind].text = "격파 시 %s +%s  ·  하루 한 번" \
+			% [str(RaidDefs.RAIDS[kind]["currency"]), _n(RaidDefs.reward(kind, n))]
+		var eb: Button = _raid_btn[kind]
+		if raid_on == kind:
+			eb.text = "돌아가기"
+			eb.disabled = false
+		elif best_stage < RaidDefs.OPEN_STAGE:
+			eb.text = "본편 %d" % RaidDefs.OPEN_STAGE
+			eb.disabled = true
+		elif raid_used.has(kind):
+			eb.text = "내일 다시"
+			eb.disabled = true
+		else:
+			eb.text = "입장"
+			eb.disabled = dungeon_on or raid_on != ""
 	if open <= 0:
 		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
 		_dungeon_sub.text = "층을 오른 기록이 다음 성장(혈맥)의 열쇠가 된다"
@@ -4295,36 +4366,94 @@ func _claim_quest(id: String) -> void:
 	_refresh_quests()
 
 
-func _build_quests(root: Control) -> void:
-	var head := _panel_label(root, Vector2(PAD, PAD), Type.SIZE_MID,
-		Color(0.92, 0.62, 0.62), CONTENT_W, 24.0)
+# 임무판 팝업 배치 (레퍼런스: 화면 가운데 모달 + 줄마다 진행바).
+const QUEST_PANEL := Rect2(24.0, 150.0, 528.0, 560.0)
+const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
+# 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
+# 잘렸다(실측). 잘린 진행도는 거짓말이다.
+const QUEST_BAR_W := 220.0
+var _quest_view: Control
+var _quest_dot: TextureRect
+
+
+func _build_quests() -> void:
+	# 여는 버튼 — 전투 화면 오른쪽 가장자리(레퍼런스의 세로 바로가기 줄 자리).
+	var open_btn := Button.new()
+	open_btn.flat = true
+	open_btn.position = QUEST_BTN_AT
+	open_btn.size = Vector2(56.0, 56.0)
+	open_btn.focus_mode = Control.FOCUS_NONE
+	open_btn.pressed.connect(func() -> void:
+		_quest_view.visible = not _quest_view.visible
+		if _quest_view.visible:
+			_refresh_quests())
+	_hud_root.add_child(open_btn)
+	_hud_root.add_child(Ui.icon("res://assets/ui/tab_quest.png",
+		QUEST_BTN_AT + Vector2(4.0, 4.0), 48.0))
+	_quest_dot = Ui.icon("res://assets/ui/dot_alert.png",
+		QUEST_BTN_AT + Vector2(-4.0, -2.0), TAB_DOT)
+	_quest_dot.visible = false
+	_hud_root.add_child(_quest_dot)
+	# 판 — 모달 팝업. 뒤가 비치면 어느 숫자가 어느 창 것인지 헷갈린다(불투명 규칙).
+	_quest_view = Control.new()
+	_quest_view.visible = false
+	_hud_root.add_child(_quest_view)
+	var back := ColorRect.new()
+	back.color = Color(0.055, 0.05, 0.065)
+	back.position = QUEST_PANEL.position
+	back.size = QUEST_PANEL.size
+	_quest_view.add_child(back)
+	_quest_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
+	var x := QUEST_PANEL.position.x + 22.0
+	var w := QUEST_PANEL.size.x - 44.0
+	var head := _panel_label(_quest_view, Vector2(x, QUEST_PANEL.position.y + 16.0),
+		Type.SIZE_MID, Color(0.92, 0.62, 0.62), w - 100.0, 24.0)
 	head.text = "일일 임무 — 자정에 새로 온다"
+	var close := Ui.button("닫기",
+		Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0),
+		Vector2(88.0, 34.0), Type.SIZE_SMALL)
+	close.pressed.connect(func() -> void: _quest_view.visible = false)
+	_quest_view.add_child(close)
 	for i in QuestDefs.QUESTS.size():
 		var q: Dictionary = QuestDefs.QUESTS[i]
-		var y := 60.0 + float(i) * 42.0
-		root.add_child(Ui.card(Vector2(PAD, y), Vector2(CONTENT_W, 38.0)))
-		root.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
-			Vector2(PAD + 10.0, y + 7.0), 24.0))
-		var nm := _panel_label(root, Vector2(PAD + 44.0, y + 3.0), Type.SIZE_SMALL,
-			Color(0.90, 0.86, 0.88), CONTENT_W - 160.0, 16.0)
+		var y := QUEST_PANEL.position.y + 58.0 + float(i) * 56.0
+		_quest_view.add_child(Ui.card(Vector2(x, y), Vector2(w, 50.0)))
+		_quest_view.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
+			Vector2(x + 10.0, y + 11.0), 28.0))
+		var nm := _panel_label(_quest_view, Vector2(x + 48.0, y + 6.0),
+			Type.SIZE_SMALL, Color(0.90, 0.86, 0.88), w - 170.0, 16.0)
 		nm.text = str(q["name"])
-		var pr := _panel_label(root, Vector2(PAD + 44.0, y + 20.0), Type.SIZE_SMALL,
-			Color(0.62, 0.60, 0.68), CONTENT_W - 160.0, 14.0)
+		# 진행바 — 레퍼런스처럼 이름 아래 얇은 막대 + 오른쪽 끝에 수치.
+		var track := ColorRect.new()
+		track.color = Color(0.10, 0.09, 0.12)
+		track.position = Vector2(x + 48.0, y + 30.0)
+		track.size = Vector2(QUEST_BAR_W, 8.0)
+		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_quest_view.add_child(track)
+		var fill := ColorRect.new()
+		fill.color = Color(0.72, 0.16, 0.20)
+		fill.position = track.position
+		fill.size = Vector2(0.0, 8.0)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_quest_view.add_child(fill)
+		var pr := _panel_label(_quest_view,
+			Vector2(x + 48.0 + QUEST_BAR_W + 8.0, y + 24.0), Type.SIZE_SMALL,
+			Color(0.62, 0.60, 0.68), 90.0, 20.0)
 		var qid := str(q["id"])
-		var b := Ui.button("", Vector2(PAD + CONTENT_W - 106.0, y + 5.0),
-			Vector2(98.0, 28.0), Type.SIZE_SMALL)
+		var b := Ui.button("", Vector2(x + w - 108.0, y + 9.0),
+			Vector2(100.0, 32.0), Type.SIZE_SMALL)
 		Ui.cost_icon(b, "res://assets/ui/%s.png"
 			% ("res_crystal" if str(q["reward"]) == "crystal" else "res_gem"), 14)
 		b.pressed.connect(func() -> void: _claim_quest(qid))
-		root.add_child(b)
-		_quest_rows.append({"prog": pr, "btn": b})
+		_quest_view.add_child(b)
+		_quest_rows.append({"prog": pr, "btn": b, "fill": fill})
 	_quest_claim_all = Ui.button("일괄 받기",
-		Vector2(PAD + CONTENT_W - 180.0, CONTENT_BOTTOM - 42.0),
-		Vector2(180.0, 38.0), Type.SIZE_MID)
+		Vector2(x + w * 0.5 - 100.0, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0),
+		Vector2(200.0, 42.0), Type.SIZE_MID)
 	_quest_claim_all.pressed.connect(func() -> void:
 		for q in QuestDefs.QUESTS:
 			_claim_quest(str(q["id"])))
-	root.add_child(_quest_claim_all)
+	_quest_view.add_child(_quest_claim_all)
 	_refresh_quests()
 
 
@@ -4332,12 +4461,15 @@ func _refresh_quests() -> void:
 	if _quest_rows.is_empty():
 		return
 	_quest_roll_day()
+	var any := false
 	for i in QuestDefs.QUESTS.size():
 		var q: Dictionary = QuestDefs.QUESTS[i]
 		var id := str(q["id"])
 		var row: Dictionary = _quest_rows[i]
-		row["prog"].text = "%d / %d" % [mini(_quest_count(id), int(q["need"])),
-			int(q["need"])]
+		var need := int(q["need"])
+		var cnt := mini(_quest_count(id), need)
+		row["prog"].text = "%d / %d" % [cnt, need]
+		row["fill"].size.x = QUEST_BAR_W * float(cnt) / float(need)
 		var b: Button = row["btn"]
 		if quest_got.has(id):
 			b.text = "완료"
@@ -4346,12 +4478,10 @@ func _refresh_quests() -> void:
 			# 보상 액수를 버튼에 계속 보여 준다 — "다 하면 뭘 받나"가 동기다.
 			b.text = "+%d" % int(q["amount"])
 			b.disabled = not _quest_claimable(id)
-	var any := false
-	for q in QuestDefs.QUESTS:
-		if _quest_claimable(str(q["id"])):
-			any = true
-			break
+		any = any or _quest_claimable(id)
 	_quest_claim_all.disabled = not any
+	if _quest_dot:
+		_quest_dot.visible = any
 
 
 func _select_tab(name: String) -> void:
@@ -4385,8 +4515,6 @@ func _select_tab(name: String) -> void:
 		_refresh_gacha()
 	elif name == "dungeon":
 		_refresh_dungeon()
-	elif name == "quest":
-		_refresh_quests()
 
 
 # 지금 올릴 수 있는 게 있는 탭인가. 방치형에서 "뭘 눌러야 하나"를 탭을 하나씩 열어
@@ -4411,10 +4539,6 @@ func _tab_todo(tab: String) -> bool:
 			for item in equipped.values():
 				if not (item as Dictionary).is_empty() \
 						and essence >= GearDefs.upgrade_cost(item):
-					return true
-		"quest":
-			for q in QuestDefs.QUESTS:
-				if _quest_claimable(str(q["id"])):
 					return true
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
@@ -4950,6 +5074,10 @@ func _tick_hero_state(delta: float) -> void:
 			# 미궁에서 쓰러지면 **본편으로 나온다** — 층 기록은 그대로 남는다.
 			if dungeon_on:
 				_dungeon_exit("미궁에서 쓰러짐")
+				return
+			# 재화 던전도 마찬가지 — 표는 이미 썼고, 빈손으로 나온다.
+			if raid_on != "":
+				_raid_exit("던전에서 쓰러짐 — 빈손")
 				return
 			_restart_stage("쓰러짐")
 		return
@@ -6000,46 +6128,107 @@ func _apply_scroll() -> void:
 # (틱 수·판정 폭·자리) 갈래를 이 여덟 함수로 모은다.
 # **오프라인·도감·경험치는 일부러 본편 기준 그대로다** — 미궁은 기록만 남긴다.
 func _c_is_boss() -> bool:
+	if raid_on != "":
+		return false
 	return DungeonDefs.is_boss_floor(dungeon_floor) if dungeon_on \
 		else StageDefs.is_boss_stage(stage)
 
 
 func _c_is_midboss() -> bool:
+	if raid_on != "":
+		return false
 	return DungeonDefs.is_midboss_floor(dungeon_floor) if dungeon_on \
 		else StageDefs.is_midboss_stage(stage)
 
 
 func _c_kills_needed() -> int:
+	if raid_on != "":
+		return RaidDefs.KILLS
 	return DungeonDefs.kills_needed(dungeon_floor) if dungeon_on \
 		else StageDefs.kills_needed(stage)
 
 
 func _c_time_limit() -> float:
+	if raid_on != "":
+		return RaidDefs.TIME_LIMIT
 	return DungeonDefs.time_limit(dungeon_floor) if dungeon_on \
 		else StageDefs.time_limit(stage)
 
 
 func _c_enemy_power() -> float:
+	if raid_on != "":
+		return StageDefs.enemy_power(RaidDefs.eq_stage(_raid_stage()))
 	return StageDefs.enemy_power(DungeonDefs.eq_stage(dungeon_floor)) if dungeon_on \
 		else StageDefs.enemy_power(stage)
 
 
 func _c_act_data() -> Dictionary:
+	if raid_on != "":
+		return StageDefs.act_data(RaidDefs.eq_stage(_raid_stage()))
 	return StageDefs.act_data(DungeonDefs.eq_stage(dungeon_floor) if dungeon_on else stage)
 
 
 func _c_gold_per_kill() -> float:
-	# 미궁 처치도 혈액은 **본편 시세**다. 등가 구간(더 깊은 곳) 시세로 주면 미궁이
-	# 본편보다 나은 혈액 사냥터가 되어 재화 격리(EXPANSION 6장)가 깨진다.
+	# 미궁·재화 던전 처치도 혈액은 **본편 시세**다. 등가 구간(더 깊은 곳) 시세로 주면
+	# 던전이 본편보다 나은 혈액 사냥터가 되어 재화 격리(EXPANSION 6장)가 깨진다.
+	# 재화 던전의 진짜 보상은 격파 뭉치(RaidDefs.reward)다.
 	return StageDefs.gold_per_kill(stage)
 
 
 func _c_label() -> String:
+	if raid_on != "":
+		return RaidDefs.label(raid_on, _raid_stage())
 	return DungeonDefs.label(dungeon_floor) if dungeon_on else StageDefs.label(stage)
 
 
 func _c_midboss_prefix() -> String:
 	return "미궁 " if dungeon_on else StageDefs.midboss_prefix(stage)
+
+
+# ── 재화 던전 (RaidDefs) — 입장·이탈·하루 표 ────────────────────────────────
+var raid_on := ""                              # "" | "blood" | "essence"
+var raid_best := {"blood": 0, "essence": 0}    # 최고 클리어 단계
+var raid_date := ""
+var raid_used := {}                            # kind -> true (오늘 입장 소모)
+
+
+func _raid_stage() -> int:
+	return int(raid_best.get(raid_on, 0)) + 1
+
+
+func _raid_roll_day() -> void:
+	var today := Time.get_date_string_from_system()
+	if raid_date == today:
+		return
+	raid_date = today
+	raid_used = {}
+
+
+func _raid_enter(kind: String) -> void:
+	# 미궁과 같은 규칙: 암전 중엔 안 들어가고, 두 모드는 겹치지 않는다.
+	if raid_on != "" or dungeon_on or _fade_t > 0.0:
+		return
+	if best_stage < RaidDefs.OPEN_STAGE:
+		return
+	_raid_roll_day()
+	if raid_used.has(kind):
+		return
+	# 입장권은 들어가는 순간 쓴다(참고작 동일) — 결과 보고 무르기가 되면
+	# 하루 한 번이 하루 무한 번이 된다. 소모 즉시 저장한다.
+	raid_used[kind] = true
+	raid_on = kind
+	_restart_stage("%s 입장" % str(RaidDefs.RAIDS[kind]["name"]))
+	_refresh_dungeon()
+	_save_game()
+
+
+func _raid_exit(reason: String) -> void:
+	if raid_on == "" or _fade_t > 0.0:
+		return
+	raid_on = ""
+	# `stage` 는 건드린 적이 없으므로 재시작만 하면 본편 그 자리다(미궁과 동일).
+	_restart_stage(reason)
+	_refresh_dungeon()
 
 
 # ── 미궁 입장·이탈 ──────────────────────────────────────────────────────────
@@ -6114,6 +6303,9 @@ func _spawn_foe() -> void:
 		tier["name_prefix"] = _c_midboss_prefix() + " "
 	var f := Foe.new()
 	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
+	if raid_on != "":
+		# 던전 전용 배경이 생기기 전까지는 몹 물감이 "다른 곳"을 읽힌다.
+		f.modulate = RaidDefs.TINT[raid_on]
 	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
 	if dungeon_on:
 		f.modulate = DungeonDefs.depth_tint(dungeon_floor)
@@ -6253,6 +6445,32 @@ func _advance_stage() -> void:
 		return
 	_clear_foes()
 	_phase = "advance"
+	# ── 재화 던전: 한 판이 끝났다 — 뭉치를 주고 본편으로 돌아간다 ──────────
+	if raid_on != "":
+		var kind := raid_on
+		var n := _raid_stage()
+		var amount := RaidDefs.reward(kind, n)
+		raid_best[kind] = n
+		if kind == "blood":
+			gold += amount
+		else:
+			essence += amount
+		_offline_banner.text = "%s 격파 — %s +%s" \
+			% [RaidDefs.label(kind, n), str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)]
+		_offline_banner.add_theme_color_override("font_color",
+			Color(1.0, 0.55, 0.62) if kind == "blood" else Color(0.74, 0.84, 1.0))
+		_offline_banner.visible = true
+		_offline_t = 4.0
+		raid_on = ""
+		_fade(func() -> void:
+			kills = 0
+			_boss_time = _c_time_limit()
+			_begin_stage_pose()
+			_start_advance()
+			_apply_stage_bg())
+		_refresh_dungeon()
+		_save_game()
+		return
 	# ── 미궁: 층을 하나 오른다. 본편(stage)은 안 건드린다 ──────────────────
 	if dungeon_on:
 		_fade(func() -> void:
@@ -6324,6 +6542,9 @@ func _tick_boss_timer(delta: float) -> bool:
 	# 미궁은 실패 페널티가 없는 대신 재도전은 다시 들어와서 한다(EXPANSION 7장).
 	if dungeon_on:
 		_dungeon_exit("미궁 시간 초과")
+		return true
+	if raid_on != "":
+		_raid_exit("시간 초과 — 빈손")
 		return true
 	_restart_stage("시간 초과")
 	return true
@@ -6912,6 +7133,9 @@ func _save_game() -> void:
 	cfg.set_value("quest", "date", quest_date)
 	cfg.set_value("quest", "prog", quest_prog)
 	cfg.set_value("quest", "got", quest_got)
+	cfg.set_value("raid", "best", raid_best)
+	cfg.set_value("raid", "date", raid_date)
+	cfg.set_value("raid", "used", raid_used)
 	cfg.set_value("skill", "owned", skill_owned)
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
@@ -7019,6 +7243,10 @@ func _load_game() -> void:
 	quest_got = cfg.get_value("quest", "got", {})
 	# 어제 저장본이면 여기서 새 날이 열린다 (접속 임무가 찬다).
 	_quest_roll_day()
+	raid_best = cfg.get_value("raid", "best", {"blood": 0, "essence": 0})
+	raid_date = str(cfg.get_value("raid", "date", ""))
+	raid_used = cfg.get_value("raid", "used", {})
+	_raid_roll_day()
 	# 옛 저장본(스킬 6종·역할 3칸)에는 owned 가 없다. 그때는 기본 스킬만 주고
 	# 새로 시작한다 — 없어진 키를 억지로 옮기면 표에 없는 스킬이 장착된다.
 	skill_owned = cfg.get_value("skill", "owned", {})
