@@ -4076,12 +4076,14 @@ func _refresh_codex_detail() -> void:
 	_codex_detail["big"].texture = Assets.tex(FoeTiers.sprite_of(key))
 	_codex_detail["big"].modulate = Color(1, 1, 1) if seen else Color(0, 0, 0, 0.55)
 	var level := FoeTiers.codex_level(n)
-	_codex_detail["lv"].text = "지식 %d레벨" % level
+	# "지식"은 도감 합계(전역 보상)의 말이고, 종별 단계는 참고작처럼 "숙련"이다 —
+	# 같은 말을 두 군데 쓰면 어느 쪽 숫자인지 헷갈린다.
+	_codex_detail["lv"].text = "숙련 %d단계" % level
 	_codex_detail["effect"].text = "%s 상대 피해 +%d%%" % [
 		str(tier["name"]) if seen else "???", int(FoeTiers.codex_kill_bonus(n) * 100.0)]
 	var need := FoeTiers.codex_next_need(n)
 	if need <= 0:
-		_codex_detail["next"].text = "지식 만렙"
+		_codex_detail["next"].text = "숙련 만렙"
 		_codex_detail["bar"].value = 1.0
 		return
 	var step := FoeTiers.codex_step_of(n)
@@ -6423,6 +6425,15 @@ func on_foe_killed(f: Foe) -> void:
 	var gained := FoeTiers.codex_level(prev_kills + 1) - FoeTiers.codex_level(prev_kills)
 	if gained > 0:
 		codex_knowledge += gained
+		# 숙련 단계 상승 — 순간을 알린다(칭호 배너와 같은 줄). 알리지 않으면
+		# 있는 기능이 없는 기능이 된다.
+		_offline_banner.text = "숙련 — %s %d단계 · 상대 피해 +%d%%" \
+			% [str(FoeTiers.get_tier(f.key)["name"]),
+			FoeTiers.codex_level(prev_kills + 1),
+			int(FoeTiers.codex_kill_bonus(prev_kills + 1) * 100.0)]
+		_offline_banner.add_theme_color_override("font_color", Color(0.82, 0.88, 0.72))
+		_offline_banner.visible = true
+		_offline_t = 3.0
 		_claim_codex_reward()
 	_gain_exp(Balance.exp_per_kill(StageDefs.major_stage(stage)))
 	# 가이드 버튼의 "받을 개수"는 여기서만 갱신한다. _refresh_hud 는 매 프레임이라

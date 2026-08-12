@@ -58,11 +58,14 @@ static func all_keys() -> Array:
 const CODEX_REWARDS := [
 	{"need": 3,   "stat": "damage", "rate": 0.02},
 	{"need": 10,  "stat": "gold",   "rate": 0.03},
-	{"need": 22,  "stat": "damage", "rate": 0.05},   # 모든 몹 지식 1레벨
-	{"need": 44,  "stat": "tough",  "rate": 0.08},   # 모든 몹 2레벨
+	{"need": 22,  "stat": "damage", "rate": 0.05},   # 모든 몹 숙련 1단계
+	{"need": 44,  "stat": "tough",  "rate": 0.08},   # 모든 몹 2단계
 	{"need": 66,  "stat": "gold",   "rate": 0.10},
 	{"need": 88,  "stat": "damage", "rate": 0.12},
-	{"need": 110, "stat": "damage", "rate": 0.15, "gem": 300.0},
+	{"need": 110, "stat": "damage", "rate": 0.15, "gem": 300.0},   # 옛 만렙(5단계)
+	# 6~7단계 확장분 (2026-08-12). 3만·10만 처치 구간이라 진짜 장기 목표다.
+	{"need": 132, "stat": "tough",  "rate": 0.15},
+	{"need": 154, "stat": "damage", "rate": 0.20, "gem": 500.0},
 ]
 
 
@@ -99,8 +102,10 @@ static func codex_stat_name(stat: String) -> String:
 #
 # 전체 스탯이 아니라 **그 몹 상대 피해**인 이유: 전체 스탯이면 그냥 숫자가 하나 더
 # 늘 뿐이고, 상대별이면 "이 막이 안 밀리네" 할 때 어디를 파야 하는지가 보인다.
-const CODEX_KILL_STEPS := [10, 100, 500, 2000, 10000]
-const CODEX_KILL_RATE := 0.04     # 지식 레벨당 그 몹 상대 피해 +4% (만렙 +20%)
+# 5단계 -> 7단계 (2026-08-12, 종별 숙련 확장 — 참고작도 7단계다). 난이도 x3 로
+# 벽 앞에서 같은 종을 오래 잡게 됐으니, 깊은 사냥에도 오르는 눈금이 있어야 한다.
+const CODEX_KILL_STEPS := [10, 100, 500, 2000, 10000, 30000, 100000]
+const CODEX_KILL_RATE := 0.04     # 숙련 단계당 그 몹 상대 피해 +4% (만렙 +28%)
 
 
 static func codex_level(kills: int) -> int:
