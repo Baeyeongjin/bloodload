@@ -62,15 +62,26 @@ const NODES := [
 
 const BRANCHES := ["attack", "life", "wealth"]
 const BRANCH_NAMES := {"attack": "살육", "life": "불사", "wealth": "탐욕"}
-# 가지를 여는 미궁 층 (EXPANSION 7장의 교차 잠금).
-const BRANCH_FLOOR := {"attack": 10, "life": 30, "wealth": 60}
-# 티어를 여는 영웅 레벨.
-const HERO_GATE := [10, 25, 45, 70, 100, 140]
 
-# 노드 비용(혈정). 티어마다 x1.8 — 전체 18노드 합 ≈ 74,190 으로,
-# 미궁 100층 첫 돌파 누적(50,500)의 약 1.5배다(EXPANSION 6장: 첫 돌파로 절반,
-# 나머지는 소탕 며칠).
-const COST := [600.0, 1080.0, 1950.0, 3500.0, 6300.0, 11340.0]
+# **노드마다 10레벨** (2026-08-12 사장님: "미궁 클리어로 재화를 얻고, 재화로
+# 노드를 해금하고, 제일 밑 노드를 10레벨 찍으면 위 노드가 열린다").
+#
+# 바뀐 것: 잠금이 **앞 노드 만렙 하나**다. 미궁 층(10/30/60)과 영웅 레벨 문턱은
+# 뺐다 — 미궁은 이제 **혈정을 주는 곳**이지 잠그는 곳이 아니고(첫 돌파 + 소탕),
+# 문턱이 셋이면 왜 안 열리는지 매번 다시 읽어야 한다.
+#
+# 표의 `value` 는 **만렙(10레벨) 기준 총량**이다 — 레벨당은 그 1/10. 이렇게
+# 잡아야 EXPANSION 8장 예산표(혈맥 완주 공격 x1.26)가 그대로 산다.
+const MAX_LV := 10
+
+# 노드 비용(혈정)은 **레벨 하나당** 값이다. 티어마다 x1.8.
+#
+# 총액을 **3배로 올렸다**: 1/10 로 나눠 담기만 하면 총량이 그대로라 "같은 걸
+# 열 번에 나눠 사는 것"일 뿐이다. 게다가 미궁 층 문턱을 뺀 지금 **혈정이
+# 유일한 문턱**이라 값이 곧 속도다. 18노드 전부 만렙 = 222,930 으로 미궁
+# 100층 첫 돌파 누적(50,500)의 약 4.4배 — 첫 돌파로 1/4, 나머지는 소탕이
+# 도는 몇 주다.
+const COST := [180.0, 324.0, 585.0, 1050.0, 1890.0, 3402.0]
 
 
 static func node(id: String) -> Dictionary:
@@ -92,22 +103,44 @@ static func cost(tier: int) -> float:
 	return COST[clampi(tier - 1, 0, COST.size() - 1)]
 
 
-static func hero_gate(tier: int) -> int:
-	return HERO_GATE[clampi(tier - 1, 0, HERO_GATE.size() - 1)]
+# **한 줄기 순서** (사장님: "한 줄기에서 나가도록"). 티어를 돌며 세 가지를
+# 번갈아 오른다: 살육1 -> 불사1 -> 탐욕1 -> 살육2 -> ... 화면의 덩굴이 곧
+# 이 순서고, 잠금도 이 순서의 **바로 앞 노드 만렙** 하나다.
+static func order() -> Array:
+	var out: Array = []
+	for t in range(1, 7):
+		for b in BRANCHES:
+			out.append("%s_%d" % [b, t])
+	return out
 
 
-static func branch_floor(branch: String) -> int:
-	return int(BRANCH_FLOOR.get(branch, 9999))
+# 줄기에서 바로 앞 노드. 첫 노드면 "".
+static func prev_id(id: String) -> String:
+	var seq := order()
+	var i := seq.find(id)
+	return "" if i <= 0 else str(seq[i - 1])
+
+
+# 지금 레벨 (없으면 0). 옛 저장본은 `true` 로 적혀 있으므로 만렙으로 읽는다.
+static func level_of(id: String, owned: Dictionary) -> int:
+	var v = owned.get(id, 0)
+	if typeof(v) == TYPE_BOOL:
+		return MAX_LV if v else 0
+	return clampi(int(v), 0, MAX_LV)
 
 
 # 곱배수 갈래. guard 는 (1-v)를 곱해 "받는 피해 경감"이 된다.
 static func mult(kind: String, owned: Dictionary) -> float:
 	var out := 1.0
 	for n in NODES:
-		if str(n["kind"]) != kind or not owned.has(str(n["id"])):
+		if str(n["kind"]) != kind:
 			continue
-		out *= (1.0 - float(n["value"])) if kind == "guard" \
-			else (1.0 + float(n["value"]))
+		var lv := level_of(str(n["id"]), owned)
+		if lv <= 0:
+			continue
+		# 레벨당 value/10 — 표의 값은 만렙 기준 총량이다.
+		var v := float(n["value"]) * float(lv) / float(MAX_LV)
+		out *= (1.0 - v) if kind == "guard" else (1.0 + v)
 	return out
 
 
@@ -115,26 +148,26 @@ static func mult(kind: String, owned: Dictionary) -> float:
 static func add(kind: String, owned: Dictionary) -> float:
 	var out := 0.0
 	for n in NODES:
-		if str(n["kind"]) == kind and owned.has(str(n["id"])):
-			out += float(n["value"])
+		if str(n["kind"]) != kind:
+			continue
+		out += float(n["value"]) * float(level_of(str(n["id"]), owned)) \
+			/ float(MAX_LV)
 	return out
 
 
 # 이 노드를 지금 살 수 있는가 — 이유를 문자열로 돌려준다("" = 가능).
 # UI 가 버튼에 그대로 적는다: 왜 안 되는지가 안 보이면 잠긴 축은 없는 축이다.
-static func lock_reason(id: String, owned: Dictionary, hero_lv: int,
-		dungeon_best: int) -> String:
+# hero_lv·dungeon_best 는 안 쓴다(문턱이 앞 노드 하나로 줄었다) — 호출부가
+# 여럿이라 시그니처는 남긴다. 다음에 문턱이 늘면 여기서 다시 본다.
+static func lock_reason(id: String, owned: Dictionary, _hero_lv: int,
+		_dungeon_best: int) -> String:
 	var n := node(id)
 	if n.is_empty():
 		return "없는 노드"
-	if owned.has(id):
-		return "보유"
-	var need_floor := branch_floor(str(n["branch"]))
-	if dungeon_best < need_floor:
-		return "미궁 %d층" % need_floor
-	var tier := int(n["tier"])
-	if tier > 1 and not owned.has("%s_%d" % [str(n["branch"]), tier - 1]):
-		return "앞 노드"
-	if hero_lv < hero_gate(tier):
-		return "Lv%d" % hero_gate(tier)
+	if level_of(id, owned) >= MAX_LV:
+		return "만렙"
+	# **문턱은 하나뿐이다: 줄기의 바로 앞 노드 만렙.** 아래를 다 채워야 위가 열린다.
+	var prev := prev_id(id)
+	if prev != "" and level_of(prev, owned) < MAX_LV:
+		return "앞 %d렙" % MAX_LV
 	return ""
