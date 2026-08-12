@@ -1778,10 +1778,14 @@ const BRANCH_ICON := {"attack": "stat_damage", "life": "stat_tough",
 # 노드는 크게(64px), 레벨은 노드 밑에 "n/10", 전체는 **스크롤**로 본다 —
 # 레퍼런스 특성 화면의 그 생김새다.
 # 잠금도 화면과 같다: 줄기의 바로 앞 노드를 만렙(10) 찍어야 다음이 열린다.
-const TRAIT_NODE := 64.0
-const TRAIT_ROW := 92.0        # 노드 한 단의 세로 간격
+# 64 -> 76 (사장님: "칸을 더 크게, 글씨가 안 짤리게") — "10/10" 이 64px 에서
+# 끝이 먹혔다. 줄기는 칸 **테두리에서 멈추고**(가운데를 관통하면 칸이 지저분해
+# 진다) 검은 테로 두른다.
+const TRAIT_NODE := 76.0
+const TRAIT_ROW := 106.0       # 노드 한 단의 세로 간격
 const TRAIT_SPREAD := 150.0    # 가운데에서 좌우로 굽는 폭
 const TRAIT_LINE := 6.0        # 줄기 두께
+const TRAIT_EDGE := 2.0        # 줄기 검은 테 두께
 
 
 func _build_trait_view(root: Control) -> void:
@@ -1812,37 +1816,53 @@ func _build_trait_view(root: Control) -> void:
 	var cx := canvas_w * 0.5
 	# 길이 굽는 무늬: 가운데 -> 오른쪽 -> 가운데 -> 왼쪽 -> ... (레퍼런스의 덩굴)
 	var sway := [0.0, 1.0, 0.0, -1.0]
-	var prev_c := Vector2.ZERO
+	# 자리 먼저 다 계산한다 — 선을 노드보다 **먼저** 깔아야 칸을 안 침범하고,
+	# 선은 칸 테두리에서 멈춰야 한다(가운데까지 이으면 칸 위를 지나간다).
+	var centers: Array[Vector2] = []
+	for i in seq.size():
+		var x := cx + float(sway[i % sway.size()]) * TRAIT_SPREAD
+		var y := canvas_h - 30.0 - TRAIT_NODE - float(i) * TRAIT_ROW
+		centers.append(Vector2(x, y + TRAIT_NODE * 0.5))
+	for i in range(1, seq.size()):
+		var p0 := centers[i - 1]
+		var p1 := centers[i]
+		var half := TRAIT_NODE * 0.5
+		# 가로 팔: 앞 노드 **옆 테두리**에서 다음 노드 x 까지.
+		var x0 := p0.x + half if p1.x > p0.x else p1.x
+		var x1 := p1.x if p1.x > p0.x else p0.x - half
+		var arm := Rect2(x0, p0.y - TRAIT_LINE * 0.5, x1 - x0 + TRAIT_LINE * 0.5,
+			TRAIT_LINE)
+		# 세로 줄기: 다음 노드 **아래 테두리**에서 팔 높이까지.
+		var stem := Rect2(p1.x - TRAIT_LINE * 0.5, p1.y + half,
+			TRAIT_LINE, p0.y - p1.y - half)
+		var parts: Array[ColorRect] = []
+		for seg in [arm, stem]:
+			# 검은 테 — 금선보다 사방 2px 크게 먼저 깐다.
+			var edge := ColorRect.new()
+			edge.color = Color(0.03, 0.02, 0.04)
+			edge.position = seg.position - Vector2(TRAIT_EDGE, TRAIT_EDGE)
+			edge.size = seg.size + Vector2(TRAIT_EDGE, TRAIT_EDGE) * 2.0
+			edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			canvas.add_child(edge)
+			var line := ColorRect.new()
+			line.position = seg.position
+			line.size = seg.size
+			line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			canvas.add_child(line)
+			parts.append(line)
+		_trait_links.append({"from": str(seq[i - 1]), "a": parts[0], "b": parts[1]})
 	for i in seq.size():
 		var id := str(seq[i])
 		var n := TraitDefs.node(id)
-		var x := cx + float(sway[i % sway.size()]) * TRAIT_SPREAD
-		# 1티어가 맨 아래 — 아래에서 위로 오른다.
-		var y := canvas_h - 30.0 - TRAIT_NODE - float(i) * TRAIT_ROW
-		var c := Vector2(x, y + TRAIT_NODE * 0.5)
-		if i > 0:
-			# 앞 노드와 ㄴ자로 잇는다: 가로 팔(앞 노드 높이) + 세로 줄기(이 노드 x).
-			var arm := ColorRect.new()
-			arm.position = Vector2(minf(prev_c.x, c.x), prev_c.y - TRAIT_LINE * 0.5)
-			arm.size = Vector2(absf(c.x - prev_c.x) + TRAIT_LINE, TRAIT_LINE)
-			arm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			canvas.add_child(arm)
-			var stem := ColorRect.new()
-			stem.position = Vector2(c.x - TRAIT_LINE * 0.5, c.y)
-			stem.size = Vector2(TRAIT_LINE, prev_c.y - c.y)
-			stem.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			canvas.add_child(stem)
-			_trait_links.append({"from": str(seq[i - 1]), "a": arm, "b": stem})
-		prev_c = c
-		var at := Vector2(x - TRAIT_NODE * 0.5, y)
+		var at := centers[i] - Vector2(TRAIT_NODE * 0.5, TRAIT_NODE * 0.5)
 		var frame := Ui.icon("res://assets/ui/slot_common.png", at, TRAIT_NODE)
 		canvas.add_child(frame)
 		var ic := Ui.icon("res://assets/ui/%s.png" % TRAIT_ICON[str(n["kind"])],
-			at + Vector2(16.0, 8.0), 32.0)
+			at + Vector2((TRAIT_NODE - 36.0) * 0.5, 10.0), 36.0)
 		canvas.add_child(ic)
-		# 레벨 "n/10" — 노드 안 아래쪽. 밖은 다음 단 팔이 지나간다.
-		var lv_lbl := _panel_label(canvas, at + Vector2(0.0, TRAIT_NODE - 22.0),
-			Type.SIZE_SMALL, Color(0.94, 0.90, 0.96), TRAIT_NODE, 16.0)
+		# 레벨 "n/10" — 노드 안 아래쪽. 칸을 키워(76) 글씨가 안 잘린다.
+		var lv_lbl := _panel_label(canvas, at + Vector2(0.0, TRAIT_NODE - 26.0),
+			Type.SIZE_SMALL, Color(0.94, 0.90, 0.96), TRAIT_NODE, 18.0)
 		lv_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var hit := Button.new()
 		hit.flat = true
