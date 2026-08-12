@@ -3930,6 +3930,21 @@ func _build_status(root: Control) -> void:
 		Vector2(100.0, 36.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _status_view.visible = false)
 	_status_view.add_child(close)
+	# 진행 초기화 (사장님: 테스트용). 능력치 창 안에 두는 이유 — 평소 플레이 동선
+	# 밖이라 오터치가 없고, "내 진행 상황" 화면이라 뜻이 맞는다.
+	# 실수 방지는 **두 번 누르기**: 한 번 누르면 3초간 확인 문구로 바뀐다.
+	var reset_btn := Ui.button("진행 초기화", Vector2(PAD, CONTENT_BOTTOM - 42.0),
+		Vector2(170.0, 36.0), Type.SIZE_SMALL)
+	reset_btn.modulate = Color(1.0, 0.72, 0.72)
+	reset_btn.pressed.connect(func() -> void:
+		if reset_btn.text != "진행 초기화":
+			_wipe_save()
+			return
+		reset_btn.text = "정말? 한 번 더"
+		get_tree().create_timer(3.0).timeout.connect(func() -> void:
+			if is_instance_valid(reset_btn):
+				reset_btn.text = "진행 초기화"))
+	_status_view.add_child(reset_btn)
 
 
 func _refresh_status() -> void:
@@ -6723,7 +6738,25 @@ func _refresh_hud() -> void:
 
 
 # ── 저장 / 오프라인 보상 ───────────────────────────────────────────────────
+# 초기화 뒤에는 저장이 전부 무효다 — 지운 파일을 어느 갱신 경로가 되살리면
+# 반쪽 초기화가 된다. 재시작(reload)까지의 짧은 틈을 이 깃발이 막는다.
+var _wiped := false
+
+
+# 진행 초기화 (테스트용, 능력치 창 버튼). 저장 파일을 지우고 씬을 새로 연다 —
+# 상태 변수를 하나하나 되돌리는 방식은 변수가 늘 때마다 빠뜨린다.
+func _wipe_save() -> void:
+	_wiped = true
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	# 트리 밖에서 불리면(테스트의 _init 시점) 재시작만 건너뛴다 — 파일은 지워졌다.
+	var tree := get_tree()
+	if tree:
+		tree.reload_current_scene()
+
+
 func _save_game() -> void:
+	if _wiped:
+		return
 	var cfg := ConfigFile.new()
 	cfg.set_value("run", "stage", stage)
 	cfg.set_value("run", "kills", kills)
