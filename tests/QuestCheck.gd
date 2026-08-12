@@ -34,5 +34,11 @@ func _init() -> void:
 		"마무리 need 가 기본 임무 수(%d)-1 을 넘는다 — 미궁 전 유저는 못 닫는다" % base)
 	assert(int(QuestDefs.fresh_prog().get("login", 0)) >= 1,
 		"새 날인데 접속 임무가 안 차 있다")
+	# 주간 — 하루로는 못 닫고(임무 6개), 한 주(6x7=42) 안에는 닫혀야 한다.
+	assert(QuestDefs.WEEKLY_NEED > QuestDefs.QUESTS.size(),
+		"주간이 하루 만에 닫힌다 — 주간이 아니다")
+	assert(QuestDefs.WEEKLY_NEED <= QuestDefs.QUESTS.size() * 7,
+		"주간을 한 주 안에 못 닫는다")
+	assert(QuestDefs.WEEKLY_GEM > 0.0)
 	print("QuestCheck OK")
 	quit()
