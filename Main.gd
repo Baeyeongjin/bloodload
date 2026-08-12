@@ -670,6 +670,10 @@ func _ready() -> void:
 			if arg.ends_with("in"):
 				_boss_enter()
 			_refresh_dungeon()
+		# [개발 도구] --mastery : 숙련 화면을 연 채로 캡처한다.
+		if arg == "--mastery":
+			_select_tab("growth")
+			_set_growth_mode("mastery")
 		# [개발 도구] --pact : 혈맹 화면을 연 채로 캡처한다(별 3개 · 인장 넉넉히).
 		if arg == "--pact":
 			pact_lv = 168
@@ -1575,7 +1579,7 @@ const STEP_H := 40.0
 func _build_growth(root: Control) -> void:
 	# 탭바가 꽉 차서 새 탭으로 못 낸다. 성장 창 안에서 나눈다 —
 	# 스탯도 스킬도 혈맥도 "무엇을 키울까"라서 자리가 맞다.
-	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"],
+	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"], ["mastery", "숙련"],
 		["pact", "혈맹"]]
 	var mode_w := (CONTENT_W - 12.0 * float(modes.size() - 1)) / float(modes.size())
 	for i in modes.size():
@@ -1621,6 +1625,7 @@ func _build_growth(root: Control) -> void:
 	_build_skill_view(root)
 	_build_trait_view(root)
 	_build_pact_view(root)
+	_build_mastery_view(root)
 	_set_step(buy_step)   # 처음 열었을 때도 선택된 배수가 보이게
 	_set_growth_mode("stat")
 
@@ -1631,6 +1636,7 @@ func _set_growth_mode(mode: String) -> void:
 	_skill_view.visible = mode == "skill"
 	_trait_view.visible = mode == "trait"
 	_pact_view.visible = mode == "pact"
+	_mst_view.visible = mode == "mastery"
 	for key in _growth_mode_buttons:
 		_growth_mode_buttons[key].set_pressed_no_signal(key == mode)
 	if mode == "skill":
@@ -1639,8 +1645,100 @@ func _set_growth_mode(mode: String) -> void:
 		_refresh_traits()
 	elif mode == "pact":
 		_refresh_pact()
+	elif mode == "mastery":
+		_refresh_mastery_view()
 	else:
 		_refresh_growth()
+
+
+# ── 숙련 (성장 소탭, 참고작 ④ 자리) ─────────────────────────────────────────
+# 종별 숙련은 도감이 이미 기록한다(처치 -> 단계 -> 그 몹 상대 피해). 이 화면은
+# 그 기록을 **성장 동선에** 편다: 종 22칸 격자 + 고른 종의 상세 + 지식 합계
+# 이정표. 도감 탭은 수집(발견·기록)의 집으로 남는다 — 여긴 "어디를 파야 하나"다.
+var _mst_view: Control
+var _mst_cells := {}
+var _mst_sel := ""
+var _mst_head: Label
+var _mst_info: Label
+
+
+func _build_mastery_view(root: Control) -> void:
+	_mst_view = Control.new()
+	_mst_view.size = Vector2(PANEL_W, PANEL_H)
+	_mst_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_mst_view.visible = false
+	root.add_child(_mst_view)
+	var top := PAD + 34.0
+	_mst_head = _panel_label(_mst_view, Vector2(PAD, top), Type.SIZE_SMALL,
+		Color(0.82, 0.88, 0.72), CONTENT_W, 18.0)
+	_mst_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sc := Ui.scroll(Vector2(PAD, top + 24.0),
+		Vector2(CONTENT_W, CONTENT_BOTTOM - top - 24.0 - 44.0))
+	_mst_view.add_child(sc)
+	var keys := FoeTiers.all_keys()
+	var cols := 5
+	var cell := 76.0
+	var gap := (CONTENT_W - Ui.SCROLL_W - cell * float(cols)) / float(cols - 1)
+	var canvas := Control.new()
+	canvas.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W,
+		ceilf(float(keys.size()) / float(cols)) * (cell + 26.0) + 8.0)
+	sc.add_child(canvas)
+	for i in keys.size():
+		var key := str(keys[i])
+		var at := Vector2(float(i % cols) * (cell + gap),
+			float(i / cols) * (cell + 26.0) + 4.0)
+		var frame := Ui.icon("res://assets/ui/slot_common.png", at, cell)
+		canvas.add_child(frame)
+		var ic := Ui.icon(FoeTiers.sprite_of(key), at + Vector2(14.0, 12.0),
+			cell - 28.0)
+		canvas.add_child(ic)
+		var st := _panel_label(canvas, at + Vector2(0.0, cell - 2.0),
+			Type.SIZE_SMALL, Color(1.0, 0.86, 0.52), cell, 16.0)
+		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var hit := Button.new()
+		hit.flat = true
+		hit.position = at
+		hit.size = Vector2(cell, cell)
+		hit.focus_mode = Control.FOCUS_NONE
+		hit.pressed.connect(func() -> void:
+			_mst_sel = key
+			_refresh_mastery_view())
+		canvas.add_child(hit)
+		_mst_cells[key] = {"frame": frame, "icon": ic, "stage": st}
+	_mst_sel = str(keys[0])
+	_mst_info = _panel_label(_mst_view, Vector2(PAD, CONTENT_BOTTOM - 38.0),
+		Type.SIZE_SMALL, Color(0.90, 0.86, 0.88), CONTENT_W, 34.0)
+	_mst_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+
+func _refresh_mastery_view() -> void:
+	if _mst_view == null:
+		return
+	# 지식 합계와 다음 이정표 — "왜 파는가"의 답이 맨 위에 있어야 한다.
+	var head := "지식 %d / %d" % [codex_knowledge, FoeTiers.codex_max_knowledge()]
+	for r in FoeTiers.CODEX_REWARDS:
+		if int(r["need"]) > codex_knowledge:
+			head += " · 다음 보상까지 %d" % (int(r["need"]) - codex_knowledge)
+			break
+	_mst_head.text = head
+	for key in _mst_cells:
+		var cell: Dictionary = _mst_cells[key]
+		var n := int(codex.get(key, 0))
+		var lv := FoeTiers.codex_level(n)
+		# 못 만난 종은 검게 — 도감과 같은 문법.
+		cell["icon"].modulate = Color(1, 1, 1) if n > 0 else Color(0, 0, 0, 0.55)
+		cell["frame"].modulate = Color(1.0, 0.86, 0.52) if lv > 0 			else Color(0.55, 0.53, 0.58)
+		if str(key) == _mst_sel:
+			cell["frame"].modulate = cell["frame"].modulate.lightened(0.25)
+		cell["stage"].text = "%d단계" % lv if lv > 0 else ""
+	var sel_n := int(codex.get(_mst_sel, 0))
+	var tier := FoeTiers.get_tier(_mst_sel)
+	var sel_name := str(tier["name"]) if sel_n > 0 else "???"
+	var need := FoeTiers.codex_next_need(sel_n)
+	var tail := "다음 단계까지 %s마리" % _n(float(need)) if need > 0 else "숙련 만렙"
+	_mst_info.text = "%s — 숙련 %d단계 · 상대 피해 +%d%% · %s" % [sel_name,
+		FoeTiers.codex_level(sel_n),
+		int(FoeTiers.codex_kill_bonus(sel_n) * 100.0), tail]
 
 
 # ── 혈맹 화면 (PactDefs) ────────────────────────────────────────────────────
@@ -1847,8 +1945,9 @@ func _build_trait_view(root: Control) -> void:
 		var at := centers[i] - Vector2(TRAIT_NODE * 0.5, TRAIT_NODE * 0.5)
 		var frame := Ui.icon("res://assets/ui/slot_common.png", at, TRAIT_NODE)
 		canvas.add_child(frame)
+		# 아이콘은 살짝 아래로(사장님) — 레벨 글자와 같이 보면 위로 치우쳐 보였다.
 		var ic := Ui.icon("res://assets/ui/%s.png" % TRAIT_ICON[str(n["kind"])],
-			at + Vector2((TRAIT_NODE - 40.0) * 0.5, 12.0), 40.0)
+			at + Vector2((TRAIT_NODE - 40.0) * 0.5, 18.0), 40.0)
 		canvas.add_child(ic)
 		# 레벨 "n/10" — 노드 안 아래쪽. 칸을 키워(76) 글씨가 안 잘린다.
 		var lv_lbl := _panel_label(canvas, at + Vector2(0.0, TRAIT_NODE - 28.0),
