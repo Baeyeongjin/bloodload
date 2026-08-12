@@ -46,7 +46,7 @@ func _init() -> void:
 	scene.pact_lv = 0
 	scene.sigil = 0.0
 	scene.raid_best = {"blood": 0, "essence": 0, "pact": 0}
-	scene.raid_used = {}
+	scene.raid_left = {}
 	scene.raid_date = ""
 	scene._restart_stage("측정")
 	while scene._phase != "fight" or scene._fade_t > 0.0:

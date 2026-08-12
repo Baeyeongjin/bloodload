@@ -10,19 +10,25 @@ class_name RaidDefs
 # 더 깊은 곳의 시세를 하루 한 뭉치만 준다. 무한 사냥터가 아니라 배급이라
 # 재화 격리(EXPANSION 6장)를 안 깬다.
 const OPEN_STAGE := 20        # 본편 이 구간부터 (미궁 30 보다 이르다 — 첫 던전)
+# 하루 3판. **클리어할 때만 깎인다**(사장님 2026-08-12) — 못 깨고 나온 판은
+# 세지 않는다. 실패에 표를 물리면 "아직 못 이길 것 같은데 눌러 볼까"가 손해가
+# 되어, 도전 자체를 안 하게 된다.
+const TRIES_PER_DAY := 3
+# 광고 보상 자리. 지금은 붙일 광고가 없어 **버튼도 안 만든다**(YAGNI) —
+# 붙일 때 이 상수를 쓰고 UI 한 줄만 더하면 된다.
+const AD_BONUS_TRIES := 1
 const KILLS := 8              # 한 판의 웨이브
 const TIME_LIMIT := 45.0      # 늘 시계가 돈다 — 도전이니까
 const STEP_PER_STAGE := 6     # 도전 단계당 등가 본편 구간 상승
 
-# 아이콘: 사장님 선택 — 동굴 입구 A · 보석 제단 C (2026-08-12).
-# 계약의 제단 아이콘은 임시(인장 배지 재사용) — 후보 뽑아 사장님 선택 대기.
+# 아이콘: 사장님 선택 — 동굴 입구 A · 보석 제단 C · 룬 제단 C (2026-08-12).
 const RAIDS := {
 	"blood": {"name": "혈액의 동굴", "currency": "혈액",
 		"icon": "res://assets/ui/raid_blood.png"},
 	"essence": {"name": "정수의 성소", "currency": "정수",
 		"icon": "res://assets/ui/raid_essence.png"},
 	"pact": {"name": "계약의 제단", "currency": "인장",
-		"icon": "res://assets/ui/badge_title.png"},
+		"icon": "res://assets/ui/raid_pact.png"},
 }
 
 

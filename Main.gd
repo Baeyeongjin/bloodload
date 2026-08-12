@@ -661,6 +661,15 @@ func _ready() -> void:
 			_quest_bump("kills", 30)
 			quest_wprog = {"kills": 380, "train": 30, "daily": 11, "raid": 2}
 			_quest_set_mode("week" if arg.ends_with("week") else "day")
+		# [개발 도구] --boss[=in] : 주간 보스 판(=in 이면 도전 중)으로 캡처한다.
+		if arg == "--boss" or arg == "--boss=in":
+			_select_tab("raid")
+			_raid_set_mode("boss")
+			_boss_dps_snap = dps()
+			boss_dmg = _boss_dps_snap * 120.0
+			if arg.ends_with("in"):
+				_boss_enter()
+			_refresh_dungeon()
 		# [개발 도구] --pact : 혈맹 화면을 연 채로 캡처한다(별 3개 · 인장 넉넉히).
 		if arg == "--pact":
 			pact_lv = 168
@@ -672,7 +681,7 @@ func _ready() -> void:
 		if arg.begins_with("--raid="):
 			var rk := arg.trim_prefix("--raid=")
 			_raid_roll_day()
-			raid_used.erase(rk)
+			raid_left[rk] = RaidDefs.TRIES_PER_DAY
 			_raid_enter(rk)
 		# [개발 도구] --traits : 혈맥 화면을 연 채로 캡처한다. 잠금 대부분을 풀고
 		# 앞 노드 몇 개를 사 둔 상태 — 보유/구매 가능/잠김 세 상태가 다 보이게.
@@ -1645,7 +1654,7 @@ func _build_pact_view(root: Control) -> void:
 	# 인장 잔액 — 혈맥의 혈정 칸과 같은 문법.
 	_pact_view.add_child(Ui.currency_bar(Vector2(PAD + CONTENT_W / 2.0 - 80.0, top),
 		Vector2(160.0, 26.0)))
-	_pact_view.add_child(Ui.icon("res://assets/ui/badge_title.png",
+	_pact_view.add_child(Ui.icon("res://assets/ui/res_sigil.png",
 		Vector2(PAD + CONTENT_W / 2.0 - 72.0, top + 3.0), 20.0))
 	_pact_sigil = _panel_label(_pact_view,
 		Vector2(PAD + CONTENT_W / 2.0 - 46.0, top), Type.SIZE_SMALL,
@@ -1668,7 +1677,7 @@ func _build_pact_view(root: Control) -> void:
 		var n := 1 if i == 0 else 10
 		var b := Ui.button("", Vector2(PAD + float(i) * (bw + 16.0), top + 200.0),
 			Vector2(bw, 48.0), Type.SIZE_MID)
-		Ui.cost_icon(b, "res://assets/ui/badge_title.png", 20)
+		Ui.cost_icon(b, "res://assets/ui/res_sigil.png", 20)
 		b.pressed.connect(func() -> void: _pact_up(n))
 		_pact_view.add_child(b)
 		_pact_btns[n] = b
@@ -4359,6 +4368,13 @@ var _dungeon_btn: Button
 var _dungeon_mastery: Array[Label] = []
 var _dungeon_badges: Array[TextureRect] = []
 var _dungeon_chips: Array[Label] = []
+var _raid_list: Control
+var _raid_mode_btns := {}
+var _boss_panel: Control
+var _boss_name: Label
+var _boss_sub: Label
+var _boss_btn: Button
+var _boss_rows: Array[Dictionary] = []
 var _raid_info := {}
 var _raid_reward := {}
 var _raid_btn := {}
@@ -4426,17 +4442,136 @@ func _build_dungeon(root: Control) -> void:
 
 # ── 던전 탭 — 재화 던전 2종 (RaidDefs). 참고작 "던전 입구"의 우리 버전 ──────
 func _build_raids(root: Control) -> void:
-	var title := _panel_label(root, Vector2(PAD, PAD), Type.SIZE_MID,
-		Color(0.92, 0.62, 0.62), CONTENT_W, 24.0)
-	title.text = "재화 던전"
-	var sub := _panel_label(root, Vector2(PAD, PAD + 30.0), Type.SIZE_SMALL,
+	# [던전][주간 보스] — 성격이 다르다: 던전은 배급(하루 한 번 뭉치),
+	# 보스는 도전(못 죽여도 누적이 남는다). 임무판과 같은 토글 문법.
+	for i in 2:
+		var mode := "raid" if i == 0 else "boss"
+		var mb := Ui.button("재화 던전" if i == 0 else "주간 보스",
+			Vector2(PAD + float(i) * 190.0, PAD - 6.0),
+			Vector2(180.0, 34.0), Type.SIZE_SMALL)
+		mb.toggle_mode = true
+		mb.pressed.connect(func() -> void: _raid_set_mode(mode))
+		root.add_child(mb)
+		_raid_mode_btns[mode] = mb
+	_raid_list = Control.new()
+	_raid_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_raid_list)
+	_boss_panel = Control.new()
+	_boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_panel.visible = false
+	root.add_child(_boss_panel)
+	_build_boss_panel(_boss_panel)
+	_build_raid_list(_raid_list)
+	_raid_set_mode("raid")
+
+
+func _raid_set_mode(mode: String) -> void:
+	_raid_list.visible = mode == "raid"
+	_boss_panel.visible = mode == "boss"
+	for key in _raid_mode_btns:
+		_raid_mode_btns[key].button_pressed = key == mode
+	_refresh_dungeon()
+
+
+# 주간 보스 판 — 이름 · 남은 도전 · 누적 피해 · 마일스톤 4줄 · 도전 버튼.
+func _build_boss_panel(root: Control) -> void:
+	# 토글 버튼(y 20~54) 아래에서 시작한다 — 46 에 두면 글자가 버튼을 뚫는다.
+	_boss_name = _panel_label(root, Vector2(PAD, 62.0), Type.SIZE_MID,
+		Color(0.98, 0.72, 0.45), CONTENT_W - 130.0, 24.0)
+	_boss_sub = _panel_label(root, Vector2(PAD, 90.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.76), CONTENT_W - 130.0, 16.0)
+	_boss_btn = Ui.button("도전", Vector2(PAD + CONTENT_W - 122.0, 62.0),
+		Vector2(114.0, 46.0), Type.SIZE_MID)
+	_boss_btn.pressed.connect(func() -> void:
+		if raid_on == "boss":
+			_boss_exit("도전 중단")
+		else:
+			_boss_enter()
+		_refresh_dungeon())
+	root.add_child(_boss_btn)
+	for i in EventDefs.MILESTONES.size():
+		var m: Dictionary = EventDefs.MILESTONES[i]
+		var y := 122.0 + float(i) * 54.0
+		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 48.0)))
+		root.add_child(Ui.icon("res://assets/ui/%s.png" % _reward_icon(str(m["reward"])),
+			Vector2(PAD + 8.0, y + 10.0), 26.0))
+		var nm := _panel_label(root, Vector2(PAD + 44.0, y + 6.0), Type.SIZE_SMALL,
+			Color(0.90, 0.86, 0.88), CONTENT_W - 170.0, 16.0)
+		nm.text = "이정표 %d" % (i + 1)
+		var track := ColorRect.new()
+		track.color = Color(0.10, 0.09, 0.12)
+		track.position = Vector2(PAD + 44.0, y + 30.0)
+		track.size = Vector2(BOSS_BAR_W, 8.0)
+		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(track)
+		var fill := ColorRect.new()
+		fill.color = Color(0.98, 0.62, 0.30)
+		fill.position = track.position
+		fill.size = Vector2(0.0, 8.0)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(fill)
+		var pr := _panel_label(root, Vector2(PAD + 44.0 + BOSS_BAR_W + 8.0, y + 24.0),
+			Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), 150.0, 20.0)
+		var idx := i
+		var b := Ui.button("", Vector2(PAD + CONTENT_W - 108.0, y + 9.0),
+			Vector2(100.0, 32.0), Type.SIZE_SMALL)
+		Ui.cost_icon(b, "res://assets/ui/%s.png" % _reward_icon(str(m["reward"])), 14)
+		b.pressed.connect(func() -> void: _claim_milestone(idx))
+		root.add_child(b)
+		_boss_rows.append({"prog": pr, "btn": b, "fill": fill})
+
+
+# 이정표 게이지는 임무보다 짧다 — 옆 수치가 "4.7K / 47.2K" 라 자리가 더 필요하다.
+const BOSS_BAR_W := 150.0
+
+
+func _refresh_boss() -> void:
+	if _boss_rows.is_empty():
+		return
+	_boss_roll()
+	var eb := EventDefs.boss_of(_boss_week_index())
+	_boss_name.text = str(eb["name"])
+	_boss_sub.text = "오늘 도전 %d / %d  ·  이번 주 누적 피해 %s" \
+		% [boss_tries, EventDefs.TRIES_PER_DAY, _n(boss_dmg)]
+	if raid_on == "boss":
+		_boss_btn.text = "돌아가기"
+		_boss_btn.disabled = false
+	else:
+		_boss_btn.text = "도전" if boss_tries > 0 else "내일"
+		_boss_btn.disabled = boss_tries <= 0 or dungeon_on or raid_on != ""
+	# 이정표 기준은 **도전 시점의 화력**이다. 밖에서는 지금 화력으로 미리 보여 준다 —
+	# 안 그러면 도전 전에는 칸이 텅 비어서 얼마나 남았는지 감이 안 온다.
+	var base := _boss_dps_snap if raid_on == "boss" else dps()
+	for i in EventDefs.MILESTONES.size():
+		var need := EventDefs.milestone_damage(i, base)
+		var row: Dictionary = _boss_rows[i]
+		row["prog"].text = "%s / %s" % [_n(minf(boss_dmg, need)), _n(need)]
+		row["fill"].size.x = BOSS_BAR_W * clampf(boss_dmg / maxf(1.0, need), 0.0, 1.0)
+		var b: Button = row["btn"]
+		if boss_got.has(i):
+			b.text = "완료"
+			b.disabled = true
+		else:
+			b.text = "+%d" % int(EventDefs.MILESTONES[i]["amount"])
+			b.disabled = boss_dmg < need
+
+
+static func _reward_icon(kind: String) -> String:
+	match kind:
+		"crystal": return "res_crystal"
+		"sigil": return "res_sigil"
+	return "res_gem"
+
+
+func _build_raid_list(root: Control) -> void:
+	var sub := _panel_label(root, Vector2(PAD, 64.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.76), CONTENT_W, 16.0)
-	sub.text = "하루 한 번 — 격파하면 깊은 곳의 시세로 뭉치를 받는다"
+	sub.text = "하루 %d판 — 표는 격파할 때만 깎인다" % RaidDefs.TRIES_PER_DAY
 	# 카드가 3장이 되면서 높이를 줄였다(108 -> 82). 재화가 더 늘면 스크롤로 간다.
 	var kinds := ["blood", "essence", "pact"]
 	for i in kinds.size():
 		var kind: String = kinds[i]
-		var y := 84.0 + float(i) * 90.0
+		var y := 96.0 + float(i) * 88.0
 		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 82.0)))
 		root.add_child(Ui.icon(str(RaidDefs.RAIDS[kind]["icon"]),
 			Vector2(PAD + 14.0, y + 18.0), 44.0))
@@ -4483,8 +4618,9 @@ func _refresh_dungeon() -> void:
 		var n := int(raid_best.get(kind, 0)) + 1
 		_raid_info[kind].text = "도전 %d단계 — 본편 %d구간 수준" \
 			% [n, RaidDefs.eq_stage(n, kind)]
-		_raid_reward[kind].text = "격파 시 %s +%s  ·  하루 한 번" \
-			% [str(RaidDefs.RAIDS[kind]["currency"]), _n(RaidDefs.reward(kind, n))]
+		_raid_reward[kind].text = "격파 시 %s +%s  ·  오늘 %d / %d판" \
+			% [str(RaidDefs.RAIDS[kind]["currency"]), _n(RaidDefs.reward(kind, n)),
+			_raid_left(kind), RaidDefs.TRIES_PER_DAY]
 		var eb: Button = _raid_btn[kind]
 		if raid_on == kind:
 			eb.text = "돌아가기"
@@ -4492,12 +4628,13 @@ func _refresh_dungeon() -> void:
 		elif best_stage < RaidDefs.open_stage(kind):
 			eb.text = "본편 %d" % RaidDefs.open_stage(kind)
 			eb.disabled = true
-		elif raid_used.has(kind):
+		elif _raid_left(kind) <= 0:
 			eb.text = "내일"
 			eb.disabled = true
 		else:
 			eb.text = "입장"
 			eb.disabled = dungeon_on or raid_on != ""
+	_refresh_boss()
 	if open <= 0:
 		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
 		_dungeon_sub.text = "층을 오른 기록이 다음 성장(혈맥)의 열쇠가 된다"
@@ -4858,8 +4995,14 @@ func _tab_todo(tab: String) -> bool:
 				_raid_roll_day()
 				for kind in RaidDefs.RAIDS:
 					if best_stage >= RaidDefs.open_stage(str(kind)) \
-							and not raid_used.has(kind):
+							and _raid_left(str(kind)) > 0:
 						return true
+			# 주간 보스 — 받을 이정표가 있으면 켠다(도전 횟수로는 안 켠다: 매일
+			# 켜져 있으면 잔소리가 되고, 늘 켜진 점은 없는 점과 같다).
+			for i in EventDefs.MILESTONES.size():
+				if not boss_got.has(i) \
+						and boss_dmg >= EventDefs.milestone_damage(i, _boss_dps_snap):
+					return true
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
 				return true
@@ -5412,6 +5555,9 @@ func _tick_hero_state(delta: float) -> void:
 			# 미궁에서 쓰러지면 **본편으로 나온다** — 층 기록은 그대로 남는다.
 			if dungeon_on:
 				_dungeon_exit("미궁에서 쓰러짐")
+				return
+			if raid_on == "boss":
+				_boss_exit("쓰러짐")
 				return
 			# 재화 던전도 마찬가지 — 표는 이미 썼고, 빈손으로 나온다.
 			if raid_on != "":
@@ -6256,6 +6402,9 @@ func _pop_number(text: String, at_x: float, at_y: float, col: Color,
 
 
 func on_foe_hit(_foe: Foe, _damage: float) -> void:
+	# 주간 보스는 **못 죽여도 성과가 남는다** — 넣은 피해가 그 주 기록에 쌓인다.
+	if raid_on == "boss":
+		boss_dmg += _damage
 	# **숫자는 프레임 관문보다 먼저.** 아래 관문은 흔들림·히트스톱을 아끼려고 광역
 	# 타격을 한 번으로 접는 건데, 숫자는 맞은 놈마다 떠야 "여섯을 같이 때렸다"가 읽힌다.
 	_pop_damage(_foe, _damage)
@@ -6466,6 +6615,8 @@ func _apply_scroll() -> void:
 # (틱 수·판정 폭·자리) 갈래를 이 여덟 함수로 모은다.
 # **오프라인·도감·경험치는 일부러 본편 기준 그대로다** — 미궁은 기록만 남긴다.
 func _c_is_boss() -> bool:
+	if raid_on == "boss":
+		return true      # 주간 보스 — 한 마리로 판을 채운다(체력 바·마크가 같이 붙는다)
 	if raid_on != "":
 		return false
 	return DungeonDefs.is_boss_floor(dungeon_floor) if dungeon_on \
@@ -6480,6 +6631,8 @@ func _c_is_midboss() -> bool:
 
 
 func _c_kills_needed() -> int:
+	if raid_on == "boss":
+		return 1
 	if raid_on != "":
 		return RaidDefs.KILLS
 	return DungeonDefs.kills_needed(dungeon_floor) if dungeon_on \
@@ -6487,6 +6640,8 @@ func _c_kills_needed() -> int:
 
 
 func _c_time_limit() -> float:
+	if raid_on == "boss":
+		return EventDefs.TIME_LIMIT
 	if raid_on != "":
 		return RaidDefs.TIME_LIMIT
 	return DungeonDefs.time_limit(dungeon_floor) if dungeon_on \
@@ -6494,6 +6649,8 @@ func _c_time_limit() -> float:
 
 
 func _c_enemy_power() -> float:
+	if raid_on == "boss":
+		return StageDefs.enemy_power(best_stage)
 	if raid_on != "":
 		return StageDefs.enemy_power(RaidDefs.eq_stage(_raid_stage(), raid_on))
 	return StageDefs.enemy_power(DungeonDefs.eq_stage(dungeon_floor)) if dungeon_on \
@@ -6501,6 +6658,8 @@ func _c_enemy_power() -> float:
 
 
 func _c_act_data() -> Dictionary:
+	if raid_on == "boss":
+		return StageDefs.act_data(best_stage)
 	if raid_on != "":
 		return StageDefs.act_data(RaidDefs.eq_stage(_raid_stage(), raid_on))
 	return StageDefs.act_data(DungeonDefs.eq_stage(dungeon_floor) if dungeon_on else stage)
@@ -6514,6 +6673,8 @@ func _c_gold_per_kill() -> float:
 
 
 func _c_label() -> String:
+	if raid_on == "boss":
+		return str(EventDefs.boss_of(_boss_week_index())["name"])
 	if raid_on != "":
 		return RaidDefs.label(raid_on, _raid_stage())
 	return DungeonDefs.label(dungeon_floor) if dungeon_on else StageDefs.label(stage)
@@ -6527,7 +6688,83 @@ func _c_midboss_prefix() -> String:
 var raid_on := ""                              # "" | "blood" | "essence" | "pact"
 var raid_best := {"blood": 0, "essence": 0, "pact": 0}   # 최고 클리어 단계
 var raid_date := ""
-var raid_used := {}                            # kind -> true (오늘 입장 소모)
+# kind -> 오늘 남은 판. **클리어할 때만 깎인다**(사장님) — 못 깨고 나온 판은
+# 세지 않으므로, 실패가 손해가 아니라서 "될까?" 싶을 때 눌러 볼 수 있다.
+var raid_left := {}
+
+
+# ── 주간 보스 (EventDefs) ───────────────────────────────────────────────────
+# 재화 던전과 같은 틀을 쓴다: 들어가면 raid_on 이 켜지고, 래퍼가 값을 갈아
+# 끼우고, 나오면 본편 그 자리. 다른 것은 **못 죽여도 성과가 남는다**는 점뿐이다.
+var boss_week := ""
+var boss_tries := 0        # 오늘 남은 도전(날마다 리셋)
+var boss_dmg := 0.0        # 이번 주 누적 피해
+var boss_got := {}         # 받은 마일스톤 (i -> true)
+var boss_date := ""
+var _boss_dps_snap := 0.0  # 도전 시작 시 화력 — 이정표 기준을 판마다 안 흔들리게
+
+
+func _boss_week_index() -> int:
+	# 주 열쇠(월요일 날짜)에서 순환 번호를 만든다. 날짜 문자열의 일수만 쓰면
+	# 월이 바뀔 때 순서가 튀어서, 유닉스 주 수를 그대로 센다.
+	return int(Time.get_unix_time_from_datetime_string(quest_week + "T00:00:00")) \
+		/ 604800
+
+
+func _boss_roll() -> void:
+	_quest_roll_day()   # 주 열쇠(quest_week)를 공유한다 — 주간 임무와 같은 월요일
+	if boss_week != quest_week:
+		boss_week = quest_week
+		boss_dmg = 0.0
+		boss_got = {}
+	var today := Time.get_date_string_from_system()
+	if boss_date != today:
+		boss_date = today
+		boss_tries = EventDefs.TRIES_PER_DAY
+
+
+func _boss_enter() -> void:
+	if raid_on != "" or dungeon_on or _fade_t > 0.0:
+		return
+	_boss_roll()
+	if boss_tries <= 0:
+		return
+	boss_tries -= 1
+	_boss_dps_snap = dps()
+	raid_on = "boss"
+	_restart_stage("주간 보스 도전")
+	_refresh_dungeon()
+	_save_game()
+
+
+# 주간 보스에서 나온다. 성과(누적 피해)는 이미 쌓여 있으므로 여기서는 알리고
+# 본편으로 돌려보내기만 한다 — 재화 던전과 달리 "빈손"이 없다.
+func _boss_exit(reason: String) -> void:
+	if raid_on != "boss" or _fade_t > 0.0:
+		return
+	raid_on = ""
+	_offline_banner.text = "%s — 이번 주 누적 피해 %s" % [reason, _n(boss_dmg)]
+	_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
+	_offline_banner.visible = true
+	_offline_t = 4.0
+	_restart_stage(reason)
+	_refresh_dungeon()
+	_save_game()
+
+
+func _claim_milestone(i: int) -> void:
+	_boss_roll()
+	if boss_got.has(i) or boss_dmg < EventDefs.milestone_damage(i, _boss_dps_snap):
+		return
+	boss_got[i] = true
+	var m: Dictionary = EventDefs.MILESTONES[i]
+	match str(m["reward"]):
+		"gem": gem += float(m["amount"])
+		"crystal": crystal += float(m["amount"])
+		"sigil": sigil += float(m["amount"])
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_dungeon()
 
 
 func _raid_stage() -> int:
@@ -6539,7 +6776,14 @@ func _raid_roll_day() -> void:
 	if raid_date == today:
 		return
 	raid_date = today
-	raid_used = {}
+	raid_left = {}
+	for k in RaidDefs.RAIDS:
+		raid_left[k] = RaidDefs.TRIES_PER_DAY
+
+
+# 오늘 남은 판. 표에 없는 키(새 던전·옛 저장본)는 가득 찬 것으로 본다.
+func _raid_left(kind: String) -> int:
+	return int(raid_left.get(kind, RaidDefs.TRIES_PER_DAY))
 
 
 func _raid_enter(kind: String) -> void:
@@ -6549,11 +6793,10 @@ func _raid_enter(kind: String) -> void:
 	if best_stage < RaidDefs.open_stage(kind):
 		return
 	_raid_roll_day()
-	if raid_used.has(kind):
+	if _raid_left(kind) <= 0:
 		return
-	# 입장권은 들어가는 순간 쓴다(참고작 동일) — 결과 보고 무르기가 되면
-	# 하루 한 번이 하루 무한 번이 된다. 소모 즉시 저장한다.
-	raid_used[kind] = true
+	# **여기서 안 깎는다.** 표는 격파할 때 깎인다(_advance_stage) — 실패에 표를
+	# 물리면 도전 자체를 안 하게 된다(사장님 2026-08-12).
 	raid_on = kind
 	_restart_stage("%s 입장" % str(RaidDefs.RAIDS[kind]["name"]))
 	_refresh_dungeon()
@@ -6633,7 +6876,12 @@ func _spawn_foe() -> void:
 	var key: String = str(act["boss"]) if boss else \
 		str((act["roster"] as Array)[randi() % (act["roster"] as Array).size()])
 	var tier := FoeTiers.get_tier(key)
-	if boss:
+	if raid_on == "boss":
+		var eb := EventDefs.boss_of(_boss_week_index())
+		tier = FoeTiers.get_tier(str(eb["key"]))
+		tier["name"] = str(eb["name"])
+		tier["anim_key"] = str(eb["anim"])
+	elif boss:
 		tier["name"] = str(act["boss_name"])
 		tier["anim_key"] = str(act["boss_anim"])
 	elif midboss:
@@ -6641,6 +6889,10 @@ func _spawn_foe() -> void:
 		tier["name_prefix"] = _c_midboss_prefix() + " "
 	var f := Foe.new()
 	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
+	if raid_on == "boss":
+		# 체력만 갈아 끼운다 — 40초에 못 눕히는 게 정상이고, 성과는 누적 피해다.
+		f.max_hp = EventDefs.boss_hp(_boss_dps_snap)
+		f.hp = f.max_hp
 	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
 	if dungeon_on:
 		f.modulate = DungeonDefs.depth_tint(dungeon_floor)
@@ -6790,12 +7042,17 @@ func _advance_stage() -> void:
 		return
 	_clear_foes()
 	_phase = "advance"
+	# ── 주간 보스를 실제로 눕혔다 — 드문 일이다(체력이 40초 x20 이다) ──────
+	if raid_on == "boss":
+		_boss_exit("주간 보스 격파")
+		return
 	# ── 재화 던전: 한 판이 끝났다 — 뭉치를 주고 본편으로 돌아간다 ──────────
 	if raid_on != "":
 		var kind := raid_on
 		var n := _raid_stage()
 		var amount := RaidDefs.reward(kind, n)
 		raid_best[kind] = n
+		raid_left[kind] = maxi(0, _raid_left(kind) - 1)   # 표는 격파에만 깎인다
 		match kind:
 			"blood": gold += amount
 			"pact": sigil += amount
@@ -6889,6 +7146,9 @@ func _tick_boss_timer(delta: float) -> bool:
 	# 미궁은 실패 페널티가 없는 대신 재도전은 다시 들어와서 한다(EXPANSION 7장).
 	if dungeon_on:
 		_dungeon_exit("미궁 시간 초과")
+		return true
+	if raid_on == "boss":
+		_boss_exit("도전 종료")
 		return true
 	if raid_on != "":
 		_raid_exit("시간 초과 — 빈손")
@@ -7493,7 +7753,12 @@ func _save_game() -> void:
 	cfg.set_value("quest", "wgot", quest_wgot)
 	cfg.set_value("raid", "best", raid_best)
 	cfg.set_value("raid", "date", raid_date)
-	cfg.set_value("raid", "used", raid_used)
+	cfg.set_value("raid", "left", raid_left)
+	cfg.set_value("boss", "week", boss_week)
+	cfg.set_value("boss", "date", boss_date)
+	cfg.set_value("boss", "tries", boss_tries)
+	cfg.set_value("boss", "dmg", boss_dmg)
+	cfg.set_value("boss", "got", boss_got)
 	cfg.set_value("skill", "owned", skill_owned)
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
@@ -7609,8 +7874,14 @@ func _load_game() -> void:
 	_quest_roll_day()
 	raid_best = cfg.get_value("raid", "best", {"blood": 0, "essence": 0})
 	raid_date = str(cfg.get_value("raid", "date", ""))
-	raid_used = cfg.get_value("raid", "used", {})
+	raid_left = cfg.get_value("raid", "left", {})
 	_raid_roll_day()
+	boss_week = str(cfg.get_value("boss", "week", ""))
+	boss_date = str(cfg.get_value("boss", "date", ""))
+	boss_tries = int(cfg.get_value("boss", "tries", EventDefs.TRIES_PER_DAY))
+	boss_dmg = maxf(0.0, float(cfg.get_value("boss", "dmg", 0.0)))
+	boss_got = cfg.get_value("boss", "got", {})
+	_boss_roll()
 	# 옛 저장본(스킬 6종·역할 3칸)에는 owned 가 없다. 그때는 기본 스킬만 주고
 	# 새로 시작한다 — 없어진 키를 억지로 옮기면 표에 없는 스킬이 장착된다.
 	skill_owned = cfg.get_value("skill", "owned", {})

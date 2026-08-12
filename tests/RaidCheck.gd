@@ -38,8 +38,8 @@ func _init() -> void:
 	# **결백성** — 지난 실행의 저장본 값을 전부 0으로 되돌린다.
 	scene.stage = 25
 	scene.best_stage = 25
-	scene.raid_best = {"blood": 0, "essence": 0}
-	scene.raid_used = {}
+	scene.raid_best = {"blood": 0, "essence": 0, "pact": 0}
+	scene.raid_left = {}
 	scene.raid_date = ""
 	scene._restart_stage("측정")
 	while scene._phase != "fight" or scene._fade_t > 0.0:
@@ -48,12 +48,12 @@ func _init() -> void:
 
 	scene._raid_enter("blood")
 	assert(scene.raid_on == "blood", "입장이 안 됐다")
-	assert(scene.raid_used.has("blood"), "입장권이 소모되지 않았다")
+	assert(scene._raid_left("blood") == RaidDefs.TRIES_PER_DAY,
+		"입장에서 표가 깎였다 — 표는 격파에만 깎인다")
 	assert(scene.stage == home_stage, "입장이 본편 stage 를 건드렸다")
 	# 겹입장 금지 — 표도 안 쓴다.
 	scene._raid_enter("essence")
-	assert(scene.raid_on == "blood" and not scene.raid_used.has("essence"),
-		"던전 안에서 다른 던전에 들어갔다")
+	assert(scene.raid_on == "blood", "던전 안에서 다른 던전에 들어갔다")
 	# 래퍼가 던전 값으로 갈렸는가.
 	assert(scene._c_kills_needed() == RaidDefs.KILLS)
 	assert(is_equal_approx(scene._c_time_limit(), RaidDefs.TIME_LIMIT))
@@ -84,8 +84,25 @@ func _init() -> void:
 	# 같은 날 재입장 금지.
 	while scene._phase != "fight" or scene._fade_t > 0.0:
 		await process_frame
+	# 격파했으니 표가 하나 깎였다 — 아직 남았으니 또 들어갈 수 있다.
+	assert(scene._raid_left("blood") == RaidDefs.TRIES_PER_DAY - 1,
+		"격파했는데 표가 안 깎였다: %d" % scene._raid_left("blood"))
 	scene._raid_enter("blood")
-	assert(scene.raid_on == "", "같은 날 두 번 들어갔다")
+	assert(scene.raid_on == "blood", "표가 남았는데 못 들어갔다")
+	# 입장이 건 페이드가 도는 중에는 이탈이 조용히 빠진다(반쪽 상태 방지 가드).
+	while scene._fade_t > 0.0:
+		await process_frame
+	scene._raid_exit("측정")
+	assert(scene.raid_on == "", "이탈이 안 됐다")
+	while scene._phase != "fight" or scene._fade_t > 0.0:
+		await process_frame
+	# 실패로 나온 판은 표를 안 먹는다.
+	assert(scene._raid_left("blood") == RaidDefs.TRIES_PER_DAY - 1,
+		"실패한 판이 표를 먹었다")
+	# 표를 다 쓰면 못 들어간다.
+	scene.raid_left["blood"] = 0
+	scene._raid_enter("blood")
+	assert(scene.raid_on == "", "표가 0인데 들어갔다")
 
 	print("RaidCheck OK")
 	quit()
