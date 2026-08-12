@@ -85,3 +85,27 @@ static func is_open(key: String, stage: int, levels: Dictionary) -> bool:
 static func at_cap(key: String, level: int) -> bool:
 	var s := of(key)
 	return s.has("cap") and level >= int(s["cap"])
+
+
+# ── 승급 — 훈련 공통 상한 (REFERENCE_TEARDOWN 4장-3) ───────────────────────
+# 참고작 전투술의 "최대 레벨 + N단계 달성 필요" 자리. 여는 열쇠는 미궁 층이다
+# (EXPANSION 7장 교차 잠금: 미궁 → 훈련). 스탯 고유 cap 이 더 작으면 그쪽이
+# 이긴다 — 이 표는 무한 성장 스탯(공격력 등)의 고삐다.
+# [미궁 최고층, 훈련 상한]. 0층 = 시작부터.
+const TRAIN_CAP := [[0, 60], [20, 120], [40, 220], [80, 400]]
+
+
+static func train_cap(dungeon_best: int) -> int:
+	var cap := 0
+	for t in TRAIN_CAP:
+		if dungeon_best >= int(t[0]):
+			cap = int(t[1])
+	return cap
+
+
+# 다음 상한이 열리는 미궁 층. 마지막 상한이면 0 — 더 열 게 없다.
+static func next_cap_floor(dungeon_best: int) -> int:
+	for t in TRAIN_CAP:
+		if dungeon_best < int(t[0]):
+			return int(t[0])
+	return 0

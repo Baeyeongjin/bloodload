@@ -2040,7 +2040,8 @@ func _refresh_growth() -> void:
 		var row: Dictionary = _stat_rows[key]
 		var reason := StatDefs.lock_reason(key, StageDefs.major_stage(stage), lv)
 		var open := reason == ""
-		row["lv"].text = "레벨 %d" % stat_lv(key)
+		# 상한을 같이 적는다(참고작 "최대 레벨") — 상한이 보여야 승급이 목표가 된다.
+		row["lv"].text = "레벨 %d / %d" % [stat_lv(key), _stat_cap(key)]
 		row["name"].text = str(s["name"])
 		row["eff"].text = _stat_effect(key) if open else ""
 		row["btn"].visible = open
@@ -2053,12 +2054,17 @@ func _refresh_growth() -> void:
 		row["lv"].visible = open
 		if not open:
 			continue
-		if StatDefs.at_cap(key, stat_lv(key)):
-			row["btn"].text = "만렙"
+		if stat_lv(key) >= _stat_cap(key):
+			# 스탯 고유 만렙은 영영 끝, 승급 상한은 미궁이 연다 — 문구가 길을 알려준다.
+			var nf := StatDefs.next_cap_floor(dungeon_best)
+			row["btn"].text = "만렙" if StatDefs.at_cap(key, stat_lv(key)) or nf <= 0 \
+				else "미궁 %d층" % nf
 			row["btn"].icon = null
 			row["btn"].disabled = true
 			continue
-		var cost := _buy_cost(key, buy_step)
+		var cost := _buy_cost(key, _step_for(key))
+		# 상한이 풀리면 아이콘도 돌아와야 한다 — 만렙 분기가 null 로 지운다.
+		Ui.cost_icon(row["btn"], "res://assets/ui/res_blood.png")
 		row["btn"].text = "혈액  %s" % _n(cost)
 		row["btn"].disabled = gold < cost
 
@@ -4532,8 +4538,8 @@ func _tab_todo(tab: String) -> bool:
 			for s in StatDefs.STATS:
 				var key := str(s["key"])
 				if StatDefs.is_open(key, major, lv) \
-						and not StatDefs.at_cap(key, stat_lv(key)) \
-						and gold >= _buy_cost(key, buy_step):
+						and stat_lv(key) < _stat_cap(key) \
+						and gold >= _buy_cost(key, _step_for(key)):
 					return true
 		"gear":
 			for item in equipped.values():
@@ -4557,20 +4563,32 @@ func _refresh_tab_dots() -> void:
 		_tab_dots[key].visible = _tab_todo(key)
 
 
+# 실효 상한 — 스탯 고유 cap 과 승급 공통 상한(미궁 층이 연다) 중 작은 쪽.
+func _stat_cap(key: String) -> int:
+	var s := StatDefs.of(key)
+	var cap := StatDefs.train_cap(dungeon_best)
+	return mini(cap, int(s["cap"])) if s.has("cap") else cap
+
+
+# 이번 구매의 실제 단계 수 — 상한 앞에서는 닿을 만큼만.
+func _step_for(key: String) -> int:
+	return mini(buy_step, _stat_cap(key) - stat_lv(key))
+
+
 func _buy(key: String) -> void:
 	if not StatDefs.is_open(key, StageDefs.major_stage(stage), lv) \
-			or StatDefs.at_cap(key, stat_lv(key)):
+			or stat_lv(key) >= _stat_cap(key):
 		return
-	var cost := _buy_cost(key, buy_step)
+	# 상한 앞에서는 **닿을 만큼만 산다.** 예전엔 x100 값을 다 받고 레벨만
+	# 상한에서 잘랐다 — 묶음이 상한을 걸치면 바가지였다. 값과 단계 수를 같은
+	# n 으로 묶는다(표시 가격도 _step_for 를 쓴다 — 다른 n 을 쓰면 가격 거짓말).
+	var n := _step_for(key)
+	var cost := _buy_cost(key, n)
 	if gold < cost:
 		return
 	var old_max := max_hp()
 	gold -= cost
-	var s := StatDefs.of(key)
-	var next := stat_lv(key) + buy_step
-	if s.has("cap"):
-		next = mini(next, int(s["cap"]))   # 상한을 넘겨 사도 레벨은 안 넘어간다
-	lv[key] = next
+	lv[key] = stat_lv(key) + n
 	_apply_hp_growth(old_max)
 	# 흡혈량은 전투력에 안 들어가므로(재화 획득량이지 전투 능력이 아니다) 그냥 사면
 	# 화면에 아무 반응이 없다. 올린 값을 직접 띄운다 — **뭘 사든 반응은 있어야 한다.**
