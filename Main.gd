@@ -1643,6 +1643,17 @@ func _set_growth_mode(mode: String) -> void:
 		_refresh_growth()
 
 
+# ── 혈맹 화면 (PactDefs) ────────────────────────────────────────────────────
+# 참고작 투혼과 같은 자리: 별 등급 + 레벨 + 전용 재화 하나. 화면도 단순해야 한다 —
+# 별 줄 · 큰 레벨 · 효과 두 줄 · 레벨업 버튼(x1/x10).
+var _pact_view: Control
+var _pact_sigil: Label
+var _pact_stars: Label
+var _pact_level: Label
+var _pact_eff: Label
+var _pact_btns := {}
+
+
 func _build_pact_view(root: Control) -> void:
 	_pact_view = Control.new()
 	_pact_view.size = Vector2(PANEL_W, PANEL_H)
