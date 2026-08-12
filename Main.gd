@@ -649,8 +649,12 @@ func _ready() -> void:
 			_quest_bump("kills", 30)
 			_refresh_quests()
 		# [개발 도구] --raid=blood|essence : 재화 던전에 들어간 채로 캡처한다.
+		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
-			_raid_enter(arg.trim_prefix("--raid="))
+			var rk := arg.trim_prefix("--raid=")
+			_raid_roll_day()
+			raid_used.erase(rk)
+			_raid_enter(rk)
 		# [개발 도구] --traits : 혈맥 화면을 연 채로 캡처한다. 잠금 대부분을 풀고
 		# 앞 노드 몇 개를 사 둔 상태 — 보유/구매 가능/잠김 세 상태가 다 보이게.
 		if arg == "--traits":
