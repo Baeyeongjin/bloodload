@@ -124,6 +124,10 @@ var gem := 0.0
 # 혈정 — 미궁 전용 재화(EXPANSION 6장). 획득은 미궁(첫 돌파 + 소탕)뿐이고
 # 쓰는 곳은 3단계의 혈맥뿐이다. 혈액과 상호 교환 불가 — 인플레 격리.
 var crystal := 0.0
+# 인장 — 혈맹 전용 재화(PactDefs). 획득은 계약의 제단(재화 던전 3호)뿐이고
+# 쓰는 곳은 혈맹 레벨업뿐이다. 혈정과 같은 격리 규칙.
+var sigil := 0.0
+var pact_lv := 0
 var mileage := 0
 var best_stage := 1
 # ── 핏빛 미궁 (DungeonDefs, EXPANSION 7장) ────────────────────────────────
@@ -433,7 +437,8 @@ func stat_lv(key: String) -> int:
 
 func damage() -> float:
 	return Balance.hero_damage(_stat_eff("damage"), _gear_stat("damage"), hero_lv) \
-		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage"))
+		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage") \
+		+ PactDefs.bonus(pact_lv))
 
 
 # 장착 중인 장비가 주는 해당 스탯 합. 없으면 0.
@@ -593,7 +598,8 @@ func _codex_act_bonus() -> float:
 
 func max_hp() -> float:
 	return Balance.hero_max_hp(_stat_eff("tough"), _gear_stat("tough")) \
-		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough")) \
+		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough") \
+		+ PactDefs.bonus(pact_lv)) \
 		* _trait_mult("hp")
 
 
@@ -655,6 +661,12 @@ func _ready() -> void:
 			_quest_bump("kills", 30)
 			quest_wprog = {"kills": 380, "train": 30, "daily": 11, "raid": 2}
 			_quest_set_mode("week" if arg.ends_with("week") else "day")
+		# [개발 도구] --pact : 혈맹 화면을 연 채로 캡처한다(별 3개 · 인장 넉넉히).
+		if arg == "--pact":
+			pact_lv = 168
+			sigil = 5000.0
+			_select_tab("growth")
+			_set_growth_mode("pact")
 		# [개발 도구] --raid=blood|essence : 재화 던전에 들어간 채로 캡처한다.
 		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
@@ -1544,7 +1556,8 @@ const STEP_H := 40.0
 func _build_growth(root: Control) -> void:
 	# 탭바가 꽉 차서 새 탭으로 못 낸다. 성장 창 안에서 나눈다 —
 	# 스탯도 스킬도 혈맥도 "무엇을 키울까"라서 자리가 맞다.
-	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"]]
+	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"],
+		["pact", "혈맹"]]
 	var mode_w := (CONTENT_W - 12.0 * float(modes.size() - 1)) / float(modes.size())
 	for i in modes.size():
 		var mode: String = modes[i][0]
@@ -1588,6 +1601,7 @@ func _build_growth(root: Control) -> void:
 
 	_build_skill_view(root)
 	_build_trait_view(root)
+	_build_pact_view(root)
 	_set_step(buy_step)   # 처음 열었을 때도 선택된 배수가 보이게
 	_set_growth_mode("stat")
 
@@ -1597,14 +1611,123 @@ func _set_growth_mode(mode: String) -> void:
 	_stat_view.visible = mode == "stat"
 	_skill_view.visible = mode == "skill"
 	_trait_view.visible = mode == "trait"
+	_pact_view.visible = mode == "pact"
 	for key in _growth_mode_buttons:
 		_growth_mode_buttons[key].set_pressed_no_signal(key == mode)
 	if mode == "skill":
 		_refresh_skills()
 	elif mode == "trait":
 		_refresh_traits()
+	elif mode == "pact":
+		_refresh_pact()
 	else:
 		_refresh_growth()
+
+
+# ── 혈맹 화면 (PactDefs) ────────────────────────────────────────────────────
+# 참고작 투혼과 같은 자리: 별 등급 + 레벨 + 전용 재화 하나. 화면도 단순해야 한다 —
+# 별 줄 · 큰 레벨 · 효과 두 줄 · 레벨업 버튼(x1/x10).
+var _pact_view: Control
+var _pact_sigil: Label
+var _pact_stars: Label
+var _pact_level: Label
+var _pact_eff: Label
+var _pact_btns := {}
+
+
+func _build_pact_view(root: Control) -> void:
+	_pact_view = Control.new()
+	_pact_view.size = Vector2(PANEL_W, PANEL_H)
+	_pact_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pact_view.visible = false
+	root.add_child(_pact_view)
+	var top := PAD + 38.0
+	# 인장 잔액 — 혈맥의 혈정 칸과 같은 문법.
+	_pact_view.add_child(Ui.currency_bar(Vector2(PAD + CONTENT_W / 2.0 - 80.0, top),
+		Vector2(160.0, 26.0)))
+	_pact_view.add_child(Ui.icon("res://assets/ui/badge_title.png",
+		Vector2(PAD + CONTENT_W / 2.0 - 72.0, top + 3.0), 20.0))
+	_pact_sigil = _panel_label(_pact_view,
+		Vector2(PAD + CONTENT_W / 2.0 - 46.0, top), Type.SIZE_SMALL,
+		Color(0.92, 0.82, 0.62), 118.0, 26.0)
+	_pact_sigil.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_pact_view.add_child(Ui.card(Vector2(PAD - 8.0, top + 34.0),
+		Vector2(CONTENT_W + 16.0, 150.0)))
+	_pact_stars = _panel_label(_pact_view, Vector2(PAD, top + 44.0), Type.SIZE_MID,
+		Color(0.98, 0.82, 0.45), CONTENT_W, 26.0)
+	_pact_stars.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pact_level = _panel_label(_pact_view, Vector2(PAD, top + 74.0), Type.SIZE_TITLE,
+		Color(0.96, 0.90, 0.86), CONTENT_W, 40.0)
+	_pact_level.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pact_eff = _panel_label(_pact_view, Vector2(PAD, top + 122.0), Type.SIZE_SMALL,
+		Color(0.82, 0.88, 0.72), CONTENT_W, 40.0)
+	_pact_eff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pact_eff.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var bw := (CONTENT_W - 16.0) * 0.5
+	for i in 2:
+		var n := 1 if i == 0 else 10
+		var b := Ui.button("", Vector2(PAD + float(i) * (bw + 16.0), top + 200.0),
+			Vector2(bw, 48.0), Type.SIZE_MID)
+		Ui.cost_icon(b, "res://assets/ui/badge_title.png", 20)
+		b.pressed.connect(func() -> void: _pact_up(n))
+		_pact_view.add_child(b)
+		_pact_btns[n] = b
+	var note := _panel_label(_pact_view, Vector2(PAD, top + 256.0), Type.SIZE_SMALL,
+		Color(0.62, 0.60, 0.68), CONTENT_W, 16.0)
+	note.text = "인장은 계약의 제단(던전)에서만 나온다"
+	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+
+# n 레벨 값. 상한 앞에서는 닿을 만큼만 — 훈련(_step_for)과 같은 규칙이다.
+func _pact_cost(n: int) -> float:
+	var sum := 0.0
+	for k in n:
+		sum += PactDefs.cost(pact_lv + k)
+	return sum
+
+
+func _pact_steps(n: int) -> int:
+	return mini(n, PactDefs.level_cap() - pact_lv)
+
+
+func _pact_up(n: int) -> void:
+	var steps := _pact_steps(n)
+	if steps <= 0:
+		return
+	var cost := _pact_cost(steps)
+	if sigil < cost:
+		return
+	var old_max := max_hp()
+	sigil -= cost
+	pact_lv += steps
+	_apply_hp_growth(old_max)
+	_refresh_pact()
+	_refresh_hud()
+	_save_game()
+
+
+func _refresh_pact() -> void:
+	if _pact_view == null:
+		return
+	_pact_sigil.text = _n(sigil)
+	var st := PactDefs.stars(pact_lv)
+	_pact_stars.text = "%s%s" % ["★".repeat(st), "☆".repeat(PactDefs.STAR_MAX - st)]
+	_pact_level.text = "Lv.%d" % pact_lv
+	var b := PactDefs.bonus(pact_lv)
+	_pact_eff.text = "공격력 +%d%%  ·  체력 +%d%%\n다음 별까지 %d레벨" \
+		% [int(b * 100.0), int(b * 100.0),
+		PactDefs.STAR_EVERY - pact_lv % PactDefs.STAR_EVERY] \
+		if st < PactDefs.STAR_MAX \
+		else "공격력 +%d%%  ·  체력 +%d%%\n만렙" % [int(b * 100.0), int(b * 100.0)]
+	for n in _pact_btns:
+		var steps := _pact_steps(int(n))
+		var btn: Button = _pact_btns[n]
+		if steps <= 0:
+			btn.text = "만렙"
+			btn.disabled = true
+			continue
+		btn.text = "x%d  %s" % [steps, _n(_pact_cost(steps))]
+		btn.disabled = sigil < _pact_cost(steps)
 
 
 # ── 혈맥 화면 ──────────────────────────────────────────────────────────────
@@ -4309,22 +4432,23 @@ func _build_raids(root: Control) -> void:
 	var sub := _panel_label(root, Vector2(PAD, PAD + 30.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.76), CONTENT_W, 16.0)
 	sub.text = "하루 한 번 — 격파하면 깊은 곳의 시세로 뭉치를 받는다"
-	var kinds := ["blood", "essence"]
+	# 카드가 3장이 되면서 높이를 줄였다(108 -> 82). 재화가 더 늘면 스크롤로 간다.
+	var kinds := ["blood", "essence", "pact"]
 	for i in kinds.size():
 		var kind: String = kinds[i]
-		var y := 96.0 + float(i) * 118.0
-		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 108.0)))
+		var y := 84.0 + float(i) * 90.0
+		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 82.0)))
 		root.add_child(Ui.icon(str(RaidDefs.RAIDS[kind]["icon"]),
-			Vector2(PAD + 14.0, y + 30.0), 48.0))
-		var nm := _panel_label(root, Vector2(PAD + 76.0, y + 16.0), Type.SIZE_MID,
-			Color(0.92, 0.72, 0.72), CONTENT_W - 210.0, 22.0)
+			Vector2(PAD + 14.0, y + 18.0), 44.0))
+		var nm := _panel_label(root, Vector2(PAD + 72.0, y + 10.0), Type.SIZE_MID,
+			Color(0.92, 0.72, 0.72), CONTENT_W - 200.0, 20.0)
 		nm.text = str(RaidDefs.RAIDS[kind]["name"])
-		_raid_info[kind] = _panel_label(root, Vector2(PAD + 76.0, y + 46.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 210.0, 16.0)
-		_raid_reward[kind] = _panel_label(root, Vector2(PAD + 76.0, y + 70.0),
-			Type.SIZE_SMALL, Color(0.88, 0.80, 0.70), CONTENT_W - 210.0, 16.0)
-		var eb := Ui.button("입장", Vector2(PAD + CONTENT_W - 122.0, y + 28.0),
-			Vector2(114.0, 50.0), Type.SIZE_MID)
+		_raid_info[kind] = _panel_label(root, Vector2(PAD + 72.0, y + 36.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 200.0, 14.0)
+		_raid_reward[kind] = _panel_label(root, Vector2(PAD + 72.0, y + 56.0),
+			Type.SIZE_SMALL, Color(0.88, 0.80, 0.70), CONTENT_W - 200.0, 14.0)
+		var eb := Ui.button("입장", Vector2(PAD + CONTENT_W - 118.0, y + 18.0),
+			Vector2(110.0, 46.0), Type.SIZE_MID)
 		eb.pressed.connect(func() -> void:
 			if raid_on == kind:
 				_raid_exit("이탈 — 빈손")
@@ -4358,18 +4482,18 @@ func _refresh_dungeon() -> void:
 	for kind in _raid_btn:
 		var n := int(raid_best.get(kind, 0)) + 1
 		_raid_info[kind].text = "도전 %d단계 — 본편 %d구간 수준" \
-			% [n, RaidDefs.eq_stage(n)]
+			% [n, RaidDefs.eq_stage(n, kind)]
 		_raid_reward[kind].text = "격파 시 %s +%s  ·  하루 한 번" \
 			% [str(RaidDefs.RAIDS[kind]["currency"]), _n(RaidDefs.reward(kind, n))]
 		var eb: Button = _raid_btn[kind]
 		if raid_on == kind:
 			eb.text = "돌아가기"
 			eb.disabled = false
-		elif best_stage < RaidDefs.OPEN_STAGE:
-			eb.text = "본편 %d" % RaidDefs.OPEN_STAGE
+		elif best_stage < RaidDefs.open_stage(kind):
+			eb.text = "본편 %d" % RaidDefs.open_stage(kind)
 			eb.disabled = true
 		elif raid_used.has(kind):
-			eb.text = "내일 다시"
+			eb.text = "내일"
 			eb.disabled = true
 		else:
 			eb.text = "입장"
@@ -4730,10 +4854,11 @@ func _tab_todo(tab: String) -> bool:
 					return true
 		"raid":
 			# 오늘 표가 남아 있다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
-			if best_stage >= RaidDefs.OPEN_STAGE and raid_on == "" and not dungeon_on:
+			if raid_on == "" and not dungeon_on:
 				_raid_roll_day()
 				for kind in RaidDefs.RAIDS:
-					if not raid_used.has(kind):
+					if best_stage >= RaidDefs.open_stage(str(kind)) \
+							and not raid_used.has(kind):
 						return true
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
@@ -6370,14 +6495,14 @@ func _c_time_limit() -> float:
 
 func _c_enemy_power() -> float:
 	if raid_on != "":
-		return StageDefs.enemy_power(RaidDefs.eq_stage(_raid_stage()))
+		return StageDefs.enemy_power(RaidDefs.eq_stage(_raid_stage(), raid_on))
 	return StageDefs.enemy_power(DungeonDefs.eq_stage(dungeon_floor)) if dungeon_on \
 		else StageDefs.enemy_power(stage)
 
 
 func _c_act_data() -> Dictionary:
 	if raid_on != "":
-		return StageDefs.act_data(RaidDefs.eq_stage(_raid_stage()))
+		return StageDefs.act_data(RaidDefs.eq_stage(_raid_stage(), raid_on))
 	return StageDefs.act_data(DungeonDefs.eq_stage(dungeon_floor) if dungeon_on else stage)
 
 
@@ -6399,8 +6524,8 @@ func _c_midboss_prefix() -> String:
 
 
 # ── 재화 던전 (RaidDefs) — 입장·이탈·하루 표 ────────────────────────────────
-var raid_on := ""                              # "" | "blood" | "essence"
-var raid_best := {"blood": 0, "essence": 0}    # 최고 클리어 단계
+var raid_on := ""                              # "" | "blood" | "essence" | "pact"
+var raid_best := {"blood": 0, "essence": 0, "pact": 0}   # 최고 클리어 단계
 var raid_date := ""
 var raid_used := {}                            # kind -> true (오늘 입장 소모)
 
@@ -6421,7 +6546,7 @@ func _raid_enter(kind: String) -> void:
 	# 미궁과 같은 규칙: 암전 중엔 안 들어가고, 두 모드는 겹치지 않는다.
 	if raid_on != "" or dungeon_on or _fade_t > 0.0:
 		return
-	if best_stage < RaidDefs.OPEN_STAGE:
+	if best_stage < RaidDefs.open_stage(kind):
 		return
 	_raid_roll_day()
 	if raid_used.has(kind):
@@ -6671,14 +6796,15 @@ func _advance_stage() -> void:
 		var n := _raid_stage()
 		var amount := RaidDefs.reward(kind, n)
 		raid_best[kind] = n
-		if kind == "blood":
-			gold += amount
-		else:
-			essence += amount
+		match kind:
+			"blood": gold += amount
+			"pact": sigil += amount
+			_: essence += amount
 		_offline_banner.text = "%s 격파 — %s +%s" \
 			% [RaidDefs.label(kind, n), str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)]
 		_offline_banner.add_theme_color_override("font_color",
-			Color(1.0, 0.55, 0.62) if kind == "blood" else Color(0.74, 0.84, 1.0))
+			Color(1.0, 0.55, 0.62) if kind == "blood" \
+			else (Color(0.92, 0.82, 0.62) if kind == "pact" else Color(0.74, 0.84, 1.0)))
 		_offline_banner.visible = true
 		_offline_t = 4.0
 		raid_on = ""
@@ -7339,6 +7465,8 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "essence", essence)
 	cfg.set_value("wallet", "gem", gem)
 	cfg.set_value("wallet", "crystal", crystal)
+	cfg.set_value("wallet", "sigil", sigil)
+	cfg.set_value("run", "pact_lv", pact_lv)
 	cfg.set_value("wallet", "mileage", mileage)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
@@ -7387,6 +7515,8 @@ func _load_game() -> void:
 	essence = maxf(0.0, float(cfg.get_value("wallet", "essence", 0.0)))
 	gem = maxf(0.0, float(cfg.get_value("wallet", "gem", 0.0)))
 	crystal = maxf(0.0, float(cfg.get_value("wallet", "crystal", 0.0)))
+	sigil = maxf(0.0, float(cfg.get_value("wallet", "sigil", 0.0)))
+	pact_lv = clampi(int(cfg.get_value("run", "pact_lv", 0)), 0, PactDefs.level_cap())
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})

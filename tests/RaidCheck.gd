@@ -16,7 +16,7 @@ func _init() -> void:
 	# ── 1) 표 ──────────────────────────────────────────────────────────────
 	var prev_eq := 0
 	for n in range(1, 200):
-		var eq := RaidDefs.eq_stage(n)
+		var eq := RaidDefs.eq_stage(n, "blood")
 		assert(eq >= prev_eq, "%d단계 등가 구간이 내려간다" % n)
 		assert(eq <= StageDefs.total_stages(), "%d단계가 본편 밖이다" % n)
 		prev_eq = eq
@@ -58,7 +58,7 @@ func _init() -> void:
 	assert(scene._c_kills_needed() == RaidDefs.KILLS)
 	assert(is_equal_approx(scene._c_time_limit(), RaidDefs.TIME_LIMIT))
 	assert(is_equal_approx(scene._c_enemy_power(),
-		StageDefs.enemy_power(RaidDefs.eq_stage(1))), "몹 세기가 등가 구간 값이 아니다")
+		StageDefs.enemy_power(RaidDefs.eq_stage(1, "blood"))), "몹 세기가 등가 구간 값이 아니다")
 	assert("혈액의 동굴" in scene._c_label())
 	assert(not scene._c_is_boss(), "재화 던전에 보스 판정이 떴다")
 	assert(is_equal_approx(scene._c_gold_per_kill(),
