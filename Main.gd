@@ -201,6 +201,12 @@ func _tick_titles(delta: float) -> void:
 	# 임무도 이 1초 틱을 탄다 — 자정 넘김과 알림점(처치가 50에 닿는 순간 등)을
 	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
 	_refresh_quests()
+	_tick_income()
+	# 장착 칭호 — 레벨 배지 아래. 여기서 갱신하면 로드 직후·장착 직후를 다 잡는다.
+	if _lbl_worn:
+		_lbl_worn.visible = title_worn != ""
+		if title_worn != "":
+			_lbl_worn.text = str(TitleDefs.title(title_worn).get("name", ""))
 	var state := _title_state()
 	for t in TitleDefs.TITLES:
 		var id := str(t["id"])
@@ -1205,6 +1211,15 @@ func _build_topbar() -> void:
 	_lbl_stage.clip_text = true
 	_lbl_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_stage.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 분당 수입 (참고작 "사냥 중 109.5 Pt/m") — "지금 벌고 있다"를 상시로 보여준다.
+	# 최근 60초 처치 수입의 굴림 합이라 곧 분당 시세다. 벌이가 없으면 숨긴다.
+	# 자리는 혈액 알약 **바로 아래 오른쪽 정렬** — 가운데(스테이지 글자)에 두면
+	# 겹쳐서 둘 다 안 읽혔다(실측).
+	_lbl_income = _mk_label(Vector2(w - 226.0, 32.0), Type.SIZE_SMALL,
+		Color(0.98, 0.78, 0.45))
+	_lbl_income.size = Vector2(218.0, 13.0)
+	_lbl_income.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_lbl_income.visible = false
 	# ── 제한 시간 바를 진행바 **위에** 올린다(레퍼런스 배치). 두 바 모두 32px 캔버스에
 	# 그림은 그 일부(타이머 y7~25 · 진행바 y11~21)라, 캔버스끼리는 겹쳐도 그림은 안 겹친다.
 	var timer_at := Vector2((w - BAR_W) * 0.5, TIMER_BAR_Y)
@@ -1284,6 +1299,13 @@ func _build_portrait() -> void:
 	_lbl_hero.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_hero.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_lbl_hero.clip_text = true
+	# 장착 칭호 (참고작 "죽음의 신" 자리) — 레벨 배지 바로 아래 금빛 한 줄.
+	_lbl_worn = _mk_label(LV_BADGE_AT + Vector2(-12.0, 24.0), Type.SIZE_SMALL,
+		Color(0.92, 0.82, 0.62))
+	_lbl_worn.size = Vector2(LV_BADGE_SIZE.x + 24.0, 14.0)
+	_lbl_worn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_worn.clip_text = true
+	_lbl_worn.visible = false
 	# 전투력 — 레퍼런스의 **교차검 + 8M**. 초상화 오른쪽 위.
 	# 아이콘은 **절반(24 -> 12)**. 원본 32px 짜리를 24로 그렸더니 초상화만큼 커서
 	# 얼굴과 숫자 사이에서 저 혼자 튀었다.
@@ -3835,7 +3857,31 @@ func _build_codex(root: Control) -> void:
 const STATUS_ROW_H := 28.0
 
 
+# ── 분당 수입 (참고작 Pt/m) ─────────────────────────────────────────────────
+# 1초마다 그 초의 처치 수입을 60칸 고리에 밀어 넣는다 — 합이 곧 분당 수입이다.
+var _income_ring := PackedFloat64Array()
+var _income_acc := 0.0
+var _income_idx := 0
+var _lbl_income: Label
+
+
+func _tick_income() -> void:
+	if _income_ring.size() < 60:
+		_income_ring.resize(60)
+	_income_ring[_income_idx] = _income_acc
+	_income_acc = 0.0
+	_income_idx = (_income_idx + 1) % 60
+	var per_min := 0.0
+	for v in _income_ring:
+		per_min += v
+	if _lbl_income:
+		_lbl_income.visible = per_min > 0.0
+		_lbl_income.text = "사냥 중  혈액 %s/분" % _n(per_min)
+
+
 # ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
+var title_worn := ""        # 장착 칭호 id — 겉멋이다. 효과는 딴 것 전부에서 온다
+var _lbl_worn: Label
 var _title_view: Control
 var _title_head: Label
 var _title_names: Array[Label] = []
@@ -3871,10 +3917,23 @@ func _build_titles(root: Control) -> void:
 	sc.add_child(col)
 	for i in TitleDefs.TITLES.size():
 		# 한 칭호 = 카드 한 장. 배지 · 이름 · 조건 둘 · 오른쪽에 보상 아이콘+수치.
+		# 줄을 누르면 **장착**한다(딴 것만) — 같은 걸 다시 누르면 벗는다.
 		var row := Control.new()
 		row.custom_minimum_size = Vector2(TITLE_ROW_W, 48.0)
 		col.add_child(row)
 		row.add_child(Ui.card(Vector2.ZERO, Vector2(TITLE_ROW_W, 48.0)))
+		var tid := str(TitleDefs.TITLES[i]["id"])
+		var wear := Button.new()
+		wear.flat = true
+		wear.size = Vector2(TITLE_ROW_W, 48.0)
+		wear.focus_mode = Control.FOCUS_NONE
+		wear.pressed.connect(func() -> void:
+			if not titles_got.has(tid):
+				return
+			title_worn = "" if title_worn == tid else tid
+			_save_game()
+			_refresh_titles())
+		row.add_child(wear)
 		# 배지(badge_title, 사장님 선택 A — 핏방울 인장). 딴 것만 밝다(_refresh).
 		var bd := Ui.icon("res://assets/ui/badge_title.png", Vector2(10.0, 10.0), 28.0)
 		row.add_child(bd)
@@ -3904,7 +3963,8 @@ func _refresh_titles() -> void:
 		for c in conds:
 			cond_str += "%s %s   " % ["✓" if TitleDefs.cond_met(c, state) else "─",
 				TitleDefs.cond_text(c)]
-		_title_names[i].text = str(t["name"])
+		_title_names[i].text = str(t["name"]) \
+			+ ("  · 장착" if title_worn == str(t["id"]) else "")
 		_title_conds[i].text = cond_str
 		_title_rewards[i].text = "%s\n+%d" % [TitleDefs.stat_name(str(t["stat"])),
 			int(t["levels"])]
@@ -6528,6 +6588,7 @@ func _shake_combat(amount: float) -> void:
 
 func on_foe_killed(f: Foe) -> void:
 	gold += f.gold
+	_income_acc += f.gold   # 분당 수입 표시(사냥 수입만 — 임무·던전 뭉치는 안 센다)
 	# 미궁 보스는 정수를 안 준다 — 정수는 장비 축의 재화이고 수도꼭지는 본편 보스
 	# 하나다(EXPANSION 6장의 재화 격리). 미궁의 보상은 2단계의 혈정이다.
 	if f.is_boss and not dungeon_on:
@@ -7277,6 +7338,7 @@ func _save_game() -> void:
 	cfg.set_value("run", "dungeon_best", dungeon_best)
 	cfg.set_value("run", "traits", traits)
 	cfg.set_value("run", "titles", titles_got)
+	cfg.set_value("run", "title_worn", title_worn)
 	cfg.set_value("run", "hero_lv", hero_lv)
 	cfg.set_value("run", "hero_exp", hero_exp)
 	cfg.set_value("run", "hero_hp", hero_hp)
@@ -7333,6 +7395,7 @@ func _load_game() -> void:
 		if not TraitDefs.node(str(id)).is_empty():
 			traits[str(id)] = true
 	titles_got = {}
+	title_worn = str(cfg.get_value("run", "title_worn", ""))
 	var saved_titles: Dictionary = cfg.get_value("run", "titles", {})
 	for id in saved_titles:
 		if not TitleDefs.title(str(id)).is_empty():
