@@ -38,6 +38,9 @@ var _attack_dir := ""             # 임팩트 프레임을 그림에서 읽으�
 var _special_dir := ""
 var _sprite: Texture2D = null
 var _anim_t := 0.0
+# 세상이 미는 동안만 걷는다. 몹은 스스로 안 걷는데 걷기 프레임이 늘 돌아서,
+# 영웅과 맞닿아 서 있으면서 제자리 달리기를 했다(사장님: "만나면 가만히 있어야지").
+var _pushed_t := 0.0
 var _flash_t := 0.0
 var _hit_t := 0.0
 var _visual_frozen := false
@@ -149,9 +152,14 @@ func _die() -> void:
 		main.on_foe_killed(self)
 
 
+func notify_pushed() -> void:
+	_pushed_t = 0.12   # 한 프레임 밀림이 걷기 반 걸음쯤 이어지게 — 깜빡임 방지 여유
+
+
 func _process(delta: float) -> void:
 	if not _visual_frozen:
 		_anim_t += delta
+		_pushed_t = maxf(0.0, _pushed_t - delta)
 		_hit_t = maxf(0.0, _hit_t - delta)
 		if _flash_t > 0.0:
 			_flash_t -= delta
@@ -487,7 +495,10 @@ func _draw() -> void:
 			frames.size() - 1)
 		tex = frames[attack_i]
 	elif not dying and not _walk_frames.is_empty():
-		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()]
+		# 밀리는 중에만 걷는다. 서 있으면 첫 프레임(선 자세)에 고정 —
+		# 맞닿은 순간 멈추는 것이 "붙었다"의 신호다.
+		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()] \
+			if _pushed_t > 0.0 else _walk_frames[0]
 	if tex:
 		# **발밑은 캔버스가 아니라 그림의 아래끝이다.** 캔버스 아래끝을 지면에 붙이면
 		# 그림이 캔버스 안에서 떠 있는 만큼 몹이 공중에 뜬다 — 거미가 그랬다.

@@ -1023,8 +1023,9 @@ func _tick_motion(delta: float) -> void:
 	# 전투 중에는 세상이 안 흐르므로(`_advance_world` 는 전진 구간에서만 돈다) 영웅이
 	# 제 자리에 있으면 화면에서 아무것도 안 움직인다. 모션을 켜는 자리가 여럿이라
 	# **재생을 관리하는 이 한 곳**에서 끊는다.
-	if _motion == "dash" and _phase == "fight" and absf(_dash_to - hero_x) <= 1.0:
-		_play("idle")
+	# (판정은 _tick_dash 로 옮겼다 — "목표점에 닿았나"가 아니라 **실제로 움직였나**를
+	# 본다. 목표점이 흔들리면(_clear_idle·넉백) 닿음 검사가 영영 안 맞아서
+	# 제자리 달리기가 남았다: 사장님 "만나면 가만히 있어야지".)
 	_hero_anim += delta
 	if _hero_frames.size() > 0:
 		var i := int(_hero_anim * _motion_fps())
@@ -5093,6 +5094,11 @@ func _tick_dash(delta: float) -> void:
 	# 여기서 24 로 잡아 버리면 화면 안에서 튀어나온다(실측: -32 로 놨는데 65.7 이 나왔다).
 	hero_x = clampf(hero_x, -float(Grid.SPRITE) if _boss_entry else 24.0,
 		Grid.BG.x - 24.0)
+	# **실제로 안 움직였으면 달리기를 끈다.** 목표점 검사(_dash_to 대 hero_x)는
+	# 목표가 흔들리면(_clear_idle·넉백) 영영 안 맞아서 몹과 맞닿은 채로
+	# 제자리 달리기가 남았다(사장님). 움직임 사실만 본다.
+	if fighting and _motion == "dash" and is_equal_approx(hero_x, was):
+		_play("idle")
 	_hero.position.x = hero_x
 	# **배경은 영웅이 실제로 움직인 만큼만 흐른다**(PARALLAX 주석 참고). 전투 중에는
 	# 안 흘린다 — 결투의 앞뒤 발놀림까지 따라가면 배경이 좌우로 흔들린다.
@@ -5245,6 +5251,7 @@ func _advance_world(dx: float) -> void:
 			continue
 		f.position.x -= dx
 		f.stop_x -= dx
+		f.notify_pushed()   # 밀리는 동안만 걷기 모션이 돈다(Foe._draw)
 	# **바닥에 놓인 것도 같이 밀린다.** 장판(진)은 화면이 아니라 **땅의 한 자리**다 —
 	# 안 밀면 세상이 흐르는데 문양만 화면에 붙어 지면 위를 미끄러진다.
 	for n in get_tree().get_nodes_in_group(WORLD_FX_GROUP):
