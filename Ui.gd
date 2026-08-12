@@ -85,6 +85,11 @@ static func button(text: String, pos: Vector2, size: Vector2,
 	for state in ["hover", "pressed", "focus"]:
 		b.add_theme_stylebox_override(state,
 			_nine("res://assets/ui/btn_hover.png", BTN_ART, 10, 5))
+	# 눌림 반응 — 누르는 동안 살짝 움츠린다. 스타일박스 색만 바뀌면 "눌렸나?"가
+	# 애매하다(사장님: 밋밋함). 트윈 없이 스냅으로 — 픽셀 게임은 스냅이 어울린다.
+	b.pivot_offset = Grid.pxv(size) * 0.5
+	b.button_down.connect(func() -> void: b.scale = Vector2(0.93, 0.93))
+	b.button_up.connect(func() -> void: b.scale = Vector2.ONE)
 	return b
 
 

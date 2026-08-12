@@ -291,9 +291,8 @@ var _hud: CanvasLayer
 var _hud_root: Control   # 테마가 걸린 실제 부모
 var _lbl_stage: Label
 var _lbl_gold: Label
-var _lbl_essence: Label
+var _lbl_essence: Label   # 장비 탭의 정수 잔액 — 상단바에서 내려왔다(레퍼런스 방식)
 var _lbl_gem: Label
-var _lbl_crystal: Label
 var _lbl_prog: Label
 var _lbl_power: Label
 var _lbl_hero: Label
@@ -1145,11 +1144,14 @@ func _build_topbar() -> void:
 	# 끄면 되고, 아이콘만 남거나 빈 판이 뜨는 일이 없다.
 	# **아이콘 세 개가 헷갈리기 쉽다.** items/gem(흰 다이아)은 정수고, 보석은
 	# ui/res_gem(보라)다. 가이드 보상과 보상 창이 보석에 흰 다이아를 쓰고 있었다.
+	#
+	# 상단에는 **핵심 2개만**(레퍼런스) — 혈액(상시 소비)과 보석(소환). 넷을 다
+	# 올리면 알약이 초상화까지 밀고 들어가 끝이 잘렸다(사장님 캡처). 정수는 장비
+	# 탭에서만 쓰니 그 탭에 두고, 혈정은 미궁 탭·혈맥 창이 이미 보여 준다 —
+	# 재화는 **쓰는 곳에** 두는 게 레퍼런스 방식이다.
 	var currencies := [
 		["res://assets/ui/res_blood.png", Color(1.0, 0.45, 0.45)],   # 혈액
-		["res://assets/items/gem.png", Color(0.74, 0.84, 1.0)],      # 정수
 		["res://assets/ui/res_gem.png", Color(0.88, 0.74, 1.0)],     # 보석
-		["res://assets/ui/res_crystal.png", Color(1.0, 0.55, 0.62)], # 혈정 (미궁)
 	]
 	var labels: Array[Label] = []
 	_currency_pills.clear()
@@ -1171,9 +1173,7 @@ func _build_topbar() -> void:
 		pill.add_child(label)
 		labels.append(label)
 	_lbl_gold = labels[0]
-	_lbl_essence = labels[1]
-	_lbl_gem = labels[2]
-	_lbl_crystal = labels[3]
+	_lbl_gem = labels[1]
 	# ── 가운데: 막이름 + 단계 -> 진행바. 한 덩어리로 **화면 가운데에** 붙인다.
 	# 예전엔 초상화 오른쪽(148)부터 남는 폭을 다 썼는데, 그러면 덩어리 가운데가
 	# 352 라 화면 가운데(288)에서 64px 오른쪽으로 밀려 있었다(사장님 지적).
@@ -1447,7 +1447,7 @@ const PAD := 26.0   # 패널 테두리(Ui.PANEL_MARGIN=12)보다 넉넉히 안�
 const PANEL_W := 576.0
 const PANEL_H := 384.0
 const CONTENT_W := PANEL_W - PAD * 2.0    # 528
-const CONTENT_BOTTOM := PANEL_H - PAD     # 296
+const CONTENT_BOTTOM := PANEL_H - PAD     # 358
 
 
 func _build_panels() -> void:
@@ -1573,6 +1573,16 @@ var _trait_btns := {}
 var _trait_head: Label
 
 
+# 노드 종류 → 아이콘. 스탯 창이 쓰는 그림을 그대로 빌린다 — 같은 능력치는
+# 어느 창에서든 같은 그림이어야 배우는 값이 한 번이다.
+const TRAIT_ICON := {"attack": "stat_damage", "critdmg": "stat_critdmg",
+	"skill": "summon_skill", "hp": "stat_tough", "regen": "stat_regen",
+	"guard": "summon_armor", "gold": "res_blood", "hours": "stat_sleep",
+	"sweep": "res_crystal"}
+const BRANCH_ICON := {"attack": "stat_damage", "life": "stat_tough",
+	"wealth": "res_blood"}
+
+
 func _build_trait_view(root: Control) -> void:
 	_trait_view = Control.new()
 	_trait_view.size = Vector2(PANEL_W, PANEL_H)
@@ -1580,24 +1590,36 @@ func _build_trait_view(root: Control) -> void:
 	_trait_view.visible = false
 	root.add_child(_trait_view)
 	var top := PAD + 38.0
-	_trait_head = _panel_label(_trait_view, Vector2(PAD, top), Type.SIZE_SMALL,
-		Color(1.0, 0.55, 0.62), CONTENT_W, 20.0)
-	_trait_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 혈정 잔액 칸 — 가운데 하나
+	_trait_view.add_child(Ui.currency_bar(Vector2(PAD + CONTENT_W / 2.0 - 80.0, top),
+		Vector2(160.0, 26.0)))
+	_trait_view.add_child(Ui.icon("res://assets/ui/res_crystal.png",
+		Vector2(PAD + CONTENT_W / 2.0 - 72.0, top + 3.0), 20.0))
+	_trait_head = _panel_label(_trait_view, Vector2(PAD + CONTENT_W / 2.0 - 46.0, top),
+		Type.SIZE_SMALL, Color(1.0, 0.55, 0.62), 118.0, 26.0)
 	var col_gap := 10.0
 	var col_w := (CONTENT_W - col_gap * 2.0) / 3.0
 	for b in TraitDefs.BRANCHES.size():
 		var branch: String = TraitDefs.BRANCHES[b]
 		var x := PAD + float(b) * (col_w + col_gap)
-		var head := _panel_label(_trait_view, Vector2(x, top + 22.0),
-			Type.SIZE_SMALL, Color(0.88, 0.78, 0.82), col_w, 20.0)
-		head.text = "%s · 미궁 %d층" % [str(TraitDefs.BRANCH_NAMES[branch]),
+		# 가지 판 + 이름표(card_tab) — 판이 세로줄을 그어 줘서 "위에서 아래" 순서가
+		# 글 없이 읽힌다.
+		_trait_view.add_child(Ui.card(Vector2(x, top + 30.0),
+			Vector2(col_w, CONTENT_BOTTOM - top - 30.0)))
+		_trait_view.add_child(Ui.card_tab(Vector2(x + 10.0, top + 24.0),
+			Vector2(col_w - 20.0, 24.0)))
+		_trait_view.add_child(Ui.icon("res://assets/ui/%s.png" % BRANCH_ICON[branch],
+			Vector2(x + 18.0, top + 28.0), 16.0))
+		var head := _panel_label(_trait_view, Vector2(x + 38.0, top + 24.0),
+			Type.SIZE_SMALL, Color(0.92, 0.84, 0.86), col_w - 48.0, 24.0)
+		head.text = "%s · %d층" % [str(TraitDefs.BRANCH_NAMES[branch]),
 			TraitDefs.branch_floor(branch)]
-		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var nodes := TraitDefs.nodes_of(branch)
 		for i in nodes.size():
 			var id := str(nodes[i]["id"])
-			var nb := Ui.button("", Vector2(x, top + 46.0 + float(i) * 34.0),
-				Vector2(col_w, 32.0), Type.SIZE_SMALL)
+			var nb := Ui.button("", Vector2(x + 5.0, top + 56.0 + float(i) * 39.0),
+				Vector2(col_w - 10.0, 34.0), Type.SIZE_SMALL)
+			Ui.cost_icon(nb, "res://assets/ui/%s.png" % TRAIT_ICON[str(nodes[i]["kind"])], 16)
 			nb.pressed.connect(func() -> void: _buy_trait(id))
 			_trait_view.add_child(nb)
 			_trait_btns[id] = nb
@@ -1606,8 +1628,7 @@ func _build_trait_view(root: Control) -> void:
 func _refresh_traits() -> void:
 	if _trait_view == null:
 		return
-	_trait_head.text = "혈정 %s — 노드는 위에서 아래로, 가지는 미궁 층이 연다" \
-		% _n(crystal)
+	_trait_head.text = _n(crystal)
 	for id in _trait_btns:
 		var n := TraitDefs.node(str(id))
 		var b: Button = _trait_btns[id]
@@ -1616,31 +1637,33 @@ func _refresh_traits() -> void:
 		# 정작 "몇 %인지·얼마인지"가 안 보였다(실측). 이름은 표(TraitDefs)의 것이고
 		# 화면의 일은 고르게 하는 것이다.
 		var eff := _trait_effect_text(n)
+		# 두 줄 — 효과 위, 비용/사유 아래. 한 줄에 붙이면 열 폭(169px)에서 비용이
+		# 잘렸다(실측). 잘린 가격은 거짓말이다.
 		if reason == "보유":
 			b.text = "%s  ✓" % eff
 			b.disabled = true
 		elif reason != "":
-			b.text = "%s — %s" % [eff, reason]
+			b.text = "%s\n%s" % [eff, reason]
 			b.disabled = true
 		else:
 			var c := TraitDefs.cost(int(n["tier"]))
-			# 비용은 _n 으로 줄인다 — "1950" 이 폭에 잘려 "195" 로 보이는 것보다
-			# "2.0K" 가 낫다. 잘린 가격은 거짓말이다.
-			b.text = "%s — %s" % [eff, _n(c)]
+			b.text = "%s\n%s" % [eff, _n(c)]
 			b.disabled = crystal < c
 
 
+# 이름은 짧게 — 버튼에 아이콘이 종류를 말해 주니 글은 수치와 비용에 자리를 준다.
+# "치명 피해 +15% — 2.0K" 는 열 폭에서 비용이 잘렸다(실측). 잘린 가격은 거짓말이다.
 static func _trait_effect_text(n: Dictionary) -> String:
 	var v := float(n["value"])
 	match str(n["kind"]):
 		"attack": return "공격 +%d%%" % int(v * 100.0)
-		"critdmg": return "치명 피해 +%d%%" % int(v * 100.0)
-		"skill": return "스킬 피해 +%d%%" % int(v * 100.0)
+		"critdmg": return "치명 +%d%%" % int(v * 100.0)
+		"skill": return "스킬 +%d%%" % int(v * 100.0)
 		"hp": return "체력 +%d%%" % int(v * 100.0)
 		"regen": return "회복 +%d%%" % int(v * 100.0)
-		"guard": return "받는 피해 -%d%%" % int(v * 100.0)
+		"guard": return "피해 -%d%%" % int(v * 100.0)
 		"gold": return "혈액 +%d%%" % int(v * 100.0)
-		"hours": return "방치 상한 +%d시간" % int(v)
+		"hours": return "방치 +%d시간" % int(v)
 		"sweep": return "소탕 +%d%%" % int(v * 100.0)
 	return ""
 
@@ -2117,6 +2140,17 @@ func _build_gear(root: Control) -> void:
 		b.pressed.connect(func() -> void: _enhance(slot))
 		_gear_equipped_view.add_child(b)
 		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl, "btn": b}
+	# 정수 잔액 — 정수를 쓰는 화면이 여기다(강화). 상단바에서 내려왔다: 상단은
+	# 핵심 2개(혈액·보석)만 남기고, 재화는 쓰는 곳에 둔다(레퍼런스 방식).
+	var ep := Ui.pill(Vector2(PAD + CONTENT_W * 0.5 - 70.0, 252.0),
+		Vector2(140.0, PILL_H))
+	_gear_equipped_view.add_child(ep)
+	ep.add_child(Ui.icon("res://assets/items/gem.png",
+		Vector2(-PILL_ICON_OUT, (PILL_H - PILL_ICON) * 0.5), PILL_ICON))
+	var ex := PILL_ICON - PILL_ICON_OUT + 4.0
+	_lbl_essence = _panel_label(ep, Vector2(ex, 0.0), Type.SIZE_SMALL,
+		Color(0.74, 0.84, 1.0), 140.0 - ex - 10.0, PILL_H)
+	_lbl_essence.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_gear_inventory_view = Control.new()
 	_gear_inventory_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_inventory_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2711,7 +2745,8 @@ func _synthesize(old_key: String) -> String:
 
 func _refresh_gear_slots() -> void:
 	if _lbl_essence:
-		_lbl_essence.text = "정수  %s" % _n(essence)
+		# 아이콘이 바로 옆이라 이름은 중복이다(상단바와 같은 규칙).
+		_lbl_essence.text = _n(essence)
 	for slot in _gear_slots.keys():
 		var item: Dictionary = equipped.get(slot, {})
 		var nodes: Dictionary = _gear_slots[slot]
@@ -3772,8 +3807,17 @@ const STATUS_ROW_H := 28.0
 
 # ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
 var _title_view: Control
-var _title_rows: Array[Label] = []
+var _title_head: Label
+var _title_names: Array[Label] = []
+var _title_conds: Array[Label] = []
+var _title_rewards: Array[Label] = []
+var _title_reward_icons: Array[TextureRect] = []
 var _title_badges: Array[TextureRect] = []
+
+# 칭호 보상 스탯 → 아이콘 (스탯 창과 같은 그림).
+const TITLE_STAT_ICON := {"damage": "stat_damage", "speed": "stat_speed",
+	"tough": "stat_tough", "gold": "res_blood"}
+const TITLE_ROW_W := CONTENT_W - Ui.SCROLL_W - 4.0
 
 
 func _build_titles(root: Control) -> void:
@@ -3786,41 +3830,42 @@ func _build_titles(root: Control) -> void:
 	back.position = Vector2(PAD * 0.5, PAD * 0.5)
 	back.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
 	_title_view.add_child(back)
-	var head := _panel_label(_title_view, Vector2(PAD, PAD), Type.SIZE_BODY,
+	_title_head = _panel_label(_title_view, Vector2(PAD, PAD), Type.SIZE_BODY,
 		Color(0.92, 0.82, 0.62), CONTENT_W, 28.0)
-	head.text = "칭호 — 조건 둘을 채우면 스스로 딴다"
 	var sc := Ui.scroll(Vector2(PAD, PAD + 36.0),
 		Vector2(CONTENT_W, CONTENT_BOTTOM - PAD - 36.0))
 	_title_view.add_child(sc)
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 2)
+	col.add_theme_constant_override("separation", 4)
 	col.custom_minimum_size.x = CONTENT_W - Ui.SCROLL_W
 	sc.add_child(col)
 	for i in TitleDefs.TITLES.size():
-		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", 8)
-		col.add_child(line)
+		# 한 칭호 = 카드 한 장. 배지 · 이름 · 조건 둘 · 오른쪽에 보상 아이콘+수치.
+		var row := Control.new()
+		row.custom_minimum_size = Vector2(TITLE_ROW_W, 48.0)
+		col.add_child(row)
+		row.add_child(Ui.card(Vector2.ZERO, Vector2(TITLE_ROW_W, 48.0)))
 		# 배지(badge_title, 사장님 선택 A — 핏방울 인장). 딴 것만 밝다(_refresh).
-		var bd := TextureRect.new()
-		bd.texture = Assets.tex("res://assets/ui/badge_title.png")
-		bd.custom_minimum_size = Vector2(28.0, 28.0)
-		bd.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		bd.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		line.add_child(bd)
+		var bd := Ui.icon("res://assets/ui/badge_title.png", Vector2(10.0, 10.0), 28.0)
+		row.add_child(bd)
 		_title_badges.append(bd)
-		var row := Label.new()
-		row.add_theme_font_size_override("font_size", Type.SIZE_SMALL)
-		row.add_theme_color_override("font_color", Color(0.72, 0.70, 0.76))
-		row.add_theme_constant_override("outline_size", 4)
-		row.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.05, 0.95))
-		row.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W - 36.0, 44.0)
-		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		line.add_child(row)
-		_title_rows.append(row)
+		_title_names.append(_panel_label(row, Vector2(46.0, 7.0), Type.SIZE_SMALL,
+			Color(0.92, 0.82, 0.62), TITLE_ROW_W - 150.0, 16.0))
+		_title_conds.append(_panel_label(row, Vector2(46.0, 26.0), Type.SIZE_SMALL,
+			Color(0.62, 0.60, 0.68), TITLE_ROW_W - 150.0, 16.0))
+		var ri := Ui.icon("res://assets/ui/stat_damage.png",
+			Vector2(TITLE_ROW_W - 96.0, 14.0), 20.0)
+		row.add_child(ri)
+		_title_reward_icons.append(ri)
+		_title_rewards.append(_panel_label(row, Vector2(TITLE_ROW_W - 72.0, 7.0),
+			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 66.0, 34.0))
 
 
 func _refresh_titles() -> void:
 	var state := _title_state()
+	# 긴 설명("조건 둘을 채우면 스스로 딴다")은 SIZE_BODY 폭에서 잘렸다(실측) —
+	# 줄마다 ✓/─ 가 이미 그 규칙을 보여 준다.
+	_title_head.text = "칭호 %d / %d" % [titles_got.size(), TitleDefs.TITLES.size()]
 	for i in TitleDefs.TITLES.size():
 		var t: Dictionary = TitleDefs.TITLES[i]
 		var got: bool = titles_got.has(str(t["id"]))
@@ -3829,9 +3874,13 @@ func _refresh_titles() -> void:
 		for c in conds:
 			cond_str += "%s %s   " % ["✓" if TitleDefs.cond_met(c, state) else "─",
 				TitleDefs.cond_text(c)]
-		_title_rows[i].text = "%s — %s +%d\n%s" % [str(t["name"]),
-			TitleDefs.stat_name(str(t["stat"])), int(t["levels"]), cond_str]
-		_title_rows[i].add_theme_color_override("font_color",
+		_title_names[i].text = str(t["name"])
+		_title_conds[i].text = cond_str
+		_title_rewards[i].text = "%s\n+%d" % [TitleDefs.stat_name(str(t["stat"])),
+			int(t["levels"])]
+		_title_reward_icons[i].texture = Assets.tex("res://assets/ui/%s.png" \
+			% TITLE_STAT_ICON[str(t["stat"])])
+		_title_names[i].add_theme_color_override("font_color",
 			Color(0.92, 0.82, 0.62) if got else Color(0.62, 0.60, 0.68))
 		if i < _title_badges.size():
 			_title_badges[i].modulate = Color(1, 1, 1) if got \
@@ -4073,34 +4122,30 @@ var _dungeon_sub: Label
 var _dungeon_btn: Button
 var _dungeon_mastery: Array[Label] = []
 var _dungeon_badges: Array[TextureRect] = []
+var _dungeon_chips: Array[Label] = []
 
 
 func _build_dungeon(root: Control) -> void:
-	var title := _panel_label(root, Vector2(PAD, PAD), Type.SIZE_MID,
-		Color(0.92, 0.62, 0.62), CONTENT_W, 28.0)
+	# 머리그림 — 미궁 배경(wide_maze)에서 260x40 을 떠내 2배로 편 판. 전투 화면과
+	# 같은 그림이라 "여기가 그 미궁"이 그림으로 읽힌다. 밝은 벽돌 위 글자는
+	# 외곽선만으로 약해서 얇은 어둠막을 한 장 덮는다.
+	root.add_child(Ui.card(Vector2(PAD - 8.0, PAD - 10.0),
+		Vector2(CONTENT_W + 16.0, 100.0)))
+	root.add_child(Ui.image("res://assets/ui/dungeon_header.png",
+		Vector2(PAD, PAD - 4.0), Vector2(CONTENT_W, 80.0)))
+	var scrim := ColorRect.new()
+	scrim.color = Color(0.03, 0.02, 0.05, 0.42)
+	scrim.position = Vector2(PAD, PAD - 4.0)
+	scrim.size = Vector2(CONTENT_W, 80.0)
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(scrim)
+	var title := _panel_label(root, Vector2(PAD + 12.0, PAD + 4.0), Type.SIZE_MID,
+		Color(0.95, 0.68, 0.68), CONTENT_W - 190.0, 28.0)
 	title.text = "핏빛 미궁"
-	_dungeon_info = _panel_label(root, Vector2(PAD, PAD + 40.0), Type.SIZE_MID,
-		Color(0.88, 0.84, 0.88), CONTENT_W, 26.0)
-	_dungeon_sub = _panel_label(root, Vector2(PAD, PAD + 72.0), Type.SIZE_SMALL,
-		Color(0.72, 0.70, 0.76), CONTENT_W, 48.0)
-	_dungeon_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	# 군림 — 본편 돌파가 자동으로 여는 기능 5개. 창은 미궁 탭을 빌린다:
-	# 교차 잠금의 다른 축들(가지·상한)이 다 이 창에 적혀 있어서 자리가 맞다.
-	var my := PAD + 128.0
-	var mt := _panel_label(root, Vector2(PAD, my), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.45), CONTENT_W, 20.0)
-	mt.text = "군림 — 본편 돌파가 스스로 연다"
-	for i in MasteryDefs.RANKS.size():
-		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
-		var bd := Ui.icon("res://assets/ui/badge_mastery.png",
-			Vector2(PAD, my + 24.0 + float(i) * 22.0), 18.0)
-		root.add_child(bd)
-		_dungeon_badges.append(bd)
-		var row := _panel_label(root, Vector2(PAD + 24.0, my + 24.0 + float(i) * 22.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 24.0, 20.0)
-		_dungeon_mastery.append(row)
-	_dungeon_btn = Ui.button("도전", Vector2(PAD, CONTENT_BOTTOM - 52.0),
-		Vector2(180.0, 48.0), Type.SIZE_MID)
+	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 38.0), Type.SIZE_SMALL,
+		Color(0.92, 0.88, 0.92), CONTENT_W - 190.0, 22.0)
+	_dungeon_btn = Ui.button("도전", Vector2(PAD + CONTENT_W - 162.0, PAD + 14.0),
+		Vector2(150.0, 48.0), Type.SIZE_MID)
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
 			_dungeon_exit("미궁 이탈")
@@ -4108,6 +4153,34 @@ func _build_dungeon(root: Control) -> void:
 			_dungeon_enter()
 		_refresh_dungeon())
 	root.add_child(_dungeon_btn)
+	# 수치 칸 3개 — 최고층(왕관) · 개방층(철문) · 혈정
+	var chip_w := (CONTENT_W - 20.0) / 3.0
+	var chip_icons := ["badge_mastery", "tab_dungeon", "res_crystal"]
+	for i in 3:
+		var x := PAD + float(i) * (chip_w + 10.0)
+		root.add_child(Ui.currency_bar(Vector2(x, 122.0), Vector2(chip_w, 30.0)))
+		root.add_child(Ui.icon("res://assets/ui/%s.png" % chip_icons[i],
+			Vector2(x + 8.0, 127.0), 20.0))
+		_dungeon_chips.append(_panel_label(root, Vector2(x + 34.0, 122.0),
+			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), chip_w - 40.0, 30.0))
+	_dungeon_sub = _panel_label(root, Vector2(PAD, 156.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.76), CONTENT_W, 18.0)
+	# 군림 판 — 본편 돌파가 자동으로 여는 기능 5개. 창은 미궁 탭을 빌린다:
+	# 교차 잠금의 다른 축들(가지·상한)이 다 이 창에 적혀 있어서 자리가 맞다.
+	root.add_child(Ui.card(Vector2(PAD - 8.0, 178.0),
+		Vector2(CONTENT_W + 16.0, CONTENT_BOTTOM - 178.0)))
+	var mt := _panel_label(root, Vector2(PAD + 6.0, 182.0), Type.SIZE_SMALL,
+		Color(1.0, 0.78, 0.45), CONTENT_W, 18.0)
+	mt.text = "군림 — 본편 돌파가 스스로 연다"
+	for i in MasteryDefs.RANKS.size():
+		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
+		var bd := Ui.icon("res://assets/ui/badge_mastery.png",
+			Vector2(PAD + 8.0, 206.0 + float(i) * 28.0), 20.0)
+		root.add_child(bd)
+		_dungeon_badges.append(bd)
+		_dungeon_mastery.append(_panel_label(root,
+			Vector2(PAD + 34.0, 206.0 + float(i) * 28.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 40.0, 20.0))
 	_refresh_dungeon()
 
 
@@ -4125,9 +4198,12 @@ func _refresh_dungeon() -> void:
 			_dungeon_badges[i].modulate = Color(1, 1, 1) if got \
 				else Color(0.4, 0.38, 0.45)
 	var open := DungeonDefs.open_floors(best_stage)
+	_dungeon_chips[0].text = "최고 %d층" % dungeon_best
+	_dungeon_chips[1].text = "개방 %d층" % open
+	_dungeon_chips[2].text = "혈정 %s" % _n(crystal)
 	if open <= 0:
 		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
-		_dungeon_sub.text = "층을 오른 기록이 남고, 그 기록이 다음 성장(혈맥)의 열쇠가 된다"
+		_dungeon_sub.text = "층을 오른 기록이 다음 성장(혈맥)의 열쇠가 된다"
 		_dungeon_btn.text = "잠김"
 		_dungeon_btn.disabled = true
 		return
@@ -4137,22 +4213,38 @@ func _refresh_dungeon() -> void:
 		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 본편으로 돌아온다 — 기록은 남는다"
 		_dungeon_btn.text = "돌아가기"
 		return
-	_dungeon_info.text = "최고 %d층  ·  개방 %d층  ·  혈정 %s" \
-		% [dungeon_best, open, _n(crystal)]
 	var next := clampi(dungeon_best + 1, 1, open)
-	_dungeon_sub.text = "%d층 도전(첫 돌파 혈정 %d) — 본편 %d구간 수준 · 소탕 시간당 %.1f" \
-		% [next, int(DungeonDefs.first_clear_reward(next)), DungeonDefs.eq_stage(next),
-		_sweep_per_hour()]
+	_dungeon_info.text = "다음 %d층 — 본편 %d구간 수준" % [next, DungeonDefs.eq_stage(next)]
+	_dungeon_sub.text = "첫 돌파 혈정 %d  ·  소탕 시간당 %.1f" \
+		% [int(DungeonDefs.first_clear_reward(next)), _sweep_per_hour()]
 	_dungeon_btn.text = "도전"
 
 
 func _select_tab(name: String) -> void:
+	var switched := _tab != name
 	_tab = name
 	for key in _panels.keys():
 		_panels[key].visible = key == name
+	# 창 전환은 **짧게 떠오르며** 나타난다(0.12초). 그냥 바뀌면 밋밋하다(사장님).
+	# 원위치는 meta 에 한 번 적어 둔다 — 연타로 트윈이 겹쳐도 늘 제자리로 수렴한다.
+	if switched:
+		var p: Control = _panels[name]
+		if not p.has_meta("base_y"):
+			p.set_meta("base_y", p.position.y)
+		var base_y: float = p.get_meta("base_y")
+		p.modulate.a = 0.0
+		p.position.y = base_y + 12.0
+		var tw := create_tween().set_parallel()
+		tw.tween_property(p, "modulate:a", 1.0, 0.12)
+		tw.tween_property(p, "position:y", base_y, 0.12) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	for key in _tab_btns.keys():
 		# 선택 안 된 탭은 어둡게. 아이콘이 4개뿐이라 밝기만으로 충분히 읽힌다.
-		_tab_btns[key].modulate = Color(1, 1, 1) if key == name else Color(0.5, 0.5, 0.55)
+		# 고른 탭은 살짝 커진다 — 밝기와 크기, 신호 둘이면 곁눈으로도 읽힌다.
+		var m: Control = _tab_btns[key]
+		m.modulate = Color(1, 1, 1) if key == name else Color(0.5, 0.5, 0.55)
+		m.pivot_offset = m.size * 0.5
+		m.scale = Vector2(1.06, 1.06) if key == name else Vector2.ONE
 	if name == "codex":
 		_refresh_codex()
 	elif name == "summon":
@@ -6500,20 +6592,17 @@ func _notify_power(now: float) -> void:
 # 1단계에서 쓸 수 있는 건 피뿐인데 정수 0 · 보석 0 이 나란히 놓여 있으면
 # "저건 언제 쓰나"가 계속 걸린다. **한 번이라도 얻으면 그때부터 계속 보인다** —
 # 다 쓰고 0이 됐다고 다시 사라지면 그게 더 이상하다.
-var _currency_seen := {"essence": false, "gem": false, "crystal": false}
+var _currency_seen := {"gem": false}
 var _currency_pills: Array[Panel] = []
 
 
 # 잠긴 재화는 알약째로 숨기고, 남은 것을 **오른쪽 끝부터** 다시 붙인다.
 # 자리를 고정해 두면 가운데가 잠겼을 때 그 자리가 빈 구멍으로 남는다.
 func _refresh_currency_visibility() -> void:
-	if _currency_pills.size() < 4:
+	if _currency_pills.size() < 2:
 		return
-	_currency_seen["essence"] = _currency_seen["essence"] or essence > 0.0
 	_currency_seen["gem"] = _currency_seen["gem"] or gem > 0.0
-	_currency_seen["crystal"] = _currency_seen["crystal"] or crystal > 0.0
-	var open := [true, bool(_currency_seen["essence"]), bool(_currency_seen["gem"]),
-		bool(_currency_seen["crystal"])]
+	var open := [true, bool(_currency_seen["gem"])]
 	var x := float(Grid.BG.x) - 8.0
 	for i in range(_currency_pills.size() - 1, -1, -1):
 		_currency_pills[i].visible = open[i]
@@ -6608,9 +6697,7 @@ func _refresh_hud() -> void:
 	# 잘렸다(GearTest 가 잡았다). 아이콘이 바로 왼쪽에 있어서 이름은 중복이다 —
 	# 레퍼런스 방치형들도 아이콘 + 숫자만 쓴다.
 	_lbl_gold.text = _n(gold)
-	_lbl_essence.text = _n(essence)
 	_lbl_gem.text = _n(gem)
-	_lbl_crystal.text = _n(crystal)
 	_refresh_currency_visibility()
 	var power := Balance.combat_power(dps(), max_hp(), regen_per_sec())
 	_lbl_power.text = _n(power)
@@ -6685,9 +6772,7 @@ func _load_game() -> void:
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})
-	_currency_seen["essence"] = bool(seen.get("essence", essence > 0.0))
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))
-	_currency_seen["crystal"] = bool(seen.get("crystal", crystal > 0.0))
 	best_stage = clampi(int(cfg.get_value("run", "best_stage", stage)), stage,
 		StageDefs.total_stages())
 	dungeon_best = clampi(int(cfg.get_value("run", "dungeon_best", 0)), 0,
