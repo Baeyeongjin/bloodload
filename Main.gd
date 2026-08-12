@@ -661,6 +661,14 @@ func _ready() -> void:
 			_quest_bump("kills", 30)
 			quest_wprog = {"kills": 380, "train": 30, "daily": 11, "raid": 2}
 			_quest_set_mode("week" if arg.ends_with("week") else "day")
+		# [개발 도구] --shop : 상점을 연 채로 캡처한다(해금 계단이 다 보이게).
+		if arg == "--shop":
+			best_stage = maxi(best_stage, RaidDefs.open_stage("essence"))
+			dungeon_best = maxi(dungeon_best, 20)
+			gem = maxf(gem, 500.0)
+			shop_used = {}          # 캡처는 오늘 아무것도 안 산 상태로
+			_shop_view.visible = true
+			_refresh_shop()
 		# [개발 도구] --boss[=in] : 주간 보스 판(=in 이면 도전 중)으로 캡처한다.
 		if arg == "--boss" or arg == "--boss=in":
 			_select_tab("raid")
@@ -4920,6 +4928,7 @@ func _claim_wquest(id: String) -> void:
 const QUEST_PANEL := Rect2(24.0, 150.0, 528.0, 560.0)
 const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
 const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세로 줄
+const SHOP_BTN_AT := Vector2(508.0, 264.0)    # 셋째 — 들러서 받는 곳끼리 모은다
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
 # 잘렸다(실측). 잘린 진행도는 거짓말이다.
 const QUEST_BAR_W := 220.0
@@ -4959,6 +4968,19 @@ func _build_quests() -> void:
 	_hud_root.add_child(t_btn)
 	_hud_root.add_child(Ui.icon("res://assets/ui/badge_title.png",
 		TITLE_BTN_AT + Vector2(8.0, 8.0), 40.0))
+	# 상점 — 임무·칭호와 같은 줄. 셋 다 "전투를 멈추지 않고 잠깐 들르는 곳"이다.
+	var s_btn := Button.new()
+	s_btn.flat = true
+	s_btn.position = SHOP_BTN_AT
+	s_btn.size = Vector2(56.0, 56.0)
+	s_btn.focus_mode = Control.FOCUS_NONE
+	s_btn.pressed.connect(func() -> void:
+		_shop_view.visible = not _shop_view.visible
+		if _shop_view.visible:
+			_refresh_shop())
+	_hud_root.add_child(s_btn)
+	_hud_root.add_child(Ui.icon("res://assets/ui/shop.png",
+		SHOP_BTN_AT + Vector2(4.0, 4.0), 48.0))
 	# 판 — 모달 팝업. 뒤가 비치면 어느 숫자가 어느 창 것인지 헷갈린다(불투명 규칙).
 	_quest_view = Control.new()
 	_quest_view.visible = false
@@ -5024,6 +5046,140 @@ func _build_quests() -> void:
 			_claim_wquest(str(q["id"])))
 	_quest_view.add_child(_quest_claim_all)
 	_quest_set_mode("day")
+	_build_shop()
+
+
+# ── 상점 (ShopDefs) — 보석으로 하루 배급을 앞당기는 곳 ──────────────────────
+var shop_date := ""
+var shop_used := {}          # id -> 오늘 산 횟수
+var _shop_view: Control
+var _shop_names: Array[Label] = []
+var _shop_amounts: Array[Label] = []
+var _shop_lefts: Array[Label] = []
+var _shop_buttons: Array[Button] = []
+var _shop_icons: Array[TextureRect] = []
+const SHOP_ROW_H := 78.0
+
+
+func _build_shop() -> void:
+	# 임무·칭호와 **같은 판(QUEST_PANEL) 같은 자리**다 — 옆줄 버튼이 여는 창은
+	# 전부 여기 뜬다(사장님: "일일미션처럼 정가운데").
+	_shop_view = Control.new()
+	_shop_view.size = Vector2(Grid.BG)
+	_shop_view.visible = false
+	_shop_view.z_index = 55
+	_hud_root.add_child(_shop_view)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.02, 0.03, 0.72)
+	dim.size = Vector2(Grid.BG)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_shop_view.add_child(dim)
+	var back := ColorRect.new()
+	back.color = Color(0.055, 0.05, 0.065)
+	back.position = QUEST_PANEL.position
+	back.size = QUEST_PANEL.size
+	_shop_view.add_child(back)
+	_shop_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
+	var x := QUEST_PANEL.position.x + 22.0
+	var w := QUEST_PANEL.size.x - 44.0
+	var head := _panel_label(_shop_view, Vector2(x, QUEST_PANEL.position.y + 16.0),
+		Type.SIZE_BODY, Color(0.92, 0.82, 0.62), w - 100.0, 28.0)
+	head.text = "상점"
+	var close := Ui.button("닫기",
+		Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0),
+		Vector2(88.0, 34.0), Type.SIZE_SMALL)
+	close.pressed.connect(func() -> void: _shop_view.visible = false)
+	_shop_view.add_child(close)
+	for i in ShopDefs.ITEMS.size():
+		var it: Dictionary = ShopDefs.ITEMS[i]
+		var id := str(it["id"])
+		var y := QUEST_PANEL.position.y + 58.0 + float(i) * SHOP_ROW_H
+		var row := Control.new()
+		row.position = Vector2(x, y)
+		_shop_view.add_child(row)
+		row.add_child(Ui.card(Vector2.ZERO, Vector2(w, SHOP_ROW_H - 8.0)))
+		var ic := Ui.icon(str(it["icon"]), Vector2(14.0, 15.0), 40.0)
+		row.add_child(ic)
+		_shop_icons.append(ic)
+		_shop_names.append(_panel_label(row, Vector2(66.0, 8.0), Type.SIZE_SMALL,
+			Color(0.92, 0.82, 0.62), w - 220.0, 18.0))
+		_shop_amounts.append(_panel_label(row, Vector2(66.0, 28.0), Type.SIZE_SMALL,
+			Color(0.95, 0.92, 0.88), w - 220.0, 18.0))
+		_shop_lefts.append(_panel_label(row, Vector2(66.0, 48.0), Type.SIZE_SMALL,
+			Color(0.62, 0.60, 0.68), w - 220.0, 18.0))
+		var buy := Ui.button("", Vector2(w - 140.0, 15.0), Vector2(126.0, 40.0),
+			Type.SIZE_SMALL)
+		buy.pressed.connect(func() -> void: _shop_buy(id))
+		row.add_child(buy)
+		_shop_buttons.append(buy)
+	var note := _panel_label(_shop_view,
+		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 60.0),
+		Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), w, 18.0)
+	note.text = "자정에 새로 온다"
+
+
+func _shop_roll_day() -> void:
+	var today := Time.get_date_string_from_system()
+	if shop_date == today:
+		return
+	shop_date = today
+	shop_used = {}
+
+
+func _shop_left(id: String) -> int:
+	var it := ShopDefs.of(id)
+	return int(it["per_day"]) - int(shop_used.get(id, 0))
+
+
+func _shop_buy(id: String) -> void:
+	var it := ShopDefs.of(id)
+	if it.is_empty() or best_stage < ShopDefs.open_stage(id):
+		return
+	_shop_roll_day()
+	if _shop_left(id) <= 0 or gem < float(it["cost"]):
+		return
+	gem -= float(it["cost"])
+	shop_used[id] = int(shop_used.get(id, 0)) + 1
+	var amt := ShopDefs.amount(id, stage, dungeon_best)
+	match id:
+		"blood": gold += amt
+		"crystal": crystal += amt
+		"essence": essence += amt
+		"sigil": sigil += amt
+		"ticket":
+			# 오늘 표를 **하루 상한 위로** 올린다 — 산 판은 덤이지 상한 안이 아니다.
+			_raid_roll_day()
+			for k in RaidDefs.RAIDS:
+				raid_left[k] = _raid_left(str(k)) + 1
+	# 산 것을 보상창으로 편다 — 지갑 숫자만 바뀌면 눌렀는지 모른다(방치 보상과 같은 길).
+	_show_reward(str(it["name"]), [{"icon": str(it["icon"]),
+		"label": "+1판" if id == "ticket" else _n(amt), "sub": str(it["sub"])}])
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_shop()
+	_refresh_hud()
+
+
+func _refresh_shop() -> void:
+	_shop_roll_day()
+	for i in ShopDefs.ITEMS.size():
+		var it: Dictionary = ShopDefs.ITEMS[i]
+		var id := str(it["id"])
+		var need := ShopDefs.open_stage(id)
+		var locked := best_stage < need
+		var left := _shop_left(id)
+		_shop_names[i].text = str(it["name"])
+		_shop_amounts[i].text = str(it["sub"]) if id == "ticket" \
+			else "%s %s" % [str(it["sub"]),
+				_n(ShopDefs.amount(id, stage, dungeon_best))]
+		_shop_lefts[i].text = "%d구간부터" % need if locked \
+			else "오늘 %d / %d" % [left, int(it["per_day"])]
+		_shop_buttons[i].text = "잠김" if locked else "보석 %d" % int(it["cost"])
+		_shop_buttons[i].disabled = locked or left <= 0 or gem < float(it["cost"])
+		var lit := not locked and left > 0
+		_shop_icons[i].modulate = Color(1, 1, 1) if lit else Color(0.4, 0.38, 0.45)
+		_shop_names[i].add_theme_color_override("font_color",
+			Color(0.92, 0.82, 0.62) if lit else Color(0.62, 0.60, 0.68))
 
 
 # 임무 줄 한 벌 — 일일·주간이 같은 생김새라 짜개는 하나다.
@@ -7952,6 +8108,8 @@ func _save_game() -> void:
 	cfg.set_value("quest", "week", quest_week)
 	cfg.set_value("quest", "wprog", quest_wprog)
 	cfg.set_value("quest", "wgot", quest_wgot)
+	cfg.set_value("shop", "date", shop_date)
+	cfg.set_value("shop", "used", shop_used)
 	cfg.set_value("raid", "best", raid_best)
 	cfg.set_value("raid", "date", raid_date)
 	cfg.set_value("raid", "left", raid_left)
@@ -8077,6 +8235,9 @@ func _load_game() -> void:
 	raid_date = str(cfg.get_value("raid", "date", ""))
 	raid_left = cfg.get_value("raid", "left", {})
 	_raid_roll_day()
+	shop_date = str(cfg.get_value("shop", "date", ""))
+	shop_used = cfg.get_value("shop", "used", {})
+	_shop_roll_day()
 	boss_week = str(cfg.get_value("boss", "week", ""))
 	boss_date = str(cfg.get_value("boss", "date", ""))
 	boss_tries = int(cfg.get_value("boss", "tries", EventDefs.TRIES_PER_DAY))

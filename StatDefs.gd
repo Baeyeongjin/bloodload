@@ -73,7 +73,9 @@ static func lock_reason(key: String, stage: int, levels: Dictionary) -> String:
 		return "%d단계 해금" % int(s["unlock"])
 	var need: Array = s.get("need", [])
 	if need.size() == 2 and int(levels.get(str(need[0]), 1)) < int(need[1]):
-		return "%s Lv%d" % [str(of(str(need[0]))["name"]), int(need[1])]
+		# **"Lv" 를 쓰지 않는다** — 이 블랙레터 폰트에서 "Lv5" 는 "LD5" 로 읽힌다
+		# (화면 실측, 같은 함정을 네 번째 밟았다).
+		return "%s %d레벨" % [str(of(str(need[0]))["name"]), int(need[1])]
 	return ""
 
 
