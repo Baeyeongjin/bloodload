@@ -724,10 +724,13 @@ func _ready() -> void:
 			_show_reward("보상 획득", [{"icon": "res://assets/ui/res_gem.png",
 				"label": "보석 +1.2k", "sub": "가이드 3개"}])
 		# [개발 도구] 방치 보상 상자를 띄운 채로 캡처한다.
-		if arg == "--chest":
+		if arg == "--chest" or arg == "--chest=open":
 			chest_gold = 12480.0
 			chest_minutes = 143.0
+			dungeon_best = 12          # 혈정 줄이 보이게
 			_refresh_chest()
+			if arg.ends_with("open"):
+				_claim_chest()
 		# [개발 도구] 스킬 상세보기를 띄운 채로 캡처한다.
 		# `--skill-detail=field_epic` 처럼 **키를 지정할 수 있다.** 지정 안 하면 보유
 		# 목록의 첫 칸인데, `--skills=N` 이 무작위로 채우므로 매번 다른 스킬이 열려
@@ -1728,7 +1731,9 @@ func _refresh_pact() -> void:
 	_pact_sigil.text = _n(sigil)
 	var st := PactDefs.stars(pact_lv)
 	_pact_stars.text = "%s%s" % ["★".repeat(st), "☆".repeat(PactDefs.STAR_MAX - st)]
-	_pact_level.text = "Lv.%d" % pact_lv
+	# **"Lv." 금지** — 이 블랙레터 폰트에서 "LD" 로 읽힌다(3318줄 주석의 그 함정을
+	# 여기서 다시 밟았다: 화면에 "LD.168" 로 나왔다). 한글 단위가 항상 안전하다.
+	_pact_level.text = "%d레벨" % pact_lv
 	var b := PactDefs.bonus(pact_lv)
 	_pact_eff.text = "공격력 +%d%%  ·  체력 +%d%%\n다음 별까지 %d레벨" \
 		% [int(b * 100.0), int(b * 100.0),
@@ -1750,7 +1755,10 @@ func _refresh_pact() -> void:
 # 가지 3열 x 노드 6줄. 노드 버튼 하나에 이름·효과·비용(또는 잠긴 이유)을 다 적는다 —
 # 왜 안 되는지가 안 보이면 잠긴 축은 없는 축이다(TraitDefs.lock_reason).
 var _trait_view: Control
-var _trait_btns := {}
+var _trait_nodes := {}      # id -> {frame, icon, line}
+var _trait_sel := ""        # 고른 노드 — 상세와 구매가 이 하나를 본다
+var _trait_info: Label
+var _trait_buy: Button
 var _trait_head: Label
 
 
@@ -1764,13 +1772,24 @@ const BRANCH_ICON := {"attack": "stat_damage", "life": "stat_tough",
 	"wealth": "res_blood"}
 
 
+# 혈맥은 **노드 트리**다 (사장님 + 레퍼런스 특성 화면): 가지 3열 x 6단,
+# 노드마다 틀 + 종류 아이콘, 위아래를 선으로 잇는다. 선이 이어진 곳이 "다음"이라
+# 순서가 글 없이 읽히고, 상세(효과·비용)는 고른 노드 하나만 아래 줄에 적는다 —
+# 18칸에 글을 다 적으면 어느 것도 안 읽힌다(이전 화면의 증상).
+# 세로 예산(창 358): 잔액칸 56~82 · 가지머리 82 · 노드 6단 104~330 · 정보줄 320.
+# 40/44 로 잡았더니 정보줄이 화면 밖(364)으로 밀렸다 — 6단이 늘 들어가게 줄인다.
+const TRAIT_NODE := 36.0     # 노드 한 변
+const TRAIT_STEP := 38.0     # 단 사이 간격 (노드 + 선 2px)
+const TRAIT_TOP := 104.0
+
+
 func _build_trait_view(root: Control) -> void:
 	_trait_view = Control.new()
 	_trait_view.size = Vector2(PANEL_W, PANEL_H)
 	_trait_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_trait_view.visible = false
 	root.add_child(_trait_view)
-	var top := PAD + 38.0
+	var top := PAD + 30.0
 	# 혈정 잔액 칸 — 가운데 하나
 	_trait_view.add_child(Ui.currency_bar(Vector2(PAD + CONTENT_W / 2.0 - 80.0, top),
 		Vector2(160.0, 26.0)))
@@ -1778,58 +1797,101 @@ func _build_trait_view(root: Control) -> void:
 		Vector2(PAD + CONTENT_W / 2.0 - 72.0, top + 3.0), 20.0))
 	_trait_head = _panel_label(_trait_view, Vector2(PAD + CONTENT_W / 2.0 - 46.0, top),
 		Type.SIZE_SMALL, Color(1.0, 0.55, 0.62), 118.0, 26.0)
-	var col_gap := 10.0
-	var col_w := (CONTENT_W - col_gap * 2.0) / 3.0
+	var col_w := CONTENT_W / 3.0
 	for b in TraitDefs.BRANCHES.size():
 		var branch: String = TraitDefs.BRANCHES[b]
-		var x := PAD + float(b) * (col_w + col_gap)
-		# 가지 판 + 이름표(card_tab) — 판이 세로줄을 그어 줘서 "위에서 아래" 순서가
-		# 글 없이 읽힌다.
-		_trait_view.add_child(Ui.card(Vector2(x, top + 30.0),
-			Vector2(col_w, CONTENT_BOTTOM - top - 30.0)))
-		_trait_view.add_child(Ui.card_tab(Vector2(x + 10.0, top + 24.0),
-			Vector2(col_w - 20.0, 24.0)))
+		var cx := PAD + col_w * (float(b) + 0.5)
+		# 가지 머리 — 아이콘 + 이름 + 여는 층.
 		_trait_view.add_child(Ui.icon("res://assets/ui/%s.png" % BRANCH_ICON[branch],
-			Vector2(x + 18.0, top + 28.0), 16.0))
-		var head := _panel_label(_trait_view, Vector2(x + 38.0, top + 24.0),
-			Type.SIZE_SMALL, Color(0.92, 0.84, 0.86), col_w - 48.0, 24.0)
-		head.text = "%s · %d층" % [str(TraitDefs.BRANCH_NAMES[branch]),
+			Vector2(cx - 40.0, TRAIT_TOP - 22.0), 18.0))
+		var head := _panel_label(_trait_view, Vector2(cx - 18.0, TRAIT_TOP - 22.0),
+			Type.SIZE_SMALL, Color(0.92, 0.84, 0.86), 74.0, 18.0)
+		head.text = "%s %d층" % [str(TraitDefs.BRANCH_NAMES[branch]),
 			TraitDefs.branch_floor(branch)]
 		var nodes := TraitDefs.nodes_of(branch)
 		for i in nodes.size():
 			var id := str(nodes[i]["id"])
-			var nb := Ui.button("", Vector2(x + 5.0, top + 56.0 + float(i) * 39.0),
-				Vector2(col_w - 10.0, 34.0), Type.SIZE_SMALL)
-			Ui.cost_icon(nb, "res://assets/ui/%s.png" % TRAIT_ICON[str(nodes[i]["kind"])], 16)
-			nb.pressed.connect(func() -> void: _buy_trait(id))
-			_trait_view.add_child(nb)
-			_trait_btns[id] = nb
+			var y := TRAIT_TOP + float(i) * TRAIT_STEP
+			# 잇는 선을 **먼저** 깐다 — 노드 밑으로 들어가야 이어 보인다.
+			var line: ColorRect = null
+			if i > 0:
+				line = ColorRect.new()
+				line.position = Vector2(cx - 2.0, y - (TRAIT_STEP - TRAIT_NODE) - 2.0)
+				line.size = Vector2(4.0, TRAIT_STEP - TRAIT_NODE + 4.0)
+				line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				_trait_view.add_child(line)
+			var at := Vector2(cx - TRAIT_NODE * 0.5, y)
+			var frame := Ui.icon("res://assets/ui/slot_common.png", at, TRAIT_NODE)
+			_trait_view.add_child(frame)
+			var ic := Ui.icon("res://assets/ui/%s.png" % TRAIT_ICON[str(nodes[i]["kind"])],
+				at + Vector2(9.0, 9.0), TRAIT_NODE - 18.0)
+			_trait_view.add_child(ic)
+			var hit := Button.new()
+			hit.flat = true
+			hit.position = at
+			hit.size = Vector2(TRAIT_NODE, TRAIT_NODE)
+			hit.focus_mode = Control.FOCUS_NONE
+			hit.pressed.connect(func() -> void:
+				_trait_sel = id
+				_refresh_traits())
+			_trait_view.add_child(hit)
+			_trait_nodes[id] = {"frame": frame, "icon": ic, "line": line}
+	# 고른 노드 하나의 상세 + 사는 자리. 18칸에 글을 흩는 대신 한 줄에 모은다.
+	var iy := TRAIT_TOP + 6.0 * TRAIT_STEP + 4.0
+	_trait_info = _panel_label(_trait_view, Vector2(PAD, iy), Type.SIZE_SMALL,
+		Color(0.90, 0.86, 0.88), CONTENT_W - 130.0, 34.0)
+	_trait_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_trait_buy = Ui.button("", Vector2(PAD + CONTENT_W - 124.0, iy),
+		Vector2(124.0, 34.0), Type.SIZE_SMALL)
+	Ui.cost_icon(_trait_buy, "res://assets/ui/res_crystal.png", 14)
+	_trait_buy.pressed.connect(func() -> void: _buy_trait(_trait_sel))
+	_trait_view.add_child(_trait_buy)
+	_trait_sel = str(TraitDefs.nodes_of(str(TraitDefs.BRANCHES[0]))[0]["id"])
 
 
 func _refresh_traits() -> void:
 	if _trait_view == null:
 		return
 	_trait_head.text = _n(crystal)
-	for id in _trait_btns:
-		var n := TraitDefs.node(str(id))
-		var b: Button = _trait_btns[id]
+	for id in _trait_nodes:
 		var reason := TraitDefs.lock_reason(str(id), traits, hero_lv, dungeon_best)
-		# 버튼에는 **효과와 비용만** 적는다. 이름까지 넣으면 열 폭(169px)에서 잘려
-		# 정작 "몇 %인지·얼마인지"가 안 보였다(실측). 이름은 표(TraitDefs)의 것이고
-		# 화면의 일은 고르게 하는 것이다.
-		var eff := _trait_effect_text(n)
-		# 두 줄 — 효과 위, 비용/사유 아래. 한 줄에 붙이면 열 폭(169px)에서 비용이
-		# 잘렸다(실측). 잘린 가격은 거짓말이다.
+		var cell: Dictionary = _trait_nodes[id]
+		# 세 상태를 **색으로** 가른다: 보유(금) · 살 수 있음(흰) · 잠김(어둠).
+		# 고른 노드는 한 단계 더 밝다 — 어느 걸 보고 있는지가 보여야 한다.
+		var tone := Color(0.42, 0.40, 0.46)
 		if reason == "보유":
-			b.text = "%s  ✓" % eff
-			b.disabled = true
-		elif reason != "":
-			b.text = "%s\n%s" % [eff, reason]
-			b.disabled = true
-		else:
-			var c := TraitDefs.cost(int(n["tier"]))
-			b.text = "%s\n%s" % [eff, _n(c)]
-			b.disabled = crystal < c
+			tone = Color(1.0, 0.86, 0.52)
+		elif reason == "":
+			tone = Color(0.95, 0.95, 1.0)
+		if str(id) == _trait_sel:
+			tone = tone.lightened(0.25)
+		cell["frame"].modulate = tone
+		cell["icon"].modulate = Color(1, 1, 1) if reason == "보유" or reason == "" 			else Color(0.5, 0.48, 0.54)
+		if cell["line"] != null:
+			# 선은 **앞 노드를 샀는가**를 말한다 — 이어져 있으면 길이 열린 것이다.
+			cell["line"].color = Color(0.22, 0.20, 0.26) if reason == "앞 노드" else Color(0.86, 0.68, 0.32)
+	_refresh_trait_info()
+
+
+func _refresh_trait_info() -> void:
+	if _trait_sel == "":
+		return
+	var n := TraitDefs.node(_trait_sel)
+	if n.is_empty():
+		return
+	var reason := TraitDefs.lock_reason(_trait_sel, traits, hero_lv, dungeon_best)
+	var eff := _trait_effect_text(n)
+	var cost := TraitDefs.cost(int(n["tier"]))
+	_trait_info.text = "%s — %s" % [str(n["name"]), eff]
+	if reason == "보유":
+		_trait_buy.text = "보유"
+		_trait_buy.disabled = true
+	elif reason != "":
+		_trait_buy.text = reason
+		_trait_buy.disabled = true
+	else:
+		_trait_buy.text = _n(cost)
+		_trait_buy.disabled = crystal < cost
 
 
 # 이름은 짧게 — 버튼에 아이콘이 종류를 말해 주니 글은 수치와 비용에 자리를 준다.
@@ -3495,11 +3557,34 @@ func _refresh_chest() -> void:
 	_chest_btn.visible = chest_gold > 0.0
 
 
+# 방치 보상은 **팝업으로 편다** (사장님 + 레퍼런스 "방치 보상" 창): 한 줄
+# 알림으로 흘리면 얼마를 받았는지 남지 않는다. 공용 보상창(_show_reward)을
+# 그대로 쓴다 — 소환·가이드가 이미 쓰는 창이라 새로 그릴 이유가 없다.
+#
+# 담기는 재화는 **자리를 비운 동안 실제로 벌린 것만**이다: 혈액은 상자에,
+# 경험치·혈정은 그 시간의 시세로 같이 친다. 없는 재화는 줄을 안 만든다 —
+# 빈 칸이 늘어선 창은 "많이 받았다"가 아니라 "뭘 못 받았다"로 읽힌다.
 func _claim_chest() -> void:
 	if chest_gold <= 0.0:
 		return
+	var hours := chest_minutes / 60.0
+	# 키는 **"label"** 이다(_show_reward). "text" 로 넣었더니 숫자가 통째로
+	# 안 뜨고 아이콘만 셋 남았다(실측).
+	var entries := [{"icon": "res://assets/ui/res_blood.png",
+		"label": _n(chest_gold), "sub": "혈액"}]
 	gold += chest_gold
-	_notify_stat("관에서 %d분  ·  피 +%s" % [int(chest_minutes), _n(chest_gold)])
+	# 경험치 — 방치 동안 잡은 몫. 접속 중과 같은 시세(절반 효율은 이미 물렸다).
+	var xp := _offline_exp(chest_minutes)
+	if xp > 0.0:
+		_gain_exp(xp)
+		entries.append({"icon": "res://assets/items/gem.png",
+			"label": _n(xp), "sub": "경험치"})
+	# 혈정은 _grant_offline 이 이미 지갑에 넣었다 — 여기서는 **보여만 준다**.
+	# 두 번 주면 소탕이 두 배가 된다.
+	if dungeon_best > 0 and hours > 0.0:
+		entries.append({"icon": "res://assets/ui/res_crystal.png",
+			"label": _n(hours * _sweep_per_hour() * 0.5), "sub": "혈정"})
+	_show_reward("방치 보상 — %d분" % int(chest_minutes), entries)
 	# 상자가 열리는 순간을 눈으로 잡아 준다 — 사라지기만 하면 눌렀는지 모른다.
 	_anim_fx("fx_hit", _chest_btn.position + Vector2(CHEST_BOX * 0.5, CHEST_BOX * 0.5),
 		16.0, 2.0)
@@ -3507,6 +3592,16 @@ func _claim_chest() -> void:
 	chest_minutes = 0.0
 	_refresh_chest()
 	_save_game()
+
+
+# 자리를 비운 동안의 경험치. 처치 수 x 마리당 경험치 — 혈액과 같은 모델이고
+# 절반 효율은 상자에 담을 때 이미 물렸으므로 여기서 또 곱하지 않는다.
+func _offline_exp(minutes: float) -> float:
+	if minutes <= 0.0:
+		return 0.0
+	var profile := _offline_profile(stage)
+	var kill_time := maxf(0.2, float(profile["hp"]) / maxf(0.001, dps()))
+	return (minutes * 60.0 / kill_time) * Balance.exp_per_kill(stage) * 0.5
 
 
 # 상시 가이드 카드.
@@ -3927,8 +4022,10 @@ func _build_codex(root: Control) -> void:
 	var keys := FoeTiers.all_keys()
 	# 지식 합계는 몹 하나가 아니라 도감 전체에 걸린 값이라 맨 위 한 줄에 둔다.
 	# 오른쪽 버튼은 그 합계가 실제로 무슨 능력치가 됐는지 펼쳐 본다.
+	# 버튼이 **둘**이다(칭호 100 + 능력치 100 + 사이 8) — 108 만 비우면 머리글이
+	# 그 밑으로 파고들어 잘린다(실측: "다음까지" 가 칭호 버튼에 먹혔다).
 	_codex_summary = _panel_label(root, Vector2(PAD, PAD), Type.SIZE_SMALL,
-		Color(0.82, 0.88, 0.72), CONTENT_W - 108.0, CODEX_HEAD_H)
+		Color(0.82, 0.88, 0.72), CONTENT_W - 216.0, CODEX_HEAD_H)
 	_codex_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var status_btn := Ui.button("능력치", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
 		Vector2(100.0, 36.0), Type.SIZE_SMALL)
@@ -3981,7 +4078,9 @@ func _build_codex(root: Control) -> void:
 	for k in ["name", "lv", "effect", "next"]:
 		_codex_detail[k].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_codex_detail[k].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var bar := Ui.bar(Vector2(dx, bar_y), dw, Color(0.62, 0.32, 0.72))
+	# 채움은 **피 계열**로. 보라(0.62,0.32,0.72)는 이 게임 어디에도 없는 색이라
+	# 도감만 다른 게임처럼 보였다(사장님 지적).
+	var bar := Ui.bar(Vector2(dx, bar_y), dw, Color(0.72, 0.16, 0.20))
 	root.add_child(bar)
 	_codex_detail["bar"] = bar
 	_codex_selected = str(keys[0])
@@ -4222,10 +4321,12 @@ func _codex_row(key: String) -> Control:
 	var ic := Ui.icon(FoeTiers.sprite_of(key), Vector2(6.0, 4.0 + _sprite_drop(key)),
 		CODEX_ICON)
 	row.add_child(ic)
-	var lv := _panel_label(row, Vector2(CODEX_ICON + 10.0, 6.0), Type.SIZE_SMALL,
-		Color(1.0, 0.86, 0.52), w - CODEX_ICON - 14.0, 24.0)
-	var cnt := _panel_label(row, Vector2(CODEX_ICON + 10.0, 32.0), Type.SIZE_SMALL,
-		Color(0.68, 0.68, 0.74), w - CODEX_ICON - 14.0, 24.0)
+	# 두 줄(숙련 / 처치 수)을 아이콘 오른쪽에 **세로 가운데로 모은다.** 6/32 로
+	# 벌려 놨더니 좁은 칸(112px)에서 위아래로 흩어져 스크롤바 옆에 뭉쳐 보였다.
+	var lv := _panel_label(row, Vector2(CODEX_ICON + 10.0, 10.0), Type.SIZE_SMALL,
+		Color(1.0, 0.86, 0.52), w - CODEX_ICON - 14.0, 20.0)
+	var cnt := _panel_label(row, Vector2(CODEX_ICON + 10.0, 31.0), Type.SIZE_SMALL,
+		Color(0.68, 0.68, 0.74), w - CODEX_ICON - 14.0, 20.0)
 	var btn := Button.new()
 	btn.flat = true
 	btn.size = Vector2(w, CODEX_ROW_H)
@@ -4272,13 +4373,16 @@ func _refresh_codex() -> void:
 		return
 	# 지금 받고 있는 것과 **다음 칸까지 몇 종 남았나**를 같이 띄운다.
 	# 진도만 보이면 더 모을 이유가 안 생긴다.
-	var parts := ["도감 %d / %d" % [codex_found, FoeTiers.TIERS.size()],
-		"지식 합 %d" % codex_knowledge]
+	# **말을 줄인다.** 버튼 둘을 뺀 폭(312px)에 세 토막을 넣으면 마지막이 잘려
+	# "다" 만 남았다(실측). 자릿수는 그대로 두고 이름만 짧게 — "다음 보상까지"는
+	# 화살표 하나로 읽힌다.
+	var parts := ["도감 %d/%d" % [codex_found, FoeTiers.TIERS.size()],
+		"지식 %d" % codex_knowledge]
 	for r in FoeTiers.CODEX_REWARDS:
 		if int(r["need"]) > codex_knowledge:
-			parts.append("다음 보상까지 %d" % (int(r["need"]) - codex_knowledge))
+			parts.append("다음 %d" % (int(r["need"]) - codex_knowledge))
 			break
-	_codex_summary.text = "  ·  ".join(parts)
+	_codex_summary.text = " · ".join(parts)
 	_refresh_codex_detail()
 	_refresh_status()
 
@@ -4614,8 +4718,10 @@ func _refresh_dungeon() -> void:
 	for i in _dungeon_mastery.size():
 		var r: Dictionary = MasteryDefs.RANKS[i]
 		var got := best_stage > int(r["stage"])
-		_dungeon_mastery[i].text = "%s — %s%s" % [str(r["name"]), str(r["desc"]),
-			"" if got else "  (본편 %d 돌파)" % int(r["stage"])]
+		# 줄이 길어 화면을 꽉 채웠다(사장님: "군림 폰트 좀 더 작게"). 폰트는 이미
+		# 최소(SIZE_SMALL)라 **글을 줄인다** — 이름과 효과만, 조건은 괄호 없이.
+		_dungeon_mastery[i].text = "%s · %s" % [str(r["name"]), str(r["desc"])] 			if got else "%s · %s  (본편 %d)" % [str(r["name"]), str(r["desc"]),
+			int(r["stage"])]
 		_dungeon_mastery[i].add_theme_color_override("font_color",
 			Color(0.92, 0.82, 0.62) if got else Color(0.55, 0.53, 0.6))
 		if i < _dungeon_badges.size():
