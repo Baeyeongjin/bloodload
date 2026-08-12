@@ -95,7 +95,8 @@ static func cond_text(cond: Dictionary) -> String:
 	match str(cond["kind"]):
 		"stage": return "본편 %d 돌파" % n
 		"floor": return "미궁 %d층" % n
-		"hero": return "영웅 Lv%d" % n
+		# "Lv" 금지 — 블랙레터 폰트에서 "LD" 로 읽힌다(Main 3318줄의 그 함정).
+		"hero": return "영웅 %d레벨" % n
 		"kills": return "처치 %s" % ("%d" % n if n < 1000 else "%.0fK" % (n / 1000.0))
 		"species": return "도감 %d종" % n
 		"knowledge": return "지식 %d" % n

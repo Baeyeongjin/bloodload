@@ -4163,46 +4163,47 @@ var _title_badges: Array[TextureRect] = []
 # 칭호 보상 스탯 → 아이콘 (스탯 창과 같은 그림).
 const TITLE_STAT_ICON := {"damage": "stat_damage", "speed": "stat_speed",
 	"tough": "stat_tough", "gold": "res_blood"}
-const TITLE_ROW_W := CONTENT_W - Ui.SCROLL_W - 4.0
+# 임무판과 같은 판(QUEST_PANEL) 안에 산다 — 줄 폭도 그 판 기준이다.
+const TITLE_ROW_W := 528.0 - 44.0 - Ui.SCROLL_W
 
 
 func _build_titles(root: Control) -> void:
-	# **팝업이다 — 도감 패널의 자식이 아니다** (사장님 버그: 칭호 버튼이 전투
-	# 화면 옆줄로 이사한 뒤에도 창이 도감 패널 안에 살아서, 도감 탭이 아니면
-	# 부모째로 숨어 버튼이 헛눌렸다). 패널 자리는 그대로 쓰되 _hud_root 에
-	# 직접 달고, 보상창처럼 화면 전체 어둠막을 깐다.
+	# **임무판과 같은 정가운데 모달이다** (사장님). 판 규격도 QUEST_PANEL 을
+	# 그대로 쓴다 — 옆줄 버튼 둘(임무·칭호)이 여는 창은 같은 자리에 떠야
+	# "여기가 팝업 자리"라는 감이 생긴다. root(도감 패널)는 이제 안 쓴다.
 	_title_view = Control.new()
-	_title_view.size = Vector2(PANEL_W, PANEL_H)
-	_title_view.position = root.position
+	_title_view.size = Vector2(Grid.BG)
 	_title_view.visible = false
 	_title_view.z_index = 55   # 확인·보상창(60·61) 바로 아래, 나머지 전부 위
 	_hud_root.add_child(_title_view)
 	var dim := ColorRect.new()
 	dim.color = Color(0.02, 0.02, 0.03, 0.72)
-	dim.position = -root.position
 	dim.size = Vector2(Grid.BG)
 	# 어둠막이 클릭을 삼킨다 — 팝업이 떠 있는데 뒤 버튼이 눌리면 헷갈린다.
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_title_view.add_child(dim)
 	var back := ColorRect.new()
 	back.color = Color(0.055, 0.05, 0.065)
-	back.position = Vector2(PAD * 0.5, PAD * 0.5)
-	back.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
+	back.position = QUEST_PANEL.position
+	back.size = QUEST_PANEL.size
 	_title_view.add_child(back)
-	_title_head = _panel_label(_title_view, Vector2(PAD, PAD), Type.SIZE_BODY,
-		Color(0.92, 0.82, 0.62), CONTENT_W - 108.0, 28.0)
-	# **닫기.** 없어서 칭호 창에 들어가면 못 나왔다(사장님 2026-08-12) — 능력치
-	# 창과 같은 자리에 둔다(두 창이 같은 버튼 줄에서 열리므로 나가는 문도 같은 자리).
-	var t_close := Ui.button("닫기", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
-		Vector2(100.0, 36.0), Type.SIZE_SMALL)
+	_title_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
+	var tx := QUEST_PANEL.position.x + 22.0
+	var tw := QUEST_PANEL.size.x - 44.0
+	_title_head = _panel_label(_title_view,
+		Vector2(tx, QUEST_PANEL.position.y + 16.0), Type.SIZE_BODY,
+		Color(0.92, 0.82, 0.62), tw - 100.0, 28.0)
+	var t_close := Ui.button("닫기",
+		Vector2(tx + tw - 88.0, QUEST_PANEL.position.y + 12.0),
+		Vector2(88.0, 34.0), Type.SIZE_SMALL)
 	t_close.pressed.connect(func() -> void: _title_view.visible = false)
 	_title_view.add_child(t_close)
-	var sc := Ui.scroll(Vector2(PAD, PAD + 36.0),
-		Vector2(CONTENT_W, CONTENT_BOTTOM - PAD - 36.0))
+	var sc := Ui.scroll(Vector2(tx, QUEST_PANEL.position.y + 56.0),
+		Vector2(tw, QUEST_PANEL.size.y - 56.0 - 16.0))
 	_title_view.add_child(sc)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
-	col.custom_minimum_size.x = CONTENT_W - Ui.SCROLL_W
+	col.custom_minimum_size.x = tw - Ui.SCROLL_W
 	sc.add_child(col)
 	for i in TitleDefs.TITLES.size():
 		# 한 칭호 = 카드 한 장. 배지 · 이름 · 조건 둘 · 오른쪽에 보상 아이콘+수치.
