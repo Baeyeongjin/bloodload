@@ -951,6 +951,13 @@ func _build_scene() -> void:
 	# 임무판은 맨 나중 — 팝업이라 모든 창 위에 그려져야 한다.
 	_build_quests()
 	_build_dialogs()
+	# 창이 뜰 때의 반응을 **한 곳에서** 건다(사장님: "모든 창들 띄울 때 애니메이션").
+	# `visible` 을 켜는 자리가 34곳이라 호출부마다 넣으면 하나씩 빠진다 — Ui.pop_in
+	# 은 켜지는 순간을 시그널로 잡으므로 여기 목록에만 올리면 된다.
+	for v in [_title_view, _status_view, _quest_view, _rates_view, _bulk_view,
+			_confirm_view, _reward_view]:
+		if v != null:
+			Ui.pop_in(v)
 	_select_tab("growth")
 
 
@@ -4040,7 +4047,13 @@ func _build_titles(root: Control) -> void:
 	back.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
 	_title_view.add_child(back)
 	_title_head = _panel_label(_title_view, Vector2(PAD, PAD), Type.SIZE_BODY,
-		Color(0.92, 0.82, 0.62), CONTENT_W, 28.0)
+		Color(0.92, 0.82, 0.62), CONTENT_W - 108.0, 28.0)
+	# **닫기.** 없어서 칭호 창에 들어가면 못 나왔다(사장님 2026-08-12) — 능력치
+	# 창과 같은 자리에 둔다(두 창이 같은 버튼 줄에서 열리므로 나가는 문도 같은 자리).
+	var t_close := Ui.button("닫기", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
+		Vector2(100.0, 36.0), Type.SIZE_SMALL)
+	t_close.pressed.connect(func() -> void: _title_view.visible = false)
+	_title_view.add_child(t_close)
 	var sc := Ui.scroll(Vector2(PAD, PAD + 36.0),
 		Vector2(CONTENT_W, CONTENT_BOTTOM - PAD - 36.0))
 	_title_view.add_child(sc)
@@ -4783,6 +4796,8 @@ func _build_quests() -> void:
 	# 판 — 모달 팝업. 뒤가 비치면 어느 숫자가 어느 창 것인지 헷갈린다(불투명 규칙).
 	_quest_view = Control.new()
 	_quest_view.visible = false
+	# 크기를 준다 — Ui.pop_in 이 이 크기로 중심을 잡는다(0이면 왼쪽 위에서 커진다).
+	_quest_view.size = Vector2(Grid.BG)
 	_hud_root.add_child(_quest_view)
 	var back := ColorRect.new()
 	back.color = Color(0.055, 0.05, 0.065)

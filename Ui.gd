@@ -475,3 +475,23 @@ static func name_plate(pos: Vector2, size: Vector2) -> NinePatchRect:
 	n.position = pos
 	n.size = size
 	return n
+
+
+# 창이 뜰 때의 반응. **`visible` 을 켜는 자리는 34곳인데 여기 한 곳만 등록하면
+# 전부 걸린다** — 켜지는 순간을 시그널로 잡으므로 호출부는 손대지 않는다
+# (사장님: "모든 창들 띄울 때 애니메이션").
+#
+# 살짝 작게 시작해 튕기며 커진다(TRANS_BACK) — 도트 게임에서 창이 "튀어나오는"
+# 그 반응이고, 0.14초라 연타를 막지 않는다. 닫힘은 안 건드린다: 닫는 건 이미
+# 결과를 본 뒤라 기다릴 이유가 없다.
+static func pop_in(node: Control) -> void:
+	node.visibility_changed.connect(func() -> void:
+		if not node.visible or not node.is_inside_tree():
+			return
+		node.pivot_offset = node.size * 0.5
+		node.modulate.a = 0.0
+		node.scale = Vector2(0.92, 0.92)
+		var tw := node.create_tween().set_parallel()
+		tw.tween_property(node, "modulate:a", 1.0, 0.10)
+		tw.tween_property(node, "scale", Vector2.ONE, 0.16) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
