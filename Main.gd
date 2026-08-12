@@ -1755,8 +1755,9 @@ func _refresh_pact() -> void:
 # 가지 3열 x 노드 6줄. 노드 버튼 하나에 이름·효과·비용(또는 잠긴 이유)을 다 적는다 —
 # 왜 안 되는지가 안 보이면 잠긴 축은 없는 축이다(TraitDefs.lock_reason).
 var _trait_view: Control
-var _trait_nodes := {}      # id -> {frame, icon, line}
-var _trait_sel := ""        # 고른 노드 — 상세와 구매가 이 하나를 본다
+var _trait_nodes := {}                    # id -> {frame, icon}
+var _trait_stems: Array[ColorRect] = []   # 티어 사이 세로 줄기
+var _trait_sel := ""                      # 고른 노드 — 상세와 구매가 이 하나를 본다
 var _trait_info: Label
 var _trait_buy: Button
 var _trait_head: Label
@@ -1772,15 +1773,18 @@ const BRANCH_ICON := {"attack": "stat_damage", "life": "stat_tough",
 	"wealth": "res_blood"}
 
 
-# 혈맥은 **노드 트리**다 (사장님 + 레퍼런스 특성 화면): 가지 3열 x 6단,
-# 노드마다 틀 + 종류 아이콘, 위아래를 선으로 잇는다. 선이 이어진 곳이 "다음"이라
-# 순서가 글 없이 읽히고, 상세(효과·비용)는 고른 노드 하나만 아래 줄에 적는다 —
-# 18칸에 글을 다 적으면 어느 것도 안 읽힌다(이전 화면의 증상).
-# 세로 예산(창 358): 잔액칸 56~82 · 가지머리 82 · 노드 6단 104~330 · 정보줄 320.
-# 40/44 로 잡았더니 정보줄이 화면 밖(364)으로 밀렸다 — 6단이 늘 들어가게 줄인다.
-const TRAIT_NODE := 36.0     # 노드 한 변
-const TRAIT_STEP := 38.0     # 단 사이 간격 (노드 + 선 2px)
-const TRAIT_TOP := 104.0
+# 혈맥은 **한 그루 나무**다 (사장님 2026-08-12: "살육 불사 탐욕을 하나로
+# 통일하고 층에 따라 해방, 좌우 선택에 노드"). 세로 축은 티어 1~6 이고,
+# 같은 티어의 세 가지가 **좌·중·우 선택지**로 놓인다 — 위로 오를수록 미궁
+# 층이 열어 주고, 어느 갈래로 오를지는 고르는 것이다.
+#
+# 3열을 따로 세우던 화면(가지마다 독립 사다리)과 데이터는 같다 — TraitDefs 의
+# branch/tier 를 **읽는 방향만** 바꿨다. 표를 안 건드리므로 예산·잠금 규칙
+# (앞 노드·미궁 층·영웅 레벨)이 그대로 산다.
+const TRAIT_NODE := 34.0
+const TRAIT_STEP := 40.0
+const TRAIT_TOP := 78.0
+const TRAIT_SPREAD := 104.0   # 가운데에서 좌우 노드까지
 
 
 func _build_trait_view(root: Control) -> void:
@@ -1789,42 +1793,45 @@ func _build_trait_view(root: Control) -> void:
 	_trait_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_trait_view.visible = false
 	root.add_child(_trait_view)
-	var top := PAD + 30.0
-	# 혈정 잔액 칸 — 가운데 하나
-	_trait_view.add_child(Ui.currency_bar(Vector2(PAD + CONTENT_W / 2.0 - 80.0, top),
-		Vector2(160.0, 26.0)))
+	# 혈정 잔액 — 위 가운데 하나.
+	var top := PAD + 22.0
+	_trait_view.add_child(Ui.currency_bar(Vector2(PAD + CONTENT_W * 0.5 - 75.0, top),
+		Vector2(150.0, 26.0)))
 	_trait_view.add_child(Ui.icon("res://assets/ui/res_crystal.png",
-		Vector2(PAD + CONTENT_W / 2.0 - 72.0, top + 3.0), 20.0))
-	_trait_head = _panel_label(_trait_view, Vector2(PAD + CONTENT_W / 2.0 - 46.0, top),
-		Type.SIZE_SMALL, Color(1.0, 0.55, 0.62), 118.0, 26.0)
-	var col_w := CONTENT_W / 3.0
-	for b in TraitDefs.BRANCHES.size():
-		var branch: String = TraitDefs.BRANCHES[b]
-		var cx := PAD + col_w * (float(b) + 0.5)
-		# 가지 머리 — 아이콘 + 이름 + 여는 층.
-		_trait_view.add_child(Ui.icon("res://assets/ui/%s.png" % BRANCH_ICON[branch],
-			Vector2(cx - 40.0, TRAIT_TOP - 22.0), 18.0))
-		var head := _panel_label(_trait_view, Vector2(cx - 18.0, TRAIT_TOP - 22.0),
-			Type.SIZE_SMALL, Color(0.92, 0.84, 0.86), 74.0, 18.0)
-		head.text = "%s %d층" % [str(TraitDefs.BRANCH_NAMES[branch]),
-			TraitDefs.branch_floor(branch)]
-		var nodes := TraitDefs.nodes_of(branch)
-		for i in nodes.size():
-			var id := str(nodes[i]["id"])
-			var y := TRAIT_TOP + float(i) * TRAIT_STEP
-			# 잇는 선을 **먼저** 깐다 — 노드 밑으로 들어가야 이어 보인다.
-			var line: ColorRect = null
-			if i > 0:
-				line = ColorRect.new()
-				line.position = Vector2(cx - 2.0, y - (TRAIT_STEP - TRAIT_NODE) - 2.0)
-				line.size = Vector2(4.0, TRAIT_STEP - TRAIT_NODE + 4.0)
-				line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				_trait_view.add_child(line)
-			var at := Vector2(cx - TRAIT_NODE * 0.5, y)
+		Vector2(PAD + CONTENT_W * 0.5 - 67.0, top + 3.0), 20.0))
+	_trait_head = _panel_label(_trait_view, Vector2(PAD + CONTENT_W * 0.5 - 41.0, top),
+		Type.SIZE_SMALL, Color(1.0, 0.55, 0.62), 108.0, 26.0)
+	var cx := PAD + CONTENT_W * 0.5
+	var tiers := 6
+	for t in tiers:
+		var y := TRAIT_TOP + float(t) * TRAIT_STEP
+		# 세로 줄기 — 티어 사이를 잇는다. 가로줄은 그 티어의 세 갈래로 뻗는다.
+		if t > 0:
+			var stem := ColorRect.new()
+			stem.position = Vector2(cx - 2.0, y - (TRAIT_STEP - TRAIT_NODE) - 2.0)
+			stem.size = Vector2(4.0, TRAIT_STEP - TRAIT_NODE + 4.0)
+			stem.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_trait_view.add_child(stem)
+			_trait_stems.append(stem)
+		var arm := ColorRect.new()
+		arm.color = Color(0.22, 0.20, 0.26)
+		arm.position = Vector2(cx - TRAIT_SPREAD, y + TRAIT_NODE * 0.5 - 2.0)
+		arm.size = Vector2(TRAIT_SPREAD * 2.0, 4.0)
+		arm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_trait_view.add_child(arm)
+		for b in TraitDefs.BRANCHES.size():
+			var branch: String = TraitDefs.BRANCHES[b]
+			var nodes := TraitDefs.nodes_of(branch)
+			if t >= nodes.size():
+				continue
+			var id := str(nodes[t]["id"])
+			var nx := cx + (float(b) - 1.0) * TRAIT_SPREAD - TRAIT_NODE * 0.5
+			var at := Vector2(nx, y)
 			var frame := Ui.icon("res://assets/ui/slot_common.png", at, TRAIT_NODE)
 			_trait_view.add_child(frame)
-			var ic := Ui.icon("res://assets/ui/%s.png" % TRAIT_ICON[str(nodes[i]["kind"])],
-				at + Vector2(9.0, 9.0), TRAIT_NODE - 18.0)
+			var ic := Ui.icon("res://assets/ui/%s.png"
+				% TRAIT_ICON[str(nodes[t]["kind"])],
+				at + Vector2(8.0, 8.0), TRAIT_NODE - 16.0)
 			_trait_view.add_child(ic)
 			var hit := Button.new()
 			hit.flat = true
@@ -1835,9 +1842,19 @@ func _build_trait_view(root: Control) -> void:
 				_trait_sel = id
 				_refresh_traits())
 			_trait_view.add_child(hit)
-			_trait_nodes[id] = {"frame": frame, "icon": ic, "line": line}
-	# 고른 노드 하나의 상세 + 사는 자리. 18칸에 글을 흩는 대신 한 줄에 모은다.
-	var iy := TRAIT_TOP + 6.0 * TRAIT_STEP + 4.0
+			_trait_nodes[id] = {"frame": frame, "icon": ic}
+	# 가지 이름은 맨 아래 한 줄에 좌·중·우로 — 어느 열이 무엇인지만 알려 주면 된다.
+	for b in TraitDefs.BRANCHES.size():
+		var branch: String = TraitDefs.BRANCHES[b]
+		var lx := cx + (float(b) - 1.0) * TRAIT_SPREAD - 52.0
+		var bl := _panel_label(_trait_view,
+			Vector2(lx, TRAIT_TOP + float(tiers) * TRAIT_STEP - 2.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), 104.0, 16.0)
+		bl.text = "%s %d층" % [str(TraitDefs.BRANCH_NAMES[branch]),
+			TraitDefs.branch_floor(branch)]
+		bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 고른 노드 하나의 상세 + 사는 자리.
+	var iy := TRAIT_TOP + float(tiers) * TRAIT_STEP + 18.0
 	_trait_info = _panel_label(_trait_view, Vector2(PAD, iy), Type.SIZE_SMALL,
 		Color(0.90, 0.86, 0.88), CONTENT_W - 130.0, 34.0)
 	_trait_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1856,7 +1873,7 @@ func _refresh_traits() -> void:
 	for id in _trait_nodes:
 		var reason := TraitDefs.lock_reason(str(id), traits, hero_lv, dungeon_best)
 		var cell: Dictionary = _trait_nodes[id]
-		# 세 상태를 **색으로** 가른다: 보유(금) · 살 수 있음(흰) · 잠김(어둠).
+		# 세 상태를 색으로 가른다: 보유(금) · 살 수 있음(흰) · 잠김(어둠).
 		# 고른 노드는 한 단계 더 밝다 — 어느 걸 보고 있는지가 보여야 한다.
 		var tone := Color(0.42, 0.40, 0.46)
 		if reason == "보유":
@@ -1867,9 +1884,16 @@ func _refresh_traits() -> void:
 			tone = tone.lightened(0.25)
 		cell["frame"].modulate = tone
 		cell["icon"].modulate = Color(1, 1, 1) if reason == "보유" or reason == "" 			else Color(0.5, 0.48, 0.54)
-		if cell["line"] != null:
-			# 선은 **앞 노드를 샀는가**를 말한다 — 이어져 있으면 길이 열린 것이다.
-			cell["line"].color = Color(0.22, 0.20, 0.26) if reason == "앞 노드" else Color(0.86, 0.68, 0.32)
+	# 줄기는 **그 티어에 산 노드가 있는가**로 색이 갈린다 — 위로 이어졌으면
+	# 그 단은 통과한 것이다(어느 갈래로 갔든).
+	for t in _trait_stems.size():
+		var passed := false
+		for branch in TraitDefs.BRANCHES:
+			var nodes := TraitDefs.nodes_of(str(branch))
+			if t < nodes.size() and traits.has(str(nodes[t]["id"])):
+				passed = true
+				break
+		_trait_stems[t].color = Color(0.86, 0.68, 0.32) if passed 			else Color(0.22, 0.20, 0.26)
 	_refresh_trait_info()
 
 
@@ -1880,9 +1904,7 @@ func _refresh_trait_info() -> void:
 	if n.is_empty():
 		return
 	var reason := TraitDefs.lock_reason(_trait_sel, traits, hero_lv, dungeon_best)
-	var eff := _trait_effect_text(n)
-	var cost := TraitDefs.cost(int(n["tier"]))
-	_trait_info.text = "%s — %s" % [str(n["name"]), eff]
+	_trait_info.text = "%s — %s" % [str(n["name"]), _trait_effect_text(n)]
 	if reason == "보유":
 		_trait_buy.text = "보유"
 		_trait_buy.disabled = true
@@ -1890,6 +1912,7 @@ func _refresh_trait_info() -> void:
 		_trait_buy.text = reason
 		_trait_buy.disabled = true
 	else:
+		var cost := TraitDefs.cost(int(n["tier"]))
 		_trait_buy.text = _n(cost)
 		_trait_buy.disabled = crystal < cost
 
@@ -4022,10 +4045,9 @@ func _build_codex(root: Control) -> void:
 	var keys := FoeTiers.all_keys()
 	# 지식 합계는 몹 하나가 아니라 도감 전체에 걸린 값이라 맨 위 한 줄에 둔다.
 	# 오른쪽 버튼은 그 합계가 실제로 무슨 능력치가 됐는지 펼쳐 본다.
-	# 버튼이 **둘**이다(칭호 100 + 능력치 100 + 사이 8) — 108 만 비우면 머리글이
-	# 그 밑으로 파고들어 잘린다(실측: "다음까지" 가 칭호 버튼에 먹혔다).
+	# 칭호가 빠져 버튼이 하나(능력치)다 — 머리글이 그만큼 넓어졌다.
 	_codex_summary = _panel_label(root, Vector2(PAD, PAD), Type.SIZE_SMALL,
-		Color(0.82, 0.88, 0.72), CONTENT_W - 216.0, CODEX_HEAD_H)
+		Color(0.82, 0.88, 0.72), CONTENT_W - 112.0, CODEX_HEAD_H)
 	_codex_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var status_btn := Ui.button("능력치", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
 		Vector2(100.0, 36.0), Type.SIZE_SMALL)
@@ -4035,16 +4057,10 @@ func _build_codex(root: Control) -> void:
 		if _status_view.visible:
 			_refresh_status())
 	root.add_child(status_btn)
-	# 칭호 — 조건 두 개 짝을 채우면 스스로 딴다(EXPANSION 5장). 도감 탭에 사는
-	# 이유: 조건 대부분이 도감·기록이고, 이 탭이 "모은 것"의 집이다.
-	var title_btn := Ui.button("칭호", Vector2(CONTENT_W + PAD - 208.0, PAD - 6.0),
-		Vector2(100.0, 36.0), Type.SIZE_SMALL)
-	title_btn.pressed.connect(func() -> void:
-		_title_view.visible = not _title_view.visible
-		_status_view.visible = false
-		if _title_view.visible:
-			_refresh_titles())
-	root.add_child(title_btn)
+	# **칭호는 여기서 뺐다** (사장님 2026-08-12): 능력치는 도감의 결산이지만
+	# 칭호는 완전히 다른 계열(본편 돌파·미궁 층·스킬 종수)이라 같은 줄에 두면
+	# 도감 첫 화면이 세 갈래로 갈린다. 임무판처럼 **전투 화면 오른쪽 버튼**으로
+	# 옮겼다(_build_quests 옆) — 도감 탭은 몬스터 도감 하나만 본다.
 
 	var body_y := PAD + CODEX_HEAD_H + 8.0
 	var body_h := CONTENT_BOTTOM - body_y
@@ -4874,6 +4890,7 @@ func _claim_wquest(id: String) -> void:
 # 임무판 팝업 배치 (레퍼런스: 화면 가운데 모달 + 줄마다 진행바).
 const QUEST_PANEL := Rect2(24.0, 150.0, 528.0, 560.0)
 const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
+const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세로 줄
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
 # 잘렸다(실측). 잘린 진행도는 거짓말이다.
 const QUEST_BAR_W := 220.0
@@ -4899,6 +4916,20 @@ func _build_quests() -> void:
 		QUEST_BTN_AT + Vector2(-4.0, -2.0), TAB_DOT)
 	_quest_dot.visible = false
 	_hud_root.add_child(_quest_dot)
+	# **칭호도 같은 줄에 세운다** (사장님: 도감에서 빼고 임무 위쪽에). 임무와
+	# 칭호는 둘 다 "들러서 받는 곳"이라 세로 바로가기 줄에 나란히 두는 게 맞다.
+	var t_btn := Button.new()
+	t_btn.flat = true
+	t_btn.position = TITLE_BTN_AT
+	t_btn.size = Vector2(56.0, 56.0)
+	t_btn.focus_mode = Control.FOCUS_NONE
+	t_btn.pressed.connect(func() -> void:
+		_title_view.visible = not _title_view.visible
+		if _title_view.visible:
+			_refresh_titles())
+	_hud_root.add_child(t_btn)
+	_hud_root.add_child(Ui.icon("res://assets/ui/badge_title.png",
+		TITLE_BTN_AT + Vector2(8.0, 8.0), 40.0))
 	# 판 — 모달 팝업. 뒤가 비치면 어느 숫자가 어느 창 것인지 헷갈린다(불투명 규칙).
 	_quest_view = Control.new()
 	_quest_view.visible = false

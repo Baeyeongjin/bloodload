@@ -23,9 +23,13 @@ func _init() -> void:
 		assert(eq <= StageDefs.total_stages(), "%d층이 본편 밖이다" % f)
 		prev = eq
 	# 개방: 30구간 전 0, 30에 5층, 이후 10구간마다 5층, 상한 100.
-	assert(DungeonDefs.open_floors(29) == 0, "30구간 전인데 열렸다")
-	assert(DungeonDefs.open_floors(30) == 5, "30구간 개방이 5층이 아니다")
-	assert(DungeonDefs.open_floors(40) == 10, "40구간 개방이 10층이 아니다")
+	# **문턱을 숫자로 박지 않는다** — 해금 계단을 옮길 때마다 검사가 깨진다
+	# (2026-08-12 에 30 -> 35 로 옮기며 실제로 깨졌다). 규칙만 본다:
+	# 문턱 전에는 0층, 문턱에서 5층, 10구간마다 5층씩.
+	var open0 := DungeonDefs.OPEN_STAGE
+	assert(DungeonDefs.open_floors(open0 - 1) == 0, "문턱 전인데 열렸다")
+	assert(DungeonDefs.open_floors(open0) == 5, "문턱 개방이 5층이 아니다")
+	assert(DungeonDefs.open_floors(open0 + 10) == 10, "10구간 뒤가 10층이 아니다")
 	assert(DungeonDefs.open_floors(9999) == DungeonDefs.FLOOR_CAP,
 		"개방 상한이 안 걸린다")
 	# 주기: 5층 중간보스, 10층 보스, 겹치지 않는다.

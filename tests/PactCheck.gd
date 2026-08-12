@@ -42,7 +42,7 @@ func _init() -> void:
 	await process_frame
 	# 결백성 — 지난 실행의 저장본 값을 되돌린다.
 	scene.stage = 45
-	scene.best_stage = 45
+	scene.best_stage = 100
 	scene.pact_lv = 0
 	scene.sigil = 0.0
 	scene.raid_best = {"blood": 0, "essence": 0, "pact": 0}
@@ -76,12 +76,13 @@ func _init() -> void:
 	scene._pact_up(1)
 	assert(is_equal_approx(scene.sigil, before), "만렙인데 값을 받았다")
 
-	# 제단 — 40구간 전에는 못 들어간다.
+	# 제단 — 문턱 전에는 못 들어간다. **숫자를 박지 않는다**(해금 계단이 움직인다).
 	scene.pact_lv = 0
-	scene.best_stage = 39
+	var gate := RaidDefs.open_stage("pact")
+	scene.best_stage = gate - 1
 	scene._raid_enter("pact")
-	assert(scene.raid_on == "", "40구간 전인데 제단에 들어갔다")
-	scene.best_stage = 45
+	assert(scene.raid_on == "", "문턱 전인데 제단에 들어갔다")
+	scene.best_stage = gate + 5
 	scene._raid_enter("pact")
 	assert(scene.raid_on == "pact", "제단 입장이 안 됐다")
 	# 격파 — 인장이 들어온다.
