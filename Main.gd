@@ -1463,7 +1463,7 @@ const CONTENT_BOTTOM := PANEL_H - PAD     # 358
 func _build_panels() -> void:
 	# 콘텐츠와 탭바는 별도 판이다. 한 장으로 덮으면 하단 메뉴가 콘텐츠에 붙어 보인다.
 	_hud_root.add_child(Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24)))
-	for name in ["growth", "gear", "summon", "dungeon", "codex"]:
+	for name in ["growth", "gear", "summon", "dungeon", "raid", "codex"]:
 		var c := Control.new()
 		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, PANEL_AT.y))
 		c.size = Grid.uv(PANEL_SIZE.x, PANEL_SIZE.y)
@@ -1474,6 +1474,7 @@ func _build_panels() -> void:
 	_build_gear(_panels["gear"])
 	_build_gacha(_panels["summon"])
 	_build_dungeon(_panels["dungeon"])
+	_build_raids(_panels["raid"])
 	_build_codex(_panels["codex"])
 
 
@@ -4097,13 +4098,16 @@ func _refresh_codex_detail() -> void:
 # 그 자리가 검게 비기만 한다.
 # 일일 임무는 탭이 아니라 **전투 화면 오른쪽 가장자리 버튼**이다(사장님 + 레퍼런스:
 # 오른쪽 세로 원형 바로가기 줄). 탭은 "머무는 곳", 임무판은 "들러서 받는 곳"이다.
+# 미궁과 재화 던전은 탭이 다르다(사장님) — 미궁 = 기록(혈맥·승급의 열쇠),
+# 던전 = 배급(하루 한 번 재화 뭉치). 성격이 다른 걸 한 창에 두면 섞여 읽힌다.
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
 	["summon", "tab_battle", "소환"], ["dungeon", "tab_dungeon", "미궁"],
-	["codex", "tab_codex", "도감"]]
+	["raid", "tab_raid", "던전"], ["codex", "tab_codex", "도감"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
 # 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
-const TAB_DOT_ON := ["growth", "gear", "summon"]
+# 던전은 "오늘 표가 남아 있다"에 켠다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
+const TAB_DOT_ON := ["growth", "gear", "summon", "raid"]
 const TAB_DOT := 18.0
 const TAB_DOT_AT := Vector2(42.0, 2.0)   # 아이콘(48,6)의 왼쪽 위 모서리에 걸친다
 
@@ -4160,7 +4164,6 @@ var _dungeon_chips: Array[Label] = []
 var _raid_info := {}
 var _raid_reward := {}
 var _raid_btn := {}
-var _mastery_view: Control
 
 
 func _build_dungeon(root: Control) -> void:
@@ -4202,30 +4205,51 @@ func _build_dungeon(root: Control) -> void:
 		_dungeon_chips.append(_panel_label(root, Vector2(x + 34.0, 122.0),
 			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), chip_w - 40.0, 30.0))
 	_dungeon_sub = _panel_label(root, Vector2(PAD, 156.0), Type.SIZE_SMALL,
-		Color(0.72, 0.70, 0.76), CONTENT_W - 116.0, 30.0)
-	# 군림은 팝업으로 이사 — 재화 던전 2종이 이 창의 아랫자리를 가져갔다.
-	var mastery_btn := Ui.button("군림", Vector2(PAD + CONTENT_W - 108.0, 150.0),
-		Vector2(108.0, 34.0), Type.SIZE_SMALL)
-	mastery_btn.pressed.connect(func() -> void:
-		_mastery_view.visible = not _mastery_view.visible)
-	root.add_child(mastery_btn)
-	# ── 재화 던전 2종 (RaidDefs) — 참고작의 "재화마다 전용 던전". 하루 한 번 ──
+		Color(0.72, 0.70, 0.76), CONTENT_W, 18.0)
+	# 군림 판 — 본편 돌파가 자동으로 여는 기능 5개. 창은 미궁 탭을 빌린다:
+	# 교차 잠금의 다른 축들(가지·상한)이 다 이 창에 적혀 있어서 자리가 맞다.
+	# (재화 던전이 잠깐 이 자리를 썼다가 제 탭으로 갔다 — 성격이 다르다, 사장님.)
+	root.add_child(Ui.card(Vector2(PAD - 8.0, 178.0),
+		Vector2(CONTENT_W + 16.0, CONTENT_BOTTOM - 178.0)))
+	var mt := _panel_label(root, Vector2(PAD + 6.0, 184.0), Type.SIZE_SMALL,
+		Color(1.0, 0.78, 0.45), CONTENT_W, 18.0)
+	mt.text = "군림 — 본편 돌파가 스스로 연다"
+	for i in MasteryDefs.RANKS.size():
+		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
+		var bd := Ui.icon("res://assets/ui/badge_mastery.png",
+			Vector2(PAD + 8.0, 210.0 + float(i) * 28.0), 20.0)
+		root.add_child(bd)
+		_dungeon_badges.append(bd)
+		_dungeon_mastery.append(_panel_label(root,
+			Vector2(PAD + 34.0, 210.0 + float(i) * 28.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 40.0, 20.0))
+	_refresh_dungeon()
+
+
+# ── 던전 탭 — 재화 던전 2종 (RaidDefs). 참고작 "던전 입구"의 우리 버전 ──────
+func _build_raids(root: Control) -> void:
+	var title := _panel_label(root, Vector2(PAD, PAD), Type.SIZE_MID,
+		Color(0.92, 0.62, 0.62), CONTENT_W, 24.0)
+	title.text = "재화 던전"
+	var sub := _panel_label(root, Vector2(PAD, PAD + 30.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.76), CONTENT_W, 16.0)
+	sub.text = "하루 한 번 — 격파하면 깊은 곳의 시세로 뭉치를 받는다"
 	var kinds := ["blood", "essence"]
 	for i in kinds.size():
 		var kind: String = kinds[i]
-		var y := 190.0 + float(i) * 86.0
-		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 80.0)))
+		var y := 96.0 + float(i) * 118.0
+		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 108.0)))
 		root.add_child(Ui.icon(str(RaidDefs.RAIDS[kind]["icon"]),
-			Vector2(PAD + 12.0, y + 20.0), 40.0))
-		var nm := _panel_label(root, Vector2(PAD + 64.0, y + 12.0), Type.SIZE_MID,
-			Color(0.92, 0.72, 0.72), CONTENT_W - 200.0, 20.0)
+			Vector2(PAD + 14.0, y + 30.0), 48.0))
+		var nm := _panel_label(root, Vector2(PAD + 76.0, y + 16.0), Type.SIZE_MID,
+			Color(0.92, 0.72, 0.72), CONTENT_W - 210.0, 22.0)
 		nm.text = str(RaidDefs.RAIDS[kind]["name"])
-		_raid_info[kind] = _panel_label(root, Vector2(PAD + 64.0, y + 36.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 200.0, 14.0)
-		_raid_reward[kind] = _panel_label(root, Vector2(PAD + 64.0, y + 54.0),
-			Type.SIZE_SMALL, Color(0.88, 0.80, 0.70), CONTENT_W - 200.0, 14.0)
-		var eb := Ui.button("입장", Vector2(PAD + CONTENT_W - 118.0, y + 18.0),
-			Vector2(110.0, 44.0), Type.SIZE_MID)
+		_raid_info[kind] = _panel_label(root, Vector2(PAD + 76.0, y + 46.0),
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 210.0, 16.0)
+		_raid_reward[kind] = _panel_label(root, Vector2(PAD + 76.0, y + 70.0),
+			Type.SIZE_SMALL, Color(0.88, 0.80, 0.70), CONTENT_W - 210.0, 16.0)
+		var eb := Ui.button("입장", Vector2(PAD + CONTENT_W - 122.0, y + 28.0),
+			Vector2(114.0, 50.0), Type.SIZE_MID)
 		eb.pressed.connect(func() -> void:
 			if raid_on == kind:
 				_raid_exit("이탈 — 빈손")
@@ -4234,31 +4258,6 @@ func _build_dungeon(root: Control) -> void:
 			_refresh_dungeon())
 		root.add_child(eb)
 		_raid_btn[kind] = eb
-	# ── 군림 팝업 — 본편 돌파가 자동으로 여는 기능 5개 ─────────────────────
-	_mastery_view = Control.new()
-	_mastery_view.visible = false
-	root.add_child(_mastery_view)
-	var mback := ColorRect.new()
-	mback.color = Color(0.055, 0.05, 0.065)
-	mback.position = Vector2(PAD * 0.5, PAD * 0.5)
-	mback.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
-	_mastery_view.add_child(mback)
-	var mt := _panel_label(_mastery_view, Vector2(PAD, PAD), Type.SIZE_BODY,
-		Color(1.0, 0.78, 0.45), CONTENT_W - 108.0, 28.0)
-	mt.text = "군림 — 본편 돌파가 스스로 연다"
-	var mclose := Ui.button("닫기", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
-		Vector2(100.0, 36.0), Type.SIZE_SMALL)
-	mclose.pressed.connect(func() -> void: _mastery_view.visible = false)
-	_mastery_view.add_child(mclose)
-	for i in MasteryDefs.RANKS.size():
-		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
-		var bd := Ui.icon("res://assets/ui/badge_mastery.png",
-			Vector2(PAD + 8.0, 76.0 + float(i) * 40.0), 24.0)
-		_mastery_view.add_child(bd)
-		_dungeon_badges.append(bd)
-		_dungeon_mastery.append(_panel_label(_mastery_view,
-			Vector2(PAD + 40.0, 76.0 + float(i) * 40.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 46.0, 24.0))
 	_refresh_dungeon()
 
 
@@ -4519,7 +4518,7 @@ func _select_tab(name: String) -> void:
 		_refresh_codex()
 	elif name == "summon":
 		_refresh_gacha()
-	elif name == "dungeon":
+	elif name == "dungeon" or name == "raid":
 		_refresh_dungeon()
 
 
@@ -4546,6 +4545,13 @@ func _tab_todo(tab: String) -> bool:
 				if not (item as Dictionary).is_empty() \
 						and essence >= GearDefs.upgrade_cost(item):
 					return true
+		"raid":
+			# 오늘 표가 남아 있다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
+			if best_stage >= RaidDefs.OPEN_STAGE and raid_on == "" and not dungeon_on:
+				_raid_roll_day()
+				for kind in RaidDefs.RAIDS:
+					if not raid_used.has(kind):
+						return true
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
 				return true
