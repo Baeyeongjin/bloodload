@@ -4167,10 +4167,23 @@ const TITLE_ROW_W := CONTENT_W - Ui.SCROLL_W - 4.0
 
 
 func _build_titles(root: Control) -> void:
+	# **팝업이다 — 도감 패널의 자식이 아니다** (사장님 버그: 칭호 버튼이 전투
+	# 화면 옆줄로 이사한 뒤에도 창이 도감 패널 안에 살아서, 도감 탭이 아니면
+	# 부모째로 숨어 버튼이 헛눌렸다). 패널 자리는 그대로 쓰되 _hud_root 에
+	# 직접 달고, 보상창처럼 화면 전체 어둠막을 깐다.
 	_title_view = Control.new()
 	_title_view.size = Vector2(PANEL_W, PANEL_H)
+	_title_view.position = root.position
 	_title_view.visible = false
-	root.add_child(_title_view)
+	_title_view.z_index = 55   # 확인·보상창(60·61) 바로 아래, 나머지 전부 위
+	_hud_root.add_child(_title_view)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.02, 0.03, 0.72)
+	dim.position = -root.position
+	dim.size = Vector2(Grid.BG)
+	# 어둠막이 클릭을 삼킨다 — 팝업이 떠 있는데 뒤 버튼이 눌리면 헷갈린다.
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_title_view.add_child(dim)
 	var back := ColorRect.new()
 	back.color = Color(0.055, 0.05, 0.065)
 	back.position = Vector2(PAD * 0.5, PAD * 0.5)
@@ -4950,7 +4963,15 @@ func _build_quests() -> void:
 	_quest_view.visible = false
 	# 크기를 준다 — Ui.pop_in 이 이 크기로 중심을 잡는다(0이면 왼쪽 위에서 커진다).
 	_quest_view.size = Vector2(Grid.BG)
+	_quest_view.z_index = 55
 	_hud_root.add_child(_quest_view)
+	# 주변 어둠막 (사장님: "보상 화면처럼") — 판 밖이 훤하면 뒤 창의 글자가
+	# 팝업 줄과 섞여 읽힌다(실측: 능력치 창 숫자가 임무 줄 밑에 비쳤다).
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.02, 0.03, 0.72)
+	dim.size = Vector2(Grid.BG)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_quest_view.add_child(dim)
 	var back := ColorRect.new()
 	back.color = Color(0.055, 0.05, 0.065)
 	back.position = QUEST_PANEL.position
