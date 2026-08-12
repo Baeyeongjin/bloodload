@@ -12,17 +12,18 @@ class_name QuestDefs
 # "all"(마무리 임무)의 need 는 4 다 — 미궁은 본편 30구간이 열어서(교차 잠금)
 # 그 전에는 기본 임무가 4개뿐이다. 4로 두면 미궁 전에도 하루를 닫을 수 있고,
 # 미궁이 열리면 다섯 중 넷이라 여유가 생긴다.
+# 아이콘: 전용판 5종 (2026-08-12 사장님 세트 승인).
 const QUESTS := [
 	{"id": "login", "name": "핏빛 성에 접속", "need": 1,
-		"reward": "gem", "amount": 10, "icon": "res_blood"},
+		"reward": "gem", "amount": 10, "icon": "quest_login"},
 	{"id": "kills", "name": "몬스터 50마리 처치", "need": 50,
-		"reward": "gem", "amount": 15, "icon": "stat_damage"},
+		"reward": "gem", "amount": 15, "icon": "quest_kill"},
 	{"id": "train", "name": "훈련 5회", "need": 5,
-		"reward": "gem", "amount": 10, "icon": "tab_growth"},
+		"reward": "gem", "amount": 10, "icon": "quest_forge"},
 	{"id": "summon", "name": "소환 3회", "need": 3,
-		"reward": "gem", "amount": 10, "icon": "tab_battle"},
+		"reward": "gem", "amount": 10, "icon": "quest_summon"},
 	{"id": "dungeon", "name": "미궁 1층 돌파", "need": 1,
-		"reward": "crystal", "amount": 20, "icon": "tab_dungeon"},
+		"reward": "crystal", "amount": 20, "icon": "quest_maze"},
 	{"id": "all", "name": "임무 4개 완료", "need": 4,
 		"reward": "gem", "amount": 30, "icon": "badge_mastery"},
 ]

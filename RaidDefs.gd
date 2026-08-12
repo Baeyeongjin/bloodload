@@ -21,13 +21,6 @@ const RAIDS := {
 	"essence": {"name": "정수의 성소", "currency": "정수",
 		"icon": "res://assets/ui/raid_essence.png"},
 }
-# 몹 물감 — 던전 전용 배경이 생기기 전까지는 이 색이 "다른 곳"을 읽힌다.
-const TINT := {
-	"blood": Color(1.0, 0.66, 0.66),
-	"essence": Color(0.70, 0.78, 1.0),
-}
-
-
 static func eq_stage(n: int) -> int:
 	return mini(OPEN_STAGE + (n - 1) * STEP_PER_STAGE, StageDefs.total_stages())
 

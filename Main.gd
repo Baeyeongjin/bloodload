@@ -648,6 +648,9 @@ func _ready() -> void:
 			_quest_view.visible = true
 			_quest_bump("kills", 30)
 			_refresh_quests()
+		# [개발 도구] --raid=blood|essence : 재화 던전에 들어간 채로 캡처한다.
+		if arg.begins_with("--raid="):
+			_raid_enter(arg.trim_prefix("--raid="))
 		# [개발 도구] --traits : 혈맥 화면을 연 채로 캡처한다. 잠금 대부분을 풀고
 		# 앞 노드 몇 개를 사 둔 상태 — 보유/구매 가능/잠김 세 상태가 다 보이게.
 		if arg == "--traits":
@@ -2058,9 +2061,13 @@ func _refresh_growth() -> void:
 		if stat_lv(key) >= _stat_cap(key):
 			# 스탯 고유 만렙은 영영 끝, 승급 상한은 미궁이 연다 — 문구가 길을 알려준다.
 			var nf := StatDefs.next_cap_floor(dungeon_best)
-			row["btn"].text = "만렙" if StatDefs.at_cap(key, stat_lv(key)) or nf <= 0 \
-				else "미궁 %d층" % nf
-			row["btn"].icon = null
+			if StatDefs.at_cap(key, stat_lv(key)) or nf <= 0:
+				row["btn"].text = "만렙"
+				row["btn"].icon = null
+			else:
+				# 승급 배지(사장님 선택 A) — 잠긴 게 아니라 "열 수 있는 문"이라는 표시.
+				row["btn"].text = "미궁 %d층" % nf
+				Ui.cost_icon(row["btn"], "res://assets/ui/badge_promo.png")
 			row["btn"].disabled = true
 			continue
 		var cost := _buy_cost(key, _step_for(key))
@@ -6329,9 +6336,6 @@ func _spawn_foe() -> void:
 		tier["name_prefix"] = _c_midboss_prefix() + " "
 	var f := Foe.new()
 	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
-	if raid_on != "":
-		# 던전 전용 배경이 생기기 전까지는 몹 물감이 "다른 곳"을 읽힌다.
-		f.modulate = RaidDefs.TINT[raid_on]
 	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
 	if dungeon_on:
 		f.modulate = DungeonDefs.depth_tint(dungeon_floor)
@@ -6640,9 +6644,14 @@ func _fade(action: Callable) -> void:
 
 func _apply_stage_bg() -> void:
 	var act: Dictionary = _c_act_data()
-	# 미궁 전용 배경(사장님이 후보에서 고르면 이 이름으로 설치한다). 아직 없으면
-	# 등가 구간의 본편 배경으로 떨어진다 — 몹 tint 가 깊이를 대신 읽힌다.
-	var bg_path := "res://assets/bg/wide_maze.png" if dungeon_on else str(act["bg"])
+	# 전용 배경 (사장님 선택: 심층 M1 · 혈액 동굴 C2 · 정수 성소 S2, 2026-08-12).
+	var bg_path := str(act["bg"])
+	if raid_on != "":
+		bg_path = "res://assets/bg/wide_raid_%s.png" % raid_on
+	elif dungeon_on:
+		# 50층부터 심층 — 100층 탑의 뒷 절반. 같은 미궁이 깊어진 티를 그림이 낸다.
+		bg_path = "res://assets/bg/wide_maze_deep.png" if dungeon_floor >= 50 \
+			else "res://assets/bg/wide_maze.png"
 	var t := Assets.tex(bg_path)
 	if t == null:
 		t = Assets.tex(str(act["bg"]))
