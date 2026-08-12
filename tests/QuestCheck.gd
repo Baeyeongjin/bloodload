@@ -34,11 +34,26 @@ func _init() -> void:
 		"마무리 need 가 기본 임무 수(%d)-1 을 넘는다 — 미궁 전 유저는 못 닫는다" % base)
 	assert(int(QuestDefs.fresh_prog().get("login", 0)) >= 1,
 		"새 날인데 접속 임무가 안 차 있다")
-	# 주간 — 하루로는 못 닫고(임무 6개), 한 주(6x7=42) 안에는 닫혀야 한다.
-	assert(QuestDefs.WEEKLY_NEED > QuestDefs.QUESTS.size(),
-		"주간이 하루 만에 닫힌다 — 주간이 아니다")
-	assert(QuestDefs.WEEKLY_NEED <= QuestDefs.QUESTS.size() * 7,
-		"주간을 한 주 안에 못 닫는다")
-	assert(QuestDefs.WEEKLY_GEM > 0.0)
+	# 주간 표 — 일일과 같은 결의 검사 + 한 주 안에 닫히는가.
+	var wseen := {}
+	for q in QuestDefs.WEEKLY:
+		var id := str(q["id"])
+		assert(not wseen.has(id) and not seen.has(id), "id 중복: %s" % id)
+		wseen[id] = true
+		assert(int(q["need"]) > 0 and int(q["amount"]) > 0,
+			"%s: need/amount 가 0 이하다" % id)
+		assert(str(q["reward"]) in ["gem", "crystal"],
+			"%s: 모르는 보상 종류 %s" % [id, str(q["reward"])])
+		assert(FileAccess.file_exists("res://assets/ui/%s.png" % str(q["icon"])),
+			"%s: 아이콘 파일이 없다 — %s" % [id, str(q["icon"])])
+	# 일일 연동 임무: 하루로는 못 닫고(하루 최대 = 일일 임무 수), 한 주면 닫힌다.
+	var wdaily := QuestDefs.wof("wdaily")
+	assert(int(wdaily["need"]) > QuestDefs.QUESTS.size(),
+		"주간 연동이 하루 만에 닫힌다 — 주간이 아니다")
+	assert(int(wdaily["need"]) <= QuestDefs.QUESTS.size() * 7,
+		"주간 연동을 한 주 안에 못 닫는다")
+	# 재화 던전 격파: 하루 2판 x 7일 안에 닫혀야 한다.
+	assert(int(QuestDefs.wof("wraid")["need"]) <= 14,
+		"던전 주간을 한 주 안에 못 닫는다")
 	print("QuestCheck OK")
 	quit()

@@ -644,11 +644,11 @@ func _ready() -> void:
 			_title_view.visible = true
 			_refresh_titles()
 		# [개발 도구] --quest : 일일 임무판을 연 채로 캡처한다.
-		if arg == "--quest":
+		if arg == "--quest" or arg == "--quest=week":
 			_quest_view.visible = true
 			_quest_bump("kills", 30)
-			quest_week_n = 18
-			_refresh_quests()
+			quest_wprog = {"kills": 380, "train": 30, "daily": 11, "raid": 2}
+			_quest_set_mode("week" if arg.ends_with("week") else "day")
 		# [개발 도구] --raid=blood|essence : 재화 던전에 들어간 채로 캡처한다.
 		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
@@ -4339,13 +4339,14 @@ var quest_date := ""
 var quest_prog := {}
 var quest_got := {}
 var quest_week := ""        # 이번 주 열쇠(월요일 날짜)
-var quest_week_n := 0       # 이번 주에 받은 일일 임무 수
-var quest_week_got := false
+var quest_wprog := {}       # 주간 카운터 (kind -> 수)
+var quest_wgot := {}        # 주간 수령 (id -> true)
 var _quest_rows: Array[Dictionary] = []
+var _quest_wrows: Array[Dictionary] = []
+var _quest_day_root: Control
+var _quest_week_root: Control
+var _quest_mode_btns := {}
 var _quest_claim_all: Button
-var _quest_week_prog: Label
-var _quest_week_fill: ColorRect
-var _quest_week_btn: Button
 
 
 # 이번 주의 열쇠 — 가장 가까운 지난 월요일. 날짜만 쓰므로 시간대 경계의 몇 시간
@@ -4361,8 +4362,8 @@ func _quest_roll_day() -> void:
 	var wk := _quest_week_key()
 	if quest_week != wk:
 		quest_week = wk
-		quest_week_n = 0
-		quest_week_got = false
+		quest_wprog = {}
+		quest_wgot = {}
 	var today := Time.get_date_string_from_system()
 	if quest_date == today:
 		return
@@ -4371,9 +4372,12 @@ func _quest_roll_day() -> void:
 	quest_got = {}
 
 
+# 훅 하나가 일일·주간 두 카운터를 같이 올린다 — 훅을 두 벌 심으면 하나를
+# 빠뜨린 자리가 조용히 주간만 안 오른다.
 func _quest_bump(id: String, n := 1) -> void:
 	_quest_roll_day()
 	quest_prog[id] = int(quest_prog.get(id, 0)) + n
+	quest_wprog[id] = int(quest_wprog.get(id, 0)) + n
 
 
 func _quest_count(id: String) -> int:
@@ -4396,7 +4400,8 @@ func _claim_quest(id: String) -> void:
 	if not _quest_claimable(id):
 		return
 	quest_got[id] = true
-	quest_week_n += 1   # 받은 임무 하나 = 주간 게이지 한 칸
+	# 받은 일일 임무 하나 = 주간 연동 임무 한 칸.
+	quest_wprog["daily"] = int(quest_wprog.get("daily", 0)) + 1
 	var q := QuestDefs.of(id)
 	match str(q["reward"]):
 		"gem": gem += float(q["amount"])
@@ -4406,12 +4411,20 @@ func _claim_quest(id: String) -> void:
 	_refresh_quests()
 
 
-func _claim_weekly() -> void:
-	_quest_roll_day()
-	if quest_week_got or quest_week_n < QuestDefs.WEEKLY_NEED:
+func _wquest_claimable(id: String) -> bool:
+	var q := QuestDefs.wof(id)
+	return not quest_wgot.has(id) \
+		and int(quest_wprog.get(str(q["kind"]), 0)) >= int(q["need"])
+
+
+func _claim_wquest(id: String) -> void:
+	if not _wquest_claimable(id):
 		return
-	quest_week_got = true
-	gem += QuestDefs.WEEKLY_GEM
+	quest_wgot[id] = true
+	var q := QuestDefs.wof(id)
+	match str(q["reward"]):
+		"gem": gem += float(q["amount"])
+		"crystal": crystal += float(q["amount"])
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_quests()
@@ -4457,37 +4470,79 @@ func _build_quests() -> void:
 	_quest_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
 	var x := QUEST_PANEL.position.x + 22.0
 	var w := QUEST_PANEL.size.x - 44.0
-	var head := _panel_label(_quest_view, Vector2(x, QUEST_PANEL.position.y + 16.0),
-		Type.SIZE_MID, Color(0.92, 0.62, 0.62), w - 100.0, 24.0)
-	head.text = "일일 임무 — 자정에 새로 온다"
 	var close := Ui.button("닫기",
 		Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0),
 		Vector2(88.0, 34.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _quest_view.visible = false)
 	_quest_view.add_child(close)
-	for i in QuestDefs.QUESTS.size():
-		var q: Dictionary = QuestDefs.QUESTS[i]
+	# [일일] [주간] — 레퍼런스처럼 별도 판이다(사장님). 한 판에 다 쌓으면
+	# "오늘 할 일"과 "이번 주 목표"가 섞여 읽힌다.
+	for i in 2:
+		var mode := "day" if i == 0 else "week"
+		var mb := Ui.button("일일 임무" if i == 0 else "주간 임무",
+			Vector2(x + float(i) * 190.0, QUEST_PANEL.position.y + 12.0),
+			Vector2(180.0, 34.0), Type.SIZE_SMALL)
+		mb.toggle_mode = true
+		mb.pressed.connect(func() -> void: _quest_set_mode(mode))
+		_quest_view.add_child(mb)
+		_quest_mode_btns[mode] = mb
+	_quest_day_root = Control.new()
+	_quest_day_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_quest_view.add_child(_quest_day_root)
+	_quest_week_root = Control.new()
+	_quest_week_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_quest_week_root.visible = false
+	_quest_view.add_child(_quest_week_root)
+	_quest_rows = _quest_build_rows(_quest_day_root, QuestDefs.QUESTS, false)
+	_quest_wrows = _quest_build_rows(_quest_week_root, QuestDefs.WEEKLY, true)
+	var day_note := _panel_label(_quest_day_root,
+		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
+		Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), w, 16.0)
+	day_note.text = "자정에 새로 온다"
+	var week_note := _panel_label(_quest_week_root,
+		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
+		Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), w, 16.0)
+	week_note.text = "월요일마다 새로 온다"
+	_quest_claim_all = Ui.button("일괄 받기",
+		Vector2(x + w * 0.5 - 100.0, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0),
+		Vector2(200.0, 42.0), Type.SIZE_MID)
+	_quest_claim_all.pressed.connect(func() -> void:
+		for q in QuestDefs.QUESTS:
+			_claim_quest(str(q["id"]))
+		for q in QuestDefs.WEEKLY:
+			_claim_wquest(str(q["id"])))
+	_quest_view.add_child(_quest_claim_all)
+	_quest_set_mode("day")
+
+
+# 임무 줄 한 벌 — 일일·주간이 같은 생김새라 짜개는 하나다.
+# 주간 게이지만 금빛 — 어느 판에 있는지 곁눈으로 갈린다.
+func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dictionary]:
+	var x := QUEST_PANEL.position.x + 22.0
+	var w := QUEST_PANEL.size.x - 44.0
+	var rows: Array[Dictionary] = []
+	for i in table.size():
+		var q: Dictionary = table[i]
 		var y := QUEST_PANEL.position.y + 58.0 + float(i) * 56.0
-		_quest_view.add_child(Ui.card(Vector2(x, y), Vector2(w, 50.0)))
-		_quest_view.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
+		root.add_child(Ui.card(Vector2(x, y), Vector2(w, 50.0)))
+		root.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
 			Vector2(x + 10.0, y + 11.0), 28.0))
-		var nm := _panel_label(_quest_view, Vector2(x + 48.0, y + 6.0),
+		var nm := _panel_label(root, Vector2(x + 48.0, y + 6.0),
 			Type.SIZE_SMALL, Color(0.90, 0.86, 0.88), w - 170.0, 16.0)
 		nm.text = str(q["name"])
-		# 진행바 — 레퍼런스처럼 이름 아래 얇은 막대 + 오른쪽 끝에 수치.
 		var track := ColorRect.new()
 		track.color = Color(0.10, 0.09, 0.12)
 		track.position = Vector2(x + 48.0, y + 30.0)
 		track.size = Vector2(QUEST_BAR_W, 8.0)
 		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_quest_view.add_child(track)
+		root.add_child(track)
 		var fill := ColorRect.new()
-		fill.color = Color(0.72, 0.16, 0.20)
+		fill.color = Color(0.88, 0.66, 0.30) if weekly else Color(0.72, 0.16, 0.20)
 		fill.position = track.position
 		fill.size = Vector2(0.0, 8.0)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_quest_view.add_child(fill)
-		var pr := _panel_label(_quest_view,
+		root.add_child(fill)
+		var pr := _panel_label(root,
 			Vector2(x + 48.0 + QUEST_BAR_W + 8.0, y + 24.0), Type.SIZE_SMALL,
 			Color(0.62, 0.60, 0.68), 90.0, 20.0)
 		var qid := str(q["id"])
@@ -4495,44 +4550,20 @@ func _build_quests() -> void:
 			Vector2(100.0, 32.0), Type.SIZE_SMALL)
 		Ui.cost_icon(b, "res://assets/ui/%s.png"
 			% ("res_crystal" if str(q["reward"]) == "crystal" else "res_gem"), 14)
-		b.pressed.connect(func() -> void: _claim_quest(qid))
-		_quest_view.add_child(b)
-		_quest_rows.append({"prog": pr, "btn": b, "fill": fill})
-	# 주간 줄 — 일일 6줄 아래 한 장. 받은 일일 임무가 쌓여 주 1회 뭉치가 된다.
-	var wy := QUEST_PANEL.position.y + 58.0 + 6.0 * 56.0 + 6.0
-	_quest_view.add_child(Ui.card(Vector2(x, wy), Vector2(w, 50.0)))
-	_quest_view.add_child(Ui.icon("res://assets/ui/badge_mastery.png",
-		Vector2(x + 10.0, wy + 11.0), 28.0))
-	var wn := _panel_label(_quest_view, Vector2(x + 48.0, wy + 6.0), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.45), w - 170.0, 16.0)
-	wn.text = "주간 — 임무 %d개 받기 (월요일마다 새로)" % QuestDefs.WEEKLY_NEED
-	var wtrack := ColorRect.new()
-	wtrack.color = Color(0.10, 0.09, 0.12)
-	wtrack.position = Vector2(x + 48.0, wy + 30.0)
-	wtrack.size = Vector2(QUEST_BAR_W, 8.0)
-	wtrack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_quest_view.add_child(wtrack)
-	_quest_week_fill = ColorRect.new()
-	_quest_week_fill.color = Color(0.88, 0.66, 0.30)   # 주간은 금빛 — 일일(핏빛)과 갈린다
-	_quest_week_fill.position = wtrack.position
-	_quest_week_fill.size = Vector2(0.0, 8.0)
-	_quest_week_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_quest_view.add_child(_quest_week_fill)
-	_quest_week_prog = _panel_label(_quest_view,
-		Vector2(x + 48.0 + QUEST_BAR_W + 8.0, wy + 24.0), Type.SIZE_SMALL,
-		Color(0.62, 0.60, 0.68), 90.0, 20.0)
-	_quest_week_btn = Ui.button("", Vector2(x + w - 108.0, wy + 9.0),
-		Vector2(100.0, 32.0), Type.SIZE_SMALL)
-	Ui.cost_icon(_quest_week_btn, "res://assets/ui/res_gem.png", 14)
-	_quest_week_btn.pressed.connect(func() -> void: _claim_weekly())
-	_quest_view.add_child(_quest_week_btn)
-	_quest_claim_all = Ui.button("일괄 받기",
-		Vector2(x + w * 0.5 - 100.0, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0),
-		Vector2(200.0, 42.0), Type.SIZE_MID)
-	_quest_claim_all.pressed.connect(func() -> void:
-		for q in QuestDefs.QUESTS:
-			_claim_quest(str(q["id"])))
-	_quest_view.add_child(_quest_claim_all)
+		if weekly:
+			b.pressed.connect(func() -> void: _claim_wquest(qid))
+		else:
+			b.pressed.connect(func() -> void: _claim_quest(qid))
+		root.add_child(b)
+		rows.append({"prog": pr, "btn": b, "fill": fill})
+	return rows
+
+
+func _quest_set_mode(mode: String) -> void:
+	_quest_day_root.visible = mode == "day"
+	_quest_week_root.visible = mode == "week"
+	for key in _quest_mode_btns:
+		_quest_mode_btns[key].button_pressed = key == mode
 	_refresh_quests()
 
 
@@ -4547,7 +4578,7 @@ func _refresh_quests() -> void:
 		var row: Dictionary = _quest_rows[i]
 		var need := int(q["need"])
 		var cnt := mini(_quest_count(id), need)
-		row["prog"].text = "%d / %d" % [cnt, need]
+		row["prog"].text = "%d/%d" % [cnt, need]
 		row["fill"].size.x = QUEST_BAR_W * float(cnt) / float(need)
 		var b: Button = row["btn"]
 		if quest_got.has(id):
@@ -4558,20 +4589,26 @@ func _refresh_quests() -> void:
 			b.text = "+%d" % int(q["amount"])
 			b.disabled = not _quest_claimable(id)
 		any = any or _quest_claimable(id)
+	for i in QuestDefs.WEEKLY.size():
+		var q: Dictionary = QuestDefs.WEEKLY[i]
+		var id := str(q["id"])
+		var row: Dictionary = _quest_wrows[i]
+		var need := int(q["need"])
+		var cnt := mini(int(quest_wprog.get(str(q["kind"]), 0)), need)
+		row["prog"].text = "%d/%d" % [cnt, need]
+		row["fill"].size.x = QUEST_BAR_W * float(cnt) / float(need)
+		var b: Button = row["btn"]
+		if quest_wgot.has(id):
+			b.text = "완료"
+			b.disabled = true
+		else:
+			b.text = "+%d" % int(q["amount"])
+			b.disabled = not _wquest_claimable(id)
+		any = any or _wquest_claimable(id)
+	# 알림점·일괄 받기는 일일이든 주간이든 "받을 게 있다"면 켠다.
 	_quest_claim_all.disabled = not any
-	# 주간 줄. 알림점은 일일이든 주간이든 "받을 게 있다"면 켠다.
-	var wn := mini(quest_week_n, QuestDefs.WEEKLY_NEED)
-	_quest_week_prog.text = "%d / %d" % [wn, QuestDefs.WEEKLY_NEED]
-	_quest_week_fill.size.x = QUEST_BAR_W * float(wn) / float(QuestDefs.WEEKLY_NEED)
-	if quest_week_got:
-		_quest_week_btn.text = "완료"
-		_quest_week_btn.disabled = true
-	else:
-		_quest_week_btn.text = "+%d" % int(QuestDefs.WEEKLY_GEM)
-		_quest_week_btn.disabled = quest_week_n < QuestDefs.WEEKLY_NEED
-	var weekly_ready := not quest_week_got and quest_week_n >= QuestDefs.WEEKLY_NEED
 	if _quest_dot:
-		_quest_dot.visible = any or weekly_ready
+		_quest_dot.visible = any
 
 
 func _select_tab(name: String) -> void:
@@ -6577,6 +6614,7 @@ func _advance_stage() -> void:
 		_offline_banner.visible = true
 		_offline_t = 4.0
 		raid_on = ""
+		_quest_bump("raid")   # 주간 임무(재화 던전 격파)가 센다
 		_fade(func() -> void:
 			kills = 0
 			_boss_time = _c_time_limit()
@@ -7254,8 +7292,8 @@ func _save_game() -> void:
 	cfg.set_value("quest", "prog", quest_prog)
 	cfg.set_value("quest", "got", quest_got)
 	cfg.set_value("quest", "week", quest_week)
-	cfg.set_value("quest", "week_n", quest_week_n)
-	cfg.set_value("quest", "week_got", quest_week_got)
+	cfg.set_value("quest", "wprog", quest_wprog)
+	cfg.set_value("quest", "wgot", quest_wgot)
 	cfg.set_value("raid", "best", raid_best)
 	cfg.set_value("raid", "date", raid_date)
 	cfg.set_value("raid", "used", raid_used)
@@ -7365,8 +7403,8 @@ func _load_game() -> void:
 	quest_prog = cfg.get_value("quest", "prog", {})
 	quest_got = cfg.get_value("quest", "got", {})
 	quest_week = str(cfg.get_value("quest", "week", ""))
-	quest_week_n = int(cfg.get_value("quest", "week_n", 0))
-	quest_week_got = bool(cfg.get_value("quest", "week_got", false))
+	quest_wprog = cfg.get_value("quest", "wprog", {})
+	quest_wgot = cfg.get_value("quest", "wgot", {})
 	# 어제 저장본이면 여기서 새 날(그리고 새 주)이 열린다 (접속 임무가 찬다).
 	_quest_roll_day()
 	raid_best = cfg.get_value("raid", "best", {"blood": 0, "essence": 0})

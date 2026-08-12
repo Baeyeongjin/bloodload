@@ -29,12 +29,32 @@ const QUESTS := [
 ]
 
 
-# ── 주간 임무 (참고작 ⑫ 하단 게이지) ───────────────────────────────────────
-# 일일 임무를 **받을 때마다** 1씩 쌓인다 — 별도 추적 없이 하루 루프가 곧
-# 주간 루프의 연료다. 25 = 하루 4~5개씩 대엿새 — 매일 다 하면 주중에 닫히고,
-# 며칠 빠져도 주말에 만회가 된다 (최대 6개 x 7일 = 42).
-const WEEKLY_NEED := 25
-const WEEKLY_GEM := 300.0   # 소환 10회 — 주 1회 뭉치
+# ── 주간 임무 (참고작 ⑫ — 일일과 별도 목록, 사장님) ─────────────────────────
+# 일일과 같은 훅을 쓰되 **주간 규모**다. kind 가 훅 열쇠라 일일 kind 와 겹쳐도
+# 카운터는 따로 쌓인다(quest_wprog). "daily" 는 일일 임무를 받을 때 차는
+# 연동 임무 — 하루 루프가 주간의 기둥인 건 그대로다.
+# 보상 합: 보석 300(소환 10회) + 혈정 60 — 주 1회 뭉치.
+const WEEKLY := [
+	{"id": "wkills", "kind": "kills", "name": "몬스터 500마리 처치", "need": 500,
+		"reward": "gem", "amount": 60, "icon": "quest_kill"},
+	{"id": "wtrain", "kind": "train", "name": "훈련 30회", "need": 30,
+		"reward": "gem", "amount": 40, "icon": "quest_forge"},
+	{"id": "wsummon", "kind": "summon", "name": "소환 20회", "need": 20,
+		"reward": "gem", "amount": 40, "icon": "quest_summon"},
+	{"id": "wdungeon", "kind": "dungeon", "name": "미궁 5층 돌파", "need": 5,
+		"reward": "crystal", "amount": 60, "icon": "quest_maze"},
+	{"id": "wraid", "kind": "raid", "name": "재화 던전 5회 격파", "need": 5,
+		"reward": "gem", "amount": 40, "icon": "raid_blood"},
+	{"id": "wdaily", "kind": "daily", "name": "일일 임무 25개 받기", "need": 25,
+		"reward": "gem", "amount": 120, "icon": "badge_mastery"},
+]
+
+
+static func wof(id: String) -> Dictionary:
+	for q in WEEKLY:
+		if str(q["id"]) == id:
+			return q
+	return {}
 
 
 # 새 날의 진행표. 접속 임무는 태어나면서 차 있다 — "오늘 처음 열었다"가 곧 달성이다.
