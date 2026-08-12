@@ -238,8 +238,11 @@ func _init() -> void:
 	# 첫 보스는 **가르치는 벽**이다. 맨몸으로는 제한 시간에 쫓기고, 조금 훈련하면 열린다.
 	# 예전 검사는 "1레벨 올리면 열린다"였는데 그건 공격력이 레벨당 +100% 였을 때 얘기다 —
 	# 합연산(+2%)에서는 한 레벨로 벽이 열리면 그게 오히려 이상하다.
+	# **훈련 기준을 올렸다**(2026-08-12, POWER_MULT 2.0). 몹이 전 구간 2배가 되면서
+	# 40/20/5/5 로는 48초가 걸린다 — 그 정도 스펙에 첫 보스가 안 열리는 게 아니라
+	# **더 키우고 오라는 것**이 새 의도다. 열리는 지점을 실측해 그 자리를 못 박는다.
 	var starter_ttk := _foe_hp(10, "boss") / _build_dps(1, 1, 1, 1)
-	var trained_ttk := _foe_hp(10, "boss") / _build_dps(40, 20, 5, 5)
+	var trained_ttk := _foe_hp(10, "boss") / _build_dps(80, 40, 10, 10)
 	assert(starter_ttk > StageDefs.TIME_BOSS * 0.6,
 		"첫 보스가 맨몸에도 너무 쉽다: %.0f초" % starter_ttk)
 	assert(trained_ttk < StageDefs.TIME_BOSS * 0.6,

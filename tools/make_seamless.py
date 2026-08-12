@@ -90,9 +90,20 @@ def blend_cost(rows, h, bpp, w, r):
     return total
 
 
+FINAL_W = 744          # 완성 폭. 이 폭이면 이미 이은 그림이다.
+
+
 def seamless(name):
     src = os.path.join(BG, name + ".png")
     orig = os.path.join(BG, name + ".orig.png")
+    # **이미 이은 그림은 건드리지 않는다.** 이 가드가 없어서 사고가 났다
+    # (2026-08-12): `.orig` 를 지운 뒤 다시 돌리면 완성본을 원본으로 삼아
+    # 24px 을 또 깎는다 — 배경 8장이 744 -> 720 -> 696 으로 줄어 있었고,
+    # CombatRulesTest 의 규격 검사가 잡아냈다. git 에서 복구했다.
+    # (bg-pipeline 스킬의 ".orig 지뢰"와 짝이다: 남겨도 문제, 지워도 문제였다.
+    #  폭으로 판단하면 둘 다 안전하다.)
+    if load(src)[0] <= FINAL_W:
+        return None
     # 원본을 한 번만 보관한다. 두 번 돌려도 결과가 계속 좁아지지 않게.
     if not os.path.exists(orig):
         open(orig, "wb").write(open(src, "rb").read())
@@ -130,7 +141,11 @@ if __name__ == "__main__":
         if not os.path.exists(os.path.join(BG, n + ".png")):
             print("없음:", n)
             continue
-        w, nw, h, r, c = seamless(n)
+        got = seamless(n)
+        if got is None:
+            print("%-16s skip (이미 이었다)" % n)
+            continue
+        w, nw, h, r, c = got
         print("%-16s %dx%d -> %dx%d | 굴림 %3d 에서 섞음(차이 %d)"
               % (n, w, h, nw, h, r, c))
     print("\nGrid.BG_SRC 의 가로를 %d 로 맞출 것." % nw)

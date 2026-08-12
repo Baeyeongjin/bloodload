@@ -7068,6 +7068,10 @@ func _advance_stage() -> void:
 		_quest_bump("raid")   # 주간 임무(재화 던전 격파)가 센다
 		_fade(func() -> void:
 			kills = 0
+			# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
+			# 회복은 여기서 한 번 — 안 그러면 앞 구간에서 깎인 체력이 그대로 넘어와
+			# "한 대 더 맞으면 죽는 구간"이 이어진다.
+			hero_hp = max_hp()
 			_boss_time = _c_time_limit()
 			_begin_stage_pose()
 			_start_advance()
@@ -7079,6 +7083,10 @@ func _advance_stage() -> void:
 	if dungeon_on:
 		_fade(func() -> void:
 			kills = 0
+			# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
+			# 회복은 여기서 한 번 — 안 그러면 앞 구간에서 깎인 체력이 그대로 넘어와
+			# "한 대 더 맞으면 죽는 구간"이 이어진다.
+			hero_hp = max_hp()
 			# **첫 돌파에만 혈정이 나온다.** 같은 층을 다시 돌면(개방 상한에 닿아
 			# 제자리를 돌 때) 기록 비교가 거짓이라 안 준다 — 도는 것의 값은
 			# 소탕 시급이 이미 치르고 있다.
@@ -7110,6 +7118,10 @@ func _advance_stage() -> void:
 	# 배경과 몹이 **암전 뒤에서** 바뀐다. 그냥 갈아 끼우면 화면이 휙 튄다.
 	_fade(func() -> void:
 		kills = 0
+		# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
+		# 회복은 여기서 한 번 — 안 그러면 앞 구간에서 깎인 체력이 그대로 넘어와
+		# "한 대 더 맞으면 죽는 구간"이 이어진다.
+		hero_hp = max_hp()
 		var next_stage := mini(stage + 1, StageDefs.total_stages())
 		if next_stage > best_stage:
 			if StageDefs.is_boss_stage(stage):

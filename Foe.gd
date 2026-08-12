@@ -344,8 +344,15 @@ func _art_ratio(tex: Texture2D) -> float:
 	return float(tex.get_width()) / _art_base
 
 
+# 보스 몸집 배수 — 1.0 -> 0.7 (2026-08-12 사장님: "보스 크기 30% 작게").
+# 몸이 화면을 반쯤 덮어서 이펙트와 체력 바가 묻혔다. 판정(reach·body_half)이
+# 전부 `_size()` 에서 나오므로 여기 한 곳만 줄이면 그림과 판정이 같이 준다.
+const BOSS_BODY := 0.7
+
+
 func _size() -> float:
-	var hero_scale := maxf(2.0, body_scale * 2.0) if is_boss or is_midboss else body_scale
+	var boss := is_boss or is_midboss
+	var hero_scale := maxf(2.0, body_scale * 2.0) * BOSS_BODY if boss else body_scale
 	return float(Grid.SPRITE) * 2.0 * hero_scale
 
 
@@ -499,6 +506,16 @@ func _draw() -> void:
 		# 맞닿은 순간 멈추는 것이 "붙었다"의 신호다.
 		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()] \
 			if _pushed_t > 0.0 else _walk_frames[0]
+		if _pushed_t <= 0.0:
+			# **서 있는 숨.** 프레임을 안 넘기고 몸만 눌렀다 폈다 한다(사장님:
+			# "가만히 있을 때 모션"). 걷기 그림 22종에 idle 을 새로 뽑는 대신
+			# 코드 한 줄로 — 도트 게임의 대기 모션이 원래 이 스쿼시다.
+			# 보스는 느리고 크게(위압), 잡몹은 빠르고 얕게.
+			var period := 2.2 if is_boss or is_midboss else 1.5
+			var amp := 0.05 if is_boss or is_midboss else 0.03
+			var breathe := sin(_anim_t * TAU / period)
+			hsc *= 1.0 + amp * breathe
+			wsc *= 1.0 - amp * 0.6 * breathe
 	if tex:
 		# **발밑은 캔버스가 아니라 그림의 아래끝이다.** 캔버스 아래끝을 지면에 붙이면
 		# 그림이 캔버스 안에서 떠 있는 만큼 몹이 공중에 뜬다 — 거미가 그랬다.

@@ -82,7 +82,10 @@ func _init() -> void:
 	var elite := Foe.new()
 	elite.setup(elite_tier, 1.0, 1.0)
 	assert(is_equal_approx(elite.max_hp, normal.max_hp * FoeTiers.MIDBOSS_HP_MULT))
-	assert(is_equal_approx(elite._size(), float(Grid.SPRITE) * 4.0))
+	# 몸집 = SPRITE x2 x (body_scale x2, 최소 2) x BOSS_BODY. 보스·중간보스는
+	# 30% 작아졌다(2026-08-12 사장님) — 배수를 여기에 그대로 적어 두면 상수를
+	# 고쳐도 이 검사가 안 잡는다.
+	assert(is_equal_approx(elite._size(), float(Grid.SPRITE) * 4.0 * Foe.BOSS_BODY))
 	assert(elite.display_name.begins_with("타락한 "))
 	var boss_tier := FoeTiers.get_tier("wraith_knight")
 	boss_tier["anim_key"] = "boss_1"
@@ -148,7 +151,8 @@ func _init() -> void:
 		"보스 평균 피해 배수가 평타~특수 사이가 아니다: %f" % avg)
 	assert(is_equal_approx(Foe.avg_attack_mult(false, false), 1.0),
 		"잡몹에 특수 패턴 배수가 붙었다")
-	assert(is_equal_approx(boss._size(), float(Grid.SPRITE) * 2.0 * 1.25 * 2.0))
+	assert(is_equal_approx(boss._size(),
+		float(Grid.SPRITE) * 2.0 * 1.25 * 2.0 * Foe.BOSS_BODY))
 	# **모션 캔버스 비율.** _draw 는 텍스처를 _size() 상자에 늘려 그리므로, 공격 모션만
 	# 큰 캔버스로 뽑으면 여백까지 눌려 몹이 작아진다. 그래서 비율(모션 캔버스 / 걷기
 	# 캔버스)만큼 상자를 키운다.
