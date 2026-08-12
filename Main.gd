@@ -1778,14 +1778,14 @@ const BRANCH_ICON := {"attack": "stat_damage", "life": "stat_tough",
 # 노드는 크게(64px), 레벨은 노드 밑에 "n/10", 전체는 **스크롤**로 본다 —
 # 레퍼런스 특성 화면의 그 생김새다.
 # 잠금도 화면과 같다: 줄기의 바로 앞 노드를 만렙(10) 찍어야 다음이 열린다.
-# 64 -> 76 (사장님: "칸을 더 크게, 글씨가 안 짤리게") — "10/10" 이 64px 에서
-# 끝이 먹혔다. 줄기는 칸 **테두리에서 멈추고**(가운데를 관통하면 칸이 지저분해
-# 진다) 검은 테로 두른다.
-const TRAIT_NODE := 76.0
-const TRAIT_ROW := 106.0       # 노드 한 단의 세로 간격
+# 칸 88 (사장님: 두 번 키웠다 64 -> 76 -> 88). 선은 **노드 중심까지 통으로**
+# 긋는다 — 테두리에서 끊으면 끝이 칸에 안 닿아 떠 보이고(실측), 마디마다
+# 두른 검은 테가 이음매를 갈라 보이게 했다. 선을 먼저 깔고 노드가 위에서
+# 덮으므로 칸 안쪽은 어차피 안 보인다 — 접점과 이음매가 공짜로 완벽해진다.
+const TRAIT_NODE := 88.0
+const TRAIT_ROW := 120.0       # 노드 한 단의 세로 간격
 const TRAIT_SPREAD := 150.0    # 가운데에서 좌우로 굽는 폭
-const TRAIT_LINE := 6.0        # 줄기 두께
-const TRAIT_EDGE := 2.0        # 줄기 검은 테 두께
+const TRAIT_LINE := 8.0        # 줄기 두께
 
 
 func _build_trait_view(root: Control) -> void:
@@ -1826,24 +1826,14 @@ func _build_trait_view(root: Control) -> void:
 	for i in range(1, seq.size()):
 		var p0 := centers[i - 1]
 		var p1 := centers[i]
-		var half := TRAIT_NODE * 0.5
-		# 가로 팔: 앞 노드 **옆 테두리**에서 다음 노드 x 까지.
-		var x0 := p0.x + half if p1.x > p0.x else p1.x
-		var x1 := p1.x if p1.x > p0.x else p0.x - half
-		var arm := Rect2(x0, p0.y - TRAIT_LINE * 0.5, x1 - x0 + TRAIT_LINE * 0.5,
-			TRAIT_LINE)
-		# 세로 줄기: 다음 노드 **아래 테두리**에서 팔 높이까지.
-		var stem := Rect2(p1.x - TRAIT_LINE * 0.5, p1.y + half,
-			TRAIT_LINE, p0.y - p1.y - half)
+		var lw := TRAIT_LINE * 0.5
+		# 중심에서 중심으로. 가로 팔(앞 노드 높이) + 세로 줄기(다음 노드 x) —
+		# 모서리는 두 선이 겹쳐 한 덩어리로 보이고, 끝은 노드가 덮는다.
+		var arm := Rect2(minf(p0.x, p1.x) - lw, p0.y - lw,
+			absf(p1.x - p0.x) + TRAIT_LINE, TRAIT_LINE)
+		var stem := Rect2(p1.x - lw, p1.y, TRAIT_LINE, p0.y - p1.y)
 		var parts: Array[ColorRect] = []
 		for seg in [arm, stem]:
-			# 검은 테 — 금선보다 사방 2px 크게 먼저 깐다.
-			var edge := ColorRect.new()
-			edge.color = Color(0.03, 0.02, 0.04)
-			edge.position = seg.position - Vector2(TRAIT_EDGE, TRAIT_EDGE)
-			edge.size = seg.size + Vector2(TRAIT_EDGE, TRAIT_EDGE) * 2.0
-			edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			canvas.add_child(edge)
 			var line := ColorRect.new()
 			line.position = seg.position
 			line.size = seg.size
@@ -1858,10 +1848,10 @@ func _build_trait_view(root: Control) -> void:
 		var frame := Ui.icon("res://assets/ui/slot_common.png", at, TRAIT_NODE)
 		canvas.add_child(frame)
 		var ic := Ui.icon("res://assets/ui/%s.png" % TRAIT_ICON[str(n["kind"])],
-			at + Vector2((TRAIT_NODE - 36.0) * 0.5, 10.0), 36.0)
+			at + Vector2((TRAIT_NODE - 40.0) * 0.5, 12.0), 40.0)
 		canvas.add_child(ic)
 		# 레벨 "n/10" — 노드 안 아래쪽. 칸을 키워(76) 글씨가 안 잘린다.
-		var lv_lbl := _panel_label(canvas, at + Vector2(0.0, TRAIT_NODE - 26.0),
+		var lv_lbl := _panel_label(canvas, at + Vector2(0.0, TRAIT_NODE - 28.0),
 			Type.SIZE_SMALL, Color(0.94, 0.90, 0.96), TRAIT_NODE, 18.0)
 		lv_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var hit := Button.new()
