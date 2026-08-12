@@ -198,6 +198,11 @@ func _tick_titles(delta: float) -> void:
 	if _title_check_t > 0.0:
 		return
 	_title_check_t = 1.0
+	# 임무의 자정 넘김도 이 1초 틱이 잡는다 — 날이 바뀌면 진행표가 새로 열린다.
+	var q_day := quest_date
+	_quest_roll_day()
+	if q_day != quest_date and _tab == "quest":
+		_refresh_quests()
 	var state := _title_state()
 	for t in TitleDefs.TITLES:
 		var id := str(t["id"])
@@ -1453,7 +1458,7 @@ const CONTENT_BOTTOM := PANEL_H - PAD     # 358
 func _build_panels() -> void:
 	# 콘텐츠와 탭바는 별도 판이다. 한 장으로 덮으면 하단 메뉴가 콘텐츠에 붙어 보인다.
 	_hud_root.add_child(Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24)))
-	for name in ["growth", "gear", "summon", "dungeon", "codex"]:
+	for name in ["growth", "gear", "summon", "dungeon", "quest", "codex"]:
 		var c := Control.new()
 		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, PANEL_AT.y))
 		c.size = Grid.uv(PANEL_SIZE.x, PANEL_SIZE.y)
@@ -1464,6 +1469,7 @@ func _build_panels() -> void:
 	_build_gear(_panels["gear"])
 	_build_gacha(_panels["summon"])
 	_build_dungeon(_panels["dungeon"])
+	_build_quests(_panels["quest"])
 	_build_codex(_panels["codex"])
 
 
@@ -3057,6 +3063,7 @@ func _pull_gacha(count: int) -> void:
 	gem -= cost
 	if free:
 		free_pull_date = Time.get_date_string_from_system()
+	_quest_bump("summon", count)
 	# 레벨은 **이번 뽑기 전** 값으로 굴린다 — 화면에 적힌 확률 그대로여야 한다.
 	var result := GachaDefs.pull(count, int(gacha_pity.get(_gacha_kind, 0)),
 		GachaDefs.level(int(gacha_pulls.get(_gacha_kind, 0))), _gacha_kind == "skill")
@@ -4080,11 +4087,11 @@ func _refresh_codex_detail() -> void:
 # 그 자리가 검게 비기만 한다.
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
 	["summon", "tab_battle", "소환"], ["dungeon", "tab_dungeon", "미궁"],
-	["codex", "tab_codex", "도감"]]
+	["quest", "tab_quest", "임무"], ["codex", "tab_codex", "도감"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
 # 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
-const TAB_DOT_ON := ["growth", "gear", "summon"]
+const TAB_DOT_ON := ["growth", "gear", "summon", "quest"]
 const TAB_DOT := 18.0
 const TAB_DOT_AT := Vector2(42.0, 2.0)   # 아이콘(48,6)의 왼쪽 위 모서리에 걸친다
 
@@ -4235,6 +4242,118 @@ func _refresh_dungeon() -> void:
 	_dungeon_btn.text = "도전"
 
 
+# ── 일일 임무 (QuestDefs, REFERENCE_TEARDOWN 4장-1) ───────────────────────
+# 날짜 문자열 비교는 무료 뽑기(free_pull_date)와 같은 문법이다. 자정 롤오버는
+# 칭호와 같은 1초 틱이 잡는다.
+var quest_date := ""
+var quest_prog := {}
+var quest_got := {}
+var _quest_rows: Array[Dictionary] = []
+var _quest_claim_all: Button
+
+
+func _quest_roll_day() -> void:
+	var today := Time.get_date_string_from_system()
+	if quest_date == today:
+		return
+	quest_date = today
+	quest_prog = QuestDefs.fresh_prog()
+	quest_got = {}
+
+
+func _quest_bump(id: String, n := 1) -> void:
+	_quest_roll_day()
+	quest_prog[id] = int(quest_prog.get(id, 0)) + n
+
+
+func _quest_count(id: String) -> int:
+	# 마무리 임무는 따로 안 센다 — "받은 기본 임무 수"가 곧 진행도다.
+	if id == "all":
+		var got := 0
+		for q in QuestDefs.QUESTS:
+			if str(q["id"]) != "all" and quest_got.has(str(q["id"])):
+				got += 1
+		return got
+	return int(quest_prog.get(id, 0))
+
+
+func _quest_claimable(id: String) -> bool:
+	return not quest_got.has(id) \
+		and _quest_count(id) >= int(QuestDefs.of(id)["need"])
+
+
+func _claim_quest(id: String) -> void:
+	if not _quest_claimable(id):
+		return
+	quest_got[id] = true
+	var q := QuestDefs.of(id)
+	match str(q["reward"]):
+		"gem": gem += float(q["amount"])
+		"crystal": crystal += float(q["amount"])
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_quests()
+
+
+func _build_quests(root: Control) -> void:
+	var head := _panel_label(root, Vector2(PAD, PAD), Type.SIZE_MID,
+		Color(0.92, 0.62, 0.62), CONTENT_W, 24.0)
+	head.text = "일일 임무 — 자정에 새로 온다"
+	for i in QuestDefs.QUESTS.size():
+		var q: Dictionary = QuestDefs.QUESTS[i]
+		var y := 60.0 + float(i) * 42.0
+		root.add_child(Ui.card(Vector2(PAD, y), Vector2(CONTENT_W, 38.0)))
+		root.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
+			Vector2(PAD + 10.0, y + 7.0), 24.0))
+		var nm := _panel_label(root, Vector2(PAD + 44.0, y + 3.0), Type.SIZE_SMALL,
+			Color(0.90, 0.86, 0.88), CONTENT_W - 160.0, 16.0)
+		nm.text = str(q["name"])
+		var pr := _panel_label(root, Vector2(PAD + 44.0, y + 20.0), Type.SIZE_SMALL,
+			Color(0.62, 0.60, 0.68), CONTENT_W - 160.0, 14.0)
+		var qid := str(q["id"])
+		var b := Ui.button("", Vector2(PAD + CONTENT_W - 106.0, y + 5.0),
+			Vector2(98.0, 28.0), Type.SIZE_SMALL)
+		Ui.cost_icon(b, "res://assets/ui/%s.png"
+			% ("res_crystal" if str(q["reward"]) == "crystal" else "res_gem"), 14)
+		b.pressed.connect(func() -> void: _claim_quest(qid))
+		root.add_child(b)
+		_quest_rows.append({"prog": pr, "btn": b})
+	_quest_claim_all = Ui.button("일괄 받기",
+		Vector2(PAD + CONTENT_W - 180.0, CONTENT_BOTTOM - 42.0),
+		Vector2(180.0, 38.0), Type.SIZE_MID)
+	_quest_claim_all.pressed.connect(func() -> void:
+		for q in QuestDefs.QUESTS:
+			_claim_quest(str(q["id"])))
+	root.add_child(_quest_claim_all)
+	_refresh_quests()
+
+
+func _refresh_quests() -> void:
+	if _quest_rows.is_empty():
+		return
+	_quest_roll_day()
+	for i in QuestDefs.QUESTS.size():
+		var q: Dictionary = QuestDefs.QUESTS[i]
+		var id := str(q["id"])
+		var row: Dictionary = _quest_rows[i]
+		row["prog"].text = "%d / %d" % [mini(_quest_count(id), int(q["need"])),
+			int(q["need"])]
+		var b: Button = row["btn"]
+		if quest_got.has(id):
+			b.text = "완료"
+			b.disabled = true
+		else:
+			# 보상 액수를 버튼에 계속 보여 준다 — "다 하면 뭘 받나"가 동기다.
+			b.text = "+%d" % int(q["amount"])
+			b.disabled = not _quest_claimable(id)
+	var any := false
+	for q in QuestDefs.QUESTS:
+		if _quest_claimable(str(q["id"])):
+			any = true
+			break
+	_quest_claim_all.disabled = not any
+
+
 func _select_tab(name: String) -> void:
 	var switched := _tab != name
 	_tab = name
@@ -4266,6 +4385,8 @@ func _select_tab(name: String) -> void:
 		_refresh_gacha()
 	elif name == "dungeon":
 		_refresh_dungeon()
+	elif name == "quest":
+		_refresh_quests()
 
 
 # 지금 올릴 수 있는 게 있는 탭인가. 방치형에서 "뭘 눌러야 하나"를 탭을 하나씩 열어
@@ -4290,6 +4411,10 @@ func _tab_todo(tab: String) -> bool:
 			for item in equipped.values():
 				if not (item as Dictionary).is_empty() \
 						and essence >= GearDefs.upgrade_cost(item):
+					return true
+		"quest":
+			for q in QuestDefs.QUESTS:
+				if _quest_claimable(str(q["id"])):
 					return true
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
@@ -4327,6 +4452,7 @@ func _buy(key: String) -> void:
 	# 화면에 아무 반응이 없다. 올린 값을 직접 띄운다 — **뭘 사든 반응은 있어야 한다.**
 	if key == "gold":
 		_notify_stat("혈액 획득 x%.2f" % gold_mult())
+	_quest_bump("train")
 	_save_game()
 	_refresh_hud()
 
@@ -6072,6 +6198,7 @@ func on_foe_killed(f: Foe) -> void:
 	if f.is_boss and not dungeon_on:
 		essence += StageDefs.boss_essence(stage)
 	kills += 1
+	_quest_bump("kills")
 	var prev_kills := int(codex.get(f.key, 0))
 	codex[f.key] = prev_kills + 1
 	if prev_kills == 0:
@@ -6143,6 +6270,7 @@ func _advance_stage() -> void:
 				_offline_banner.visible = true
 				_offline_t = 3.0
 			dungeon_best = maxi(dungeon_best, dungeon_floor)
+			_quest_bump("dungeon")
 			var open := DungeonDefs.open_floors(best_stage)
 			if dungeon_floor >= open:
 				# 개방 상한까지 다 올랐다 — 본편을 밀어야 다음 층이 열린다
@@ -6781,6 +6909,9 @@ func _save_game() -> void:
 	cfg.set_value("gacha", "owned", gacha_owned)
 	cfg.set_value("gacha", "shards", gacha_shards)
 	cfg.set_value("gacha", "free_date", free_pull_date)
+	cfg.set_value("quest", "date", quest_date)
+	cfg.set_value("quest", "prog", quest_prog)
+	cfg.set_value("quest", "got", quest_got)
 	cfg.set_value("skill", "owned", skill_owned)
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
@@ -6883,6 +7014,11 @@ func _load_game() -> void:
 				+ int(gacha_shards[old_owned_key])
 			gacha_shards.erase(old_owned_key)
 	free_pull_date = str(cfg.get_value("gacha", "free_date", ""))
+	quest_date = str(cfg.get_value("quest", "date", ""))
+	quest_prog = cfg.get_value("quest", "prog", {})
+	quest_got = cfg.get_value("quest", "got", {})
+	# 어제 저장본이면 여기서 새 날이 열린다 (접속 임무가 찬다).
+	_quest_roll_day()
 	# 옛 저장본(스킬 6종·역할 3칸)에는 owned 가 없다. 그때는 기본 스킬만 주고
 	# 새로 시작한다 — 없어진 키를 억지로 옮기면 표에 없는 스킬이 장착된다.
 	skill_owned = cfg.get_value("skill", "owned", {})
