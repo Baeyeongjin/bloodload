@@ -50,11 +50,17 @@ def slice_v(im, names):
 
 # 탭 전용 세트(사장님 2026-08-13: "각각 UI 다르게") — 시트마다 세로로 쌓인
 # 조각들이라 행 투영으로 잘린다. 조각 수가 다르면 assert 가 걸린다(재뽑기 신호).
+#
+# **몸판·버튼은 2차본이다** (사장님: "너무 화려함, 간단한 버전으로") — 1차
+# *_card 시트는 화려한 쪽이라 지금 안 쓴다(재뽑기 원본으로 남겨 둘 뿐).
+# 여기 적힌 것만 잘린다: 안 적힌 시트를 자르면 담백한 판이 화려한 걸로 되돌아간다.
 SETS = "assets/ui/sets"
 SET_SHEETS = {
-    "forge_card": ["forge_body", "forge_pill"],
+    "forge_body3": ["forge_body"],
+    "forge_btn2": ["forge_button", "forge_pill"],
     "forge_tabs": ["forge_tab_on", "forge_tab_off"],
-    "astro_card": ["astro_body", "astro_band", "astro_pill"],
+    "astro_body2": ["astro_body"],
+    "astro_btn2": ["astro_button", "astro_pill"],
     "astro_tabs": ["astro_tab_on", "astro_tab_off"],
     "gate_card": ["gate_row", "gate_button", "gate_pill"],
     "gate_tabs": ["gate_tab_on", "gate_tab_off"],
