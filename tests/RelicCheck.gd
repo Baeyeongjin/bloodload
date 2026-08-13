@@ -26,6 +26,15 @@ func _init() -> void:
 			"%s 등급이 소환 표에 없다" % id)
 		assert(float(r["value"]) > 0.0, "%s 값이 0" % id)
 		assert(RelicDefs.effect_text(r, 1) != "", "%s 효과 설명이 없다" % id)
+	# **낮은 등급부터** 늘어서 있어야 한다 (사장님) — 화면이 표 순서를 그대로 쓰므로
+	# 종을 덧붙일 때 뒤에만 붙이면 진열이 뒤섞인다(실제로 6종 추가에서 났다).
+	var rank := {"common": 0, "uncommon": 1, "rare": 2, "epic": 3,
+		"legend": 4, "mythic": 5}
+	var prev := -1
+	for r in RelicDefs.RELICS:
+		var cur := int(rank[str(r["rarity"])])
+		assert(cur >= prev, "%s 에서 등급 순서가 뒤집혔다" % str(r["id"]))
+		prev = cur
 
 	# ── 2) 배수 ────────────────────────────────────────────────────────────
 	assert(is_equal_approx(RelicDefs.mult("damage", {}), 1.0), "빈 유물이 배수를 준다")

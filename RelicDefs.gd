@@ -26,19 +26,12 @@ const SHARDS_PER_LV := 5    # 중복 5개 = 1레벨 (소환 장비와 같은 문
 # value 는 **만렙 기준 총량**이고 레벨당 1/5 씩 붙는다(혈맥과 같은 규칙).
 # 공격 계열이 넷인 이유: 메우려는 간극이 공격력 쪽이다.
 # 18종 (전설 3 · 에픽 6 · 레어 9).
+# 18종 (레어 9 · 에픽 6 · 전설 3).
+#
+# **낮은 등급부터 늘어놓는다** (사장님 2026-08-13). 화면이 이 순서를 그대로 쓰므로
+# 표가 곧 진열 순서다 — 처음 열었을 때 손에 잡히는 것부터 보이고, 아래로 내려갈수록
+# 귀해진다. 6종을 뒤에 덧붙였더니 등급이 뒤섞였던 것을 여기서 바로잡았다.
 const RELICS := [
-	{"id": "abyss_eye", "name": "심연의 눈", "rarity": "legend",
-		"kind": "damage", "value": 0.25, "icon": "relic_abyss_eye"},
-	{"id": "yellow_sign", "name": "노란 표식", "rarity": "legend",
-		"kind": "critdmg", "value": 0.25, "icon": "relic_yellow_sign"},
-	{"id": "hungry_heart", "name": "굶주린 심장", "rarity": "epic",
-		"kind": "damage", "value": 0.15, "icon": "relic_hungry_heart"},
-	{"id": "great_gospel", "name": "피의 금서", "rarity": "epic",
-		"kind": "damage", "value": 0.15, "icon": "relic_great_gospel"},
-	{"id": "metaglio", "name": "봉인의 방패", "rarity": "epic",
-		"kind": "hp", "value": 0.15, "icon": "relic_metaglio"},
-	{"id": "soul_lantern", "name": "영혼 등불", "rarity": "epic",
-		"kind": "hours", "value": 3.0, "icon": "relic_soul_lantern"},
 	{"id": "black_chalice", "name": "검은 성배", "rarity": "rare",
 		"kind": "damage", "value": 0.10, "icon": "relic_black_chalice"},
 	{"id": "fallen_halo", "name": "타락한 후광", "rarity": "rare",
@@ -51,22 +44,30 @@ const RELICS := [
 		"kind": "speed", "value": 0.10, "icon": "relic_witch_tear"},
 	{"id": "milky_map", "name": "별의 지도", "rarity": "rare",
 		"kind": "sweep", "value": 0.10, "icon": "relic_milky_map"},
-	# 2026-08-13 추가분 6종 (사장님: "유물 종류 몇 개 더"). 아이콘은 새로 뽑았다 —
-	# 앞의 12종과 달리 이건 우리 것이라 이름과 그림이 처음부터 맞는다.
-	# 공격 계열을 둘만 더한 이유: 넷이 이미 x1.82 라, 더 얹으면 곱연산 예산
-	# (RelicCheck 이 지키는 1.5~2.5)을 넘어 혈맥 몫까지 먹는다.
-	{"id": "broken_crown", "name": "부러진 왕관", "rarity": "legend",
-		"kind": "damage", "value": 0.20, "icon": "relic_broken_crown"},
-	{"id": "heart_stone", "name": "굳은 심장석", "rarity": "epic",
-		"kind": "hp", "value": 0.15, "icon": "relic_heart_stone"},
-	{"id": "blood_hourglass", "name": "피의 모래시계", "rarity": "epic",
-		"kind": "hours", "value": 2.0, "icon": "relic_blood_hourglass"},
 	{"id": "raven_feather", "name": "갈까마귀 깃", "rarity": "rare",
 		"kind": "speed", "value": 0.08, "icon": "relic_raven_feather"},
 	{"id": "green_candle", "name": "푸른 촛대", "rarity": "rare",
 		"kind": "critdmg", "value": 0.12, "icon": "relic_green_candle"},
 	{"id": "sealed_coffin", "name": "봉인된 관", "rarity": "rare",
 		"kind": "damage", "value": 0.08, "icon": "relic_sealed_coffin"},
+	{"id": "hungry_heart", "name": "굶주린 심장", "rarity": "epic",
+		"kind": "damage", "value": 0.15, "icon": "relic_hungry_heart"},
+	{"id": "great_gospel", "name": "피의 금서", "rarity": "epic",
+		"kind": "damage", "value": 0.15, "icon": "relic_great_gospel"},
+	{"id": "metaglio", "name": "봉인의 방패", "rarity": "epic",
+		"kind": "hp", "value": 0.15, "icon": "relic_metaglio"},
+	{"id": "soul_lantern", "name": "영혼 등불", "rarity": "epic",
+		"kind": "hours", "value": 3.0, "icon": "relic_soul_lantern"},
+	{"id": "heart_stone", "name": "굳은 심장석", "rarity": "epic",
+		"kind": "hp", "value": 0.15, "icon": "relic_heart_stone"},
+	{"id": "blood_hourglass", "name": "피의 모래시계", "rarity": "epic",
+		"kind": "hours", "value": 2.0, "icon": "relic_blood_hourglass"},
+	{"id": "abyss_eye", "name": "심연의 눈", "rarity": "legend",
+		"kind": "damage", "value": 0.25, "icon": "relic_abyss_eye"},
+	{"id": "yellow_sign", "name": "노란 표식", "rarity": "legend",
+		"kind": "critdmg", "value": 0.25, "icon": "relic_yellow_sign"},
+	{"id": "broken_crown", "name": "부러진 왕관", "rarity": "legend",
+		"kind": "damage", "value": 0.20, "icon": "relic_broken_crown"},
 ]
 
 
