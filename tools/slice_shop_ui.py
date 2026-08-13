@@ -48,7 +48,30 @@ def slice_v(im, names):
         print(name, "ok")
 
 
+# 탭 전용 세트(사장님 2026-08-13: "각각 UI 다르게") — 시트마다 세로로 쌓인
+# 조각들이라 행 투영으로 잘린다. 조각 수가 다르면 assert 가 걸린다(재뽑기 신호).
+SETS = "assets/ui/sets"
+SET_SHEETS = {
+    "forge_card": ["forge_body", "forge_pill"],
+    "forge_tabs": ["forge_tab_on", "forge_tab_off"],
+    "astro_card": ["astro_body", "astro_band", "astro_pill"],
+    "astro_tabs": ["astro_tab_on", "astro_tab_off"],
+    "gate_card": ["gate_row", "gate_button", "gate_pill"],
+    "gate_tabs": ["gate_tab_on", "gate_tab_off"],
+}
+
+
+def slice_sets():
+    global BASE
+    keep = BASE
+    BASE = SETS
+    for sheet, names in SET_SHEETS.items():
+        slice_v(Image.open(f"{SETS}/{sheet}.png").convert("RGBA"), names)
+    BASE = keep
+
+
 def main():
+    slice_sets()
     # 세로 카드: 제목 띠 / 그림 창 / 가격 띠
     slice_v(Image.open(f"{BASE}/card_v.png").convert("RGBA"),
             ["card_title", "card_art", "card_price"])
