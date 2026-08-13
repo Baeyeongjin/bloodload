@@ -4818,8 +4818,14 @@ func _build_dungeon(root: Control) -> void:
 	# 머리그림 — 미궁 배경(wide_maze)에서 260x40 을 떠내 2배로 편 판. 전투 화면과
 	# 같은 그림이라 "여기가 그 미궁"이 그림으로 읽힌다. 밝은 벽돌 위 글자는
 	# 외곽선만으로 약해서 얇은 어둠막을 한 장 덮는다.
-	root.add_child(Ui.card(Vector2(PAD - 8.0, PAD - 10.0),
-		Vector2(MAZE_W + 16.0, 100.0)))
+	# 머리판은 **그림과 검은 테두리만**이다 (사장님). 금테 카드를 두르고 그 안에
+	# 버튼까지 넣었더니 테두리가 두 겹이고 버튼이 그림 위에 떠 있었다.
+	var edge := ColorRect.new()
+	edge.color = Color(0.02, 0.02, 0.03)
+	edge.position = Vector2(PAD - 3.0, PAD - 7.0)
+	edge.size = Vector2(MAZE_W + 6.0, 86.0)
+	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(edge)
 	root.add_child(Ui.image("res://assets/ui/dungeon_header.png",
 		Vector2(PAD, PAD - 4.0), Vector2(MAZE_W, 80.0)))
 	var scrim := ColorRect.new()
@@ -4833,8 +4839,10 @@ func _build_dungeon(root: Control) -> void:
 	title.text = "핏빛 미궁"
 	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 38.0), Type.SIZE_SMALL,
 		Color(0.92, 0.88, 0.92), MAZE_W - 190.0, 22.0)
-	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 14.0),
-		Vector2(150.0, 48.0), Type.SIZE_MID)
+	# 도전 버튼은 **그림 안**에 둔다 (사장님). 그림 위 어둠막(scrim)이 이미 깔려
+	# 있어서 버튼 글자가 배경에 묻히지 않는다.
+	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 16.0),
+		Vector2(150.0, 44.0), Type.SIZE_MID)
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
 			_dungeon_exit("미궁 이탈")
