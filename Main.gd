@@ -4822,8 +4822,10 @@ func _build_dungeon(root: Control) -> void:
 	# 버튼까지 넣었더니 테두리가 두 겹이고 버튼이 그림 위에 떠 있었다.
 	var edge := ColorRect.new()
 	edge.color = Color(0.02, 0.02, 0.03)
-	edge.position = Vector2(PAD - 3.0, PAD - 7.0)
-	edge.size = Vector2(MAZE_W + 6.0, 86.0)
+	# 테두리는 **6px** — 3px 로 뒀더니 오른쪽 변이 얇아 안 보여서 그림이 판을
+	# 튀어나온 것처럼 읽혔다(사장님).
+	edge.position = Vector2(PAD - 6.0, PAD - 10.0)
+	edge.size = Vector2(MAZE_W + 12.0, 92.0)
 	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(edge)
 	root.add_child(Ui.image("res://assets/ui/dungeon_header.png",
