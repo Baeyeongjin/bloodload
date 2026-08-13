@@ -681,6 +681,10 @@ func _ready() -> void:
 			_quest_bump("kills", 30)
 			quest_wprog = {"kills": 380, "train": 30, "daily": 11, "raid": 2}
 			_quest_set_mode("week" if arg.ends_with("week") else "day")
+		# [개발 도구] --maze : 던전 탭의 미궁 소탭을 연 채로 캡처한다.
+		if arg == "--maze":
+			_select_tab("raid")
+			_raid_set_mode("maze")
 		# [개발 도구] --relic : 유물 화면을 연 채로 캡처한다(가진 것·못 가진 것 섞어).
 		if arg == "--relic":
 			best_stage = maxi(best_stage, RelicDefs.OPEN_STAGE)
@@ -4797,6 +4801,7 @@ var _dungeon_chips: Array[Label] = []
 var _raid_list: Control
 var _raid_mode_btns := {}
 var _maze_panel: Control
+var _maze_scroll: Control
 var _boss_panel: Control
 var _boss_name: Label
 var _boss_sub: Label
@@ -4809,26 +4814,31 @@ var _raid_reward := {}
 var _raid_btn := {}
 
 
+# 미궁 화면. **스크롤 안에 산다**(_build_raids) — 안쪽 폭이 스크롤바만큼 좁으므로
+# CONTENT_W 대신 이 값을 쓴다.
+const MAZE_W := CONTENT_W - Ui.SCROLL_W - 8.0
+
+
 func _build_dungeon(root: Control) -> void:
 	# 머리그림 — 미궁 배경(wide_maze)에서 260x40 을 떠내 2배로 편 판. 전투 화면과
 	# 같은 그림이라 "여기가 그 미궁"이 그림으로 읽힌다. 밝은 벽돌 위 글자는
 	# 외곽선만으로 약해서 얇은 어둠막을 한 장 덮는다.
 	root.add_child(Ui.card(Vector2(PAD - 8.0, PAD - 10.0),
-		Vector2(CONTENT_W + 16.0, 100.0)))
+		Vector2(MAZE_W + 16.0, 100.0)))
 	root.add_child(Ui.image("res://assets/ui/dungeon_header.png",
-		Vector2(PAD, PAD - 4.0), Vector2(CONTENT_W, 80.0)))
+		Vector2(PAD, PAD - 4.0), Vector2(MAZE_W, 80.0)))
 	var scrim := ColorRect.new()
 	scrim.color = Color(0.03, 0.02, 0.05, 0.42)
 	scrim.position = Vector2(PAD, PAD - 4.0)
-	scrim.size = Vector2(CONTENT_W, 80.0)
+	scrim.size = Vector2(MAZE_W, 80.0)
 	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(scrim)
 	var title := _panel_label(root, Vector2(PAD + 12.0, PAD + 4.0), Type.SIZE_MID,
-		Color(0.95, 0.68, 0.68), CONTENT_W - 190.0, 28.0)
+		Color(0.95, 0.68, 0.68), MAZE_W - 190.0, 28.0)
 	title.text = "핏빛 미궁"
 	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 38.0), Type.SIZE_SMALL,
-		Color(0.92, 0.88, 0.92), CONTENT_W - 190.0, 22.0)
-	_dungeon_btn = Ui.button("도전", Vector2(PAD + CONTENT_W - 162.0, PAD + 14.0),
+		Color(0.92, 0.88, 0.92), MAZE_W - 190.0, 22.0)
+	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 14.0),
 		Vector2(150.0, 48.0), Type.SIZE_MID)
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
@@ -4838,7 +4848,7 @@ func _build_dungeon(root: Control) -> void:
 		_refresh_dungeon())
 	root.add_child(_dungeon_btn)
 	# 수치 칸 3개 — 최고층(왕관) · 개방층(철문) · 혈정
-	var chip_w := (CONTENT_W - 20.0) / 3.0
+	var chip_w := (MAZE_W - 20.0) / 3.0
 	var chip_icons := ["badge_mastery", "tab_dungeon", "res_crystal"]
 	for i in 3:
 		var x := PAD + float(i) * (chip_w + 10.0)
@@ -4848,14 +4858,14 @@ func _build_dungeon(root: Control) -> void:
 		_dungeon_chips.append(_panel_label(root, Vector2(x + 34.0, 122.0),
 			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), chip_w - 40.0, 30.0))
 	_dungeon_sub = _panel_label(root, Vector2(PAD, 156.0), Type.SIZE_SMALL,
-		Color(0.72, 0.70, 0.76), CONTENT_W, 18.0)
+		Color(0.72, 0.70, 0.76), MAZE_W, 18.0)
 	# 군림 판 — 본편 돌파가 자동으로 여는 기능 5개. 창은 미궁 탭을 빌린다:
 	# 교차 잠금의 다른 축들(가지·상한)이 다 이 창에 적혀 있어서 자리가 맞다.
 	# (재화 던전이 잠깐 이 자리를 썼다가 제 탭으로 갔다 — 성격이 다르다, 사장님.)
 	root.add_child(Ui.card(Vector2(PAD - 8.0, 178.0),
-		Vector2(CONTENT_W + 16.0, CONTENT_BOTTOM - 178.0)))
+		Vector2(MAZE_W + 16.0, CONTENT_BOTTOM - 178.0)))
 	var mt := _panel_label(root, Vector2(PAD + 6.0, 184.0), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.45), CONTENT_W, 18.0)
+		Color(1.0, 0.78, 0.45), MAZE_W, 18.0)
 	mt.text = "군림 — 본편 돌파가 스스로 연다"
 	for i in MasteryDefs.RANKS.size():
 		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
@@ -4865,7 +4875,7 @@ func _build_dungeon(root: Control) -> void:
 		_dungeon_badges.append(bd)
 		_dungeon_mastery.append(_panel_label(root,
 			Vector2(PAD + 34.0, 210.0 + float(i) * 28.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CONTENT_W - 40.0, 20.0))
+			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), MAZE_W - 40.0, 20.0))
 	_refresh_dungeon()
 
 
@@ -4876,7 +4886,7 @@ func _build_raids(root: Control) -> void:
 	# [미궁][재화 던전][주간 보스] — 셋 다 "들어가서 도는 곳"이다. 성격은 다르다:
 	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
 	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"]]
-	var mw := (CONTENT_W - 12.0 * 2.0) / 3.0
+	var mw := (MAZE_W - 12.0 * 2.0) / 3.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
 		var mb := Ui.button(str(modes[i][1]),
@@ -4887,10 +4897,18 @@ func _build_raids(root: Control) -> void:
 		root.add_child(mb)
 		_raid_mode_btns[mode] = mb
 	# 미궁 화면을 이 판 안으로 들인다 — 옛 미궁 탭의 내용 그대로다.
+	# **소탭 버튼 아래에서 시작하고 스크롤 안에 담는다**(사장님): 예전엔 미궁이
+	# 판 꼭대기부터 그려서 버튼을 덮었고, 한번 들어가면 다른 소탭으로 못 돌아갔다.
+	var mz_top := PAD + 34.0
+	var mz := Ui.scroll(Vector2(0.0, mz_top), Vector2(PANEL_W, PANEL_H - mz_top))
+	root.add_child(mz)
+	_maze_scroll = mz
 	_maze_panel = Control.new()
 	_maze_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_maze_panel.visible = false
-	root.add_child(_maze_panel)
+	# 내용은 PAD~CONTENT_BOTTOM 좌표로 그려지므로 그만큼을 세로로 확보한다.
+	_maze_panel.custom_minimum_size = Vector2(PANEL_W - Ui.SCROLL_W - 8.0,
+		CONTENT_BOTTOM + 8.0)
+	mz.add_child(_maze_panel)
 	_build_dungeon(_maze_panel)
 	_raid_list = Control.new()
 	_raid_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4907,7 +4925,7 @@ func _build_raids(root: Control) -> void:
 func _raid_set_mode(mode: String) -> void:
 	_raid_list.visible = mode == "raid"
 	_boss_panel.visible = mode == "boss"
-	_maze_panel.visible = mode == "maze"
+	_maze_scroll.visible = mode == "maze"
 	for key in _raid_mode_btns:
 		_raid_mode_btns[key].button_pressed = key == mode
 	_refresh_dungeon()
