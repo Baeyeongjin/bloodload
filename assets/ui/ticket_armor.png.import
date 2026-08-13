@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dslwmoa608mtx"
-path="res://.godot/imported/ticket_hi.png-75fe83e49f118f236503cf77f2a66942.ctex"
+uid="uid://cm3ayus2oynkc"
+path="res://.godot/imported/ticket_armor.png-eddc6740d1fedf97ebebe150fd84aa88.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/ticket_hi.png"
-dest_files=["res://.godot/imported/ticket_hi.png-75fe83e49f118f236503cf77f2a66942.ctex"]
+source_file="res://assets/ui/ticket_armor.png"
+dest_files=["res://.godot/imported/ticket_armor.png-eddc6740d1fedf97ebebe150fd84aa88.ctex"]
 
 [params]
 

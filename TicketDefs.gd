@@ -5,27 +5,47 @@ class_name TicketDefs
 # 왜 만드나: 소환 값이 보석인데, 상점과 과금이 붙으면 보석이 두 곳에서 당겨진다.
 # 임무가 "소환하라"고 준 보석이 상점으로 새면 그 임무는 보상 의도를 잃는다.
 # 소환권은 새지 않는다 — 임무가 소환권을 주면 그건 반드시 소환이 된다.
-# 동시에 보석은 **상점·과금의 통화**로 성격이 정리된다. 재화를 늘리는 게 아니라
-# 하나가 하던 두 일을 둘로 쪼개는 것이다.
 #
-# **두 종류뿐이다.** 설계 초안의 "지정 소환권"(종류를 골라 뽑는 권)은 접었다 —
-# 소환 화면이 이미 종류 탭(무기·방어구·장신구·스킬)으로 고르게 되어 있어서
-# 일반권과 하는 일이 같았다. 화면을 보기 전에 표부터 그린 대가다.
-const BASIC := "ticket"
-const HIGH := "ticket_hi"
-
-# 고급권의 바닥 등급 — 에픽 이상만 나온다. 확률표는 안 건드린다(GachaDefs.pull).
-const HIGH_FLOOR := GachaDefs.EPIC_INDEX
+# **종류별로 나눈다** (사장님 2026-08-13). 처음엔 범용 한 종으로 뒀는데, 소환
+# 화면이 이미 종류 탭으로 고르니 같은 일이라고 본 게 틀렸다 — **천장(100연)이
+# 종류별로 따로 쌓인다.** 범용권만 주면 한 종류에 몰아넣게 되고 나머지 셋의
+# 천장은 영영 안 찬다. 종류가 나뉘어야 "오늘은 스킬을 민다"가 성립한다.
+#
+# 고급권(에픽 확정)은 뺐다 (사장님) — 종류가 넷이 되면서 지갑에 다섯째 칸까지
+# 두면 화면에 다 못 적고, 확정 등급은 천장이 이미 하는 일이다.
+const KINDS := ["weapon", "armor", "trinket", "skill"]
 
 const INFO := {
-	BASIC: {"name": "소환권", "icon": "res://assets/ui/ticket.png"},
-	HIGH: {"name": "고급 소환권", "icon": "res://assets/ui/ticket_hi.png"},
+	"weapon": {"name": "무기 소환권", "short": "무기권",
+		"icon": "res://assets/ui/ticket_weapon.png"},
+	"armor": {"name": "방어구 소환권", "short": "방어구권",
+		"icon": "res://assets/ui/ticket_armor.png"},
+	"trinket": {"name": "장신구 소환권", "short": "장신구권",
+		"icon": "res://assets/ui/ticket_trinket.png"},
+	"skill": {"name": "스킬 소환권", "short": "스킬권",
+		"icon": "res://assets/ui/ticket_skill.png"},
 }
 
+# 보상 표에 적는 이름 — "ticket_weapon" 처럼 쓴다(Main._grant_reward 가 푼다).
+const PREFIX := "ticket_"
 
-static func name_of(key: String) -> String:
-	return str(INFO.get(key, {}).get("name", key))
+
+static func kind_of(reward: String) -> String:
+	var k := reward.trim_prefix(PREFIX)
+	return k if k in KINDS else ""
 
 
-static func icon_of(key: String) -> String:
-	return str(INFO.get(key, {}).get("icon", ""))
+static func reward_of(kind: String) -> String:
+	return PREFIX + kind
+
+
+static func name_of(kind: String) -> String:
+	return str(INFO.get(kind, {}).get("name", kind))
+
+
+static func short_of(kind: String) -> String:
+	return str(INFO.get(kind, {}).get("short", kind))
+
+
+static func icon_of(kind: String) -> String:
+	return str(INFO.get(kind, {}).get("icon", ""))

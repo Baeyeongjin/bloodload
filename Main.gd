@@ -129,8 +129,9 @@ var crystal := 0.0
 var sigil := 0.0
 # 소환권 — 소환 전용(TicketDefs). 장수라 정수다. 보석과 달리 **다른 데 못 쓴다**:
 # 임무·도감이 준 소환권은 반드시 소환이 된다.
-var ticket := 0
-var ticket_hi := 0
+# 종류별 소환권 (TicketDefs). kind -> 장수. **천장이 종류별로 쌓이므로** 권도
+# 나뉜다 — 범용 한 종이면 한 종류에 몰아넣게 되고 나머지 천장이 안 찬다.
+var tickets := {}
 # 유물 — id -> 레벨(0..5). 조각은 gacha_shards 에 "relic:<id>" 로 같이 쌓는다
 # (소환 장비와 같은 그릇이라 새 저장 칸을 안 만든다).
 var relics := {}
@@ -3267,22 +3268,17 @@ func _build_gacha(root: Control) -> void:
 	_gacha_labels["tickets"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 버튼 셋 — 1회 · 10연 · 고급. 260 짜리 둘이던 자리를 170 짜리 셋으로 나눈다
 	# (24 + 170x3 + 8x2 = 550, 창 안쪽 폭에 맞는다).
+	# 고급권을 없애면서(사장님) 버튼은 다시 둘이다.
 	var one := Ui.button("", Vector2(24.0, CONTENT_BOTTOM - 50.0),
-		Vector2(170.0, 50.0), Type.SIZE_SMALL)
+		Vector2(258.0, 50.0), Type.SIZE_SMALL)
 	one.pressed.connect(func() -> void: _pull_gacha(1))
 	root.add_child(one)
 	_gacha_buttons["one"] = one
-	var ten := Ui.button("", Vector2(202.0, CONTENT_BOTTOM - 50.0),
-		Vector2(170.0, 50.0), Type.SIZE_SMALL)
+	var ten := Ui.button("", Vector2(292.0, CONTENT_BOTTOM - 50.0),
+		Vector2(258.0, 50.0), Type.SIZE_SMALL)
 	ten.pressed.connect(func() -> void: _pull_gacha(10))
 	root.add_child(ten)
 	_gacha_buttons["ten"] = ten
-	# 고급권은 **자동 소비에 안 태운다** — 아껴 둔 것을 태워 버리면 손해가 크다.
-	var hi := Ui.button("", Vector2(380.0, CONTENT_BOTTOM - 50.0),
-		Vector2(170.0, 50.0), Type.SIZE_SMALL)
-	hi.pressed.connect(func() -> void: _pull_gacha(1, true))
-	root.add_child(hi)
-	_gacha_buttons["hi"] = hi
 	# 창(y 68~246)의 9-slice 테두리가 12px이라 안쪽은 80~234뿐이다. 32px 버튼을
 	# 212에 두면 테두리를 넘는다 — 버튼 원화 높이 그대로(24) 208에 놓는다.
 	var table_btn := Ui.button("확률표",
@@ -3500,27 +3496,23 @@ func _dev_jump_stage() -> void:
 # high 면 고급 소환권(에픽 확정) 한 장. 아니면 **무료 > 소환권 > 보석** 순으로
 # 낸다 — 소환권을 두고 보석이 나가면 유저가 손해를 본 줄도 모른다. 부분 지불
 # (소환권 3장 + 보석 7회)은 안 한다: 값이 두 줄로 읽히면 무엇을 냈는지 흐려진다.
-func _pull_gacha(count: int, high := false) -> void:
-	if high:
-		if ticket_hi < count:
-			return
-		ticket_hi -= count
-	var free := not high and count == 1 \
+func _pull_gacha(count: int) -> void:
+	var have := int(tickets.get(_gacha_kind, 0))
+	var free := count == 1 \
 		and free_pull_date != Time.get_date_string_from_system()
-	var by_ticket := not high and not free and ticket >= count
-	var cost := 0.0 if (high or free or by_ticket) else GachaDefs.COST * float(count)
+	var by_ticket := not free and have >= count
+	var cost := 0.0 if (free or by_ticket) else GachaDefs.COST * float(count)
 	if gem < cost:
 		return
 	gem -= cost
 	if by_ticket:
-		ticket -= count
+		tickets[_gacha_kind] = have - count
 	if free:
 		free_pull_date = Time.get_date_string_from_system()
 	_quest_bump("summon", count)
 	# 레벨은 **이번 뽑기 전** 값으로 굴린다 — 화면에 적힌 확률 그대로여야 한다.
 	var result := GachaDefs.pull(count, int(gacha_pity.get(_gacha_kind, 0)),
-		GachaDefs.level(int(gacha_pulls.get(_gacha_kind, 0))), _gacha_kind == "skill",
-		TicketDefs.HIGH_FLOOR if high else 0)
+		GachaDefs.level(int(gacha_pulls.get(_gacha_kind, 0))), _gacha_kind == "skill")
 	gacha_pity[_gacha_kind] = int(result["pity"])
 	gacha_pulls[_gacha_kind] = int(gacha_pulls.get(_gacha_kind, 0)) + count
 	mileage += count
@@ -4270,26 +4262,29 @@ func _refresh_gacha() -> void:
 	# 값이 세 갈래다: 무료 · 소환권 · 보석. **무엇으로 내는지 버튼에 적는다** —
 	# 아이콘까지 바꿔야 곁눈질로 갈린다(보석 알약 vs 소환권).
 	var free := free_pull_date != Time.get_date_string_from_system()
-	var one_ticket := not free and ticket >= 1
+	# 값은 **지금 고른 종류의 권**을 먼저 본다 — 무기 탭에서 스킬권이 나가면 안 된다.
+	var have := int(tickets.get(_gacha_kind, 0))
+	var one_ticket := not free and have >= 1
 	_gacha_buttons["one"].text = "오늘 무료 1회" if free \
 		else ("1회  1" if one_ticket else "1회  30")
 	if free:
 		_gacha_buttons["one"].icon = null
 	else:
 		Ui.cost_icon(_gacha_buttons["one"],
-			TicketDefs.icon_of(TicketDefs.BASIC) if one_ticket \
+			TicketDefs.icon_of(_gacha_kind) if one_ticket \
 			else "res://assets/ui/res_gem.png", 32)
-	var ten_ticket := ticket >= 10
+	var ten_ticket := have >= 10
 	_gacha_buttons["ten"].text = "10연  10" if ten_ticket else "10연  300"
 	Ui.cost_icon(_gacha_buttons["ten"],
-		TicketDefs.icon_of(TicketDefs.BASIC) if ten_ticket \
+		TicketDefs.icon_of(_gacha_kind) if ten_ticket \
 		else "res://assets/ui/res_gem.png", 32)
-	_gacha_buttons["hi"].text = "고급  1"
-	Ui.cost_icon(_gacha_buttons["hi"], TicketDefs.icon_of(TicketDefs.HIGH), 32)
 	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = not ten_ticket and gem < GachaDefs.COST * 10.0
-	_gacha_buttons["hi"].disabled = ticket_hi < 1
-	_gacha_labels["tickets"].text = "소환권 %d  ·  고급권 %d" % [ticket, ticket_hi]
+	# 잔량은 **네 종류를 다** 적는다 — 어느 탭에서 무엇을 쓸 수 있는지 한눈에.
+	var tk_parts := PackedStringArray()
+	for k in TicketDefs.KINDS:
+		tk_parts.append("%s %d" % [TicketDefs.short_of(k), int(tickets.get(k, 0))])
+	_gacha_labels["tickets"].text = "  ".join(tk_parts)
 
 
 const CODEX_COLS := 6   # 5칸이면 5줄이 되어 세로가 창을 넘는다
@@ -4801,7 +4796,6 @@ var _dungeon_chips: Array[Label] = []
 var _raid_list: Control
 var _raid_mode_btns := {}
 var _maze_panel: Control
-var _maze_scroll: Control
 var _boss_panel: Control
 var _boss_name: Label
 var _boss_sub: Label
@@ -4814,9 +4808,9 @@ var _raid_reward := {}
 var _raid_btn := {}
 
 
-# 미궁 화면. **스크롤 안에 산다**(_build_raids) — 안쪽 폭이 스크롤바만큼 좁으므로
-# CONTENT_W 대신 이 값을 쓴다.
-const MAZE_W := CONTENT_W - Ui.SCROLL_W - 8.0
+# 미궁 화면 폭. 판 전체를 쓰던 시절과 같다 — 소탭 버튼 아래로 34px 내려간 것
+# 말고는 좌표가 그대로다.
+const MAZE_W := CONTENT_W
 
 
 func _build_dungeon(root: Control) -> void:
@@ -4833,13 +4827,14 @@ func _build_dungeon(root: Control) -> void:
 	scrim.size = Vector2(MAZE_W, 80.0)
 	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(scrim)
-	var title := _panel_label(root, Vector2(PAD + 12.0, PAD + 4.0), Type.SIZE_MID,
+	var title := _panel_label(root, Vector2(PAD + 12.0, PAD + 30.0), Type.SIZE_MID,
 		Color(0.95, 0.68, 0.68), MAZE_W - 190.0, 28.0)
 	title.text = "핏빛 미궁"
-	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 38.0), Type.SIZE_SMALL,
+	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 58.0), Type.SIZE_SMALL,
 		Color(0.92, 0.88, 0.92), MAZE_W - 190.0, 22.0)
-	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 14.0),
-		Vector2(150.0, 48.0), Type.SIZE_MID)
+	# 소탭 버튼(y 20~54)이 이 판 위에 얹히므로 도전 버튼은 그 아래로 내린다.
+	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 34.0),
+		Vector2(150.0, 44.0), Type.SIZE_MID)
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
 			_dungeon_exit("미궁 이탈")
@@ -4883,10 +4878,18 @@ func _build_dungeon(root: Control) -> void:
 func _build_raids(root: Control) -> void:
 	# [던전][주간 보스] — 성격이 다르다: 던전은 배급(하루 한 번 뭉치),
 	# 보스는 도전(못 죽여도 누적이 남는다). 임무판과 같은 토글 문법.
+	# 미궁 화면을 먼저 깐다 — 그 위에 소탭 버튼을 얹어야 미궁에서도 버튼이 보인다
+	# (사장님: 미궁에 들어가면 돌아갈 길이 없었다). 미궁 판을 아래로 내리는 안은
+	# 접었다: 34px 를 내리면 군림 카드가 9-slice 최소 높이보다 작아져 모서리가 깨진다.
+	_maze_panel = Control.new()
+	_maze_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_maze_panel.visible = false
+	root.add_child(_maze_panel)
+	_build_dungeon(_maze_panel)
 	# [미궁][재화 던전][주간 보스] — 셋 다 "들어가서 도는 곳"이다. 성격은 다르다:
 	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
 	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"]]
-	var mw := (MAZE_W - 12.0 * 2.0) / 3.0
+	var mw := (CONTENT_W - 12.0 * 2.0) / 3.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
 		var mb := Ui.button(str(modes[i][1]),
@@ -4896,20 +4899,6 @@ func _build_raids(root: Control) -> void:
 		mb.pressed.connect(func() -> void: _raid_set_mode(mode))
 		root.add_child(mb)
 		_raid_mode_btns[mode] = mb
-	# 미궁 화면을 이 판 안으로 들인다 — 옛 미궁 탭의 내용 그대로다.
-	# **소탭 버튼 아래에서 시작하고 스크롤 안에 담는다**(사장님): 예전엔 미궁이
-	# 판 꼭대기부터 그려서 버튼을 덮었고, 한번 들어가면 다른 소탭으로 못 돌아갔다.
-	var mz_top := PAD + 34.0
-	var mz := Ui.scroll(Vector2(0.0, mz_top), Vector2(PANEL_W, PANEL_H - mz_top))
-	root.add_child(mz)
-	_maze_scroll = mz
-	_maze_panel = Control.new()
-	_maze_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# 내용은 PAD~CONTENT_BOTTOM 좌표로 그려지므로 그만큼을 세로로 확보한다.
-	_maze_panel.custom_minimum_size = Vector2(PANEL_W - Ui.SCROLL_W - 8.0,
-		CONTENT_BOTTOM + 8.0)
-	mz.add_child(_maze_panel)
-	_build_dungeon(_maze_panel)
 	_raid_list = Control.new()
 	_raid_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_raid_list)
@@ -4925,7 +4914,7 @@ func _build_raids(root: Control) -> void:
 func _raid_set_mode(mode: String) -> void:
 	_raid_list.visible = mode == "raid"
 	_boss_panel.visible = mode == "boss"
-	_maze_scroll.visible = mode == "maze"
+	_maze_panel.visible = mode == "maze"
 	for key in _raid_mode_btns:
 		_raid_mode_btns[key].button_pressed = key == mode
 	_refresh_dungeon()
@@ -5078,8 +5067,11 @@ func _grant_reward(kind: String, amount: float) -> void:
 		"sigil": sigil += amount
 		"essence": essence += amount
 		"gold": gold += amount
-		"ticket": ticket += int(amount)
-		"ticket_hi": ticket_hi += int(amount)
+		_:
+			# 소환권은 "ticket_<종류>" 로 온다 — 표에 종류가 늘어도 여기는 그대로다.
+			var tk := TicketDefs.kind_of(kind)
+			if tk != "":
+				tickets[tk] = int(tickets.get(tk, 0)) + int(amount)
 
 
 static func _reward_name(kind: String) -> String:
@@ -5088,17 +5080,14 @@ static func _reward_name(kind: String) -> String:
 		"sigil": return "인장"
 		"essence": return "정수"
 		"gold": return "혈액"
-		"ticket": return "소환권"
-		"ticket_hi": return "고급권"
-	return "보석"
+	var tk := TicketDefs.kind_of(kind)
+	return TicketDefs.short_of(tk) if tk != "" else "보석"
 
 
 static func _reward_icon(kind: String) -> String:
 	match kind:
 		"crystal": return "res_crystal"
 		"sigil": return "res_sigil"
-		"ticket": return "ticket"
-		"ticket_hi": return "ticket_hi"
 	return "res_gem"
 
 
@@ -8442,8 +8431,7 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "gem", gem)
 	cfg.set_value("wallet", "crystal", crystal)
 	cfg.set_value("wallet", "sigil", sigil)
-	cfg.set_value("wallet", "ticket", ticket)
-	cfg.set_value("wallet", "ticket_hi", ticket_hi)
+	cfg.set_value("wallet", "tickets", tickets)
 	cfg.set_value("run", "relics", relics)
 	cfg.set_value("run", "title_ms", title_ms_got)
 	cfg.set_value("run", "promo_got", promo_got)
@@ -8505,8 +8493,7 @@ func _load_game() -> void:
 	gem = maxf(0.0, float(cfg.get_value("wallet", "gem", 0.0)))
 	crystal = maxf(0.0, float(cfg.get_value("wallet", "crystal", 0.0)))
 	sigil = maxf(0.0, float(cfg.get_value("wallet", "sigil", 0.0)))
-	ticket = maxi(0, int(cfg.get_value("wallet", "ticket", 0)))
-	ticket_hi = maxi(0, int(cfg.get_value("wallet", "ticket_hi", 0)))
+	tickets = cfg.get_value("wallet", "tickets", {})
 	relics = cfg.get_value("run", "relics", {})
 	title_ms_got = cfg.get_value("run", "title_ms", {})
 	promo_got = cfg.get_value("run", "promo_got", {})

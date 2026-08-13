@@ -87,10 +87,10 @@ static func earned(id: String, state: Dictionary) -> bool:
 # 이중이다. 대신 **몇 개를 모았는가**에 따로 상을 건다 — 칭호는 조건이 제각각이라
 # 하나씩 보면 순서가 안 보이는데, 개수 이정표가 그 줄을 세워 준다.
 const MILESTONES := [
-	{"n": 3, "reward": "ticket", "amount": 10},
-	{"n": 5, "reward": "ticket_hi", "amount": 3},
-	{"n": 8, "reward": "ticket", "amount": 20},
-	{"n": 10, "reward": "ticket_hi", "amount": 10},
+	{"n": 3, "reward": "ticket_weapon", "amount": 10},
+	{"n": 5, "reward": "ticket_armor", "amount": 10},
+	{"n": 8, "reward": "ticket_trinket", "amount": 20},
+	{"n": 10, "reward": "ticket_skill", "amount": 20},
 ]
 
 

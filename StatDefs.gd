@@ -130,9 +130,9 @@ const PROMO_FLOORS := [0, 20, 40, 80]
 # 0단계(시작)는 없다.
 const PROMO_REWARDS := [
 	{},
-	{"reward": "ticket", "amount": 10},
-	{"reward": "ticket", "amount": 20},
-	{"reward": "ticket_hi", "amount": 10},
+	{"reward": "ticket_weapon", "amount": 10},
+	{"reward": "ticket_armor", "amount": 20},
+	{"reward": "ticket_skill", "amount": 20},
 ]
 
 

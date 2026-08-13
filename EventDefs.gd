@@ -53,8 +53,8 @@ const BOSSES := [
 const MILESTONES := [
 	{"need": 30.0, "reward": "gem", "amount": 60},
 	{"need": 90.0, "reward": "crystal", "amount": 80},
-	{"need": 200.0, "reward": "ticket", "amount": 10},
-	{"need": 400.0, "reward": "ticket_hi", "amount": 3},
+	{"need": 200.0, "reward": "ticket_trinket", "amount": 10},
+	{"need": 400.0, "reward": "ticket_skill", "amount": 10},
 ]
 
 
