@@ -224,6 +224,14 @@ def main(argv):
     if not argv:
         print(__doc__ or "usage: install_motion.py <skin> motion=<job> ...")
         return 1
+    # --no-span: 폭(사거리) 검사를 끈다. **세로·제자리 동작에만 쓴다** —
+    # HANDOFF 8-2 의 그 선례다(boss_2 발밑 충격파·boss_3 얼음 가시·boss_4 촉수는
+    # 가로 폭이 안 변하는 게 맞다). 긴 드레스처럼 팔이 몸에 붙은 실루엣도 같은
+    # 경우라, 세 번 다시 뽑아도 0px 이 나온다. 실루엣 변화 검사는 그대로 걸린다.
+    global REACH
+    if "--no-span" in argv:
+        argv = [a for a in argv if a != "--no-span"]
+        REACH = set()
     check_only = argv[0] == "--check"
     if check_only:
         argv = argv[1:]

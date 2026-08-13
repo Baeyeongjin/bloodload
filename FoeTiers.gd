@@ -28,6 +28,13 @@ const TIERS := {
 	"wraith_knight":{"name": "망령 기사", "hp_mult": 3.4, "size": 1.25},
 	"cultist":      {"name": "뿔 광신도", "hp_mult": 2.9, "size": 1.1},
 	"dark_knight":  {"name": "다크 나이트", "hp_mult": 3.8, "size": 1.4},
+	# 주간 보스 전용 4종 (2026-08-13 사장님: "새로운 신규 보스"). 본편 로스터에는
+	# 안 들어간다 — StageDefs.ACTS 가 안 부르므로 주간 보스에서만 나온다.
+	# 걷기·공격·특수 애니를 전용으로 뽑았다(기존 보스 몸을 빌리면 "또 저놈"이 된다).
+	"plague_hag":   {"name": "역병의 산파", "hp_mult": 3.5, "size": 1.35},
+	"bone_choir":   {"name": "뼈의 합창단", "hp_mult": 3.6, "size": 1.45},
+	"blood_queen":  {"name": "피의 여왕", "hp_mult": 3.7, "size": 1.3},
+	"butcher":      {"name": "잊힌 도살자", "hp_mult": 4.0, "size": 1.45},
 }
 
 

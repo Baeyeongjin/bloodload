@@ -699,7 +699,14 @@ func _ready() -> void:
 			_shop_view.visible = true
 			_refresh_shop()
 		# [개발 도구] --boss[=in] : 주간 보스 판(=in 이면 도전 중)으로 캡처한다.
-		if arg == "--boss" or arg == "--boss=in":
+		if arg.begins_with("--boss=") and arg.trim_prefix("--boss=").is_valid_int():
+			_dev_boss = int(arg.trim_prefix("--boss="))
+			_select_tab("raid")
+			_raid_set_mode("boss")
+			_boss_dps_snap = dps()
+			boss_dmg = _boss_dps_snap * 120.0
+			_refresh_dungeon()
+		elif arg == "--boss" or arg == "--boss=in":
 			_select_tab("raid")
 			_raid_set_mode("boss")
 			_boss_dps_snap = dps()
@@ -7364,7 +7371,14 @@ var _boss_dps_snap := 0.0  # 도전 시작 시 화력 — 이정표 기준을 �
 var boss_tier := 1
 
 
+# [개발 도구] --boss=4 : 순환을 무시하고 그 보스를 띄운다. 8종이 되면서 특정
+# 보스를 화면에서 보려면 몇 주를 기다려야 하는데, 그건 검수 방법이 아니다.
+var _dev_boss := -1
+
+
 func _boss_week_index() -> int:
+	if _dev_boss >= 0:
+		return _dev_boss
 	# 주 열쇠(월요일 날짜)에서 순환 번호를 만든다. 날짜 문자열의 일수만 쓰면
 	# 월이 바뀔 때 순서가 튀어서, 유닉스 주 수를 그대로 센다.
 	return int(Time.get_unix_time_from_datetime_string(quest_week + "T00:00:00")) \

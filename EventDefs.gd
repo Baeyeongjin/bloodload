@@ -36,6 +36,16 @@ const BOSSES := [
 		"art": "boss_saint"},
 	{"name": "재의 폭군", "key": "dark_knight", "anim": "boss_5",
 		"art": "boss_tyrant"},
+	# 신규 4종 (2026-08-13). 앞의 넷은 본편 보스 자산을 빌렸지만 이들은 몸까지
+	# 전용이라 주간 보스에서만 볼 수 있다 — 8주 순환이 된다.
+	{"name": "역병의 산파", "key": "plague_hag", "anim": "plague_hag",
+		"art": "boss_hag"},
+	{"name": "뼈의 합창단", "key": "bone_choir", "anim": "bone_choir",
+		"art": "boss_choir"},
+	{"name": "피의 여왕", "key": "blood_queen", "anim": "blood_queen",
+		"art": "boss_queen"},
+	{"name": "잊힌 도살자", "key": "butcher", "anim": "butcher",
+		"art": "boss_butcher"},
 ]
 
 # 마일스톤 — 그 주 누적 피해가 이 배수(내 dps x 초)를 넘으면 하나씩 열린다.
