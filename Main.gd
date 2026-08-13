@@ -393,11 +393,12 @@ var gacha_shards := {}
 var free_pull_date := ""
 var _gacha_kind := "weapon"
 # 소환 창 왼쪽 그림 자리. 창(y 68~246)의 세로 한가운데에 온다.
-# 64px 원본 1배 — 카드 액자 창에 128 은 안 들어간다. 도트 정합은 1배가 정확.
+# 종류별 전용 제단 그림(sets/altar_*.png, 80px) — 64px 공용 제단은 세트 액자
+# 안에서 작고 결이 안 맞았다(사장님: "아이콘도 그렇고 어색해").
 # 자리는 세트마다 액자가 달라서 _refresh_gacha 가 장소에 맞춰 옮긴다.
-const GACHA_ART_BOX := 64.0
-const GACHA_ART_X := 135.0   # 대장간 철판 액자 창 실측
-const GACHA_ART_Y := 370.0
+const GACHA_ART_BOX := 80.0
+const GACHA_ART_X := 122.0   # 대장간 철판 액자 창 실측
+const GACHA_ART_Y := 358.0
 # 레벨별 확률표를 펼쳐 보는 창. 지금 레벨의 확률만 보이면 "올리면 뭐가 좋아지는지"가
 # 숫자로 안 잡힌다 — 해금 레벨만 적혀 있고 그 뒤가 안 보인다.
 # 0레벨부터 만렙까지 **전부** 보여 준다. 몇 개만 뽑아 보여 주면 그 사이가 어떻게
@@ -412,6 +413,11 @@ var _gacha_line: Label
 var _gacha_bubble: TextureRect     # 말풍선 틀 — 세트 알약, 장소 따라 바뀐다
 var _gacha_card_tex: TextureRect   # 소환 카드 몸판 — 철판/별판
 var _gacha_kind_labels := {}       # 종류 탭이 그림 버튼이라 글자는 따로 얹는다
+var _gacha_btn_tex := {}           # 1회·10연 — 그림/아이콘/글자가 셋으로 나뉜다
+var _gacha_btn_icon := {}
+var _gacha_btn_lbl := {}
+var _gacha_table_tex: TextureRect  # 확률표 알약
+var _gacha_tk_texs: Array[TextureRect] = []   # 소환권 알약 그림 넷
 var _gacha_labels := {}
 var _gacha_ticket_labels: Array[Label] = []
 var _gacha_buttons := {}
@@ -3330,35 +3336,53 @@ func _build_gacha(root: Control) -> void:
 		Color(0.62, 0.82, 0.68), text_w, 44.0)
 	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 확률표 버튼은 카드의 아랫띠(대장간 잉걸불/점성소 별빛 자리)에 선다.
-	var table_btn := Ui.button("확률표",
-		Vector2(PAD + (CONTENT_W - 110.0) * 0.5, 488.0),
-		Vector2(110.0, 28.0), Type.SIZE_SMALL)
+	# 확률표 버튼 — 세트 알약 그림. 카드 아랫띠(잉걸불/별빛 홈)에 선다.
+	var tpos := Vector2(PAD + (CONTENT_W - 116.0) * 0.5, 486.0)
+	_gacha_table_tex = _shop_tex(root, "res://assets/ui/sets/forge_pill.png",
+		tpos, Vector2(116.0, 34.0))
+	var tlb := _panel_label(root, Vector2(tpos.x, tpos.y + 9.0), Type.SIZE_SMALL,
+		Color(0.95, 0.90, 0.86), 116.0, 18.0)
+	tlb.text = "확률표"
+	tlb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(tlb, 5)
+	var table_btn := _shop_ghost(root, Vector2(116.0, 34.0))
+	table_btn.position = tpos
 	table_btn.pressed.connect(func() -> void:
 		_rates_view.visible = not _rates_view.visible
 		if _rates_view.visible:
 			_refresh_rates_table())
-	root.add_child(table_btn)
-	# 소환권 잔량 — **아이콘 + 숫자 알약 넷** (참고작 상단 재화 줄과 같은 문법).
+	# 소환권 잔량 — **아이콘 + 숫자, 세트 알약 넷** (참고작 상단 재화 줄 문법).
 	var tk_w := (CONTENT_W - 30.0) / 4.0
 	for i in TicketDefs.KINDS.size():
 		var tk: String = TicketDefs.KINDS[i]
 		var tx2 := PAD + float(i) * (tk_w + 10.0)
-		root.add_child(Ui.currency_bar(Vector2(tx2, 554.0), Vector2(tk_w, 28.0)))
-		root.add_child(Ui.icon(TicketDefs.icon_of(tk), Vector2(tx2 + 5.0, 558.0), 20.0))
-		_gacha_ticket_labels.append(_panel_label(root, Vector2(tx2 + 30.0, 554.0),
-			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), tk_w - 36.0, 28.0))
-	# 버튼 둘 — 1회 · 10연. 전면 판이라 넉넉히 키운다.
-	var one := Ui.button("", Vector2(24.0, 598.0), Vector2(258.0, 56.0),
-		Type.SIZE_SMALL)
-	one.pressed.connect(func() -> void: _pull_gacha(1))
-	root.add_child(one)
-	_gacha_buttons["one"] = one
-	var ten := Ui.button("", Vector2(292.0, 598.0), Vector2(258.0, 56.0),
-		Type.SIZE_SMALL)
-	ten.pressed.connect(func() -> void: _pull_gacha(10))
-	root.add_child(ten)
-	_gacha_buttons["ten"] = ten
+		_gacha_tk_texs.append(_shop_tex(root,
+			"res://assets/ui/sets/forge_pill.png",
+			Vector2(tx2, 552.0), Vector2(tk_w, 30.0)))
+		root.add_child(Ui.icon(TicketDefs.icon_of(tk), Vector2(tx2 + 8.0, 557.0), 20.0))
+		_gacha_ticket_labels.append(_panel_label(root, Vector2(tx2 + 34.0, 553.0),
+			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), tk_w - 40.0, 28.0))
+	# 버튼 둘 — 1회 · 10연. 세트 버튼 그림 + 투명 버튼(값 표기는 라벨·아이콘).
+	for pair in [["one", 24.0, 1], ["ten", 292.0, 10]]:
+		var key: String = pair[0]
+		var bpos := Vector2(pair[1], 596.0)
+		var count: int = pair[2]
+		_gacha_btn_tex[key] = _shop_tex(root,
+			"res://assets/ui/sets/forge_button.png", bpos, Vector2(258.0, 58.0))
+		var bic := Ui.icon("res://assets/ui/res_gem.png",
+			bpos + Vector2(52.0, 15.0), 28.0)
+		bic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(bic)
+		_gacha_btn_icon[key] = bic
+		var blb := _panel_label(root, bpos + Vector2(0.0, 17.0), Type.SIZE_MID,
+			Color(1.0, 0.96, 0.90), 258.0, 24.0)
+		blb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(blb, 8)
+		_gacha_btn_lbl[key] = blb
+		var gb := _shop_ghost(root, Vector2(258.0, 58.0))
+		gb.position = bpos
+		gb.pressed.connect(func() -> void: _pull_gacha(count))
+		_gacha_buttons[key] = gb
 	_build_rates_table(root)
 	_gacha_reveal = Control.new()
 	_gacha_reveal.size = Vector2(PANEL_W, PANEL_FULL_H)
@@ -4282,13 +4306,13 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 func _refresh_gacha() -> void:
 	if _gacha_labels.is_empty():
 		return
-	# 종류마다 전용 제단 그림. 파일명이 곧 종류라 표를 따로 두지 않는다.
-	# 유물은 전용 제단 그림이 없다 — 공용 제단을 쓴다(없는 파일이면 빈 칸이 뜬다).
-	_gacha_icon.texture = Assets.tex("res://assets/ui/summon_altar.png" \
-		if _gacha_kind == "relic" \
-		else "res://assets/ui/summon_%s.png" % _gacha_kind)
+	# 종류마다 전용 그림 — 세트 결(대장간=모루, 점성소=별빛)로 새로 뽑았다.
+	_gacha_icon.texture = Assets.tex(
+		"res://assets/ui/sets/altar_%s.png" % _gacha_kind)
+	# 유물이 "스킬 소환"으로 적히던 버그 — 장비가 아니면 다 스킬로 뭉뚱그렸다.
 	var kind_name: String = GearDefs.SLOT_NAME[_gacha_kind] \
-		if _gacha_kind in GearDefs.SLOTS else "스킬"
+		if _gacha_kind in GearDefs.SLOTS \
+		else ("유물" if _gacha_kind == "relic" else "스킬")
 	var pulls := int(gacha_pulls.get(_gacha_kind, 0))
 	var lv := GachaDefs.level(pulls)
 	var need := GachaDefs.level_next_need(pulls)
@@ -4328,8 +4352,8 @@ func _refresh_gacha() -> void:
 	_gacha_bubble.texture = Assets.tex(
 		"res://assets/ui/sets/%s_tab_off.png" % set_name)
 	# 액자가 세트마다 다른 자리다 — 그림도 따라 옮긴다.
-	_gacha_icon.position = Vector2(GACHA_ART_X + 3.0, GACHA_ART_Y - 4.0) if forge \
-		else Vector2(105.0, 378.0)
+	_gacha_icon.position = Vector2(GACHA_ART_X, GACHA_ART_Y) if forge \
+		else Vector2(96.0, 364.0)
 	_gacha_place.text = "핏빛 대장간" if forge else "달의 제단"
 	_gacha_line.text = "좋은 재료가 들어왔다. 골라 봐라." if forge \
 		else "운명의 조각이 떨리고 있어요…"
@@ -4356,21 +4380,32 @@ func _refresh_gacha() -> void:
 	# 값은 **지금 고른 종류의 권**을 먼저 본다 — 무기 탭에서 스킬권이 나가면 안 된다.
 	var have := int(tickets.get(_gacha_kind, 0))
 	var one_ticket := not free and have >= 1
-	_gacha_buttons["one"].text = "오늘 무료 1회" if free \
+	_gacha_btn_lbl["one"].text = "오늘 무료 1회" if free \
 		else ("1회  1" if one_ticket else "1회  30")
-	if free:
-		_gacha_buttons["one"].icon = null
-	else:
-		Ui.cost_icon(_gacha_buttons["one"],
+	_gacha_btn_icon["one"].visible = not free
+	if not free:
+		_gacha_btn_icon["one"].texture = Assets.tex(
 			TicketDefs.icon_of(_gacha_kind) if one_ticket \
-			else "res://assets/ui/res_gem.png", 32)
+			else "res://assets/ui/res_gem.png")
 	var ten_ticket := have >= 10
-	_gacha_buttons["ten"].text = "10연  10" if ten_ticket else "10연  300"
-	Ui.cost_icon(_gacha_buttons["ten"],
+	_gacha_btn_lbl["ten"].text = "10연  10" if ten_ticket else "10연  300"
+	_gacha_btn_icon["ten"].texture = Assets.tex(
 		TicketDefs.icon_of(_gacha_kind) if ten_ticket \
-		else "res://assets/ui/res_gem.png", 32)
+		else "res://assets/ui/res_gem.png")
 	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = not ten_ticket and gem < GachaDefs.COST * 10.0
+	# 그림 버튼·알약의 세트 전환 + 잠김 표시(어두워진다).
+	for key in ["one", "ten"]:
+		_gacha_btn_tex[key].texture = Assets.tex(
+			"res://assets/ui/sets/%s_button.png" % set_name)
+		var dim: bool = _gacha_buttons[key].disabled
+		_gacha_btn_tex[key].modulate = Color(0.5, 0.47, 0.5) if dim else Color(1, 1, 1)
+		_gacha_btn_lbl[key].modulate = Color(0.6, 0.58, 0.6) if dim else Color(1, 1, 1)
+		_gacha_btn_icon[key].modulate = Color(0.6, 0.58, 0.6) if dim else Color(1, 1, 1)
+	_gacha_table_tex.texture = Assets.tex(
+		"res://assets/ui/sets/%s_pill.png" % set_name)
+	for t in _gacha_tk_texs:
+		t.texture = Assets.tex("res://assets/ui/sets/%s_pill.png" % set_name)
 	# 잔량은 **네 종류를 다** 적는다 — 어느 탭에서 무엇을 쓸 수 있는지 한눈에.
 	for i in TicketDefs.KINDS.size():
 		var k: String = TicketDefs.KINDS[i]
