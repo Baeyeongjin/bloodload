@@ -7,13 +7,20 @@ import sys, os
 from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ANIM = os.path.join(ROOT, "assets", "anim")
-for name in sys.argv[1:]:
+# 모션 전체:  plague_hag_walk
+# 일부 프레임: plague_hag_attack:0,1,2,3,4,8
+# **생성기가 한 모션 안에서도 방향을 섞는다** — 프레임 단위로 짚어야 고쳐진다.
+for arg in sys.argv[1:]:
+    name, _, want = arg.partition(":")
+    idxs = None if not want else set(int(i) for i in want.split(","))
     d = os.path.join(ANIM, name)
     n = 0
     for f in sorted(os.listdir(d)):
         if not f.endswith(".png"):
             continue
-        p = os.path.join(d, f)
-        Image.open(p).transpose(Image.FLIP_LEFT_RIGHT).save(p)
+        if idxs is not None and int(os.path.splitext(f)[0]) not in idxs:
+            continue
+        fp = os.path.join(d, f)
+        Image.open(fp).transpose(Image.FLIP_LEFT_RIGHT).save(fp)
         n += 1
     print(name, n)
