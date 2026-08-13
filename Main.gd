@@ -418,6 +418,10 @@ var _gacha_btn_tex := {}           # 1회·10연 — 그림/아이콘/글자가 
 var _gacha_btn_icon := {}
 var _gacha_btn_lbl := {}
 var _gacha_table_tex: TextureRect  # 확률표 알약
+var _gacha_table_lbl: Label
+var _gacha_table_btn: Button
+# 확률표 알약의 세로 자리 — 몸판마다 아랫띠 높이가 달라 세트별로 잰 값이다.
+const TABLE_Y := {"forge": 498.0, "astro": 506.0}
 var _gacha_tk_texs: Array[TextureRect] = []   # 소환권 알약 그림 넷
 var _gacha_labels := {}
 var _gacha_ticket_labels: Array[Label] = []
@@ -3337,17 +3341,19 @@ func _build_gacha(root: Control) -> void:
 		Color(0.62, 0.82, 0.68), text_w, 44.0)
 	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 확률표 버튼 — 세트 알약 그림. 카드 아랫띠(두 몸판 다 이 높이에 홈이 있다).
-	var tpos := Vector2(PAD + (CONTENT_W - 116.0) * 0.5, 512.0)
+	# 확률표 버튼 — 세트 알약 그림. **띠 높이가 몸판마다 달라 y 는 세트별**이다
+	# (사장님: "두 개 사이즈 공유하니? 같이 움직이네") — TABLE_Y 를 _refresh 가 고른다.
+	var tpos := Vector2(PAD + (CONTENT_W - 116.0) * 0.5, TABLE_Y["forge"])
 	_gacha_table_tex = _shop_tex(root, "res://assets/ui/sets/forge_pill.png",
 		tpos, Vector2(116.0, 34.0))
-	var tlb := _panel_label(root, Vector2(tpos.x, tpos.y + 9.0), Type.SIZE_SMALL,
-		Color(0.95, 0.90, 0.86), 116.0, 18.0)
-	tlb.text = "확률표"
-	tlb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_shop_outline(tlb, 5)
+	_gacha_table_lbl = _panel_label(root, Vector2(tpos.x, tpos.y + 9.0),
+		Type.SIZE_SMALL, Color(0.95, 0.90, 0.86), 116.0, 18.0)
+	_gacha_table_lbl.text = "확률표"
+	_gacha_table_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_gacha_table_lbl, 5)
 	var table_btn := _shop_ghost(root, Vector2(116.0, 34.0))
 	table_btn.position = tpos
+	_gacha_table_btn = table_btn
 	table_btn.pressed.connect(func() -> void:
 		_rates_view.visible = not _rates_view.visible
 		if _rates_view.visible:
@@ -4414,6 +4420,10 @@ func _refresh_gacha() -> void:
 		_gacha_btn_icon[key].modulate = Color(0.6, 0.58, 0.6) if dim else Color(1, 1, 1)
 	_gacha_table_tex.texture = Assets.tex(
 		"res://assets/ui/sets/%s_pill.png" % set_name)
+	var ty: float = TABLE_Y[set_name]
+	_gacha_table_tex.position.y = ty
+	_gacha_table_lbl.position.y = ty + 9.0
+	_gacha_table_btn.position.y = ty
 	for t in _gacha_tk_texs:
 		t.texture = Assets.tex("res://assets/ui/sets/%s_pill.png" % set_name)
 	# 잔량은 **네 종류를 다** 적는다 — 어느 탭에서 무엇을 쓸 수 있는지 한눈에.
