@@ -701,6 +701,10 @@ func _ready() -> void:
 		# [개발 도구] --boss[=in] : 주간 보스 판(=in 이면 도전 중)으로 캡처한다.
 		if arg.begins_with("--boss=") and arg.trim_prefix("--boss=").is_valid_int():
 			_dev_boss = int(arg.trim_prefix("--boss="))
+			# 캡처마다 도전 횟수가 깎여서 넷째 판부터 진입이 막힌다(실측) —
+			# 검수용 플래그는 표를 되돌려 넣는다(--raid= 와 같은 규칙).
+			_boss_roll()
+			boss_tries = EventDefs.TRIES_PER_DAY
 			_select_tab("raid")
 			_raid_set_mode("boss")
 			_boss_dps_snap = dps()
