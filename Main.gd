@@ -697,12 +697,15 @@ func _ready() -> void:
 			_select_tab("growth")
 			_set_growth_mode("relic")
 		# [개발 도구] --shop : 상점을 연 채로 캡처한다(해금 계단이 다 보이게).
-		if arg == "--shop":
+		if arg == "--shop" or arg.begins_with("--shop="):
 			best_stage = maxi(best_stage, RaidDefs.open_stage("essence"))
 			dungeon_best = maxi(dungeon_best, 20)
 			gem = maxf(gem, 500.0)
 			shop_used = {}          # 캡처는 오늘 아무것도 안 산 상태로
 			_select_tab("shop")
+			for a2 in args:
+				if a2.begins_with("--shop="):
+					_shop_set_mode(a2.trim_prefix("--shop="))
 		# [개발 도구] --boss[=in] : 주간 보스 판(=in 이면 도전 중)으로 캡처한다.
 		if arg.begins_with("--boss=") and arg.trim_prefix("--boss=").is_valid_int():
 			_dev_boss = int(arg.trim_prefix("--boss="))
@@ -5432,50 +5435,345 @@ func _build_quests() -> void:
 var shop_date := ""
 var shop_used := {}          # id -> 오늘 산 횟수
 var _shop_view: Control
-var _shop_names: Array[Label] = []
-var _shop_amounts: Array[Label] = []
-var _shop_lefts: Array[Label] = []
-var _shop_buttons: Array[Button] = []
-var _shop_icons: Array[TextureRect] = []
-# 64 — 다섯 줄이 창(PAD 26 ~ CONTENT_BOTTOM 358) 안에 서는 최대치다.
-const SHOP_ROW_H := 64.0
+var _pack_view: Control
+var _sub_view: Control
+var _shop_mode_btns := {}
+var _pack_rows: Array[Dictionary] = []
+var _shop_cards: Array[Dictionary] = []   # 교환 카드(vcard) 5장
+var _shop_line: Label                      # 상인 대사 — 소탭마다 바뀐다
+# 전면 재설계(사장님 2026-08-13: "상점은 제일 꽃이야") — 레퍼런스 9장의 문법:
+# **카드 한 장에 배지·그림·구성·한도·가격이 다 들어간다.** 줄 나열이 아니라
+# 카드 격자고, 위에는 상인이 서서 가게 분위기를 만든다. 자산은 전부 새로
+# 뽑았다(assets/ui/shop/, tools/slice_shop_ui.py 가 시트를 조각낸다).
+const SHOP_DIR := "res://assets/ui/shop/"
+const SHOP_HEAD_H := 88.0     # 상인 창 — 판 384 에서 카드 스크롤을 208 남기는 상한
+const SHOP_TAB_Y := 108.0
+const SHOP_SCROLL_Y := 150.0
+const SHOP_LIST_W := CONTENT_W - Ui.SCROLL_W - 6.0   # 스크롤 안 콘텐츠 폭 498
+const SHOP_COL_W := 240.0     # 세로 카드 폭 — (498-14)/2 를 넘지 않게
+const SHOP_VCARD_H := 214.0   # 세로 카드 높이(제목 38 + 액자 116 + 한도 + 가격 36)
+const SHOP_WCARD_H := 227.0   # 와이드 카드 — 원본 565x260 을 폭 494 로 축소한 비율
 
 
-# **상점은 이제 탭이다** (사장님 2026-08-13). 팝업 자리에서 탭 콘텐츠로 옮겼다 —
-# 과금 상품이 붙으면 진열이 늘어나므로 팝업 한 판으로는 안 담긴다. 소탭은
-# 상품군이 생기는 대로 여기 붙인다(설계서 7-1: 특가·정기·소환권·교환).
+# **상점은 이제 탭이다** (사장님 2026-08-13). 소탭 셋: 특가(1회성 팩) ·
+# 정기(구독+보석 충전) · 교환(보석으로 하루 배급 앞당기기).
 func _build_shop(root: Control) -> void:
-	_shop_view = Control.new()
-	_shop_view.size = Vector2(PANEL_W, PANEL_H)
-	_shop_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_shop_view)
-	var x := PAD
-	var w := CONTENT_W
-	# 머리글은 안 단다 — 탭 이름이 이미 "상점"이고, 세로를 그만큼 벌어야 다섯 줄이
-	# 창(358) 안에 선다(실측: 머리글 + 78 짜리 다섯 줄이면 450 으로 넘친다).
+	# 1) 상인 헤더 — 그림(576x224)을 클립 창으로 떠낸다(미궁 머리판과 같은 수법).
+	var head := Control.new()
+	head.position = Vector2(PAD, 12.0)
+	head.size = Vector2(CONTENT_W, SHOP_HEAD_H)
+	head.clip_contents = true
+	root.add_child(head)
+	var mer := TextureRect.new()
+	mer.texture = Assets.tex(SHOP_DIR + "merchant.png")
+	mer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	mer.size = Vector2(CONTENT_W, CONTENT_W * 224.0 / 576.0)   # 528x205
+	mer.position = Vector2(0.0, -58.0)     # 상인 얼굴~카운터가 창에 오는 실측값
+	mer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	mer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(mer)
+	# 말풍선 — 새 카드의 제목 띠를 늘려 쓴다. 대사는 소탭마다 바뀐다.
+	# 폭 328: 제일 긴 대사("매일 들러 주시는…")가 300 에서 끝이 잘렸다(실측).
+	_shop_tex(head, "card_title", Vector2(8.0, 8.0), Vector2(328.0, 40.0))
+	_shop_line = _panel_label(head, Vector2(26.0, 18.0), Type.SIZE_SMALL,
+		Color(0.95, 0.88, 0.80), 300.0, 18.0)
+	_shop_outline(_shop_line, 4)
+	# 2) 소탭 — 박쥐 알약. 켬/끔이 그림이라 TextureButton 이다.
+	var modes := [["pack", "특가"], ["sub", "정기"], ["trade", "교환"]]
+	var sw := (CONTENT_W - 10.0 * 2.0) / 3.0
+	for i in modes.size():
+		var mode: String = modes[i][0]
+		var tb := TextureButton.new()
+		tb.texture_normal = Assets.tex(SHOP_DIR + "tab_off.png")
+		tb.texture_pressed = Assets.tex(SHOP_DIR + "tab_on.png")
+		tb.ignore_texture_size = true
+		tb.stretch_mode = TextureButton.STRETCH_SCALE
+		tb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		tb.toggle_mode = true
+		tb.position = Vector2(PAD + float(i) * (sw + 10.0), SHOP_TAB_Y)
+		tb.size = Vector2(sw, 36.0)
+		tb.pressed.connect(func() -> void: _shop_set_mode(mode))
+		root.add_child(tb)
+		# 박쥐 문양이 알약 정중앙이라 글자와 무조건 겹친다 — 11px 는 문양에
+		# 묻혔다(실측). 16px + 두꺼운 외곽선으로 글자가 문양을 이기게 한다.
+		var tl := _panel_label(root, Vector2(tb.position.x, SHOP_TAB_Y + 7.0),
+			Type.SIZE_MID, Color(1.0, 0.97, 0.92), sw, 22.0)
+		tl.text = str(modes[i][1])
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(tl, 8)
+		_shop_mode_btns[mode] = tb
+	# 3) 모드별 스크롤 — 카드가 커서(레퍼런스 문법) 진열은 전부 스크롤이다.
+	_pack_view = _shop_scroll_view(root)
+	_build_shop_packs(_pack_view)
+	_sub_view = _shop_scroll_view(root)
+	_build_shop_subs(_sub_view)
+	_shop_view = _shop_scroll_view(root)
+	_build_shop_trade(_shop_view)
+	_shop_set_mode("pack")
+
+
+func _shop_scroll_view(root: Control) -> Control:
+	var sc := Ui.scroll(Vector2(PAD, SHOP_SCROLL_Y),
+		Vector2(CONTENT_W, CONTENT_BOTTOM - SHOP_SCROLL_Y))
+	root.add_child(sc)
+	var inner := Control.new()
+	inner.custom_minimum_size.x = SHOP_LIST_W
+	sc.add_child(inner)
+	return inner
+
+
+# ── 카드 조립 조각들 ────────────────────────────────────────────────────────
+# 그림 위에 얹는 글자는 전부 이걸 거친다 — 박쥐 문양·별 무늬 위에서 맨 글자가
+# 뭉개졌다(사장님 실측 지적). 외곽선 문법은 수량 라벨과 같다.
+func _shop_outline(l: Label, size := 5) -> void:
+	l.add_theme_constant_override("outline_size", size)
+	l.add_theme_color_override("font_outline_color", Color(0.08, 0.02, 0.04))
+
+
+# 시트 조각 하나. 도트라 NEAREST, 전부 마우스 무시(버튼은 투명 버튼이 따로 덮는다).
+func _shop_tex(parent: Control, file: String, pos: Vector2,
+		size: Vector2) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = Assets.tex(SHOP_DIR + file + ".png")
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.position = pos
+	t.size = size
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(t)
+	return t
+
+
+# 카드 전체를 덮는 투명 버튼 — 가격 띠가 이미 버튼처럼 그려져 있어서
+# 그림 위에 또 버튼 판을 얹으면 이중 액자가 된다.
+func _shop_ghost(parent: Control, size: Vector2) -> Button:
+	var b := Button.new()
+	b.size = size
+	for st in ["normal", "hover", "pressed", "disabled", "focus"]:
+		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	parent.add_child(b)
+	return b
+
+
+# 리본 머리 — "필수 구매" 같은 섹션 이름표.
+func _shop_ribbon(parent: Control, y: float, text: String) -> void:
+	_shop_tex(parent, "ribbon", Vector2(0.0, y), Vector2(SHOP_LIST_W, 53.0))
+	var l := _panel_label(parent, Vector2(0.0, y + 17.0), Type.SIZE_MID,
+		Color(0.96, 0.84, 0.55), SHOP_LIST_W, 20.0)
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(l, 4)
+
+
+# 별 배지 — "가치 N%". 카드 왼쪽 위 모서리에 겹친다(레퍼런스).
+func _shop_badge(parent: Control, value: int) -> void:
+	_shop_tex(parent, "badge_star", Vector2(-10.0, -12.0), Vector2(62.0, 62.0))
+	var l := _panel_label(parent, Vector2(-10.0, 6.0), Type.SIZE_SMALL,
+		Color(1.0, 1.0, 1.0), 62.0, 30.0)
+	l.text = "%d%%\n가치" % value
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(l, 8)      # 별 무늬가 복잡해서 순백 + 두꺼운 외곽선이어야 산다
+
+
+# 보상 알약 하나 — 아이콘 + 수. 와이드 카드의 "구성" 표기.
+func _shop_pill(parent: Control, pos: Vector2, icon: String, text: String) -> void:
+	_shop_tex(parent, "pill", pos, Vector2(108.0, 34.0))
+	var ic := Ui.icon(icon, pos + Vector2(10.0, 7.0), 20.0)
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(ic)
+	var l := _panel_label(parent, pos + Vector2(34.0, 8.0), Type.SIZE_SMALL,
+		Color(0.97, 0.93, 0.88), 70.0, 18.0)
+	l.text = text
+
+
+# 보상 종류의 아이콘 — 재화·소환권을 다 안다(알약과 팩 대표 그림이 쓴다).
+func _shop_kind_icon(kind: String) -> String:
+	var t := TicketDefs.kind_of(kind)
+	if t != "":
+		return TicketDefs.icon_of(t)
+	match kind:
+		"crystal": return "res://assets/ui/res_crystal.png"
+		"essence": return "res://assets/items/gem.png"
+		"sigil": return "res://assets/ui/res_sigil.png"
+		"gold": return "res://assets/ui/res_blood.png"
+	return "res://assets/ui/res_gem.png"
+
+
+# 세로 카드 — 제목 띠 / 금테 액자(그림+수량) / 한도 줄 / 가격 띠.
+# 교환과 보석 충전이 같은 틀이다. 반환 사전의 라벨들을 _refresh 가 채운다.
+func _shop_vcard(parent: Control, pos: Vector2) -> Dictionary:
+	var card := Control.new()
+	card.position = pos
+	card.size = Vector2(SHOP_COL_W, SHOP_VCARD_H)
+	parent.add_child(card)
+	_shop_tex(card, "card_title", Vector2(0.0, 0.0), Vector2(SHOP_COL_W, 38.0))
+	var title := _panel_label(card, Vector2(8.0, 9.0), Type.SIZE_SMALL,
+		Color(0.96, 0.88, 0.78), SHOP_COL_W - 16.0, 18.0)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_tex(card, "card_art", Vector2(66.0, 42.0), Vector2(108.0, 114.0))
+	var icon := Ui.icon("res://assets/ui/res_gem.png", Vector2(92.0, 62.0), 56.0)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(icon)
+	# 수량 — 레퍼런스처럼 그림 위에 겹쳐 적는다(외곽선이 있어야 그림 위에서 읽힌다).
+	var amount := _panel_label(card, Vector2(66.0, 128.0), Type.SIZE_SMALL,
+		Color(1.0, 1.0, 1.0), 108.0, 18.0)
+	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	amount.add_theme_constant_override("outline_size", 6)
+	amount.add_theme_color_override("font_outline_color", Color(0.05, 0.03, 0.05))
+	var left := _panel_label(card, Vector2(0.0, 158.0), Type.SIZE_SMALL,
+		Color(0.72, 0.68, 0.72), SHOP_COL_W, 16.0)
+	left.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_tex(card, "card_price", Vector2(0.0, SHOP_VCARD_H - 36.0),
+		Vector2(SHOP_COL_W, 36.0))
+	var price := _panel_label(card, Vector2(0.0, SHOP_VCARD_H - 27.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.55), SHOP_COL_W, 18.0)
+	price.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 상태 도장들 — 위에서 그려야 카드를 덮는다.
+	var stamp := _shop_tex(card, "stamp_soldout", Vector2(48.0, 78.0),
+		Vector2(144.0, 61.0))
+	stamp.rotation_degrees = -8.0
+	stamp.visible = false
+	var lock := _shop_tex(card, "lock", Vector2(94.0, 62.0), Vector2(52.0, 77.0))
+	lock.visible = false
+	var btn := _shop_ghost(card, card.size)
+	return {"root": card, "title": title, "icon": icon, "amount": amount,
+		"left": left, "price": price, "stamp": stamp, "lock": lock, "btn": btn}
+
+
+# 와이드 카드 — 패키지·구독용. 왼쪽 금테 액자 + 오른쪽 이름·구성 알약 +
+# 아래 검은 가격 띠. 그림 왜곡을 피해 **원본 비율 그대로** 폭만 맞춘다.
+func _shop_wcard(parent: Control, y: float, name: String, icon_path: String,
+		value: int) -> Dictionary:
+	var card := Control.new()
+	card.position = Vector2(0.0, y)
+	card.size = Vector2(SHOP_LIST_W, SHOP_WCARD_H)
+	parent.add_child(card)
+	_shop_tex(card, "wide_body", Vector2.ZERO, card.size)
+	# 액자 창 실측(원본 x67..150 y55..145)을 축소 배율 0.874 로 옮긴 자리.
+	var icon := Ui.icon(icon_path, Vector2(63.0, 54.0), 64.0)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(icon)
+	if value > 0:
+		_shop_badge(card, value)
+	var title := _panel_label(card, Vector2(150.0, 22.0), Type.SIZE_MID,
+		Color(0.96, 0.88, 0.78), SHOP_LIST_W - 170.0, 22.0)
+	title.text = name
+	var sub := _panel_label(card, Vector2(150.0, 102.0), Type.SIZE_SMALL,
+		Color(0.72, 0.68, 0.72), SHOP_LIST_W - 170.0, 34.0)
+	var price := _panel_label(card, Vector2(0.0, 186.0), Type.SIZE_MID,
+		Color(0.98, 0.86, 0.55), SHOP_LIST_W, 22.0)
+	price.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var lock := _shop_tex(card, "lock", Vector2(219.0, 52.0), Vector2(56.0, 83.0))
+	lock.visible = false
+	var btn := _shop_ghost(card, card.size)
+	return {"root": card, "title": title, "icon": icon, "sub": sub,
+		"price": price, "lock": lock, "btn": btn}
+
+
+# ── 소탭 셋의 진열 ──────────────────────────────────────────────────────────
+# 특가: 리본 + 성장 패키지 카드. **구매 버튼은 잠가 둔다** — 결제 SDK 가 아직
+# 없다(사장님 결정: 표와 화면까지). SDK 가 붙으면 ghost 버튼의 pressed 만 잇는다.
+func _build_shop_packs(view: Control) -> void:
+	_shop_ribbon(view, 0.0, "성장 패키지 — 계정당 1회")
+	for i in IapDefs.PACKS.size():
+		var it: Dictionary = IapDefs.PACKS[i]
+		var y := 63.0 + float(i) * (SHOP_WCARD_H + 10.0)
+		var reward: Dictionary = it["reward"]
+		var main_icon := ""
+		var pills: Array = []
+		for k in reward:
+			if float(reward[k]) <= 0.0:
+				continue
+			if main_icon == "":
+				main_icon = _shop_kind_icon(str(k))
+			if pills.size() < 3:
+				pills.append([_shop_kind_icon(str(k)), _n(float(reward[k]))])
+		var card := _shop_wcard(view, y, str(it["name"]), main_icon,
+			int(it["value"]))
+		for j in pills.size():
+			_shop_pill(card["root"], Vector2(150.0 + float(j) * 114.0, 60.0),
+				str(pills[j][0]), str(pills[j][1]))
+		card["sub"].text = "계정당 1 / 1"
+		card["btn"].disabled = true
+		_pack_rows.append(card)
+	view.custom_minimum_size.y = 63.0 \
+		+ float(IapDefs.PACKS.size()) * (SHOP_WCARD_H + 10.0)
+
+
+# 정기: 구독 카드 + 보석 충전(등급마다 그림이 다르다 — 레퍼런스 충전소 문법).
+func _build_shop_subs(view: Control) -> void:
+	_shop_ribbon(view, 0.0, "정기 구독 — 최고 효율")
+	var sub_icons := ["gem_chest", "badge_star"]   # 혈세=보물함, 패스=문장
+	var y := 63.0
+	for i in IapDefs.SUBS.size():
+		var it: Dictionary = IapDefs.SUBS[i]
+		var card := _shop_wcard(view, y, "%s  ·  %d일" % [str(it["name"]),
+			int(it["days"])], SHOP_DIR + sub_icons[i] + ".png", int(it["value"]))
+		card["sub"].text = str(it["desc"])
+		card["sub"].position.y = 58.0          # 알약 대신 설명 두 줄이 그 자리다
+		card["sub"].size.y = 40.0
+		card["price"].text = IapDefs.price_text(int(it["price"]))
+		card["btn"].disabled = true
+		y += SHOP_WCARD_H + 10.0
+	_shop_ribbon(view, y + 4.0, "보석 충전 — 첫 구매 2배")
+	y += 67.0
+	var gem_art := ["gem_cluster", "gem_pouch", "gem_barrel", "gem_chest"]
+	for i in IapDefs.GEMS.size():
+		var g: Dictionary = IapDefs.GEMS[i]
+		var pos := Vector2(float(i % 2) * (SHOP_COL_W + 14.0),
+			y + float(i / 2) * (SHOP_VCARD_H + 10.0))
+		var card := _shop_vcard(view, pos)
+		card["title"].text = "보석 %s" % _n(float(g["gem"]))
+		card["icon"].texture = Assets.tex(SHOP_DIR + gem_art[i] + ".png")
+		card["amount"].text = _n(float(g["gem"]))
+		card["left"].text = "첫 구매 %s" % _n(float(g["gem"]) * IapDefs.FIRST_BUY_MULT)
+		card["price"].text = IapDefs.price_text(int(g["price"]))
+		card["btn"].disabled = true
+	view.custom_minimum_size.y = y + 2.0 * (SHOP_VCARD_H + 10.0)
+
+
+# 교환: 원래 있던 판 — 보석으로 오늘치 배급을 앞당긴다. 카드 5장, 2열.
+func _build_shop_trade(view: Control) -> void:
 	for i in ShopDefs.ITEMS.size():
 		var it: Dictionary = ShopDefs.ITEMS[i]
 		var id := str(it["id"])
-		var y := PAD + float(i) * SHOP_ROW_H
-		var row := Control.new()
-		row.position = Vector2(x, y)
-		_shop_view.add_child(row)
-		row.add_child(Ui.card(Vector2.ZERO, Vector2(w, SHOP_ROW_H - 8.0)))
-		var ic := Ui.icon(str(it["icon"]), Vector2(14.0, 10.0), 38.0)
-		row.add_child(ic)
-		_shop_icons.append(ic)
-		_shop_names.append(_panel_label(row, Vector2(66.0, 3.0), Type.SIZE_SMALL,
-			Color(0.92, 0.82, 0.62), w - 220.0, 18.0))
-		_shop_amounts.append(_panel_label(row, Vector2(66.0, 22.0), Type.SIZE_SMALL,
-			Color(0.95, 0.92, 0.88), w - 220.0, 18.0))
-		_shop_lefts.append(_panel_label(row, Vector2(66.0, 41.0), Type.SIZE_SMALL,
-			Color(0.62, 0.60, 0.68), w - 220.0, 18.0))
-		var buy := Ui.button("", Vector2(w - 140.0, 10.0), Vector2(126.0, 38.0),
-			Type.SIZE_SMALL)
-		buy.pressed.connect(func() -> void: _shop_buy(id))
-		row.add_child(buy)
-		_shop_buttons.append(buy)
-	# "자정에 새로 온다"도 뺐다 — 줄마다 "오늘 n / m"이 이미 그 뜻이다.
+		var pos := Vector2(float(i % 2) * (SHOP_COL_W + 14.0),
+			float(i / 2) * (SHOP_VCARD_H + 10.0))
+		var card := _shop_vcard(view, pos)
+		card["icon"].texture = Assets.tex(str(it["icon"]))
+		card["btn"].pressed.connect(func() -> void: _shop_buy(id))
+		_shop_cards.append(card)
+	var rows := ceili(ShopDefs.ITEMS.size() / 2.0)
+	view.custom_minimum_size.y = float(rows) * (SHOP_VCARD_H + 10.0)
+
+
+func _shop_set_mode(mode: String) -> void:
+	# 스크롤 안 inner 를 들고 있으므로 겉(ScrollContainer)을 눌러 끈다.
+	_shop_view.get_parent().visible = mode == "trade"
+	_pack_view.get_parent().visible = mode == "pack"
+	_sub_view.get_parent().visible = mode == "sub"
+	for key in _shop_mode_btns:
+		_shop_mode_btns[key].set_pressed_no_signal(key == mode)
+	match mode:
+		"pack": _shop_line.text = "귀한 손님이군요… 좋은 것만 꺼내 왔어요."
+		"sub": _shop_line.text = "매일 들러 주시는 분께는 값을 맞춰 드려요."
+		"trade": _shop_line.text = "보석이라면 무엇이든 바꿔 드리죠."
+	if mode == "trade":
+		_refresh_shop()
+	elif mode == "pack":
+		_refresh_packs()
+
+
+# 패키지는 **벽 직전에 하나씩** 열린다 — 아직 못 간 구간의 것은 잠가 둔다.
+func _refresh_packs() -> void:
+	for i in IapDefs.PACKS.size():
+		var it: Dictionary = IapDefs.PACKS[i]
+		var open := best_stage >= int(it["open"])
+		var row: Dictionary = _pack_rows[i]
+		row["lock"].visible = not open
+		row["root"].modulate = Color(1, 1, 1) if open else Color(0.5, 0.47, 0.52)
+		row["price"].text = IapDefs.price_text(int(it["price"])) if open \
+			else "%d구간 돌파 시" % int(it["open"])
 
 
 func _shop_roll_day() -> void:
@@ -5528,18 +5826,19 @@ func _refresh_shop() -> void:
 		var need := ShopDefs.open_stage(id)
 		var locked := best_stage < need
 		var left := _shop_left(id)
-		_shop_names[i].text = str(it["name"])
-		_shop_amounts[i].text = str(it["sub"]) if id == "ticket" \
-			else "%s %s" % [str(it["sub"]),
-				_n(ShopDefs.amount(id, stage, dungeon_best))]
-		_shop_lefts[i].text = "%d구간부터" % need if locked \
+		var card: Dictionary = _shop_cards[i]
+		card["title"].text = str(it["name"])
+		# 그림 위 숫자는 수량만 — "1회 6"이 값으로 읽힌 사고의 재발 방지.
+		card["amount"].text = "+1판" if id == "ticket" \
+			else _n(ShopDefs.amount(id, stage, dungeon_best))
+		card["left"].text = "%d구간부터" % need if locked \
 			else "오늘 %d / %d" % [left, int(it["per_day"])]
-		_shop_buttons[i].text = "잠김" if locked else "보석 %d" % int(it["cost"])
-		_shop_buttons[i].disabled = locked or left <= 0 or gem < float(it["cost"])
-		var lit := not locked and left > 0
-		_shop_icons[i].modulate = Color(1, 1, 1) if lit else Color(0.4, 0.38, 0.45)
-		_shop_names[i].add_theme_color_override("font_color",
-			Color(0.92, 0.82, 0.62) if lit else Color(0.62, 0.60, 0.68))
+		card["price"].text = "잠김" if locked else "보석 %d" % int(it["cost"])
+		card["btn"].disabled = locked or left <= 0 or gem < float(it["cost"])
+		card["lock"].visible = locked
+		card["stamp"].visible = not locked and left <= 0
+		card["root"].modulate = Color(1, 1, 1) if not locked and left > 0 \
+			else Color(0.62, 0.58, 0.62)
 
 
 # 임무 줄 한 벌 — 일일·주간이 같은 생김새라 짜개는 하나다.
@@ -5670,6 +5969,7 @@ func _select_tab(name: String) -> void:
 	elif name == "raid":
 		_refresh_dungeon()
 	elif name == "shop":
+		_refresh_packs()
 		_refresh_shop()
 
 
