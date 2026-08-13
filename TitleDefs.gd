@@ -82,6 +82,27 @@ static func earned(id: String, state: Dictionary) -> bool:
 
 
 # 딴 칭호(got)가 그 스탯에 주는 공짜 레벨 합.
+# ── 수집 이정표 (MONETIZATION_PLAN 4-3) ────────────────────────────────────
+# 칭호 하나하나는 이미 "공짜 스탯 레벨"이 보상이라, 거기에 소환권을 또 얹으면
+# 이중이다. 대신 **몇 개를 모았는가**에 따로 상을 건다 — 칭호는 조건이 제각각이라
+# 하나씩 보면 순서가 안 보이는데, 개수 이정표가 그 줄을 세워 준다.
+const MILESTONES := [
+	{"n": 3, "reward": "ticket", "amount": 10},
+	{"n": 5, "reward": "ticket_hi", "amount": 3},
+	{"n": 8, "reward": "ticket", "amount": 20},
+	{"n": 10, "reward": "ticket_hi", "amount": 10},
+]
+
+
+# 지금 개수로 받을 수 있는 이정표 번호들 (아직 안 받은 것만).
+static func claimable_milestones(count: int, got: Dictionary) -> Array:
+	var out: Array = []
+	for i in MILESTONES.size():
+		if count >= int(MILESTONES[i]["n"]) and not got.has(i):
+			out.append(i)
+	return out
+
+
 static func bonus(stat: String, got: Dictionary) -> int:
 	var out := 0
 	for t in TITLES:

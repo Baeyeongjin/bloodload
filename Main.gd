@@ -134,6 +134,9 @@ var ticket_hi := 0
 # 유물 — id -> 레벨(0..5). 조각은 gacha_shards 에 "relic:<id>" 로 같이 쌓는다
 # (소환 장비와 같은 그릇이라 새 저장 칸을 안 만든다).
 var relics := {}
+# 받은 이정표 — 칭호 수집(번호), 승급 단계(번호). 한 번만 준다.
+var title_ms_got := {}
+var promo_got := {}
 var pact_lv := 0
 var mileage := 0
 var best_stage := 1
@@ -230,6 +233,7 @@ func _tick_titles(delta: float) -> void:
 		if titles_got.has(id) or not TitleDefs.earned(id, state):
 			continue
 		titles_got[id] = true
+		_claim_title_milestones()
 		_offline_banner.text = "칭호 획득 — %s (%s +%d)" % [str(t["name"]),
 			TitleDefs.stat_name(str(t["stat"])), int(t["levels"])]
 		_offline_banner.add_theme_color_override("font_color", Color(0.92, 0.82, 0.62))
@@ -4384,6 +4388,7 @@ var title_worn := ""        # 장착 칭호 id — 겉멋이다. 효과는 딴 �
 var _lbl_worn: Label
 var _title_view: Control
 var _title_head: Label
+var _title_ms: Label
 var _title_names: Array[Label] = []
 var _title_conds: Array[Label] = []
 var _title_rewards: Array[Label] = []
@@ -4428,8 +4433,13 @@ func _build_titles(root: Control) -> void:
 		Vector2(88.0, 34.0), Type.SIZE_SMALL)
 	t_close.pressed.connect(func() -> void: _title_view.visible = false)
 	_title_view.add_child(t_close)
-	var sc := Ui.scroll(Vector2(tx, QUEST_PANEL.position.y + 56.0),
-		Vector2(tw, QUEST_PANEL.size.y - 56.0 - 16.0))
+	# 이정표 줄 — 머리글(SIZE_BODY)에 붙였더니 "칭호 0 / 12 · "에서 잘렸다(실측).
+	# 한 줄 내리고 작은 글씨로 둔다.
+	_title_ms = _panel_label(_title_view,
+		Vector2(tx, QUEST_PANEL.position.y + 48.0), Type.SIZE_SMALL,
+		Color(0.72, 0.72, 0.80), tw, 18.0)
+	var sc := Ui.scroll(Vector2(tx, QUEST_PANEL.position.y + 72.0),
+		Vector2(tw, QUEST_PANEL.size.y - 72.0 - 16.0))
 	_title_view.add_child(sc)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
@@ -4475,6 +4485,14 @@ func _refresh_titles() -> void:
 	# 긴 설명("조건 둘을 채우면 스스로 딴다")은 SIZE_BODY 폭에서 잘렸다(실측) —
 	# 줄마다 ✓/─ 가 이미 그 규칙을 보여 준다.
 	_title_head.text = "칭호 %d / %d" % [titles_got.size(), TitleDefs.TITLES.size()]
+	# **다음 이정표**를 한 줄로 — 칭호는 조건이 제각각이라 하나씩 보면 순서가
+	# 안 보이는데, "몇 개 더 모으면 무엇"이 그 줄을 세워 준다.
+	_title_ms.text = "모두 모았다"
+	for m in TitleDefs.MILESTONES:
+		if titles_got.size() < int(m["n"]):
+			_title_ms.text = "%d종을 모으면 %s %d" % [int(m["n"]),
+				_reward_name(str(m["reward"])), int(m["amount"])]
+			break
 	for i in TitleDefs.TITLES.size():
 		var t: Dictionary = TitleDefs.TITLES[i]
 		var got: bool = titles_got.has(str(t["id"]))
@@ -4952,6 +4970,42 @@ func _refresh_boss() -> void:
 
 # 보상 지급 **한 곳**. 임무·주간·이벤트·도감이 저마다 match 를 갖고 있었는데,
 # 종류가 늘 때마다 한 곳을 빠뜨려 조용히 안 들어온다(그 사고를 막는 자리다).
+# 칭호를 몇 개 모았는가에 걸린 상. 여러 개가 한꺼번에 열릴 수 있어 전부 돈다.
+func _claim_title_milestones() -> void:
+	var entries: Array = []
+	for i in TitleDefs.claimable_milestones(titles_got.size(), title_ms_got):
+		var m: Dictionary = TitleDefs.MILESTONES[i]
+		title_ms_got[i] = true
+		_grant_reward(str(m["reward"]), float(m["amount"]))
+		entries.append({"icon": "res://assets/ui/%s.png" % _reward_icon(str(m["reward"])),
+			"label": "+%d" % int(m["amount"]),
+			"sub": "칭호 %d종" % int(m["n"])})
+	if not entries.is_empty():
+		_show_reward("칭호 수집 보상", entries)
+		_save_game()
+
+
+# 승급(미궁 층이 여는 훈련 단계)에 걸린 상. 상한만 열고 손에 쥐는 게 없으면
+# 승급이 이정표로 안 읽힌다.
+func _claim_promo_reward() -> void:
+	var idx := StatDefs.promo_index(dungeon_best)
+	var entries: Array = []
+	for i in range(1, idx + 1):
+		if promo_got.has(i) or i >= StatDefs.PROMO_REWARDS.size():
+			continue
+		var m: Dictionary = StatDefs.PROMO_REWARDS[i]
+		if m.is_empty():
+			continue
+		promo_got[i] = true
+		_grant_reward(str(m["reward"]), float(m["amount"]))
+		entries.append({"icon": "res://assets/ui/%s.png" % _reward_icon(str(m["reward"])),
+			"label": "+%d" % int(m["amount"]),
+			"sub": "승급 %d단계" % (i + 1)})
+	if not entries.is_empty():
+		_show_reward("승급 보상", entries)
+		_save_game()
+
+
 func _grant_reward(kind: String, amount: float) -> void:
 	match kind:
 		"gem": gem += amount
@@ -7681,6 +7735,7 @@ func _advance_stage() -> void:
 				_offline_banner.visible = true
 				_offline_t = 3.0
 			dungeon_best = maxi(dungeon_best, dungeon_floor)
+			_claim_promo_reward()
 			_quest_bump("dungeon")
 			var open := DungeonDefs.open_floors(best_stage)
 			if dungeon_floor >= open:
@@ -8322,6 +8377,8 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "ticket", ticket)
 	cfg.set_value("wallet", "ticket_hi", ticket_hi)
 	cfg.set_value("run", "relics", relics)
+	cfg.set_value("run", "title_ms", title_ms_got)
+	cfg.set_value("run", "promo_got", promo_got)
 	cfg.set_value("run", "pact_lv", pact_lv)
 	cfg.set_value("wallet", "mileage", mileage)
 	cfg.set_value("wallet", "seen", _currency_seen)
@@ -8382,6 +8439,8 @@ func _load_game() -> void:
 	ticket = maxi(0, int(cfg.get_value("wallet", "ticket", 0)))
 	ticket_hi = maxi(0, int(cfg.get_value("wallet", "ticket_hi", 0)))
 	relics = cfg.get_value("run", "relics", {})
+	title_ms_got = cfg.get_value("run", "title_ms", {})
+	promo_got = cfg.get_value("run", "promo_got", {})
 	pact_lv = clampi(int(cfg.get_value("run", "pact_lv", 0)), 0, PactDefs.level_cap())
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.

@@ -125,6 +125,16 @@ const CAP_PER_STAGE := 2.5
 # 승급 단계는 **표시용**으로 남는다(배지·안내). 상한 계산은 위 식이 한다.
 const PROMO_FLOORS := [0, 20, 40, 80]
 
+# 승급 보상 (MONETIZATION_PLAN 4-4). 예전엔 승급이 상한만 열어서 그 순간 손에
+# 쥐는 게 없었다 — 이정표로 안 읽힌다. 단계마다 소환권 뭉치를 준다.
+# 0단계(시작)는 없다.
+const PROMO_REWARDS := [
+	{},
+	{"reward": "ticket", "amount": 10},
+	{"reward": "ticket", "amount": 20},
+	{"reward": "ticket_hi", "amount": 10},
+]
+
 
 # 승급 단계 (0..3).
 static func promo_index(dungeon_best: int) -> int:

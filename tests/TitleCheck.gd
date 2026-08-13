@@ -65,5 +65,31 @@ func _init() -> void:
 	print("칭호: 표 %d종 · 짝 조건 판정 · 공짜 레벨(효과만, 비용 불변) OK"
 		% TitleDefs.TITLES.size())
 	print("")
+	# ── 수집 이정표 (MONETIZATION_PLAN 4-3) ───────────────────────────────
+	var ms_seen := {}
+	var prev_n := 0
+	for m in TitleDefs.MILESTONES:
+		var n := int(m["n"])
+		assert(n > prev_n, "이정표 개수가 오름차순이 아니다: %d" % n)
+		assert(n <= TitleDefs.TITLES.size(), "칭호 수보다 많은 이정표: %d" % n)
+		assert(not ms_seen.has(n), "이정표 중복: %d" % n)
+		ms_seen[n] = true
+		prev_n = n
+		assert(int(m["amount"]) > 0, "이정표 보상이 0")
+	# 아직 안 받은 것만 나온다 — 같은 이정표를 두 번 주면 안 된다.
+	assert(TitleDefs.claimable_milestones(0, {}).is_empty(), "0개인데 받을 게 있다")
+	var all_n: int = int(TitleDefs.MILESTONES[TitleDefs.MILESTONES.size() - 1]["n"])
+	assert(TitleDefs.claimable_milestones(all_n, {}).size()
+		== TitleDefs.MILESTONES.size(), "전부 모았는데 다 안 열린다")
+	assert(TitleDefs.claimable_milestones(all_n, {0: true}).size()
+		== TitleDefs.MILESTONES.size() - 1, "받은 이정표가 또 나온다")
+
+	# ── 승급 보상 (MONETIZATION_PLAN 4-4) ─────────────────────────────────
+	assert(StatDefs.PROMO_REWARDS.size() == StatDefs.PROMO_FLOORS.size(),
+		"승급 단계 수와 보상 수가 다르다")
+	assert(StatDefs.PROMO_REWARDS[0].is_empty(), "시작 단계에 보상이 붙었다")
+	for i in range(1, StatDefs.PROMO_REWARDS.size()):
+		assert(int(StatDefs.PROMO_REWARDS[i]["amount"]) > 0, "승급 %d 보상이 0" % i)
+
 	print("TitleCheck OK")
 	quit()
