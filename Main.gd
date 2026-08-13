@@ -4796,6 +4796,7 @@ var _dungeon_chips: Array[Label] = []
 var _raid_list: Control
 var _raid_mode_btns := {}
 var _maze_panel: Control
+var _maze_scroll: Control
 var _boss_panel: Control
 var _boss_name: Label
 var _boss_sub: Label
@@ -4808,9 +4809,9 @@ var _raid_reward := {}
 var _raid_btn := {}
 
 
-# 미궁 화면 폭. 판 전체를 쓰던 시절과 같다 — 소탭 버튼 아래로 34px 내려간 것
-# 말고는 좌표가 그대로다.
-const MAZE_W := CONTENT_W
+# 미궁 화면 폭. **스크롤바 + 여백만큼 좁다** — 카드가 스크롤바 밑으로 들어가면
+# 손잡이 무늬가 카드 위에 겹쳐 보인다(사장님이 짚은 그 노란 조각).
+const MAZE_W := CONTENT_W - Ui.SCROLL_W - 26.0
 
 
 func _build_dungeon(root: Control) -> void:
@@ -4827,14 +4828,13 @@ func _build_dungeon(root: Control) -> void:
 	scrim.size = Vector2(MAZE_W, 80.0)
 	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(scrim)
-	var title := _panel_label(root, Vector2(PAD + 12.0, PAD + 30.0), Type.SIZE_MID,
+	var title := _panel_label(root, Vector2(PAD + 12.0, PAD + 4.0), Type.SIZE_MID,
 		Color(0.95, 0.68, 0.68), MAZE_W - 190.0, 28.0)
 	title.text = "핏빛 미궁"
-	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 58.0), Type.SIZE_SMALL,
+	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 38.0), Type.SIZE_SMALL,
 		Color(0.92, 0.88, 0.92), MAZE_W - 190.0, 22.0)
-	# 소탭 버튼(y 20~54)이 이 판 위에 얹히므로 도전 버튼은 그 아래로 내린다.
-	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 34.0),
-		Vector2(150.0, 44.0), Type.SIZE_MID)
+	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 14.0),
+		Vector2(150.0, 48.0), Type.SIZE_MID)
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
 			_dungeon_exit("미궁 이탈")
@@ -4878,13 +4878,19 @@ func _build_dungeon(root: Control) -> void:
 func _build_raids(root: Control) -> void:
 	# [던전][주간 보스] — 성격이 다르다: 던전은 배급(하루 한 번 뭉치),
 	# 보스는 도전(못 죽여도 누적이 남는다). 임무판과 같은 토글 문법.
-	# 미궁 화면을 먼저 깐다 — 그 위에 소탭 버튼을 얹어야 미궁에서도 버튼이 보인다
-	# (사장님: 미궁에 들어가면 돌아갈 길이 없었다). 미궁 판을 아래로 내리는 안은
-	# 접었다: 34px 를 내리면 군림 카드가 9-slice 최소 높이보다 작아져 모서리가 깨진다.
+	# 미궁은 **버튼 아래에서 시작하는 스크롤** 안에 산다 (사장님). 카드가 스크롤바를
+	# 침범하면 모서리 무늬가 그 위에 얹혀 지저분해지므로(그 노란 조각), 안쪽 폭을
+	# 스크롤바 + 여백만큼 줄여 둔다(MAZE_W). 카드 높이는 원래대로라 9-slice 도 안 깨진다.
+	_maze_scroll = Ui.scroll(Vector2(0.0, PAD + 34.0),
+		Vector2(PANEL_W, CONTENT_BOTTOM - PAD - 34.0 + 12.0))
+	_maze_scroll.visible = false
+	root.add_child(_maze_scroll)
 	_maze_panel = Control.new()
 	_maze_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_maze_panel.visible = false
-	root.add_child(_maze_panel)
+	# 내용은 PAD~CONTENT_BOTTOM 좌표를 그대로 쓰므로 그만큼 세로를 확보한다.
+	_maze_panel.custom_minimum_size = Vector2(PANEL_W - Ui.SCROLL_W,
+		CONTENT_BOTTOM + 12.0)
+	_maze_scroll.add_child(_maze_panel)
 	_build_dungeon(_maze_panel)
 	# [미궁][재화 던전][주간 보스] — 셋 다 "들어가서 도는 곳"이다. 성격은 다르다:
 	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
@@ -4914,7 +4920,7 @@ func _build_raids(root: Control) -> void:
 func _raid_set_mode(mode: String) -> void:
 	_raid_list.visible = mode == "raid"
 	_boss_panel.visible = mode == "boss"
-	_maze_panel.visible = mode == "maze"
+	_maze_scroll.visible = mode == "maze"
 	for key in _raid_mode_btns:
 		_raid_mode_btns[key].button_pressed = key == mode
 	_refresh_dungeon()
