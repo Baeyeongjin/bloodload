@@ -4787,6 +4787,8 @@ var _boss_name: Label
 var _boss_sub: Label
 var _boss_btn: Button
 var _boss_rows: Array[Dictionary] = []
+var _boss_art: TextureRect
+var _boss_dmg_lbl: Label
 var _raid_info := {}
 var _raid_reward := {}
 var _raid_btn := {}
@@ -4887,12 +4889,27 @@ func _raid_set_mode(mode: String) -> void:
 
 # 주간 보스 판 — 이름 · 남은 도전 · 누적 피해 · 마일스톤 4줄 · 도전 버튼.
 func _build_boss_panel(root: Control) -> void:
+	# **초상화를 앞세운다** (사장님: "텍스트 덩어리"). 이 판은 주마다 얼굴이 바뀌는
+	# 곳인데 이름 한 줄로는 그게 안 읽힌다 — 왼쪽에 72px 그림, 오른쪽에 이름·단계·
+	# 이번 주 성과, 그 아래 이정표 넷.
 	# 토글 버튼(y 20~54) 아래에서 시작한다 — 46 에 두면 글자가 버튼을 뚫는다.
-	_boss_name = _panel_label(root, Vector2(PAD, 62.0), Type.SIZE_MID,
-		Color(0.98, 0.72, 0.45), CONTENT_W - 130.0, 24.0)
-	_boss_sub = _panel_label(root, Vector2(PAD, 90.0), Type.SIZE_SMALL,
-		Color(0.72, 0.70, 0.76), CONTENT_W - 130.0, 16.0)
-	_boss_btn = Ui.button("도전", Vector2(PAD + CONTENT_W - 122.0, 62.0),
+	root.add_child(Ui.card(Vector2(PAD - 8.0, 60.0), Vector2(CONTENT_W + 16.0, 78.0)))
+	var frame := Ui.image("res://assets/ui/slot_common.png", Vector2(PAD, 64.0),
+		Vector2(70.0, 70.0))
+	frame.modulate = Color(0.98, 0.62, 0.45)
+	root.add_child(frame)
+	_boss_art = Ui.icon("", Vector2(PAD + 5.0, 69.0), 60.0)
+	root.add_child(_boss_art)
+	var text_x := PAD + 82.0
+	_boss_name = _panel_label(root, Vector2(text_x, 66.0), Type.SIZE_MID,
+		Color(0.98, 0.72, 0.45), CONTENT_W - 212.0, 24.0)
+	# 이번 주 성과를 **큰 숫자로** 따로 세운다 — 누적 피해가 이 판의 점수판이다.
+	_boss_dmg_lbl = _panel_label(root, Vector2(text_x, 92.0), Type.SIZE_MID,
+		Color(0.98, 0.86, 0.62), CONTENT_W - 212.0, 24.0)
+	# 114 — 118 에 두면 카드 아래 테두리(60~138)에 글자가 닿는다(실측).
+	_boss_sub = _panel_label(root, Vector2(text_x, 113.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.76), CONTENT_W - 212.0, 16.0)
+	_boss_btn = Ui.button("도전", Vector2(PAD + CONTENT_W - 122.0, 72.0),
 		Vector2(114.0, 46.0), Type.SIZE_MID)
 	_boss_btn.pressed.connect(func() -> void:
 		if raid_on == "boss":
@@ -4903,13 +4920,14 @@ func _build_boss_panel(root: Control) -> void:
 	root.add_child(_boss_btn)
 	for i in EventDefs.MILESTONES.size():
 		var m: Dictionary = EventDefs.MILESTONES[i]
-		var y := 122.0 + float(i) * 54.0
+		var y := 148.0 + float(i) * 52.0
 		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 48.0)))
 		root.add_child(Ui.icon("res://assets/ui/%s.png" % _reward_icon(str(m["reward"])),
 			Vector2(PAD + 8.0, y + 10.0), 26.0))
 		var nm := _panel_label(root, Vector2(PAD + 44.0, y + 6.0), Type.SIZE_SMALL,
 			Color(0.90, 0.86, 0.88), CONTENT_W - 170.0, 16.0)
-		nm.text = "이정표 %d" % (i + 1)
+		# "이정표 3"보다 **무엇을 주는가**가 먼저다 — 번호는 옆 진행도가 말해 준다.
+		nm.text = "%d차 · %s" % [i + 1, _reward_name(str(m["reward"]))]
 		var track := ColorRect.new()
 		track.color = Color(0.10, 0.09, 0.12)
 		track.position = Vector2(PAD + 44.0, y + 30.0)
@@ -4923,7 +4941,7 @@ func _build_boss_panel(root: Control) -> void:
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(fill)
 		var pr := _panel_label(root, Vector2(PAD + 44.0 + BOSS_BAR_W + 8.0, y + 24.0),
-			Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), 150.0, 20.0)
+			Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), 182.0, 20.0)
 		var idx := i
 		var b := Ui.button("", Vector2(PAD + CONTENT_W - 108.0, y + 9.0),
 			Vector2(100.0, 32.0), Type.SIZE_SMALL)
@@ -4933,8 +4951,9 @@ func _build_boss_panel(root: Control) -> void:
 		_boss_rows.append({"prog": pr, "btn": b, "fill": fill})
 
 
-# 이정표 게이지는 임무보다 짧다 — 옆 수치가 "4.7K / 47.2K" 라 자리가 더 필요하다.
-const BOSS_BAR_W := 150.0
+# 이정표 게이지는 임무보다 짧다 — 옆 수치가 "43.3K / 144.2K" 라 자리가 더 필요하다.
+# 단계가 오르면 요구가 x1.6 씩 커져 자릿수가 계속 는다(실측: 4차에서 잘렸다).
+const BOSS_BAR_W := 118.0
 
 
 func _refresh_boss() -> void:
@@ -4942,9 +4961,11 @@ func _refresh_boss() -> void:
 		return
 	_boss_roll()
 	var eb := EventDefs.boss_of(_boss_week_index())
-	_boss_name.text = str(eb["name"])
-	_boss_sub.text = "오늘 도전 %d / %d  ·  이번 주 누적 피해 %s" \
-		% [boss_tries, EventDefs.TRIES_PER_DAY, _n(boss_dmg)]
+	_boss_art.texture = Assets.tex(EventDefs.art_path(eb))
+	_boss_name.text = "%s  ·  %d단계" % [str(eb["name"]), boss_tier]
+	_boss_dmg_lbl.text = "누적 피해 %s" % _n(boss_dmg)
+	# 폭 316px 이라 긴 문장은 잘린다(실측: "넷을 다 받으면 다"). 짧게 쓴다.
+	_boss_sub.text = "도전 %d / %d  ·  넷을 받으면 다음 단계" 		% [boss_tries, EventDefs.TRIES_PER_DAY]
 	if raid_on == "boss":
 		_boss_btn.text = "돌아가기"
 		_boss_btn.disabled = false
@@ -4955,7 +4976,7 @@ func _refresh_boss() -> void:
 	# 안 그러면 도전 전에는 칸이 텅 비어서 얼마나 남았는지 감이 안 온다.
 	var base := _boss_dps_snap if raid_on == "boss" else dps()
 	for i in EventDefs.MILESTONES.size():
-		var need := EventDefs.milestone_damage(i, base)
+		var need := EventDefs.milestone_damage(i, base, boss_tier)
 		var row: Dictionary = _boss_rows[i]
 		row["prog"].text = "%s / %s" % [_n(minf(boss_dmg, need)), _n(need)]
 		row["fill"].size.x = BOSS_BAR_W * clampf(boss_dmg / maxf(1.0, need), 0.0, 1.0)
@@ -4964,7 +4985,7 @@ func _refresh_boss() -> void:
 			b.text = "완료"
 			b.disabled = true
 		else:
-			b.text = "+%d" % int(EventDefs.MILESTONES[i]["amount"])
+			b.text = "+%d" % EventDefs.milestone_amount(i, boss_tier)
 			b.disabled = boss_dmg < need
 
 
@@ -5637,7 +5658,7 @@ func _tab_todo(tab: String) -> bool:
 			# 켜져 있으면 잔소리가 되고, 늘 켜진 점은 없는 점과 같다).
 			for i in EventDefs.MILESTONES.size():
 				if not boss_got.has(i) \
-						and boss_dmg >= EventDefs.milestone_damage(i, _boss_dps_snap):
+						and boss_dmg >= EventDefs.milestone_damage(i, _boss_dps_snap, boss_tier):
 					return true
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
@@ -7338,6 +7359,9 @@ var boss_dmg := 0.0        # 이번 주 누적 피해
 var boss_got := {}         # 받은 마일스톤 (i -> true)
 var boss_date := ""
 var _boss_dps_snap := 0.0  # 도전 시작 시 화력 — 이정표 기준을 판마다 안 흔들리게
+# 주간 보스 단계. 이정표 넷을 다 받으면 오르고 누적이 0 에서 다시 시작한다 —
+# 주가 바뀌어도 남는다(재화 던전의 도전 단계와 같은 사다리다).
+var boss_tier := 1
 
 
 func _boss_week_index() -> int:
@@ -7390,11 +7414,22 @@ func _boss_exit(reason: String) -> void:
 
 func _claim_milestone(i: int) -> void:
 	_boss_roll()
-	if boss_got.has(i) or boss_dmg < EventDefs.milestone_damage(i, _boss_dps_snap):
+	if boss_got.has(i) 			or boss_dmg < EventDefs.milestone_damage(i, _boss_dps_snap, boss_tier):
 		return
 	boss_got[i] = true
 	var m: Dictionary = EventDefs.MILESTONES[i]
-	_grant_reward(str(m["reward"]), float(m["amount"]))
+	_grant_reward(str(m["reward"]), float(EventDefs.milestone_amount(i, boss_tier)))
+	# **넷을 다 받으면 다음 단계**로 (사장님) — 재화 던전이 격파마다 세지는 것과
+	# 같은 사다리다. 누적은 0 에서 다시 시작한다: 새 단계의 요구가 그만큼 커졌으므로
+	# 옛 누적을 들고 가면 첫 이정표가 공짜로 열린다.
+	if boss_got.size() >= EventDefs.MILESTONES.size():
+		boss_tier += 1
+		boss_got = {}
+		boss_dmg = 0.0
+		_offline_banner.text = "주간 보스 %d단계 진입" % boss_tier
+		_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
+		_offline_banner.visible = true
+		_offline_t = 4.0
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_dungeon()
@@ -7524,7 +7559,7 @@ func _spawn_foe() -> void:
 	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
 	if raid_on == "boss":
 		# 체력만 갈아 끼운다 — 40초에 못 눕히는 게 정상이고, 성과는 누적 피해다.
-		f.max_hp = EventDefs.boss_hp(_boss_dps_snap)
+		f.max_hp = EventDefs.boss_hp(_boss_dps_snap, boss_tier)
 		f.hp = f.max_hp
 	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
 	if dungeon_on:
@@ -8414,6 +8449,7 @@ func _save_game() -> void:
 	cfg.set_value("boss", "tries", boss_tries)
 	cfg.set_value("boss", "dmg", boss_dmg)
 	cfg.set_value("boss", "got", boss_got)
+	cfg.set_value("boss", "tier", boss_tier)
 	cfg.set_value("skill", "owned", skill_owned)
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
@@ -8544,6 +8580,7 @@ func _load_game() -> void:
 	boss_tries = int(cfg.get_value("boss", "tries", EventDefs.TRIES_PER_DAY))
 	boss_dmg = maxf(0.0, float(cfg.get_value("boss", "dmg", 0.0)))
 	boss_got = cfg.get_value("boss", "got", {})
+	boss_tier = maxi(1, int(cfg.get_value("boss", "tier", 1)))
 	_boss_roll()
 	# 옛 저장본(스킬 6종·역할 3칸)에는 owned 가 없다. 그때는 기본 스킬만 주고
 	# 새로 시작한다 — 없어진 키를 억지로 옮기면 표에 없는 스킬이 장착된다.

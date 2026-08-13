@@ -13,15 +13,29 @@ class_name EventDefs
 const TRIES_PER_DAY := 3
 const TIME_LIMIT := 40.0
 
+# **단계** (사장님 2026-08-13). 재화 던전은 격파할 때마다 도전 단계가 올라 계속
+# 세지는데 주간 보스만 제자리였다 — 이정표 넷을 다 받으면 그걸로 끝이라, 그 주에
+# 더 할 일이 없어진다. 이제 넷을 다 받으면 **다음 단계**가 열리고 누적이 0 에서
+# 다시 시작한다. 단계는 주가 바뀌어도 남는다(주마다 얼굴만 바뀌는 같은 사다리다).
+const TIER_STEP := 1.6      # 단계마다 요구·보상 배수
+
+
+static func tier_mult(tier: int) -> float:
+	return pow(TIER_STEP, float(maxi(1, tier) - 1))
+
 # 주마다 도는 보스. 이름과 결만 다르고 체력은 아래 식이 정한다 — 표를 늘리면
 # 그만큼 주기가 길어진다(지금 4주 순환).
 # key/anim 은 본편 막 보스 자산을 그대로 빌린다 — 이벤트용 몹을 새로 뽑을 이유가
 # 없다(이름과 결이 다르면 다른 놈으로 읽힌다). 새 자산이 생기면 여기만 바꾼다.
 const BOSSES := [
-	{"name": "피에 굶주린 군주", "key": "wraith_knight", "anim": "boss_1"},
-	{"name": "심연의 감시자", "key": "eye_mass", "anim": "boss_4"},
-	{"name": "뒤틀린 성녀", "key": "gargoyle", "anim": "boss_2"},
-	{"name": "재의 폭군", "key": "dark_knight", "anim": "boss_5"},
+	{"name": "피에 굶주린 군주", "key": "wraith_knight", "anim": "boss_1",
+		"art": "boss_lord"},
+	{"name": "심연의 감시자", "key": "eye_mass", "anim": "boss_4",
+		"art": "boss_watcher"},
+	{"name": "뒤틀린 성녀", "key": "gargoyle", "anim": "boss_2",
+		"art": "boss_saint"},
+	{"name": "재의 폭군", "key": "dark_knight", "anim": "boss_5",
+		"art": "boss_tyrant"},
 ]
 
 # 마일스톤 — 그 주 누적 피해가 이 배수(내 dps x 초)를 넘으면 하나씩 열린다.
@@ -35,16 +49,26 @@ const MILESTONES := [
 ]
 
 
+# 판에 거는 초상화. 몹 스프라이트(32px)를 빌려 쓰면 판이 초라해서 전용으로 뽑았다.
+static func art_path(b: Dictionary) -> String:
+	return "res://assets/ui/%s.png" % str(b.get("art", ""))
+
+
 static func boss_of(week_index: int) -> Dictionary:
 	return BOSSES[week_index % BOSSES.size()]
 
 
 # 보스 체력 — 한 판(40초)에 못 죽이는 게 정상이라 넉넉히 잡는다. 도전 자체가
 # 목적이 아니라 **피해 누적**이 목적이다.
-static func boss_hp(dps: float) -> float:
-	return maxf(1.0, dps) * TIME_LIMIT * 20.0
+static func boss_hp(dps: float, tier := 1) -> float:
+	return maxf(1.0, dps) * TIME_LIMIT * 20.0 * tier_mult(tier)
 
 
 # 이번 주 이정표의 절대 피해량. dps 는 도전 시점의 화력이다.
-static func milestone_damage(i: int, dps: float) -> float:
-	return maxf(1.0, dps) * float(MILESTONES[i]["need"])
+static func milestone_damage(i: int, dps: float, tier := 1) -> float:
+	return maxf(1.0, dps) * float(MILESTONES[i]["need"]) * tier_mult(tier)
+
+
+# 그 단계의 보상량. 요구가 오른 만큼 준다 — 안 그러면 단계를 올릴 이유가 없다.
+static func milestone_amount(i: int, tier := 1) -> int:
+	return int(round(float(MILESTONES[i]["amount"]) * tier_mult(tier)))

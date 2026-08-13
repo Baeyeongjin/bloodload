@@ -103,5 +103,26 @@ func _init() -> void:
 	scene._boss_enter()
 	assert(scene.raid_on == "", "도전 횟수가 0인데 들어갔다")
 
+	# ── 단계 (사장님 2026-08-13) ───────────────────────────────────────────
+	# 재화 던전이 격파마다 세지듯 주간 보스도 이정표 넷을 다 받으면 다음 단계다.
+	assert(is_equal_approx(EventDefs.tier_mult(1), 1.0), "1단계에 배수가 붙었다")
+	var prev_m := 0.0
+	for t in range(1, 12):
+		var m := EventDefs.tier_mult(t)
+		assert(m > prev_m, "%d단계에서 배수가 안 올랐다" % t)
+		prev_m = m
+	# 요구와 보상이 **같이** 올라야 한다 — 요구만 오르면 단계를 올릴 이유가 없다.
+	for i in EventDefs.MILESTONES.size():
+		assert(EventDefs.milestone_damage(i, 100.0, 3)
+			> EventDefs.milestone_damage(i, 100.0, 1), "%d차 요구가 안 올랐다" % i)
+		assert(EventDefs.milestone_amount(i, 3)
+			> EventDefs.milestone_amount(i, 1), "%d차 보상이 안 올랐다" % i)
+	assert(EventDefs.boss_hp(100.0, 3) > EventDefs.boss_hp(100.0, 1),
+		"단계가 올랐는데 보스 체력이 그대로다")
+	# 초상화 — 판이 이걸 건다. 없으면 빈 액자가 뜬다.
+	for b in EventDefs.BOSSES:
+		assert(FileAccess.file_exists(EventDefs.art_path(b)),
+			"%s 초상화가 없다: %s" % [str(b["name"]), EventDefs.art_path(b)])
+
 	print("EventCheck OK")
 	quit()
