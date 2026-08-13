@@ -373,6 +373,8 @@ var _bulk_mode := "salvage"
 var _bulk_grid: GridContainer
 var _bulk_selected := {}
 var _panels := {}           # 탭 이름 -> 창 (한 번에 하나만 보인다)
+var _panel_bg: Control      # 반판 배경 — 전투가 보이는 탭들
+var _panel_bg_full: Control # 전면 판 배경 — FULL_TABS 가 쓴다
 var _tab_btns := {}
 var _tab_dots := {}         # 탭 이름 -> 붉은 알림 점 (도감은 없다)
 var _tab := "growth"
@@ -391,10 +393,10 @@ var gacha_shards := {}
 var free_pull_date := ""
 var _gacha_kind := "weapon"
 # 소환 창 왼쪽 그림 자리. 창(y 68~246)의 세로 한가운데에 온다.
-# 원본 64px 을 정확히 2배로 그린다 — 1.5배(96)로 놓으면 도트가 어긋나 혼자 흐려 보인다.
-const GACHA_ART_BOX := 128.0
-const GACHA_ART_X := 26.0    # 창 왼쪽(18) + 안쪽 여백 8
-const GACHA_ART_Y := 78.0    # 아래에 확률표 버튼을 넣으려고 위로 붙였다
+# 64px 원본 1배 — 카드 액자 창(폭 77)에 128 은 안 들어간다. 도트 정합은 1배가 정확.
+const GACHA_ART_BOX := 64.0
+const GACHA_ART_X := 100.0   # 와이드 카드 액자 창 실측(x89..166)의 가운데
+const GACHA_ART_Y := 346.0
 # 레벨별 확률표를 펼쳐 보는 창. 지금 레벨의 확률만 보이면 "올리면 뭐가 좋아지는지"가
 # 숫자로 안 잡힌다 — 해금 레벨만 적혀 있고 그 뒤가 안 보인다.
 # 0레벨부터 만렙까지 **전부** 보여 준다. 몇 개만 뽑아 보여 주면 그 사이가 어떻게
@@ -403,6 +405,10 @@ const RATE_ROW_H := 30.0
 const RATE_NAME_W := 92.0
 const RATE_COL_W := 86.0
 var _gacha_icon: TextureRect
+var _gacha_head_tex: TextureRect   # 대장간/점성소 — 종류를 고르면 장소가 바뀐다
+var _gacha_place: Label
+var _gacha_line: Label
+var _gacha_kind_labels := {}       # 종류 탭이 그림 버튼이라 글자는 따로 얹는다
 var _gacha_labels := {}
 var _gacha_ticket_labels: Array[Label] = []
 var _gacha_buttons := {}
@@ -1576,15 +1582,29 @@ const PANEL_W := 576.0
 const PANEL_H := 384.0
 const CONTENT_W := PANEL_W - PAD * 2.0    # 528
 const CONTENT_BOTTOM := PANEL_H - PAD     # 358
+# 전면 판 — **화면 꼭대기부터** 하단 네비까지(사장님: 상단 HUD·사이드 아이콘도
+# 다 가리고 완전 전체 화면). 레퍼런스처럼 장소 헤더 + 큰 카드 진열이 들어가는
+# 탭들이 쓴다. 나머지 탭은 반판(전투가 보인다) 유지.
+const FULL_TABS := ["shop", "summon", "raid"]
+const PANEL_FULL_H := 800.0               # Grid.uv 50칸 — 네비(96) 위 전부
+const FULL_BOTTOM := PANEL_FULL_H - PAD   # 774
 
 
 func _build_panels() -> void:
 	# 콘텐츠와 탭바는 별도 판이다. 한 장으로 덮으면 하단 메뉴가 콘텐츠에 붙어 보인다.
-	_hud_root.add_child(Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24)))
+	# 배경 판이 둘이다: 반판(전투가 보인다)과 전면 판(레퍼런스 문법 — 상점·도전·
+	# 소환은 진열이 커서 반판 384 에 안 담긴다. 사장님 2026-08-13). 방치형에서
+	# 전투는 배경 소음이라 가려도 잃는 게 없다.
+	_panel_bg = Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24))
+	_hud_root.add_child(_panel_bg)
+	_panel_bg_full = Ui.panel(Grid.uv(0, 0), Grid.uv(36, 50))
+	_panel_bg_full.visible = false
+	_hud_root.add_child(_panel_bg_full)
 	for name in ["growth", "gear", "summon", "raid", "shop", "codex"]:
+		var full: bool = name in FULL_TABS
 		var c := Control.new()
-		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, PANEL_AT.y))
-		c.size = Grid.uv(PANEL_SIZE.x, PANEL_SIZE.y)
+		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, 0 if full else PANEL_AT.y))
+		c.size = Grid.uv(PANEL_SIZE.x, 50 if full else PANEL_SIZE.y)
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_hud_root.add_child(c)
 		_panels[name] = c
@@ -3232,76 +3252,102 @@ func _enhance(slot: String) -> void:
 
 
 func _build_gacha(root: Control) -> void:
-	# 다섯째로 유물이 붙었다 — 128 짜리 넷이던 자리를 104~110 짜리 다섯으로 나눈다
-	# (22 + 110x4 + 104 = 566, 창 안에 든다). 이름에서 "소환"을 뺐다: 소환 화면
-	# 안이라 다섯 번 되풀이할 말이 아니고, 그 자리가 있어야 다섯이 들어간다.
+	# 전면 판 (사장님 2026-08-13, 레퍼런스 문법): 장소 헤더가 위에 서고 — 장비는
+	# 대장간, 스킬·유물은 점성소 — 종류를 고르면 장소가 따라 바뀐다. 레퍼런스는
+	# 대장간/점성소를 소탭으로 갈랐지만 우리는 종류 탭이 이미 그 일을 한다.
+	var head := Control.new()
+	head.position = Vector2(PAD, 12.0)
+	head.size = Vector2(CONTENT_W, 210.0)
+	head.clip_contents = true
+	root.add_child(head)
+	_gacha_head_tex = TextureRect.new()
+	_gacha_head_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_gacha_head_tex.size = Vector2(CONTENT_W, CONTENT_W * 224.0 / 576.0)
+	_gacha_head_tex.position = Vector2(0.0, -6.0)
+	_gacha_head_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_gacha_head_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(_gacha_head_tex)
+	_gacha_place = _panel_label(head, Vector2(16.0, 10.0), Type.SIZE_MID,
+		Color(0.97, 0.92, 0.86), 220.0, 24.0)
+	_shop_outline(_gacha_place, 8)
+	_shop_tex(head, "card_title", Vector2(8.0, 42.0), Vector2(328.0, 40.0))
+	_gacha_line = _panel_label(head, Vector2(26.0, 52.0), Type.SIZE_SMALL,
+		Color(0.95, 0.88, 0.80), 300.0, 18.0)
+	_shop_outline(_gacha_line, 4)
+	# 종류 탭 다섯 — 상점과 같은 박쥐 알약. 그림 버튼이라 글자는 라벨로 따로 얹고
+	# _refresh_gacha 가 잠금 문구("N구간")까지 그 라벨에 적는다.
 	var kinds := ["weapon", "armor", "trinket", "skill", "relic"]
-	var names := ["무기", "방어구", "장신구", "스킬", "유물"]
+	var kw := (CONTENT_W - 8.0 * 4.0) / 5.0    # 99.2
 	for i in kinds.size():
 		var kind: String = kinds[i]
-		var button := Ui.button(names[i], Vector2(22.0 + i * 110.0, 18.0),
-			Vector2(104.0, 40.0), Type.SIZE_SMALL)
-		button.toggle_mode = true
-		button.pressed.connect(func() -> void: _set_gacha_kind(kind))
-		root.add_child(button)
-		_gacha_buttons[kind] = button
-	root.add_child(Ui.panel(Vector2(18.0, 68.0), Vector2(540.0, 178.0)))
-	# 왼쪽에 제단 그림 한 장. 글자만 있으면 어느 소환인지 곁눈질로 안 읽히고 창이 허전하다.
-	# 등급 틀은 안 두른다 — 소환 결과는 매번 등급이 다른데 틀이 한 등급을 주장한다.
+		var tb := TextureButton.new()
+		tb.texture_normal = Assets.tex(SHOP_DIR + "tab_off.png")
+		tb.texture_pressed = Assets.tex(SHOP_DIR + "tab_on.png")
+		tb.ignore_texture_size = true
+		tb.stretch_mode = TextureButton.STRETCH_SCALE
+		tb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		tb.toggle_mode = true
+		tb.position = Vector2(PAD + float(i) * (kw + 8.0), 232.0)
+		tb.size = Vector2(kw, 36.0)
+		tb.pressed.connect(func() -> void: _set_gacha_kind(kind))
+		root.add_child(tb)
+		var tl := _panel_label(root, Vector2(tb.position.x, 239.0),
+			Type.SIZE_SMALL, Color(1.0, 0.97, 0.92), kw, 22.0)
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(tl, 6)
+		_gacha_buttons[kind] = tb
+		_gacha_kind_labels[kind] = tl
+	# 소환 카드 — 상점 와이드 카드 틀. 액자에 제단 그림, 오른쪽에 레벨·천장·확률.
+	_shop_tex(root, "wide_body", Vector2(PAD, 284.0), Vector2(CONTENT_W, 243.0))
 	_gacha_icon = Ui.icon("", Vector2(GACHA_ART_X, GACHA_ART_Y), GACHA_ART_BOX)
 	root.add_child(_gacha_icon)
-	# 글자 칸 376px. 레벨이 오르면 확률에 소수점이 붙어 줄이 길어진다 —
+	# 글자 칸: 레벨이 오르면 확률에 소수점이 붙어 줄이 길어진다 —
 	# 최악값 "커먼 38.5%  언커먼 23.1%  레어 26.9%" 가 348px 이라 이 폭이 필요하다.
-	var text_x := GACHA_ART_X + GACHA_ART_BOX + 12.0
-	var text_w := 550.0 - text_x
-	_gacha_labels["pity"] = _panel_label(root, Vector2(text_x, 108.0), Type.SIZE_MID,
+	var text_x := PAD + 166.0
+	var text_w := PAD + CONTENT_W - 14.0 - text_x
+	_gacha_labels["pity"] = _panel_label(root, Vector2(text_x, 316.0), Type.SIZE_MID,
 		Color(1.0, 0.86, 0.52), text_w, 28.0)
 	_gacha_labels["pity"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 2줄: 다음 레벨까지 남은 횟수와 천장. 레벨과 천장은 역할이 달라 같이 보여야 한다.
-	_gacha_labels["sub"] = _panel_label(root, Vector2(text_x, 138.0), Type.SIZE_SMALL,
+	_gacha_labels["sub"] = _panel_label(root, Vector2(text_x, 348.0), Type.SIZE_SMALL,
 		Color(0.72, 0.72, 0.80), text_w, 20.0)
 	_gacha_labels["sub"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_gacha_labels["rates"] = _panel_label(root, Vector2(text_x, 160.0), Type.SIZE_SMALL,
+	_gacha_labels["rates"] = _panel_label(root, Vector2(text_x, 372.0), Type.SIZE_SMALL,
 		Color(0.62, 0.82, 0.68), text_w, 44.0)
 	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 소환권 잔량 — **아이콘 + 숫자 알약 넷** (참고작 상단 재화 줄과 같은 문법).
-	# 글자로 "무기권 0 방어구권 0 …"을 늘어놓았더니 읽기 전에 지저분했다(사장님).
-	# 알약이면 아이콘이 종류를 말하고 숫자만 읽으면 된다.
-	var tk_w := (CONTENT_W - 30.0) / 4.0
-	for i in TicketDefs.KINDS.size():
-		var tk: String = TicketDefs.KINDS[i]
-		var tx2 := PAD + float(i) * (tk_w + 10.0)
-		root.add_child(Ui.currency_bar(Vector2(tx2, 252.0), Vector2(tk_w, 28.0)))
-		root.add_child(Ui.icon(TicketDefs.icon_of(tk), Vector2(tx2 + 5.0, 256.0), 20.0))
-		_gacha_ticket_labels.append(_panel_label(root, Vector2(tx2 + 30.0, 252.0),
-			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), tk_w - 36.0, 28.0))
-	# 버튼 셋 — 1회 · 10연 · 고급. 260 짜리 둘이던 자리를 170 짜리 셋으로 나눈다
-	# (24 + 170x3 + 8x2 = 550, 창 안쪽 폭에 맞는다).
-	# 고급권을 없애면서(사장님) 버튼은 다시 둘이다.
-	var one := Ui.button("", Vector2(24.0, CONTENT_BOTTOM - 50.0),
-		Vector2(258.0, 50.0), Type.SIZE_SMALL)
-	one.pressed.connect(func() -> void: _pull_gacha(1))
-	root.add_child(one)
-	_gacha_buttons["one"] = one
-	var ten := Ui.button("", Vector2(292.0, CONTENT_BOTTOM - 50.0),
-		Vector2(258.0, 50.0), Type.SIZE_SMALL)
-	ten.pressed.connect(func() -> void: _pull_gacha(10))
-	root.add_child(ten)
-	_gacha_buttons["ten"] = ten
-	# 창(y 68~246)의 9-slice 테두리가 12px이라 안쪽은 80~234뿐이다. 32px 버튼을
-	# 212에 두면 테두리를 넘는다 — 버튼 원화 높이 그대로(24) 208에 놓는다.
+	# 확률표 버튼은 카드의 검은 띠(가격 자리)에 선다.
 	var table_btn := Ui.button("확률표",
-		Vector2(GACHA_ART_X + (GACHA_ART_BOX - 100.0) * 0.5, 208.0),
-		Vector2(100.0, 24.0), Type.SIZE_SMALL)
+		Vector2(PAD + (CONTENT_W - 110.0) * 0.5, 478.0),
+		Vector2(110.0, 28.0), Type.SIZE_SMALL)
 	table_btn.pressed.connect(func() -> void:
 		_rates_view.visible = not _rates_view.visible
 		if _rates_view.visible:
 			_refresh_rates_table())
 	root.add_child(table_btn)
+	# 소환권 잔량 — **아이콘 + 숫자 알약 넷** (참고작 상단 재화 줄과 같은 문법).
+	var tk_w := (CONTENT_W - 30.0) / 4.0
+	for i in TicketDefs.KINDS.size():
+		var tk: String = TicketDefs.KINDS[i]
+		var tx2 := PAD + float(i) * (tk_w + 10.0)
+		root.add_child(Ui.currency_bar(Vector2(tx2, 542.0), Vector2(tk_w, 28.0)))
+		root.add_child(Ui.icon(TicketDefs.icon_of(tk), Vector2(tx2 + 5.0, 546.0), 20.0))
+		_gacha_ticket_labels.append(_panel_label(root, Vector2(tx2 + 30.0, 542.0),
+			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), tk_w - 36.0, 28.0))
+	# 버튼 둘 — 1회 · 10연. 전면 판이라 넉넉히 키운다.
+	var one := Ui.button("", Vector2(24.0, 586.0), Vector2(258.0, 56.0),
+		Type.SIZE_SMALL)
+	one.pressed.connect(func() -> void: _pull_gacha(1))
+	root.add_child(one)
+	_gacha_buttons["one"] = one
+	var ten := Ui.button("", Vector2(292.0, 586.0), Vector2(258.0, 56.0),
+		Type.SIZE_SMALL)
+	ten.pressed.connect(func() -> void: _pull_gacha(10))
+	root.add_child(ten)
+	_gacha_buttons["ten"] = ten
 	_build_rates_table(root)
 	_gacha_reveal = Control.new()
-	_gacha_reveal.size = Vector2(PANEL_W, PANEL_H)
+	_gacha_reveal.size = Vector2(PANEL_W, PANEL_FULL_H)
 	_gacha_reveal.visible = false
 	root.add_child(_gacha_reveal)
 	_refresh_gacha()
@@ -3315,14 +3361,14 @@ func _rate_cols() -> int:
 
 func _build_rates_table(root: Control) -> void:
 	_rates_view = Control.new()
-	_rates_view.size = Vector2(PANEL_W, PANEL_H)
+	_rates_view.size = Vector2(PANEL_W, PANEL_FULL_H)
 	_rates_view.visible = false
 	_rates_view.z_index = 5
 	root.add_child(_rates_view)
 	var back := ColorRect.new()
 	back.color = Color(0.055, 0.05, 0.065)
 	back.position = Vector2(PAD * 0.5, PAD * 0.5)
-	back.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
+	back.size = Vector2(PANEL_W - PAD, PANEL_FULL_H - PAD)
 	_rates_view.add_child(back)
 	_rates_head = _panel_label(_rates_view, Vector2(PAD, PAD - 4.0), Type.SIZE_SMALL,
 		Color(0.96, 0.90, 0.86), CONTENT_W - 108.0, 28.0)
@@ -3802,7 +3848,8 @@ func _refresh_chest() -> void:
 	if not _chest_btn:
 		return
 	# 상자 아래 글자는 뺐다 — 얼마인지는 눌러서 받을 때 알림으로 뜬다.
-	_chest_btn.visible = chest_gold > 0.0
+	# 전면 판 탭에서는 안 보인다 — 전투 화면 소품이라 판 위에 떠 버린다(실측).
+	_chest_btn.visible = chest_gold > 0.0 and _tab not in FULL_TABS
 
 
 # 방치 보상은 **팝업으로 편다** (사장님 + 레퍼런스 "방치 보상" 창): 한 줄
@@ -4256,19 +4303,30 @@ func _refresh_gacha() -> void:
 	var half := (parts.size() + 1) / 2
 	_gacha_labels["rates"].text = "%s\n%s" % [
 		"  ".join(parts.slice(0, half)), "  ".join(parts.slice(half))]
+	# 장소가 종류를 따라간다 — 장비는 대장간, 스킬·유물은 점성소(레퍼런스 문법).
+	var forge := _gacha_kind in GearDefs.SLOTS
+	_gacha_head_tex.texture = Assets.tex("res://assets/ui/head_forge.png" \
+		if forge else "res://assets/ui/head_astro.png")
+	_gacha_place.text = "핏빛 대장간" if forge else "달의 제단"
+	_gacha_line.text = "좋은 재료가 들어왔다. 골라 봐라." if forge \
+		else "운명의 조각이 떨리고 있어요…"
 	for kind in ["weapon", "armor", "trinket", "skill", "relic"]:
 		_gacha_buttons[kind].set_pressed_no_signal(_gacha_kind == kind)
+		var lbl: Label = _gacha_kind_labels[kind]
 		if kind in GearDefs.SLOTS:
 			var reason := GearDefs.lock_reason(kind, StageDefs.major_stage(stage))
 			_gacha_buttons[kind].disabled = not reason.is_empty()
-			_gacha_buttons[kind].text = reason if not reason.is_empty() \
+			lbl.text = reason if not reason.is_empty() \
 				else str(GearDefs.SLOT_NAME[kind])
 		elif kind == "relic":
 			# 유물은 **후반 축**이라 중반에 열린다(RelicDefs.OPEN_STAGE).
 			var locked := best_stage < RelicDefs.OPEN_STAGE
 			_gacha_buttons[kind].disabled = locked
-			_gacha_buttons[kind].text = "%d구간" % RelicDefs.OPEN_STAGE if locked \
-				else "유물"
+			lbl.text = "%d구간" % RelicDefs.OPEN_STAGE if locked else "유물"
+		else:
+			lbl.text = "스킬"
+		lbl.modulate = Color(1, 1, 1) \
+			if not _gacha_buttons[kind].disabled else Color(0.55, 0.52, 0.58)
 	# 값이 세 갈래다: 무료 · 소환권 · 보석. **무엇으로 내는지 버튼에 적는다** —
 	# 아이콘까지 바꿔야 곁눈질로 갈린다(보석 알약 vs 소환권).
 	var free := free_pull_date != Time.get_date_string_from_system()
@@ -4908,13 +4966,32 @@ func _build_dungeon(root: Control) -> void:
 
 # ── 던전 탭 — 재화 던전 2종 (RaidDefs). 참고작 "던전 입구"의 우리 버전 ──────
 func _build_raids(root: Control) -> void:
-	# [던전][주간 보스] — 성격이 다르다: 던전은 배급(하루 한 번 뭉치),
-	# 보스는 도전(못 죽여도 누적이 남는다). 임무판과 같은 토글 문법.
-	# 미궁은 **버튼 아래에서 시작하는 스크롤** 안에 산다 (사장님). 카드가 스크롤바를
-	# 침범하면 모서리 무늬가 그 위에 얹혀 지저분해지므로(그 노란 조각), 안쪽 폭을
-	# 스크롤바 + 여백만큼 줄여 둔다(MAZE_W). 카드 높이는 원래대로라 9-slice 도 안 깨진다.
-	_maze_scroll = Ui.scroll(Vector2(0.0, PAD + 34.0),
-		Vector2(PANEL_W, CONTENT_BOTTOM - PAD - 34.0 + 12.0))
+	# 전면 판 (사장님 2026-08-13, 레퍼런스 문법): 성문 헤더가 위에 서고 콘텐츠
+	# 컨테이너(미궁·던전·보스)는 통째로 그 아래로 내린다 — 내부 좌표는 안 바꾼다.
+	var head := Control.new()
+	head.position = Vector2(PAD, 12.0)
+	head.size = Vector2(CONTENT_W, 210.0)
+	head.clip_contents = true
+	root.add_child(head)
+	var gate := TextureRect.new()
+	gate.texture = Assets.tex("res://assets/ui/head_gate.png")
+	gate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	gate.size = Vector2(CONTENT_W, CONTENT_W * 224.0 / 576.0)
+	gate.position = Vector2(0.0, -6.0)
+	gate.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	gate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(gate)
+	_raid_place = _panel_label(head, Vector2(16.0, 10.0), Type.SIZE_MID,
+		Color(0.97, 0.92, 0.86), 220.0, 24.0)
+	_shop_outline(_raid_place, 8)
+	_shop_tex(head, "card_title", Vector2(8.0, 42.0), Vector2(328.0, 40.0))
+	_raid_line = _panel_label(head, Vector2(26.0, 52.0), Type.SIZE_SMALL,
+		Color(0.95, 0.88, 0.80), 300.0, 18.0)
+	_shop_outline(_raid_line, 4)
+	# 미궁은 **버튼 아래에서 시작하는 스크롤** 안에 산다 (사장님). 안쪽 폭은
+	# 스크롤바 + 여백만큼 줄여 둔다(MAZE_W).
+	_maze_scroll = Ui.scroll(Vector2(0.0, 274.0),
+		Vector2(PANEL_W, FULL_BOTTOM - 274.0 + 12.0))
 	_maze_scroll.visible = false
 	root.add_child(_maze_scroll)
 	_maze_panel = Control.new()
@@ -4926,23 +5003,36 @@ func _build_raids(root: Control) -> void:
 	_build_dungeon(_maze_panel)
 	# [미궁][재화 던전][주간 보스] — 셋 다 "들어가서 도는 곳"이다. 성격은 다르다:
 	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
+	# 상점·소환과 같은 박쥐 알약 — 그림 버튼이라 글자는 라벨로 얹는다.
 	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"]]
-	var mw := (CONTENT_W - 12.0 * 2.0) / 3.0
+	var mw := (CONTENT_W - 10.0 * 2.0) / 3.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
-		var mb := Ui.button(str(modes[i][1]),
-			Vector2(PAD + float(i) * (mw + 12.0), PAD - 6.0),
-			Vector2(mw, 34.0), Type.SIZE_SMALL)
+		var mb := TextureButton.new()
+		mb.texture_normal = Assets.tex(SHOP_DIR + "tab_off.png")
+		mb.texture_pressed = Assets.tex(SHOP_DIR + "tab_on.png")
+		mb.ignore_texture_size = true
+		mb.stretch_mode = TextureButton.STRETCH_SCALE
+		mb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		mb.toggle_mode = true
+		mb.position = Vector2(PAD + float(i) * (mw + 10.0), 232.0)
+		mb.size = Vector2(mw, 36.0)
 		mb.pressed.connect(func() -> void: _raid_set_mode(mode))
 		root.add_child(mb)
+		var ml := _panel_label(root, Vector2(mb.position.x, 239.0),
+			Type.SIZE_MID, Color(1.0, 0.97, 0.92), mw, 22.0)
+		ml.text = str(modes[i][1])
+		ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(ml, 8)
 		_raid_mode_btns[mode] = mb
 	_raid_list = Control.new()
 	_raid_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raid_list.position.y = 214.0
 	root.add_child(_raid_list)
 	_boss_panel = Control.new()
 	_boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_boss_panel.visible = false
+	_boss_panel.position.y = 214.0
 	root.add_child(_boss_panel)
 	_build_boss_panel(_boss_panel)
 	_build_raid_list(_raid_list)
@@ -4953,6 +5043,17 @@ func _raid_set_mode(mode: String) -> void:
 	_raid_list.visible = mode == "raid"
 	_boss_panel.visible = mode == "boss"
 	_maze_scroll.visible = mode == "maze"
+	# 헤더 이름표·대사 — 장소는 성문 하나지만 말은 소탭을 따라간다.
+	match mode:
+		"maze":
+			_raid_place.text = "심연의 미궁"
+			_raid_line.text = "깊이 내려갈수록 좋은 것이 잠들어 있지."
+		"raid":
+			_raid_place.text = "던전 성문"
+			_raid_line.text = "오늘의 사냥감이 기다린다."
+		"boss":
+			_raid_place.text = "제물의 제단"
+			_raid_line.text = "이번 주의 제물은… 강하다."
 	for key in _raid_mode_btns:
 		_raid_mode_btns[key].button_pressed = key == mode
 	_refresh_dungeon()
@@ -5325,9 +5426,17 @@ const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세
 const QUEST_BAR_W := 220.0
 var _quest_view: Control
 var _quest_dot: TextureRect
+var _side_root: Control      # 오른쪽 바로가기 줄(임무·칭호) — 전면 판이 숨긴다
+var _raid_place: Label       # 도전 헤더 이름표·대사 — 소탭 따라 바뀐다
+var _raid_line: Label
 
 
 func _build_quests() -> void:
+	# 오른쪽 세로 바로가기 줄을 한 컨테이너로 묶는다 — 전면 판 탭(상점 등)에서
+	# 통째로 숨겨야 한다(사장님: 완전 전체 화면).
+	_side_root = Control.new()
+	_side_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_root.add_child(_side_root)
 	# 여는 버튼 — 전투 화면 오른쪽 가장자리(레퍼런스의 세로 바로가기 줄 자리).
 	var open_btn := Button.new()
 	open_btn.flat = true
@@ -5338,13 +5447,13 @@ func _build_quests() -> void:
 		_quest_view.visible = not _quest_view.visible
 		if _quest_view.visible:
 			_refresh_quests())
-	_hud_root.add_child(open_btn)
-	_hud_root.add_child(Ui.icon("res://assets/ui/tab_quest.png",
+	_side_root.add_child(open_btn)
+	_side_root.add_child(Ui.icon("res://assets/ui/tab_quest.png",
 		QUEST_BTN_AT + Vector2(4.0, 4.0), 48.0))
 	_quest_dot = Ui.icon("res://assets/ui/dot_alert.png",
 		QUEST_BTN_AT + Vector2(-4.0, -2.0), TAB_DOT)
 	_quest_dot.visible = false
-	_hud_root.add_child(_quest_dot)
+	_side_root.add_child(_quest_dot)
 	# **칭호도 같은 줄에 세운다** (사장님: 도감에서 빼고 임무 위쪽에). 임무와
 	# 칭호는 둘 다 "들러서 받는 곳"이라 세로 바로가기 줄에 나란히 두는 게 맞다.
 	var t_btn := Button.new()
@@ -5356,8 +5465,8 @@ func _build_quests() -> void:
 		_title_view.visible = not _title_view.visible
 		if _title_view.visible:
 			_refresh_titles())
-	_hud_root.add_child(t_btn)
-	_hud_root.add_child(Ui.icon("res://assets/ui/badge_title.png",
+	_side_root.add_child(t_btn)
+	_side_root.add_child(Ui.icon("res://assets/ui/badge_title.png",
 		TITLE_BTN_AT + Vector2(8.0, 8.0), 40.0))
 	# 상점 진입점은 **일부러 안 만든다** (사장님 2026-08-12): 상점은 과금과 한
 	# 묶음으로 **별도 탭**이 되고 지금 이 판은 그 탭 안의 한 소탭으로 들어간다.
@@ -5446,9 +5555,11 @@ var _shop_line: Label                      # 상인 대사 — 소탭마다 바�
 # 카드 격자고, 위에는 상인이 서서 가게 분위기를 만든다. 자산은 전부 새로
 # 뽑았다(assets/ui/shop/, tools/slice_shop_ui.py 가 시트를 조각낸다).
 const SHOP_DIR := "res://assets/ui/shop/"
-const SHOP_HEAD_H := 88.0     # 상인 창 — 판 384 에서 카드 스크롤을 208 남기는 상한
-const SHOP_TAB_Y := 108.0
-const SHOP_SCROLL_Y := 150.0
+# 전면 판(사장님 2026-08-13: 반판 스크롤 208 로는 카드 한 장도 다 안 보였다).
+# 헤더를 원본 비율 그대로 크게 두고, 카드 스크롤이 두 장 넘게 선다.
+const SHOP_HEAD_H := 210.0
+const SHOP_TAB_Y := 232.0
+const SHOP_SCROLL_Y := 274.0
 const SHOP_LIST_W := CONTENT_W - Ui.SCROLL_W - 6.0   # 스크롤 안 콘텐츠 폭 498
 const SHOP_COL_W := 240.0     # 세로 카드 폭 — (498-14)/2 를 넘지 않게
 const SHOP_VCARD_H := 214.0   # 세로 카드 높이(제목 38 + 액자 116 + 한도 + 가격 36)
@@ -5468,14 +5579,19 @@ func _build_shop(root: Control) -> void:
 	mer.texture = Assets.tex(SHOP_DIR + "merchant.png")
 	mer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	mer.size = Vector2(CONTENT_W, CONTENT_W * 224.0 / 576.0)   # 528x205
-	mer.position = Vector2(0.0, -58.0)     # 상인 얼굴~카운터가 창에 오는 실측값
+	mer.position = Vector2(0.0, -6.0)      # 전면 판이라 거의 원본대로 다 보인다
 	mer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	mer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_child(mer)
+	# 장소명 — 레퍼런스 문법(왼쪽 위 큰 글자). 상인 대사보다 위에 선다.
+	var place := _panel_label(head, Vector2(16.0, 10.0), Type.SIZE_MID,
+		Color(0.97, 0.92, 0.86), 200.0, 24.0)
+	place.text = "밤의 상점"
+	_shop_outline(place, 8)
 	# 말풍선 — 새 카드의 제목 띠를 늘려 쓴다. 대사는 소탭마다 바뀐다.
 	# 폭 328: 제일 긴 대사("매일 들러 주시는…")가 300 에서 끝이 잘렸다(실측).
-	_shop_tex(head, "card_title", Vector2(8.0, 8.0), Vector2(328.0, 40.0))
-	_shop_line = _panel_label(head, Vector2(26.0, 18.0), Type.SIZE_SMALL,
+	_shop_tex(head, "card_title", Vector2(8.0, 42.0), Vector2(328.0, 40.0))
+	_shop_line = _panel_label(head, Vector2(26.0, 52.0), Type.SIZE_SMALL,
 		Color(0.95, 0.88, 0.80), 300.0, 18.0)
 	_shop_outline(_shop_line, 4)
 	# 2) 소탭 — 박쥐 알약. 켬/끔이 그림이라 TextureButton 이다.
@@ -5514,7 +5630,7 @@ func _build_shop(root: Control) -> void:
 
 func _shop_scroll_view(root: Control) -> Control:
 	var sc := Ui.scroll(Vector2(PAD, SHOP_SCROLL_Y),
-		Vector2(CONTENT_W, CONTENT_BOTTOM - SHOP_SCROLL_Y))
+		Vector2(CONTENT_W, FULL_BOTTOM - SHOP_SCROLL_Y))
 	root.add_child(sc)
 	var inner := Control.new()
 	inner.custom_minimum_size.x = SHOP_LIST_W
@@ -5655,11 +5771,12 @@ func _shop_wcard(parent: Control, y: float, name: String, icon_path: String,
 	card.add_child(icon)
 	if value > 0:
 		_shop_badge(card, value)
-	var title := _panel_label(card, Vector2(150.0, 22.0), Type.SIZE_MID,
-		Color(0.96, 0.88, 0.78), SHOP_LIST_W - 170.0, 22.0)
+	# 이름·계정당은 166 — 150 이면 액자 모서리 장식에 첫 글자가 물린다(실측).
+	var title := _panel_label(card, Vector2(166.0, 22.0), Type.SIZE_MID,
+		Color(0.96, 0.88, 0.78), SHOP_LIST_W - 186.0, 22.0)
 	title.text = name
-	var sub := _panel_label(card, Vector2(150.0, 102.0), Type.SIZE_SMALL,
-		Color(0.72, 0.68, 0.72), SHOP_LIST_W - 170.0, 34.0)
+	var sub := _panel_label(card, Vector2(166.0, 102.0), Type.SIZE_SMALL,
+		Color(0.72, 0.68, 0.72), SHOP_LIST_W - 186.0, 34.0)
 	var price := _panel_label(card, Vector2(0.0, 186.0), Type.SIZE_MID,
 		Color(0.98, 0.86, 0.55), SHOP_LIST_W, 22.0)
 	price.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -5942,6 +6059,14 @@ func _select_tab(name: String) -> void:
 	_tab = name
 	for key in _panels.keys():
 		_panels[key].visible = key == name
+	_panel_bg.visible = name not in FULL_TABS
+	_panel_bg_full.visible = name in FULL_TABS
+	# 전투 화면에 떠 있는 소품(가이드·방치 상자·오른쪽 바로가기 줄)은 전면 판과
+	# 겹친다 — 같이 숨긴다(사장님: 임무·업적 아이콘도 안 보이게, 완전 전체 화면).
+	_goal_widget.visible = name not in FULL_TABS
+	if _side_root:
+		_side_root.visible = name not in FULL_TABS
+	_refresh_chest()
 	# 창 전환은 **짧게 떠오르며** 나타난다(0.12초). 그냥 바뀌면 밋밋하다(사장님).
 	# 원위치는 meta 에 한 번 적어 둔다 — 연타로 트윈이 겹쳐도 늘 제자리로 수렴한다.
 	if switched:
