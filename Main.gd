@@ -619,10 +619,7 @@ func _apply_hp_growth(old_max: float) -> void:
 
 func upgrade_cost(key: String, level: int) -> float:
 	var s := StatDefs.of(key)
-	# 지수는 **승급 단계가 정한다**(StatDefs.cost_exp) — 승급이 상한만 열고
-	# 비용을 안 건드리면 그 상한은 도달할 수 없는 숫자로 남는다.
-	return Balance.upgrade_cost(level, s.get("base", 10.0),
-		StatDefs.cost_exp(key, dungeon_best))
+	return Balance.upgrade_cost(level, s.get("base", 10.0), StatDefs.cost_exp(key))
 
 
 func _ready() -> void:
@@ -5428,7 +5425,7 @@ func _refresh_tab_dots() -> void:
 # 실효 상한 — 스탯 고유 cap 과 승급 공통 상한(미궁 층이 연다) 중 작은 쪽.
 func _stat_cap(key: String) -> int:
 	var s := StatDefs.of(key)
-	var cap := StatDefs.train_cap(dungeon_best)
+	var cap := StatDefs.train_cap(dungeon_best, best_stage)
 	return mini(cap, int(s["cap"])) if s.has("cap") else cap
 
 

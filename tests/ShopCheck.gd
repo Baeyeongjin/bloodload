@@ -33,10 +33,14 @@ func _init() -> void:
 			var a := ShopDefs.amount(id, st, 20)
 			assert(a > 0.0 and a >= prev, "%s %d구간 수량이 줄었다" % [id, st])
 			prev = a
-	# 던전 한 판보다 후하면 던전을 안 돌게 된다.
-	assert(ShopDefs.amount("blood", 50, 20) < RaidDefs.reward("blood", 1),
+	# 던전 한 판보다 후하면 던전을 안 돌게 된다. **같은 구간에서 견준다** —
+	# 상점은 지금 서 있는 구간 시세고 던전 1단계는 그 던전이 열리는 구간 시세라,
+	# 서로 다른 자리를 비교하면 수입 곡선이 지수가 되는 순간 뜻 없이 깨진다.
+	var eq_b := RaidDefs.eq_stage(1, "blood")
+	assert(ShopDefs.amount("blood", eq_b, 20) < RaidDefs.reward("blood", 1),
 		"상점 혈액이 동굴 한 판보다 많다")
-	assert(ShopDefs.amount("essence", 50, 20) < RaidDefs.reward("essence", 1),
+	var eq_e := RaidDefs.eq_stage(1, "essence")
+	assert(ShopDefs.amount("essence", eq_e, 20) < RaidDefs.reward("essence", 1),
 		"상점 정수가 성소 한 판보다 많다")
 	# 미궁이 열렸는데 아직 안 돈 사람(기록 0)에게도 빈 물건을 팔면 안 된다.
 	assert(ShopDefs.amount("crystal", 50, 0) > 0.0, "혈정 수량이 0 인 판이 뜬다")

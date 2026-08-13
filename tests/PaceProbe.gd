@@ -35,13 +35,16 @@ const MEMBER_RAID_BONUS := 1
 # 2주 하고 105층이었다는 실측이 출발점이고, 사장님이 거기서 이 페이스를 잡았다.
 # 500 완주는 이 기울기의 꼬리라 반년 너머에 놓인다 — 끝을 못 보는 게 아니라
 # **끝이 목표가 아닌 구간**이 뒤에 길게 남는 게 방치형의 모양이다.
-# [적 배수, 보상 배수, 적 선형항]. 선형항을 같이 흔든다 — 그게 **초반을 눌러
+# [적 배수, 보상 배수, 적 선형항, 비용지수 배수]. 넷째가 스탯 비용 손잡이다 —
+# **요구는 지수인데 스탯 성장은 선형**이라(합연산), 비용만 낮추면 초반이 폭주하고
+# (14일 완주) 높이면 후반이 막힌다. 둘을 같이 흔들어야 자리가 맞는다.
+# 원래 선형항을 같이 흔든다 — 그게 **초반을 눌러
 # 전체를 아래로 당기는** 손잡이라, 지수만 만지면 모양(감속의 기울기)이 안 맞는다.
 const SWEEP := [
-	[1.16, 1.15, 0.0],
-	[1.20, 1.19, 0.0],
-	[1.24, 1.23, 0.0],
-	[1.28, 1.27, 0.0],
+	[1.35, 1.33, 0.0, 1.00],
+	[1.40, 1.38, 0.0, 1.00],
+	[1.45, 1.43, 0.0, 1.00],
+	[1.50, 1.48, 0.0, 1.00],
 ]
 
 
@@ -111,6 +114,7 @@ func _sweep(days: int) -> void:
 		StageDefs.POWER_STEP = float(c[0])
 		StageDefs.GOLD_STEP = float(c[1])
 		StageDefs.POWER_LINEAR = float(c[2])
+		StatDefs.COST_EXP_SCALE = float(c[3])
 		var f := _run(days, false)
 		var m := _run(days, true)
 		var cells := PackedStringArray()
@@ -120,11 +124,12 @@ func _sweep(days: int) -> void:
 				continue
 			cells.append("%d/%d" % [int(f["log"][d - 1]), int(m["log"][d - 1])])
 		print("%-18s %-10s %-10s %-10s %s"
-			% ["x%.3f 돈%.3f 선%.2f" % [float(c[0]), float(c[1]), float(c[2])],
+			% ["x%.2f 돈%.2f 값%.2f" % [float(c[0]), float(c[1]), float(c[3])],
 			cells[0], cells[1], cells[2], cells[3]])
 	StageDefs.POWER_STEP = keep_p
 	StageDefs.GOLD_STEP = keep_g
 	StageDefs.POWER_LINEAR = keep_l
+	StatDefs.COST_EXP_SCALE = 1.0
 	print("")
 	print("목표 로그식  s(t) = 144·ln(t) - 341   (500 도달 ~340일)")
 	print("PaceProbe OK")
@@ -184,7 +189,7 @@ func _run(days: int, member: bool) -> Dictionary:
 		# **어디서 막혔는가**를 같이 남긴다 — 구간만 보면 "느리다"까지만 알고
 		# 무엇이 병목인지는 모른다(멤버십 차이가 0 인 이유가 여기 있다).
 		diag.append({"stage": game.stage, "floor": game.dungeon_best,
-			"cap": StatDefs.train_cap(game.dungeon_best),
+			"cap": StatDefs.train_cap(game.dungeon_best, game.best_stage),
 			"lv": int(game.stat_lv("damage")),
 			"gold": gold, "crystal": game.crystal,
 			"power": Balance.combat_power(game.dps(), game.max_hp(),
@@ -356,7 +361,7 @@ func _shop(game, gold: float) -> float:
 				continue
 			var lv: int = game.stat_lv(key)
 			if StatDefs.at_cap(key, lv) \
-					or lv >= StatDefs.train_cap(game.dungeon_best):
+					or lv >= StatDefs.train_cap(game.dungeon_best, game.best_stage):
 				continue
 			var cost: float = game.upgrade_cost(key, lv)
 			if cost > gold:
