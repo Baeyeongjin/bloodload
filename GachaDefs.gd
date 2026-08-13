@@ -3,6 +3,7 @@ extends RefCounted
 
 const COST := 30.0
 const RARE_INDEX := 2
+const EPIC_INDEX := 3       # 고급 소환권의 바닥 등급
 const LEGEND_INDEX := 4
 # unlock = 이 등급이 나오기 시작하는 소환 레벨.
 # **처음부터 전설·신화가 나오면 레벨을 올릴 이유가 없다.** 방치형에서 뽑기 레벨의
@@ -141,14 +142,19 @@ static func rates(lv: int, skill_pool := false) -> Array[float]:
 
 
 # 반환 pity는 다음 뽑기 전에 쌓여 있는 횟수다. 99면 이번 한 번이 전설이다.
-static func pull(count: int, pity: int, lv := 0, skill_pool := false) -> Dictionary:
+# floor_index: 이 등급 아래는 안 나온다. 고급 소환권(에픽 확정)이 쓰는 길이고,
+# **확률표는 안 건드린다** — 바닥 위쪽 무게로만 다시 굴린다(10연 레어 확정과 같은
+# 기전). 표를 손대면 천장·기댓값 계산이 전부 다시다.
+static func pull(count: int, pity: int, lv := 0, skill_pool := false,
+		floor_index := 0) -> Dictionary:
 	var out: Array[String] = []
 	var has_rare := false
 	# 천장이 찼는데 전설이 아직 안 열렸으면 **터뜨리지 않고 계속 쌓는다.**
 	# 열린 순간 바로 터져서, 잠긴 동안 뽑은 게 헛되지 않는다.
 	var pity_ready := unlocked(LEGEND_INDEX, lv)
 	for i in count:
-		var min_index := RARE_INDEX if count == 10 and i == 9 and not has_rare else 0
+		var min_index := maxi(floor_index,
+			RARE_INDEX if count == 10 and i == 9 and not has_rare else 0)
 		var index := LEGEND_INDEX if (pity >= 99 and pity_ready) \
 			else _roll_index(min_index, lv, skill_pool)
 		out.append(str(RARITIES[index]["key"]))

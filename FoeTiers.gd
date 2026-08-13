@@ -55,18 +55,32 @@ static func all_keys() -> Array:
 # 방치로 계속 오르므로 오래 간다.
 # 마지막 칸은 전 몹 만렙(= TIERS.size() x CODEX_KILL_STEPS.size())이어야 한다.
 # 그 검사는 tests/GearTest.gd 에 있다.
+# 부가 보상은 **줄마다 한 종류만** 둔다 — 두 개를 적으면 190px 칸을 넘는다.
+# 소환권을 여기 태우는 이유(2026-08-13, MONETIZATION_PLAN 4-2): 도감은 가장 긴
+# 수집(154종 · 10만 처치)인데 보상이 스탯 %뿐이라 눈에 안 보였다. 합 소환권 38 ·
+# 고급권 18 — 끝까지 미는 사람에게 56회 소환이 걸려 있다.
 const CODEX_REWARDS := [
-	{"need": 3,   "stat": "damage", "rate": 0.02},
-	{"need": 10,  "stat": "gold",   "rate": 0.03},
-	{"need": 22,  "stat": "damage", "rate": 0.05},   # 모든 몹 숙련 1단계
-	{"need": 44,  "stat": "tough",  "rate": 0.08},   # 모든 몹 2단계
-	{"need": 66,  "stat": "gold",   "rate": 0.10},
-	{"need": 88,  "stat": "damage", "rate": 0.12},
+	{"need": 3,   "stat": "damage", "rate": 0.02, "ticket": 3.0},
+	{"need": 10,  "stat": "gold",   "rate": 0.03, "ticket": 5.0},
+	{"need": 22,  "stat": "damage", "rate": 0.05, "ticket": 5.0},   # 모든 몹 숙련 1단계
+	{"need": 44,  "stat": "tough",  "rate": 0.08, "ticket": 10.0},  # 모든 몹 2단계
+	{"need": 66,  "stat": "gold",   "rate": 0.10, "ticket_hi": 3.0},
+	{"need": 88,  "stat": "damage", "rate": 0.12, "ticket": 15.0},
 	{"need": 110, "stat": "damage", "rate": 0.15, "gem": 300.0},   # 옛 만렙(5단계)
 	# 6~7단계 확장분 (2026-08-12). 3만·10만 처치 구간이라 진짜 장기 목표다.
-	{"need": 132, "stat": "tough",  "rate": 0.15},
-	{"need": 154, "stat": "damage", "rate": 0.20, "gem": 500.0},
+	{"need": 132, "stat": "tough",  "rate": 0.15, "ticket_hi": 5.0},
+	{"need": 154, "stat": "damage", "rate": 0.20, "ticket_hi": 10.0},
 ]
+
+# 그 줄의 부가 보상 (종류, 수량). 없으면 빈 사전.
+const EXTRA_KEYS := ["gem", "ticket", "ticket_hi"]
+
+
+static func codex_extra(r: Dictionary) -> Dictionary:
+	for k in EXTRA_KEYS:
+		if r.has(k):
+			return {"kind": k, "amount": float(r[k])}
+	return {}
 
 
 static func codex_max_knowledge() -> int:

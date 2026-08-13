@@ -8,6 +8,12 @@ extends SceneTree
 #      하루를 영영 못 닫는다.
 #   4) 새 날 진행표는 접속 임무가 차 있다
 
+# 지급은 Main._grant_reward 한 곳이 한다 — 여기 이름이 있는데 거기 없으면
+# 조용히 안 들어온다. 실제로 들어오는지는 TicketCheck 이 씬으로 잰다.
+const KNOWN_REWARDS := ["gem", "crystal", "sigil", "essence", "gold",
+	"ticket", "ticket_hi"]
+
+
 func _init() -> void:
 	create_timer(20.0).timeout.connect(func() -> void:
 		push_error("안 끝났다")
@@ -21,7 +27,7 @@ func _init() -> void:
 		seen[id] = true
 		assert(int(q["need"]) > 0 and int(q["amount"]) > 0,
 			"%s: need/amount 가 0 이하다" % id)
-		assert(str(q["reward"]) in ["gem", "crystal"],
+		assert(str(q["reward"]) in KNOWN_REWARDS,
 			"%s: 모르는 보상 종류 %s" % [id, str(q["reward"])])
 		assert(FileAccess.file_exists("res://assets/ui/%s.png" % str(q["icon"])),
 			"%s: 아이콘 파일이 없다 — %s" % [id, str(q["icon"])])
@@ -42,7 +48,7 @@ func _init() -> void:
 		wseen[id] = true
 		assert(int(q["need"]) > 0 and int(q["amount"]) > 0,
 			"%s: need/amount 가 0 이하다" % id)
-		assert(str(q["reward"]) in ["gem", "crystal"],
+		assert(str(q["reward"]) in KNOWN_REWARDS,
 			"%s: 모르는 보상 종류 %s" % [id, str(q["reward"])])
 		assert(FileAccess.file_exists("res://assets/ui/%s.png" % str(q["icon"])),
 			"%s: 아이콘 파일이 없다 — %s" % [id, str(q["icon"])])

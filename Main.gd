@@ -127,6 +127,10 @@ var crystal := 0.0
 # 인장 — 혈맹 전용 재화(PactDefs). 획득은 계약의 제단(재화 던전 3호)뿐이고
 # 쓰는 곳은 혈맹 레벨업뿐이다. 혈정과 같은 격리 규칙.
 var sigil := 0.0
+# 소환권 — 소환 전용(TicketDefs). 장수라 정수다. 보석과 달리 **다른 데 못 쓴다**:
+# 임무·도감이 준 소환권은 반드시 소환이 된다.
+var ticket := 0
+var ticket_hi := 0
 var pact_lv := 0
 var mileage := 0
 var best_stage := 1
@@ -3123,17 +3127,29 @@ func _build_gacha(root: Control) -> void:
 		Color(0.62, 0.82, 0.68), text_w, 44.0)
 	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var one := Ui.button("", Vector2(22.0, CONTENT_BOTTOM - 50.0),
-		Vector2(260.0, 50.0), Type.SIZE_SMALL)
+	# 소환권 잔량. **버튼 숫자는 나가는 양**(보석 30 · 소환권 1)이라 가진 장수를
+	# 적을 자리가 없다 — 잔량을 버튼에 적었더니 "1회 6"이 값 6으로 읽혔다(실측).
+	_gacha_labels["tickets"] = _panel_label(root, Vector2(text_x, 206.0),
+		Type.SIZE_SMALL, Color(0.86, 0.78, 0.62), text_w, 20.0)
+	_gacha_labels["tickets"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 버튼 셋 — 1회 · 10연 · 고급. 260 짜리 둘이던 자리를 170 짜리 셋으로 나눈다
+	# (24 + 170x3 + 8x2 = 550, 창 안쪽 폭에 맞는다).
+	var one := Ui.button("", Vector2(24.0, CONTENT_BOTTOM - 50.0),
+		Vector2(170.0, 50.0), Type.SIZE_SMALL)
 	one.pressed.connect(func() -> void: _pull_gacha(1))
 	root.add_child(one)
 	_gacha_buttons["one"] = one
-	var ten := Ui.button("10연  보석 300", Vector2(294.0, CONTENT_BOTTOM - 50.0),
-		Vector2(260.0, 50.0), Type.SIZE_SMALL)
-	Ui.cost_icon(ten, "res://assets/ui/res_gem.png", 32)
+	var ten := Ui.button("", Vector2(202.0, CONTENT_BOTTOM - 50.0),
+		Vector2(170.0, 50.0), Type.SIZE_SMALL)
 	ten.pressed.connect(func() -> void: _pull_gacha(10))
 	root.add_child(ten)
 	_gacha_buttons["ten"] = ten
+	# 고급권은 **자동 소비에 안 태운다** — 아껴 둔 것을 태워 버리면 손해가 크다.
+	var hi := Ui.button("", Vector2(380.0, CONTENT_BOTTOM - 50.0),
+		Vector2(170.0, 50.0), Type.SIZE_SMALL)
+	hi.pressed.connect(func() -> void: _pull_gacha(1, true))
+	root.add_child(hi)
+	_gacha_buttons["hi"] = hi
 	# 창(y 68~246)의 9-slice 테두리가 12px이라 안쪽은 80~234뿐이다. 32px 버튼을
 	# 212에 두면 테두리를 넘는다 — 버튼 원화 높이 그대로(24) 208에 놓는다.
 	var table_btn := Ui.button("확률표",
@@ -3348,18 +3364,30 @@ func _dev_jump_stage() -> void:
 	_save_game()
 
 
-func _pull_gacha(count: int) -> void:
-	var free := count == 1 and free_pull_date != Time.get_date_string_from_system()
-	var cost := 0.0 if free else GachaDefs.COST * float(count)
+# high 면 고급 소환권(에픽 확정) 한 장. 아니면 **무료 > 소환권 > 보석** 순으로
+# 낸다 — 소환권을 두고 보석이 나가면 유저가 손해를 본 줄도 모른다. 부분 지불
+# (소환권 3장 + 보석 7회)은 안 한다: 값이 두 줄로 읽히면 무엇을 냈는지 흐려진다.
+func _pull_gacha(count: int, high := false) -> void:
+	if high:
+		if ticket_hi < count:
+			return
+		ticket_hi -= count
+	var free := not high and count == 1 \
+		and free_pull_date != Time.get_date_string_from_system()
+	var by_ticket := not high and not free and ticket >= count
+	var cost := 0.0 if (high or free or by_ticket) else GachaDefs.COST * float(count)
 	if gem < cost:
 		return
 	gem -= cost
+	if by_ticket:
+		ticket -= count
 	if free:
 		free_pull_date = Time.get_date_string_from_system()
 	_quest_bump("summon", count)
 	# 레벨은 **이번 뽑기 전** 값으로 굴린다 — 화면에 적힌 확률 그대로여야 한다.
 	var result := GachaDefs.pull(count, int(gacha_pity.get(_gacha_kind, 0)),
-		GachaDefs.level(int(gacha_pulls.get(_gacha_kind, 0))), _gacha_kind == "skill")
+		GachaDefs.level(int(gacha_pulls.get(_gacha_kind, 0))), _gacha_kind == "skill",
+		TicketDefs.HIGH_FLOOR if high else 0)
 	gacha_pity[_gacha_kind] = int(result["pity"])
 	gacha_pulls[_gacha_kind] = int(gacha_pulls.get(_gacha_kind, 0)) + count
 	mileage += count
@@ -4041,15 +4069,29 @@ func _refresh_gacha() -> void:
 			_gacha_buttons[kind].disabled = not reason.is_empty()
 			_gacha_buttons[kind].text = reason if not reason.is_empty() \
 				else "%s 소환" % GearDefs.SLOT_NAME[kind]
+	# 값이 세 갈래다: 무료 · 소환권 · 보석. **무엇으로 내는지 버튼에 적는다** —
+	# 아이콘까지 바꿔야 곁눈질로 갈린다(보석 알약 vs 소환권).
 	var free := free_pull_date != Time.get_date_string_from_system()
-	_gacha_buttons["one"].text = "오늘 무료 1회" if free else "1회  30"
+	var one_ticket := not free and ticket >= 1
+	_gacha_buttons["one"].text = "오늘 무료 1회" if free \
+		else ("1회  1" if one_ticket else "1회  30")
 	if free:
 		_gacha_buttons["one"].icon = null
 	else:
-		Ui.cost_icon(_gacha_buttons["one"], "res://assets/ui/res_gem.png", 32)
-	_gacha_buttons["ten"].text = "10연  300"
-	_gacha_buttons["one"].disabled = not free and gem < GachaDefs.COST
-	_gacha_buttons["ten"].disabled = gem < GachaDefs.COST * 10.0
+		Ui.cost_icon(_gacha_buttons["one"],
+			TicketDefs.icon_of(TicketDefs.BASIC) if one_ticket \
+			else "res://assets/ui/res_gem.png", 32)
+	var ten_ticket := ticket >= 10
+	_gacha_buttons["ten"].text = "10연  10" if ten_ticket else "10연  300"
+	Ui.cost_icon(_gacha_buttons["ten"],
+		TicketDefs.icon_of(TicketDefs.BASIC) if ten_ticket \
+		else "res://assets/ui/res_gem.png", 32)
+	_gacha_buttons["hi"].text = "고급  1"
+	Ui.cost_icon(_gacha_buttons["hi"], TicketDefs.icon_of(TicketDefs.HIGH), 32)
+	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
+	_gacha_buttons["ten"].disabled = not ten_ticket and gem < GachaDefs.COST * 10.0
+	_gacha_buttons["hi"].disabled = ticket_hi < 1
+	_gacha_labels["tickets"].text = "소환권 %d  ·  고급권 %d" % [ticket, ticket_hi]
 
 
 const CODEX_COLS := 6   # 5칸이면 5줄이 되어 세로가 창을 넘는다
@@ -4303,9 +4345,11 @@ func _build_status(root: Control) -> void:
 		need.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		var gain := _panel_label(_status_view, Vector2(PAD + 122.0, y), Type.SIZE_SMALL,
 			Color(0.95, 0.90, 0.88), 190.0, STATUS_ROW_H)
+		var extra := FoeTiers.codex_extra(r)
 		gain.text = "%s +%d%%%s" % [FoeTiers.codex_stat_name(str(r["stat"])),
 			int(float(r["rate"]) * 100.0),
-			"  보석 %d" % int(float(r["gem"])) if r.has("gem") else ""]
+			"" if extra.is_empty() else "  %s %d" % [_reward_name(str(extra["kind"])),
+				int(float(extra["amount"]))]]
 		gain.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		var state := _panel_label(_status_view, Vector2(PAD + 320.0, y), Type.SIZE_SMALL,
 			Color(0.62, 0.62, 0.68), CONTENT_W - 328.0, STATUS_ROW_H)
@@ -4726,10 +4770,36 @@ func _refresh_boss() -> void:
 			b.disabled = boss_dmg < need
 
 
+# 보상 지급 **한 곳**. 임무·주간·이벤트·도감이 저마다 match 를 갖고 있었는데,
+# 종류가 늘 때마다 한 곳을 빠뜨려 조용히 안 들어온다(그 사고를 막는 자리다).
+func _grant_reward(kind: String, amount: float) -> void:
+	match kind:
+		"gem": gem += amount
+		"crystal": crystal += amount
+		"sigil": sigil += amount
+		"essence": essence += amount
+		"gold": gold += amount
+		"ticket": ticket += int(amount)
+		"ticket_hi": ticket_hi += int(amount)
+
+
+static func _reward_name(kind: String) -> String:
+	match kind:
+		"crystal": return "혈정"
+		"sigil": return "인장"
+		"essence": return "정수"
+		"gold": return "혈액"
+		"ticket": return "소환권"
+		"ticket_hi": return "고급권"
+	return "보석"
+
+
 static func _reward_icon(kind: String) -> String:
 	match kind:
 		"crystal": return "res_crystal"
 		"sigil": return "res_sigil"
+		"ticket": return "ticket"
+		"ticket_hi": return "ticket_hi"
 	return "res_gem"
 
 
@@ -4897,9 +4967,7 @@ func _claim_quest(id: String) -> void:
 	# 받은 일일 임무 하나 = 주간 연동 임무 한 칸.
 	quest_wprog["daily"] = int(quest_wprog.get("daily", 0)) + 1
 	var q := QuestDefs.of(id)
-	match str(q["reward"]):
-		"gem": gem += float(q["amount"])
-		"crystal": crystal += float(q["amount"])
+	_grant_reward(str(q["reward"]), float(q["amount"]))
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_quests()
@@ -4916,9 +4984,7 @@ func _claim_wquest(id: String) -> void:
 		return
 	quest_wgot[id] = true
 	var q := QuestDefs.wof(id)
-	match str(q["reward"]):
-		"gem": gem += float(q["amount"])
-		"crystal": crystal += float(q["amount"])
+	_grant_reward(str(q["reward"]), float(q["amount"]))
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_quests()
@@ -5207,7 +5273,7 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		var b := Ui.button("", Vector2(x + w - 108.0, y + 9.0),
 			Vector2(100.0, 32.0), Type.SIZE_SMALL)
 		Ui.cost_icon(b, "res://assets/ui/%s.png"
-			% ("res_crystal" if str(q["reward"]) == "crystal" else "res_gem"), 14)
+			% _reward_icon(str(q["reward"])), 14)
 		if weekly:
 			b.pressed.connect(func() -> void: _claim_wquest(qid))
 		else:
@@ -7094,10 +7160,7 @@ func _claim_milestone(i: int) -> void:
 		return
 	boss_got[i] = true
 	var m: Dictionary = EventDefs.MILESTONES[i]
-	match str(m["reward"]):
-		"gem": gem += float(m["amount"])
-		"crystal": crystal += float(m["amount"])
-		"sigil": sigil += float(m["amount"])
+	_grant_reward(str(m["reward"]), float(m["amount"]))
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_dungeon()
@@ -7358,7 +7421,9 @@ func _claim_codex_reward() -> void:
 	var r := FoeTiers.codex_reward_at(codex_knowledge)
 	if r.is_empty():
 		return
-	gem += float(r.get("gem", 0.0))
+	var extra := FoeTiers.codex_extra(r)
+	if not extra.is_empty():
+		_grant_reward(str(extra["kind"]), float(extra["amount"]))
 	_offline_banner.text = "지식 합 %d · %s +%d%%" % [codex_knowledge,
 		FoeTiers.codex_stat_name(str(r["stat"])), int(float(r["rate"]) * 100.0)]
 	_offline_banner.add_theme_color_override("font_color", Color(0.72, 0.92, 1.0))
@@ -8074,6 +8139,8 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "gem", gem)
 	cfg.set_value("wallet", "crystal", crystal)
 	cfg.set_value("wallet", "sigil", sigil)
+	cfg.set_value("wallet", "ticket", ticket)
+	cfg.set_value("wallet", "ticket_hi", ticket_hi)
 	cfg.set_value("run", "pact_lv", pact_lv)
 	cfg.set_value("wallet", "mileage", mileage)
 	cfg.set_value("wallet", "seen", _currency_seen)
@@ -8131,6 +8198,8 @@ func _load_game() -> void:
 	gem = maxf(0.0, float(cfg.get_value("wallet", "gem", 0.0)))
 	crystal = maxf(0.0, float(cfg.get_value("wallet", "crystal", 0.0)))
 	sigil = maxf(0.0, float(cfg.get_value("wallet", "sigil", 0.0)))
+	ticket = maxi(0, int(cfg.get_value("wallet", "ticket", 0)))
+	ticket_hi = maxi(0, int(cfg.get_value("wallet", "ticket_hi", 0)))
 	pact_lv = clampi(int(cfg.get_value("run", "pact_lv", 0)), 0, PactDefs.level_cap())
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
