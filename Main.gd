@@ -696,8 +696,7 @@ func _ready() -> void:
 			dungeon_best = maxi(dungeon_best, 20)
 			gem = maxf(gem, 500.0)
 			shop_used = {}          # 캡처는 오늘 아무것도 안 산 상태로
-			_shop_view.visible = true
-			_refresh_shop()
+			_select_tab("shop")
 		# [개발 도구] --boss[=in] : 주간 보스 판(=in 이면 도전 중)으로 캡처한다.
 		if arg.begins_with("--boss=") and arg.trim_prefix("--boss=").is_valid_int():
 			_dev_boss = int(arg.trim_prefix("--boss="))
@@ -1573,7 +1572,7 @@ const CONTENT_BOTTOM := PANEL_H - PAD     # 358
 func _build_panels() -> void:
 	# 콘텐츠와 탭바는 별도 판이다. 한 장으로 덮으면 하단 메뉴가 콘텐츠에 붙어 보인다.
 	_hud_root.add_child(Ui.panel(Grid.uv(0, 26), Grid.uv(36, 24)))
-	for name in ["growth", "gear", "summon", "dungeon", "raid", "codex"]:
+	for name in ["growth", "gear", "summon", "raid", "shop", "codex"]:
 		var c := Control.new()
 		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, PANEL_AT.y))
 		c.size = Grid.uv(PANEL_SIZE.x, PANEL_SIZE.y)
@@ -1583,7 +1582,7 @@ func _build_panels() -> void:
 	_build_growth(_panels["growth"])
 	_build_gear(_panels["gear"])
 	_build_gacha(_panels["summon"])
-	_build_dungeon(_panels["dungeon"])
+	_build_shop(_panels["shop"])
 	_build_raids(_panels["raid"])
 	_build_codex(_panels["codex"])
 
@@ -4730,9 +4729,13 @@ func _refresh_codex_detail() -> void:
 # 오른쪽 세로 원형 바로가기 줄). 탭은 "머무는 곳", 임무판은 "들러서 받는 곳"이다.
 # 미궁과 재화 던전은 탭이 다르다(사장님) — 미궁 = 기록(혈맥·승급의 열쇠),
 # 던전 = 배급(하루 한 번 재화 뭉치). 성격이 다른 걸 한 창에 두면 섞여 읽힌다.
+# **미궁을 던전 탭 안으로 넣었다** (사장님 2026-08-13). 둘 다 "들어가서 도는 곳"이라
+# 성격이 같고, 던전 탭엔 이미 소탭이 있었다 — 그 옆에 미궁을 붙이면 탭 수는 여섯
+# 그대로고 빈 자리가 상점 몫이 된다. 7탭으로 늘리면 아이콘이 48 -> 40px 로 깎여
+# 전 탭이 조금씩 작아진다(그 안은 기각).
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
-	["summon", "tab_battle", "소환"], ["dungeon", "tab_dungeon", "미궁"],
-	["raid", "tab_raid", "던전"], ["codex", "tab_codex", "도감"]]
+	["summon", "tab_battle", "소환"], ["raid", "tab_raid", "던전"],
+	["shop", "shop", "상점"], ["codex", "tab_codex", "도감"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
 # 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
@@ -4793,6 +4796,7 @@ var _dungeon_badges: Array[TextureRect] = []
 var _dungeon_chips: Array[Label] = []
 var _raid_list: Control
 var _raid_mode_btns := {}
+var _maze_panel: Control
 var _boss_panel: Control
 var _boss_name: Label
 var _boss_sub: Label
@@ -4869,15 +4873,25 @@ func _build_dungeon(root: Control) -> void:
 func _build_raids(root: Control) -> void:
 	# [던전][주간 보스] — 성격이 다르다: 던전은 배급(하루 한 번 뭉치),
 	# 보스는 도전(못 죽여도 누적이 남는다). 임무판과 같은 토글 문법.
-	for i in 2:
-		var mode := "raid" if i == 0 else "boss"
-		var mb := Ui.button("재화 던전" if i == 0 else "주간 보스",
-			Vector2(PAD + float(i) * 190.0, PAD - 6.0),
-			Vector2(180.0, 34.0), Type.SIZE_SMALL)
+	# [미궁][재화 던전][주간 보스] — 셋 다 "들어가서 도는 곳"이다. 성격은 다르다:
+	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
+	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"]]
+	var mw := (CONTENT_W - 12.0 * 2.0) / 3.0
+	for i in modes.size():
+		var mode: String = modes[i][0]
+		var mb := Ui.button(str(modes[i][1]),
+			Vector2(PAD + float(i) * (mw + 12.0), PAD - 6.0),
+			Vector2(mw, 34.0), Type.SIZE_SMALL)
 		mb.toggle_mode = true
 		mb.pressed.connect(func() -> void: _raid_set_mode(mode))
 		root.add_child(mb)
 		_raid_mode_btns[mode] = mb
+	# 미궁 화면을 이 판 안으로 들인다 — 옛 미궁 탭의 내용 그대로다.
+	_maze_panel = Control.new()
+	_maze_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_maze_panel.visible = false
+	root.add_child(_maze_panel)
+	_build_dungeon(_maze_panel)
 	_raid_list = Control.new()
 	_raid_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_raid_list)
@@ -4893,6 +4907,7 @@ func _build_raids(root: Control) -> void:
 func _raid_set_mode(mode: String) -> void:
 	_raid_list.visible = mode == "raid"
 	_boss_panel.visible = mode == "boss"
+	_maze_panel.visible = mode == "maze"
 	for key in _raid_mode_btns:
 		_raid_mode_btns[key].button_pressed = key == mode
 	_refresh_dungeon()
@@ -5369,7 +5384,6 @@ func _build_quests() -> void:
 			_claim_wquest(str(q["id"])))
 	_quest_view.add_child(_quest_claim_all)
 	_quest_set_mode("day")
-	_build_shop()
 
 
 # ── 상점 (ShopDefs) — 보석으로 하루 배급을 앞당기는 곳 ──────────────────────
@@ -5381,64 +5395,45 @@ var _shop_amounts: Array[Label] = []
 var _shop_lefts: Array[Label] = []
 var _shop_buttons: Array[Button] = []
 var _shop_icons: Array[TextureRect] = []
-const SHOP_ROW_H := 78.0
+# 64 — 다섯 줄이 창(PAD 26 ~ CONTENT_BOTTOM 358) 안에 서는 최대치다.
+const SHOP_ROW_H := 64.0
 
 
-func _build_shop() -> void:
-	# 임무·칭호와 **같은 판(QUEST_PANEL) 같은 자리**다 — 옆줄 버튼이 여는 창은
-	# 전부 여기 뜬다(사장님: "일일미션처럼 정가운데").
+# **상점은 이제 탭이다** (사장님 2026-08-13). 팝업 자리에서 탭 콘텐츠로 옮겼다 —
+# 과금 상품이 붙으면 진열이 늘어나므로 팝업 한 판으로는 안 담긴다. 소탭은
+# 상품군이 생기는 대로 여기 붙인다(설계서 7-1: 특가·정기·소환권·교환).
+func _build_shop(root: Control) -> void:
 	_shop_view = Control.new()
-	_shop_view.size = Vector2(Grid.BG)
-	_shop_view.visible = false
-	_shop_view.z_index = 55
-	_hud_root.add_child(_shop_view)
-	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.02, 0.03, 0.72)
-	dim.size = Vector2(Grid.BG)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	_shop_view.add_child(dim)
-	var back := ColorRect.new()
-	back.color = Color(0.055, 0.05, 0.065)
-	back.position = QUEST_PANEL.position
-	back.size = QUEST_PANEL.size
-	_shop_view.add_child(back)
-	_shop_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
-	var x := QUEST_PANEL.position.x + 22.0
-	var w := QUEST_PANEL.size.x - 44.0
-	var head := _panel_label(_shop_view, Vector2(x, QUEST_PANEL.position.y + 16.0),
-		Type.SIZE_BODY, Color(0.92, 0.82, 0.62), w - 100.0, 28.0)
-	head.text = "상점"
-	var close := Ui.button("닫기",
-		Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0),
-		Vector2(88.0, 34.0), Type.SIZE_SMALL)
-	close.pressed.connect(func() -> void: _shop_view.visible = false)
-	_shop_view.add_child(close)
+	_shop_view.size = Vector2(PANEL_W, PANEL_H)
+	_shop_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_shop_view)
+	var x := PAD
+	var w := CONTENT_W
+	# 머리글은 안 단다 — 탭 이름이 이미 "상점"이고, 세로를 그만큼 벌어야 다섯 줄이
+	# 창(358) 안에 선다(실측: 머리글 + 78 짜리 다섯 줄이면 450 으로 넘친다).
 	for i in ShopDefs.ITEMS.size():
 		var it: Dictionary = ShopDefs.ITEMS[i]
 		var id := str(it["id"])
-		var y := QUEST_PANEL.position.y + 58.0 + float(i) * SHOP_ROW_H
+		var y := PAD + float(i) * SHOP_ROW_H
 		var row := Control.new()
 		row.position = Vector2(x, y)
 		_shop_view.add_child(row)
 		row.add_child(Ui.card(Vector2.ZERO, Vector2(w, SHOP_ROW_H - 8.0)))
-		var ic := Ui.icon(str(it["icon"]), Vector2(14.0, 15.0), 40.0)
+		var ic := Ui.icon(str(it["icon"]), Vector2(14.0, 10.0), 38.0)
 		row.add_child(ic)
 		_shop_icons.append(ic)
-		_shop_names.append(_panel_label(row, Vector2(66.0, 8.0), Type.SIZE_SMALL,
+		_shop_names.append(_panel_label(row, Vector2(66.0, 3.0), Type.SIZE_SMALL,
 			Color(0.92, 0.82, 0.62), w - 220.0, 18.0))
-		_shop_amounts.append(_panel_label(row, Vector2(66.0, 28.0), Type.SIZE_SMALL,
+		_shop_amounts.append(_panel_label(row, Vector2(66.0, 22.0), Type.SIZE_SMALL,
 			Color(0.95, 0.92, 0.88), w - 220.0, 18.0))
-		_shop_lefts.append(_panel_label(row, Vector2(66.0, 48.0), Type.SIZE_SMALL,
+		_shop_lefts.append(_panel_label(row, Vector2(66.0, 41.0), Type.SIZE_SMALL,
 			Color(0.62, 0.60, 0.68), w - 220.0, 18.0))
-		var buy := Ui.button("", Vector2(w - 140.0, 15.0), Vector2(126.0, 40.0),
+		var buy := Ui.button("", Vector2(w - 140.0, 10.0), Vector2(126.0, 38.0),
 			Type.SIZE_SMALL)
 		buy.pressed.connect(func() -> void: _shop_buy(id))
 		row.add_child(buy)
 		_shop_buttons.append(buy)
-	var note := _panel_label(_shop_view,
-		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 60.0),
-		Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), w, 18.0)
-	note.text = "자정에 새로 온다"
+	# "자정에 새로 온다"도 뺐다 — 줄마다 "오늘 n / m"이 이미 그 뜻이다.
 
 
 func _shop_roll_day() -> void:
@@ -5630,8 +5625,10 @@ func _select_tab(name: String) -> void:
 		_refresh_codex()
 	elif name == "summon":
 		_refresh_gacha()
-	elif name == "dungeon" or name == "raid":
+	elif name == "raid":
 		_refresh_dungeon()
+	elif name == "shop":
+		_refresh_shop()
 
 
 # 지금 올릴 수 있는 게 있는 탭인가. 방치형에서 "뭘 눌러야 하나"를 탭을 하나씩 열어
