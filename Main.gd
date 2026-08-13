@@ -131,6 +131,9 @@ var sigil := 0.0
 # 임무·도감이 준 소환권은 반드시 소환이 된다.
 var ticket := 0
 var ticket_hi := 0
+# 유물 — id -> 레벨(0..5). 조각은 gacha_shards 에 "relic:<id>" 로 같이 쌓는다
+# (소환 장비와 같은 그릇이라 새 저장 칸을 안 만든다).
+var relics := {}
 var pact_lv := 0
 var mileage := 0
 var best_stage := 1
@@ -147,6 +150,12 @@ var traits := {}
 
 func _trait_mult(kind: String) -> float:
 	return TraitDefs.mult(kind, traits)
+
+
+# 유물 곱배수. **혈맥과 곱연산 예산을 나눠 갖는다**(EXPANSION 8장 갱신) —
+# 혈맥은 혈정으로 꾸준히 크고 유물은 뽑기로 띄엄띄엄 커서 성격이 안 겹친다.
+func _relic_mult(kind: String) -> float:
+	return RelicDefs.mult(kind, relics)
 
 
 func _trait_add(kind: String) -> float:
@@ -166,13 +175,13 @@ func _exec_bonus() -> float:
 
 # 소탕 시급 — 기록 x 혈맥(탐욕) x 군림 V. 접속 중·오프라인 둘 다 이걸 쓴다.
 func _sweep_per_hour() -> float:
-	return DungeonDefs.sweep_per_hour(dungeon_best) * _trait_mult("sweep") \
+	return DungeonDefs.sweep_per_hour(dungeon_best) * _trait_mult("sweep") 		* _relic_mult("sweep") \
 		* (2.0 if MasteryDefs.has("sweep2", best_stage) else 1.0)
 
 
 # 방치 상한(시간) — 기본 8 + 혈맥 긴 잠 + 군림 IV.
 func _offline_cap_hours() -> float:
-	return 8.0 + _trait_add("hours") \
+	return 8.0 + _trait_add("hours") + RelicDefs.add("hours", relics) \
 		+ (4.0 if MasteryDefs.has("hours", best_stage) else 0.0)
 
 
@@ -442,7 +451,8 @@ func stat_lv(key: String) -> int:
 func damage() -> float:
 	return Balance.hero_damage(_stat_eff("damage"), _gear_stat("damage"), hero_lv) \
 		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage") \
-		+ PactDefs.bonus(pact_lv))
+		+ PactDefs.bonus(pact_lv)) \
+		* _relic_mult("damage")
 
 
 # 장착 중인 장비가 주는 해당 스탯 합. 없으면 0.
@@ -463,14 +473,15 @@ func _collection_bonus(stat: String) -> float:
 
 
 func attack_interval() -> float:
-	return Balance.attack_interval(_stat_eff("speed"))
+	# 유물 공격속도는 **간격을 줄인다** — 배수를 그냥 곱하면 느려진다.
+	return Balance.attack_interval(_stat_eff("speed")) / _relic_mult("speed")
 
 
 func gold_mult() -> float:
 	return (1.0 + 0.15 * float(_stat_eff("gold") - 1) + _gear_stat("gold") * 0.02) \
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
-		* _trait_mult("gold")
+		* _trait_mult("gold") * _relic_mult("gold")
 
 
 func dps() -> float:
@@ -552,7 +563,8 @@ func _base_hit_damage() -> float:
 	# 혈맥: 공격 배수(살육 I~III)와 치명 피해 가산(사혈)이 여기서 붙는다 —
 	# 화면 DPS(dps())와 실제 피해(_combat_damage)가 같은 함수를 지나므로 안 갈린다.
 	return damage() * _trait_mult("attack") \
-		* Balance.crit_mult(_stat_eff("crit"), _stat_eff("critdmg"), _trait_add("critdmg"))
+		* Balance.crit_mult(_stat_eff("crit"), _stat_eff("critdmg"),
+			_trait_add("critdmg") + RelicDefs.add("critdmg", relics))
 
 
 # 실제 타격 피해. 대상을 주면 그 몹의 **지식 레벨**만큼 더 아프게 때린다.
@@ -604,7 +616,7 @@ func max_hp() -> float:
 	return Balance.hero_max_hp(_stat_eff("tough"), _gear_stat("tough")) \
 		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough") \
 		+ PactDefs.bonus(pact_lv)) \
-		* _trait_mult("hp")
+		* _trait_mult("hp") * _relic_mult("hp")
 
 
 func regen_per_sec() -> float:
@@ -665,6 +677,15 @@ func _ready() -> void:
 			_quest_bump("kills", 30)
 			quest_wprog = {"kills": 380, "train": 30, "daily": 11, "raid": 2}
 			_quest_set_mode("week" if arg.ends_with("week") else "day")
+		# [개발 도구] --relic : 유물 화면을 연 채로 캡처한다(가진 것·못 가진 것 섞어).
+		if arg == "--relic":
+			best_stage = maxi(best_stage, RelicDefs.OPEN_STAGE)
+			for i in RelicDefs.RELICS.size():
+				if i % 3 != 2:
+					relics[str(RelicDefs.RELICS[i]["id"])] = 1 + i % RelicDefs.MAX_LV
+			gacha_shards["relic:" + str(RelicDefs.RELICS[0]["id"])] = 3
+			_select_tab("growth")
+			_set_growth_mode("relic")
 		# [개발 도구] --shop : 상점을 연 채로 캡처한다(해금 계단이 다 보이게).
 		if arg == "--shop":
 			best_stage = maxi(best_stage, RaidDefs.open_stage("essence"))
@@ -1588,7 +1609,7 @@ func _build_growth(root: Control) -> void:
 	# 탭바가 꽉 차서 새 탭으로 못 낸다. 성장 창 안에서 나눈다 —
 	# 스탯도 스킬도 혈맥도 "무엇을 키울까"라서 자리가 맞다.
 	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"],
-		["pact", "혈맹"]]
+		["pact", "혈맹"], ["relic", "유물"]]
 	var mode_w := (CONTENT_W - 12.0 * float(modes.size() - 1)) / float(modes.size())
 	for i in modes.size():
 		var mode: String = modes[i][0]
@@ -1633,6 +1654,7 @@ func _build_growth(root: Control) -> void:
 	_build_skill_view(root)
 	_build_trait_view(root)
 	_build_pact_view(root)
+	_build_relic_view(root)
 	_set_step(buy_step)   # 처음 열었을 때도 선택된 배수가 보이게
 	_set_growth_mode("stat")
 
@@ -1643,6 +1665,7 @@ func _set_growth_mode(mode: String) -> void:
 	_skill_view.visible = mode == "skill"
 	_trait_view.visible = mode == "trait"
 	_pact_view.visible = mode == "pact"
+	_relic_view.visible = mode == "relic"
 	for key in _growth_mode_buttons:
 		_growth_mode_buttons[key].set_pressed_no_signal(key == mode)
 	if mode == "skill":
@@ -1651,8 +1674,85 @@ func _set_growth_mode(mode: String) -> void:
 		_refresh_traits()
 	elif mode == "pact":
 		_refresh_pact()
+	elif mode == "relic":
+		_refresh_relics()
 	else:
 		_refresh_growth()
+
+
+# ── 유물 화면 (RelicDefs) ───────────────────────────────────────────────────
+# 12칸 격자 하나. 유물은 **고르는 축이 아니라 모으는 축**이라(장착도 구매도 없다)
+# 화면이 할 일은 "무엇을 가졌고 다음은 무엇인가"를 보여 주는 것뿐이다.
+var _relic_view: Control
+var _relic_icons: Array[TextureRect] = []
+var _relic_names: Array[Label] = []
+var _relic_effs: Array[Label] = []
+var _relic_head: Label
+# 4열은 글자 칸이 66px 뿐이라 효과가 통째로 잘렸다(실측). 3열이면 110px 이고
+# 12개가 4줄에 들어가 창(384) 안에 선다.
+const RELIC_COLS := 3
+const RELIC_CELL := Vector2(168.0, 72.0)
+
+
+func _build_relic_view(root: Control) -> void:
+	_relic_view = Control.new()
+	_relic_view.size = Vector2(PANEL_W, PANEL_H)
+	_relic_view.visible = false
+	_relic_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_relic_view)
+	_relic_head = _panel_label(_relic_view, Vector2(PAD, PAD + 40.0), Type.SIZE_SMALL,
+		Color(0.92, 0.82, 0.62), CONTENT_W, 20.0)
+	for i in RelicDefs.RELICS.size():
+		var r: Dictionary = RelicDefs.RELICS[i]
+		var at := Vector2(PAD + float(i % RELIC_COLS) * RELIC_CELL.x,
+			PAD + 66.0 + float(i / RELIC_COLS) * RELIC_CELL.y)
+		var cell := Control.new()
+		cell.position = at
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_relic_view.add_child(cell)
+		# 등급 틀을 두른다 — 무엇이 귀한지가 색으로 먼저 읽힌다(소환 결과와 같은 규칙).
+		var frame := Ui.image("res://assets/ui/slot_common.png", Vector2(2.0, 4.0),
+			Vector2(46.0, 46.0))
+		frame.modulate = Color(GachaDefs.rarity(str(r["rarity"]))["col"])
+		cell.add_child(frame)
+		var ic := Ui.icon(RelicDefs.icon_path(r), Vector2(7.0, 9.0), 36.0)
+		cell.add_child(ic)
+		_relic_icons.append(ic)
+		_relic_names.append(_panel_label(cell, Vector2(56.0, 2.0), Type.SIZE_SMALL,
+			Color(0.92, 0.82, 0.62), RELIC_CELL.x - 62.0, 18.0))
+		_relic_effs.append(_panel_label(cell, Vector2(56.0, 22.0), Type.SIZE_SMALL,
+			Color(0.72, 0.72, 0.80), RELIC_CELL.x - 62.0, 36.0))
+
+
+func _refresh_relics() -> void:
+	var got := 0
+	for i in RelicDefs.RELICS.size():
+		var r: Dictionary = RelicDefs.RELICS[i]
+		var id := str(r["id"])
+		var lv := RelicDefs.level_of(id, relics)
+		if lv > 0:
+			got += 1
+		_relic_icons[i].modulate = Color(1, 1, 1) if lv > 0 else Color(0.22, 0.20, 0.26)
+		_relic_names[i].text = str(r["name"]) if lv > 0 else "???"
+		_relic_names[i].add_theme_color_override("font_color",
+			Color(0.92, 0.82, 0.62) if lv > 0 else Color(0.5, 0.48, 0.55))
+		if lv <= 0:
+			_relic_effs[i].text = "미발견"
+			continue
+		# **효과가 첫 줄을 통째로 쓴다.** 앞에 "N단계 ·"를 붙였더니 110px 에서
+		# 정작 중요한 %가 잘렸다(실측: "1단계 · 공격"). 단계는 아래 줄로 내린다.
+		var eff := RelicDefs.effect_text(r, lv)
+		if lv >= RelicDefs.MAX_LV:
+			_relic_effs[i].text = "%s
+%d단계 · 만렙" % [eff, lv]
+		else:
+			var sh := int(gacha_shards.get("relic:" + id, 0))
+			# "조각"이라는 낱말까지 넣으면 정작 숫자가 잘린다(실측: "1단계 · 조각").
+			_relic_effs[i].text = "%s
+%d단계 · %d/%d" % [eff, lv, sh,
+				RelicDefs.SHARDS_PER_LV]
+	_relic_head.text = "유물 %d / %d  ·  소환으로 모은다 (%d구간부터)" % [
+		got, RelicDefs.RELICS.size(), RelicDefs.OPEN_STAGE]
 
 
 # ── 혈맹 화면 (PactDefs) ────────────────────────────────────────────────────
@@ -3097,12 +3197,15 @@ func _enhance(slot: String) -> void:
 
 
 func _build_gacha(root: Control) -> void:
-	var kinds := ["weapon", "armor", "trinket", "skill"]
-	var names := ["무기 소환", "방어구 소환", "장신구 소환", "스킬 소환"]
+	# 다섯째로 유물이 붙었다 — 128 짜리 넷이던 자리를 104~110 짜리 다섯으로 나눈다
+	# (22 + 110x4 + 104 = 566, 창 안에 든다). 이름에서 "소환"을 뺐다: 소환 화면
+	# 안이라 다섯 번 되풀이할 말이 아니고, 그 자리가 있어야 다섯이 들어간다.
+	var kinds := ["weapon", "armor", "trinket", "skill", "relic"]
+	var names := ["무기", "방어구", "장신구", "스킬", "유물"]
 	for i in kinds.size():
 		var kind: String = kinds[i]
-		var button := Ui.button(names[i], Vector2(22.0 + i * 134.0, 18.0),
-			Vector2(128.0, 40.0), Type.SIZE_SMALL)
+		var button := Ui.button(names[i], Vector2(22.0 + i * 110.0, 18.0),
+			Vector2(104.0, 40.0), Type.SIZE_SMALL)
 		button.toggle_mode = true
 		button.pressed.connect(func() -> void: _set_gacha_kind(kind))
 		root.add_child(button)
@@ -3393,8 +3496,13 @@ func _pull_gacha(count: int, high := false) -> void:
 	mileage += count
 	var received_items: Array[Dictionary] = []
 	for rarity_key in result["rarities"]:
-		var received: Dictionary = _receive_gacha_gear(str(rarity_key)) if _gacha_kind in GearDefs.SLOTS \
-			else _receive_gacha_skill(str(rarity_key))
+		var received: Dictionary = {}
+		if _gacha_kind in GearDefs.SLOTS:
+			received = _receive_gacha_gear(str(rarity_key))
+		elif _gacha_kind == "relic":
+			received = _receive_gacha_relic(str(rarity_key))
+		else:
+			received = _receive_gacha_skill(str(rarity_key))
 		received_items.append(received)
 	_refresh_gear_slots()
 	_refresh_gear_inventory()
@@ -3432,6 +3540,40 @@ func _receive_gacha_gear(rarity_key: String) -> Dictionary:
 
 # 굴린 등급 안에서 **형태만** 랜덤이다. 등급은 소환 확률이 이미 정했고, 그 안에서
 # 무엇이 나오느냐까지 등급을 다시 굴리면 표시 확률이 거짓말이 된다.
+# 유물 수령. 등급은 소환이 이미 굴렸고 **그 등급 안에서 하나를 고른다**
+# (장비의 "형태만 랜덤"과 같은 규칙 — 여기서 등급을 다시 굴리면 표시 확률이
+# 거짓말이 된다). 이미 있으면 조각이 쌓이고 5개마다 한 레벨 오른다.
+func _receive_gacha_relic(rarity_key: String) -> Dictionary:
+	# 유물이 없는 등급(커먼·언커먼·신화)이 나오면 한 칸씩 내려 준다 — 빈손으로
+	# 돌려보내면 뽑기 한 번이 통째로 사라진다.
+	var pool: Array = RelicDefs.of_rarity(rarity_key)
+	for fallback in ["legend", "epic", "rare"]:
+		if not pool.is_empty():
+			break
+		pool = RelicDefs.of_rarity(fallback)
+	if pool.is_empty():
+		return {}
+	var r: Dictionary = pool[randi() % pool.size()]
+	var id := str(r["id"])
+	var key := "relic:" + id
+	var lv := RelicDefs.level_of(id, relics)
+	if lv <= 0:
+		relics[id] = 1
+	elif lv < RelicDefs.MAX_LV:
+		var sh := int(gacha_shards.get(key, 0)) + 1
+		if sh >= RelicDefs.SHARDS_PER_LV:
+			relics[id] = lv + 1
+			sh -= RelicDefs.SHARDS_PER_LV
+		gacha_shards[key] = sh
+	else:
+		gacha_shards[key] = int(gacha_shards.get(key, 0)) + 1
+	var out := r.duplicate(true)
+	out["slot"] = "relic"
+	out["icon"] = RelicDefs.icon_path(r)
+	out["lv"] = RelicDefs.level_of(id, relics)
+	return out
+
+
 func _receive_gacha_skill(rarity_key: String) -> Dictionary:
 	var shape: String = SkillDefs.SHAPE_ORDER[randi() % SkillDefs.SHAPE_ORDER.size()]
 	var key := SkillDefs.key_of(shape, rarity_key)
@@ -3939,6 +4081,12 @@ func _ask_skill_synth() -> void:
 			_show_reward("스킬 조합", got.slice(0, mini(got.size(), 5))))
 
 
+func _gacha_kind_name() -> String:
+	if _gacha_kind in GearDefs.SLOTS:
+		return str(GearDefs.SLOT_NAME[_gacha_kind])
+	return "유물" if _gacha_kind == "relic" else "스킬"
+
+
 func _show_gacha_results(items: Array[Dictionary]) -> void:
 	if not _gacha_reveal:
 		return
@@ -3953,8 +4101,7 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	_gacha_reveal.add_child(Ui.panel(Vector2.ZERO, Vector2(PANEL_W, PANEL_H)))
 	var title := _panel_label(_gacha_reveal, Vector2(PAD, 16.0), Type.SIZE_MID,
 		Color(0.96, 0.84, 0.58), CONTENT_W, 28.0)
-	title.text = "%s 소환 결과" % (GearDefs.SLOT_NAME[_gacha_kind] \
-		if _gacha_kind in GearDefs.SLOTS else "스킬")
+	title.text = "%s 소환 결과" % _gacha_kind_name()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var cards: Array[Control] = []
 	for i in items.size():
@@ -4031,7 +4178,10 @@ func _refresh_gacha() -> void:
 	if _gacha_labels.is_empty():
 		return
 	# 종류마다 전용 제단 그림. 파일명이 곧 종류라 표를 따로 두지 않는다.
-	_gacha_icon.texture = Assets.tex("res://assets/ui/summon_%s.png" % _gacha_kind)
+	# 유물은 전용 제단 그림이 없다 — 공용 제단을 쓴다(없는 파일이면 빈 칸이 뜬다).
+	_gacha_icon.texture = Assets.tex("res://assets/ui/summon_altar.png" \
+		if _gacha_kind == "relic" \
+		else "res://assets/ui/summon_%s.png" % _gacha_kind)
 	var kind_name: String = GearDefs.SLOT_NAME[_gacha_kind] \
 		if _gacha_kind in GearDefs.SLOTS else "스킬"
 	var pulls := int(gacha_pulls.get(_gacha_kind, 0))
@@ -4062,13 +4212,19 @@ func _refresh_gacha() -> void:
 	var half := (parts.size() + 1) / 2
 	_gacha_labels["rates"].text = "%s\n%s" % [
 		"  ".join(parts.slice(0, half)), "  ".join(parts.slice(half))]
-	for kind in ["weapon", "armor", "trinket", "skill"]:
+	for kind in ["weapon", "armor", "trinket", "skill", "relic"]:
 		_gacha_buttons[kind].set_pressed_no_signal(_gacha_kind == kind)
 		if kind in GearDefs.SLOTS:
 			var reason := GearDefs.lock_reason(kind, StageDefs.major_stage(stage))
 			_gacha_buttons[kind].disabled = not reason.is_empty()
 			_gacha_buttons[kind].text = reason if not reason.is_empty() \
-				else "%s 소환" % GearDefs.SLOT_NAME[kind]
+				else str(GearDefs.SLOT_NAME[kind])
+		elif kind == "relic":
+			# 유물은 **후반 축**이라 중반에 열린다(RelicDefs.OPEN_STAGE).
+			var locked := best_stage < RelicDefs.OPEN_STAGE
+			_gacha_buttons[kind].disabled = locked
+			_gacha_buttons[kind].text = "%d구간" % RelicDefs.OPEN_STAGE if locked \
+				else "유물"
 	# 값이 세 갈래다: 무료 · 소환권 · 보석. **무엇으로 내는지 버튼에 적는다** —
 	# 아이콘까지 바꿔야 곁눈질로 갈린다(보석 알약 vs 소환권).
 	var free := free_pull_date != Time.get_date_string_from_system()
@@ -8141,6 +8297,7 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "sigil", sigil)
 	cfg.set_value("wallet", "ticket", ticket)
 	cfg.set_value("wallet", "ticket_hi", ticket_hi)
+	cfg.set_value("run", "relics", relics)
 	cfg.set_value("run", "pact_lv", pact_lv)
 	cfg.set_value("wallet", "mileage", mileage)
 	cfg.set_value("wallet", "seen", _currency_seen)
@@ -8200,6 +8357,7 @@ func _load_game() -> void:
 	sigil = maxf(0.0, float(cfg.get_value("wallet", "sigil", 0.0)))
 	ticket = maxi(0, int(cfg.get_value("wallet", "ticket", 0)))
 	ticket_hi = maxi(0, int(cfg.get_value("wallet", "ticket_hi", 0)))
+	relics = cfg.get_value("run", "relics", {})
 	pact_lv = clampi(int(cfg.get_value("run", "pact_lv", 0)), 0, PactDefs.level_cap())
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
