@@ -18,20 +18,27 @@ func _init() -> void:
 	assert(StageDefs.is_boss_stage(10) and not StageDefs.is_boss_stage(9))
 	assert(StageDefs.kills_needed(5) == 1 and StageDefs.kills_needed(10) == 1)
 	assert(StageDefs.kills_needed(4) == StageDefs.KILLS_PER_STAGE)
-	assert(StageDefs.total_stages() == 1000)
-	assert(StageDefs.parse("1-1") == 1 and StageDefs.parse("100-10") == 1000)
+	# 총 구간은 **표에서 읽는다** — 1000 을 박아 뒀더니 500 으로 줄일 때 깨졌다.
+	assert(StageDefs.total_stages()
+		== StageDefs.MAJOR_STAGE_COUNT * StageDefs.STEPS_PER_STAGE)
+	assert(StageDefs.parse("1-1") == 1)
+	assert(StageDefs.parse("%d-%d" % [StageDefs.MAJOR_STAGE_COUNT,
+		StageDefs.STEPS_PER_STAGE]) == StageDefs.total_stages())
 	assert(StageDefs.parse("10") == 10, "기존 내부 단계 플래그가 깨졌다")
 	for internal in range(1, StageDefs.total_stages() + 1):
 		assert(StageDefs.parse(StageDefs.label(internal)) == internal,
 			"단계 표시 왕복 실패: %d -> %s" % [internal, StageDefs.label(internal)])
 	assert(StageDefs.major_stage(1) == 1 and StageDefs.step_in_act(1) == 1)
 	assert(StageDefs.major_stage(10) == 1 and StageDefs.step_in_act(10) == 10)
-	assert(StageDefs.major_stage(991) == 100 and StageDefs.step_in_act(1000) == 10)
-	assert(StageDefs.is_midboss_stage(995) and StageDefs.is_boss_stage(1000))
+	# 끝 구간도 표에서 읽는다(1000 을 박으면 총구간을 줄일 때마다 깨진다).
+	var last := StageDefs.total_stages()
+	assert(StageDefs.major_stage(last - StageDefs.STEPS_PER_STAGE + 1)
+		== StageDefs.MAJOR_STAGE_COUNT and StageDefs.step_in_act(last) == 10)
+	assert(StageDefs.is_midboss_stage(last - 5) and StageDefs.is_boss_stage(last))
 	assert(is_equal_approx(StageDefs.boss_essence(10), 25.0))
-	assert(StageDefs.boss_essence(1000) > StageDefs.boss_essence(10))
+	assert(StageDefs.boss_essence(last) > StageDefs.boss_essence(10))
 	assert(StageDefs.act_of(1) == StageDefs.act_of(51), "5개 테마가 순환하지 않는다")
-	assert(StageDefs.enemy_power(1000) > StageDefs.enemy_power(999))
+	assert(StageDefs.enemy_power(last) > StageDefs.enemy_power(last - 1))
 
 	# Main 은 class_name 이 없어서 상수를 읽으려면 스크립트를 불러와야 한다.
 	var main := load("res://Main.gd")

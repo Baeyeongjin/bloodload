@@ -97,6 +97,38 @@ static func at_cap(key: String, level: int) -> bool:
 const TRAIN_CAP := [[0, 60], [20, 120], [40, 220], [80, 400]]
 
 
+# 승급 단계 (0..3). 상한 표의 몇 번째 칸에 서 있는가.
+static func promo_index(dungeon_best: int) -> int:
+	var idx := 0
+	for i in TRAIN_CAP.size():
+		if dungeon_best >= int(TRAIN_CAP[i][0]):
+			idx = i
+	return idx
+
+
+# **승급은 상한만 열지 않는다 — 비용 지수도 낮춘다** (2026-08-13, PaceProbe 실측).
+#
+# 상한만 열면 상한이 장식이 된다: 비용이 지수 1.15 라 하루 벌이로 살 수 있는
+# 레벨이 90 근처에서 멈추고, 그 위로는 재화가 얼마든 안 팔린다(60일차에 혈액
+# 209K 가 남은 채로 다음 레벨이 2.2M 이었다). 상한 400 은 도달할 수 없는 숫자였다.
+#
+# 지수를 낮추면 **그 위 레벨이 실제로 팔린다** — 미궁을 밀어 승급하면 스탯이
+# 다시 싸져서 본편이 밀리고, 그게 다시 미궁을 연다. 교차 잠금이 순환이 아니라
+# 나선이 되는 자리다. 이미 산 레벨까지 싸지는 건 의도다: 승급은 도약이어야 한다.
+# 0.72/0.48/0.30 은 **너무 쌌다** — 14일차에 공격 189레벨까지 가서 스탯 혼자
+# x7.58 을 냈다(축별 기여 실측: 장비 1.66 · 혈맹 1.64 · 도감 1.19 · 혈맥 1.06).
+# 지수 1.15 가 1.045 까지 내려가면 사실상 비용이 없어진다. 완화는 "그 위가
+# 팔리게" 하는 만큼만 한다.
+const PROMO_COST_SCALE := [1.0, 0.92, 0.84, 0.76]
+
+
+# 이 승급 단계에서 쓰는 비용 지수. 1 을 뺀 몫(성장분)만 줄인다 —
+# 지수 자체를 곱하면 1 아래로 내려가 비용이 거꾸로 줄어든다.
+static func cost_exp(key: String, dungeon_best: int) -> float:
+	var e := float(of(key).get("exp", 1.15))
+	return 1.0 + (e - 1.0) * PROMO_COST_SCALE[promo_index(dungeon_best)]
+
+
 static func train_cap(dungeon_best: int) -> int:
 	var cap := 0
 	for t in TRAIN_CAP:

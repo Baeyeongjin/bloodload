@@ -619,7 +619,10 @@ func _apply_hp_growth(old_max: float) -> void:
 
 func upgrade_cost(key: String, level: int) -> float:
 	var s := StatDefs.of(key)
-	return Balance.upgrade_cost(level, s.get("base", 10.0), s.get("exp", 1.15))
+	# 지수는 **승급 단계가 정한다**(StatDefs.cost_exp) — 승급이 상한만 열고
+	# 비용을 안 건드리면 그 상한은 도달할 수 없는 숫자로 남는다.
+	return Balance.upgrade_cost(level, s.get("base", 10.0),
+		StatDefs.cost_exp(key, dungeon_best))
 
 
 func _ready() -> void:
