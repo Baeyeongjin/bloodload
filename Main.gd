@@ -404,6 +404,7 @@ const RATE_NAME_W := 92.0
 const RATE_COL_W := 86.0
 var _gacha_icon: TextureRect
 var _gacha_labels := {}
+var _gacha_ticket_labels: Array[Label] = []
 var _gacha_buttons := {}
 var _gacha_reveal: Control
 var _rates_view: Control
@@ -3261,11 +3262,17 @@ func _build_gacha(root: Control) -> void:
 		Color(0.62, 0.82, 0.68), text_w, 44.0)
 	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 소환권 잔량. **버튼 숫자는 나가는 양**(보석 30 · 소환권 1)이라 가진 장수를
-	# 적을 자리가 없다 — 잔량을 버튼에 적었더니 "1회 6"이 값 6으로 읽혔다(실측).
-	_gacha_labels["tickets"] = _panel_label(root, Vector2(text_x, 206.0),
-		Type.SIZE_SMALL, Color(0.86, 0.78, 0.62), text_w, 20.0)
-	_gacha_labels["tickets"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 소환권 잔량 — **아이콘 + 숫자 알약 넷** (참고작 상단 재화 줄과 같은 문법).
+	# 글자로 "무기권 0 방어구권 0 …"을 늘어놓았더니 읽기 전에 지저분했다(사장님).
+	# 알약이면 아이콘이 종류를 말하고 숫자만 읽으면 된다.
+	var tk_w := (CONTENT_W - 30.0) / 4.0
+	for i in TicketDefs.KINDS.size():
+		var tk: String = TicketDefs.KINDS[i]
+		var tx2 := PAD + float(i) * (tk_w + 10.0)
+		root.add_child(Ui.currency_bar(Vector2(tx2, 252.0), Vector2(tk_w, 28.0)))
+		root.add_child(Ui.icon(TicketDefs.icon_of(tk), Vector2(tx2 + 5.0, 256.0), 20.0))
+		_gacha_ticket_labels.append(_panel_label(root, Vector2(tx2 + 30.0, 252.0),
+			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), tk_w - 36.0, 28.0))
 	# 버튼 셋 — 1회 · 10연 · 고급. 260 짜리 둘이던 자리를 170 짜리 셋으로 나눈다
 	# (24 + 170x3 + 8x2 = 550, 창 안쪽 폭에 맞는다).
 	# 고급권을 없애면서(사장님) 버튼은 다시 둘이다.
@@ -4281,10 +4288,13 @@ func _refresh_gacha() -> void:
 	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = not ten_ticket and gem < GachaDefs.COST * 10.0
 	# 잔량은 **네 종류를 다** 적는다 — 어느 탭에서 무엇을 쓸 수 있는지 한눈에.
-	var tk_parts := PackedStringArray()
-	for k in TicketDefs.KINDS:
-		tk_parts.append("%s %d" % [TicketDefs.short_of(k), int(tickets.get(k, 0))])
-	_gacha_labels["tickets"].text = "  ".join(tk_parts)
+	for i in TicketDefs.KINDS.size():
+		var k: String = TicketDefs.KINDS[i]
+		_gacha_ticket_labels[i].text = "%d" % int(tickets.get(k, 0))
+		# 가진 종류는 밝게 — 곁눈질로 "지금 쓸 수 있는 게 있나"가 읽힌다.
+		_gacha_ticket_labels[i].add_theme_color_override("font_color",
+			Color(0.92, 0.86, 0.86) if int(tickets.get(k, 0)) > 0
+			else Color(0.5, 0.48, 0.55))
 
 
 const CODEX_COLS := 6   # 5칸이면 5줄이 되어 세로가 창을 넘는다
