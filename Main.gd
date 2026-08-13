@@ -4828,8 +4828,17 @@ func _build_dungeon(root: Control) -> void:
 	edge.size = Vector2(MAZE_W + 12.0, 92.0)
 	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(edge)
-	root.add_child(Ui.image("res://assets/ui/dungeon_header.png",
-		Vector2(PAD, PAD - 4.0), Vector2(MAZE_W, 80.0)))
+	# **잘라서 넣는다.** TextureRect 는 스크롤 안에서 size 가 되밀려 원본 폭(520)으로
+	# 그려졌고, 그래서 판을 뚫고 스크롤바 밑까지 갔다(사장님). 클립 상자에 담으면
+	# 폭이 확실히 지켜진다.
+	var hdr_clip := Control.new()
+	hdr_clip.position = Vector2(PAD, PAD - 4.0)
+	hdr_clip.size = Vector2(MAZE_W, 80.0)
+	hdr_clip.clip_contents = true
+	hdr_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(hdr_clip)
+	hdr_clip.add_child(Ui.image("res://assets/ui/dungeon_header.png",
+		Vector2.ZERO, Vector2(MAZE_W, 80.0)))
 	var scrim := ColorRect.new()
 	scrim.color = Color(0.03, 0.02, 0.05, 0.42)
 	scrim.position = Vector2(PAD, PAD - 4.0)
