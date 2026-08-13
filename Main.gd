@@ -396,9 +396,10 @@ var _gacha_kind := "weapon"
 # 종류별 전용 제단 그림(sets/altar_*.png, 80px) — 64px 공용 제단은 세트 액자
 # 안에서 작고 결이 안 맞았다(사장님: "아이콘도 그렇고 어색해").
 # 자리는 세트마다 액자가 달라서 _refresh_gacha 가 장소에 맞춰 옮긴다.
+# 좌표는 담백한 2차 몸판(카드 528x288 고정)의 액자 실측 중심이다.
 const GACHA_ART_BOX := 80.0
-const GACHA_ART_X := 122.0   # 대장간 철판 액자 창 실측
-const GACHA_ART_Y := 358.0
+const GACHA_ART_X := 94.0    # 대장간 철판 액자 창 실측
+const GACHA_ART_Y := 363.0
 # 레벨별 확률표를 펼쳐 보는 창. 지금 레벨의 확률만 보이면 "올리면 뭐가 좋아지는지"가
 # 숫자로 안 잡힌다 — 해금 레벨만 적혀 있고 그 뒤가 안 보인다.
 # 0레벨부터 만렙까지 **전부** 보여 준다. 몇 개만 뽑아 보여 주면 그 사이가 어떻게
@@ -3317,27 +3318,27 @@ func _build_gacha(root: Control) -> void:
 		_gacha_buttons[kind] = tb
 		_gacha_kind_labels[kind] = tl
 	# 소환 카드 — 세트 몸판(대장간 철판/점성소 별판)을 장소 따라 갈아 끼운다.
+	# 두 몸판의 원본 크기가 달라도 **528x288 로 고정**해 안 요소가 안 흔들린다.
 	_gacha_card_tex = _shop_tex(root, "res://assets/ui/sets/forge_body.png",
-		Vector2(PAD, 284.0), Vector2(CONTENT_W, 256.0))
+		Vector2(PAD, 284.0), Vector2(CONTENT_W, 288.0))
 	_gacha_icon = Ui.icon("", Vector2(GACHA_ART_X, GACHA_ART_Y), GACHA_ART_BOX)
 	root.add_child(_gacha_icon)
-	# 글자 칸 — 세트 액자가 상점 것보다 커서 오른쪽으로 밀었다. 확률은 두 줄로
-	# 나뉘므로 한 줄 최악값(둘)이 290 안에 든다.
-	var text_x := PAD + 224.0
+	# 글자 칸 — 액자 오른쪽부터. 확률은 두 줄로 나뉘므로 한 줄 최악값이 300 에 든다.
+	var text_x := PAD + 214.0
 	var text_w := PAD + CONTENT_W - 14.0 - text_x
-	_gacha_labels["pity"] = _panel_label(root, Vector2(text_x, 324.0), Type.SIZE_MID,
+	_gacha_labels["pity"] = _panel_label(root, Vector2(text_x, 330.0), Type.SIZE_MID,
 		Color(1.0, 0.86, 0.52), text_w, 28.0)
 	_gacha_labels["pity"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 2줄: 다음 레벨까지 남은 횟수와 천장. 레벨과 천장은 역할이 달라 같이 보여야 한다.
-	_gacha_labels["sub"] = _panel_label(root, Vector2(text_x, 356.0), Type.SIZE_SMALL,
+	_gacha_labels["sub"] = _panel_label(root, Vector2(text_x, 364.0), Type.SIZE_SMALL,
 		Color(0.72, 0.72, 0.80), text_w, 20.0)
 	_gacha_labels["sub"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_gacha_labels["rates"] = _panel_label(root, Vector2(text_x, 380.0), Type.SIZE_SMALL,
+	_gacha_labels["rates"] = _panel_label(root, Vector2(text_x, 390.0), Type.SIZE_SMALL,
 		Color(0.62, 0.82, 0.68), text_w, 44.0)
 	_gacha_labels["rates"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gacha_labels["rates"].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 확률표 버튼 — 세트 알약 그림. 카드 아랫띠(잉걸불/별빛 홈)에 선다.
-	var tpos := Vector2(PAD + (CONTENT_W - 116.0) * 0.5, 486.0)
+	# 확률표 버튼 — 세트 알약 그림. 카드 아랫띠(두 몸판 다 이 높이에 홈이 있다).
+	var tpos := Vector2(PAD + (CONTENT_W - 116.0) * 0.5, 512.0)
 	_gacha_table_tex = _shop_tex(root, "res://assets/ui/sets/forge_pill.png",
 		tpos, Vector2(116.0, 34.0))
 	var tlb := _panel_label(root, Vector2(tpos.x, tpos.y + 9.0), Type.SIZE_SMALL,
@@ -3358,14 +3359,15 @@ func _build_gacha(root: Control) -> void:
 		var tx2 := PAD + float(i) * (tk_w + 10.0)
 		_gacha_tk_texs.append(_shop_tex(root,
 			"res://assets/ui/sets/forge_pill.png",
-			Vector2(tx2, 552.0), Vector2(tk_w, 30.0)))
-		root.add_child(Ui.icon(TicketDefs.icon_of(tk), Vector2(tx2 + 8.0, 557.0), 20.0))
-		_gacha_ticket_labels.append(_panel_label(root, Vector2(tx2 + 34.0, 553.0),
-			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), tk_w - 40.0, 28.0))
+			Vector2(tx2, 584.0), Vector2(tk_w, 30.0)))
+		# 아이콘 x+16 — 알약 곡선 테두리에 걸치면 일그러져 보인다(사장님 실측).
+		root.add_child(Ui.icon(TicketDefs.icon_of(tk), Vector2(tx2 + 16.0, 589.0), 20.0))
+		_gacha_ticket_labels.append(_panel_label(root, Vector2(tx2 + 42.0, 585.0),
+			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), tk_w - 50.0, 28.0))
 	# 버튼 둘 — 1회 · 10연. 세트 버튼 그림 + 투명 버튼(값 표기는 라벨·아이콘).
 	for pair in [["one", 24.0, 1], ["ten", 292.0, 10]]:
 		var key: String = pair[0]
-		var bpos := Vector2(pair[1], 596.0)
+		var bpos := Vector2(pair[1], 628.0)
 		var count: int = pair[2]
 		_gacha_btn_tex[key] = _shop_tex(root,
 			"res://assets/ui/sets/forge_button.png", bpos, Vector2(258.0, 58.0))
@@ -4353,7 +4355,7 @@ func _refresh_gacha() -> void:
 		"res://assets/ui/sets/%s_tab_off.png" % set_name)
 	# 액자가 세트마다 다른 자리다 — 그림도 따라 옮긴다.
 	_gacha_icon.position = Vector2(GACHA_ART_X, GACHA_ART_Y) if forge \
-		else Vector2(96.0, 364.0)
+		else Vector2(88.0, 369.0)
 	_gacha_place.text = "핏빛 대장간" if forge else "달의 제단"
 	_gacha_line.text = "좋은 재료가 들어왔다. 골라 봐라." if forge \
 		else "운명의 조각이 떨리고 있어요…"
@@ -4394,6 +4396,14 @@ func _refresh_gacha() -> void:
 		else "res://assets/ui/res_gem.png")
 	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = not ten_ticket and gem < GachaDefs.COST * 10.0
+	# 아이콘을 글자 바로 왼쪽에 붙인다 — 고정 x 는 글자 길이에 따라 간격이
+	# 들쭉였다(사장님: "배치가 일그러진 부분"). 라벨이 가운데 정렬이라 폭을 재서 옮긴다.
+	for key in ["one", "ten"]:
+		var lbl2: Label = _gacha_btn_lbl[key]
+		var fw := lbl2.get_theme_font("font").get_string_size(lbl2.text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, Type.SIZE_MID).x
+		_gacha_btn_icon[key].position.x = lbl2.position.x \
+			+ (258.0 - fw) * 0.5 - 34.0
 	# 그림 버튼·알약의 세트 전환 + 잠김 표시(어두워진다).
 	for key in ["one", "ten"]:
 		_gacha_btn_tex[key].texture = Assets.tex(
