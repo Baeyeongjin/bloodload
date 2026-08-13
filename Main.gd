@@ -4154,15 +4154,27 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 			label.text = str(rarity["name"])
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cards.append(card)
-	var close := Ui.button("보관함 확인" if _gacha_kind in GearDefs.SLOTS else "확인",
-		Vector2(158.0, CONTENT_BOTTOM - 50.0),
-		Vector2(260.0, 50.0), Type.SIZE_SMALL)
-	close.pressed.connect(func() -> void:
+	# **버튼 둘이다** (사장님 2026-08-13): 예전엔 장비 소환에 "보관함 확인" 하나뿐이라
+	# 연달아 뽑으려면 보관함에 들렀다가 되돌아와야 했다. 창을 닫기만 하는 "확인"과
+	# 그 자리로 데려가는 "보러 가기"를 나눈다 — 뽑은 것마다 갈 곳이 다르다.
+	var kind_now := _gacha_kind
+	var ok := Ui.button("확인", Vector2(30.0, CONTENT_BOTTOM - 50.0),
+		Vector2(250.0, 50.0), Type.SIZE_SMALL)
+	ok.pressed.connect(func() -> void: _gacha_reveal.visible = false)
+	_gacha_reveal.add_child(ok)
+	var go := Ui.button("보관함" if kind_now in GearDefs.SLOTS else "보러 가기",
+		Vector2(296.0, CONTENT_BOTTOM - 50.0),
+		Vector2(250.0, 50.0), Type.SIZE_SMALL)
+	go.pressed.connect(func() -> void:
 		_gacha_reveal.visible = false
-		if _gacha_kind in GearDefs.SLOTS:
+		if kind_now in GearDefs.SLOTS:
 			_select_tab("gear")
-			_set_gear_mode("inventory"))
-	_gacha_reveal.add_child(close)
+			_set_gear_mode("inventory")
+		else:
+			# 스킬·유물은 성장 탭의 제 소탭으로 — 뽑은 것이 어디 쌓였는지 보여 준다.
+			_select_tab("growth")
+			_set_growth_mode("relic" if kind_now == "relic" else "skill"))
+	_gacha_reveal.add_child(go)
 	if is_inside_tree():
 		var tween := create_tween()
 		for card in cards:

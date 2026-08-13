@@ -41,10 +41,10 @@ const MEMBER_RAID_BONUS := 1
 # 원래 선형항을 같이 흔든다 — 그게 **초반을 눌러
 # 전체를 아래로 당기는** 손잡이라, 지수만 만지면 모양(감속의 기울기)이 안 맞는다.
 const SWEEP := [
-	[1.35, 1.33, 0.0, 1.00],
 	[1.40, 1.38, 0.0, 1.00],
-	[1.45, 1.43, 0.0, 1.00],
-	[1.50, 1.48, 0.0, 1.00],
+	[1.45, 1.43, 0.0, 0.90],
+	[1.50, 1.48, 0.0, 0.85],
+	[1.55, 1.53, 0.0, 0.80],
 ]
 
 
@@ -94,7 +94,7 @@ func _init() -> void:
 	print("")
 	print("축별 기여 (%d일차 무과금, 공격력 기준 배수)" % days)
 	var a: Dictionary = free["axes"]
-	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "칭호"]:
+	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "유물", "칭호"]:
 		print("  %-8s x%.2f" % [k, float(a.get(k, 1.0))])
 	print("PaceProbe OK")
 	quit()
@@ -105,6 +105,7 @@ func _sweep(days: int) -> void:
 	var keep_p: float = StageDefs.POWER_STEP
 	var keep_g: float = StageDefs.GOLD_STEP
 	var keep_l: float = StageDefs.POWER_LINEAR
+	var keep_c: float = StageDefs.POWER_CURVE
 	print("")
 	print("목표(멤버십): 1달 150 · 2달 250 · 3달 300 — 처음 빠르고 점점 감속")
 	print("%-18s %-11s %-11s %-11s %s"
@@ -114,7 +115,7 @@ func _sweep(days: int) -> void:
 		StageDefs.POWER_STEP = float(c[0])
 		StageDefs.GOLD_STEP = float(c[1])
 		StageDefs.POWER_LINEAR = float(c[2])
-		StatDefs.COST_EXP_SCALE = float(c[3])
+		StageDefs.POWER_CURVE = float(c[3])
 		var f := _run(days, false)
 		var m := _run(days, true)
 		var cells := PackedStringArray()
@@ -124,12 +125,12 @@ func _sweep(days: int) -> void:
 				continue
 			cells.append("%d/%d" % [int(f["log"][d - 1]), int(m["log"][d - 1])])
 		print("%-18s %-10s %-10s %-10s %s"
-			% ["x%.2f 돈%.2f 값%.2f" % [float(c[0]), float(c[1]), float(c[3])],
+			% ["x%.2f 돈%.2f 곡%.2f" % [float(c[0]), float(c[1]), float(c[3])],
 			cells[0], cells[1], cells[2], cells[3]])
 	StageDefs.POWER_STEP = keep_p
 	StageDefs.GOLD_STEP = keep_g
 	StageDefs.POWER_LINEAR = keep_l
-	StatDefs.COST_EXP_SCALE = 1.0
+	StageDefs.POWER_CURVE = keep_c
 	print("")
 	print("목표 로그식  s(t) = 144·ln(t) - 341   (500 도달 ~340일)")
 	print("PaceProbe OK")
@@ -215,6 +216,7 @@ func _axes(game) -> Dictionary:
 		"도감": 1.0 + FoeTiers.codex_bonus(game.codex_knowledge, "damage"),
 		"혈맹": 1.0 + PactDefs.bonus(game.pact_lv),
 		"혈맥": TraitDefs.mult("attack", game.traits),
+		"유물": RelicDefs.mult("damage", game.relics),
 		"칭호": with_title / maxf(0.001, stat_only),
 	}
 
@@ -249,8 +251,13 @@ func _summon_day(game, member: bool) -> void:
 	var pulls := 4 + 2                     # 소환권 4 + 보석 25~35 -> 1~2회
 	if member:
 		pulls += 3 + 3                     # 소환권 3 + 보석 100 -> 3회
+	# 유물은 100구간부터 열린다 — 열리면 뽑기 한 자리를 유물이 가져간다
+	# (실제 유저도 후반엔 유물을 민다).
+	var kinds: Array = ["weapon", "armor", "trinket", "skill"]
+	if game.best_stage >= RelicDefs.OPEN_STAGE:
+		kinds.append("relic")
 	for i in pulls:
-		var kind: String = ["weapon", "armor", "trinket", "skill"][i % 4]
+		var kind: String = kinds[i % kinds.size()]
 		game._gacha_kind = kind
 		var lv := GachaDefs.level(int(game.gacha_pulls.get(kind, 0)))
 		var r := GachaDefs.pull(1, int(game.gacha_pity.get(kind, 0)), lv,
@@ -259,6 +266,8 @@ func _summon_day(game, member: bool) -> void:
 		game.gacha_pulls[kind] = int(game.gacha_pulls.get(kind, 0)) + 1
 		if kind == "skill":
 			game._receive_gacha_skill(str(r["rarities"][0]))
+		elif kind == "relic":
+			game._receive_gacha_relic(str(r["rarities"][0]))
 		else:
 			game._receive_gacha_gear(str(r["rarities"][0]))
 	_equip_best(game)
