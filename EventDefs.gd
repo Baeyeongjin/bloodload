@@ -27,17 +27,11 @@ static func tier_mult(tier: int) -> float:
 # 그만큼 주기가 길어진다(지금 4주 순환).
 # key/anim 은 본편 막 보스 자산을 그대로 빌린다 — 이벤트용 몹을 새로 뽑을 이유가
 # 없다(이름과 결이 다르면 다른 놈으로 읽힌다). 새 자산이 생기면 여기만 바꾼다.
+# **4종으로 마무리한다** (사장님 2026-08-13): 매주 얼굴이 바뀌고 넉 주에 한 바퀴.
+# 본편 보스를 빌려 쓰던 옛 넷은 뺐다 — 같은 놈이 본편에도 나오면 "주간 보스"라는
+# 자리가 안 선다. 지금 넷은 걷기·공격·특수까지 전용이라 여기서만 볼 수 있다.
+# 단계(TIER_STEP)가 무한이므로 종수가 적어도 도전은 계속 세진다.
 const BOSSES := [
-	{"name": "피에 굶주린 군주", "key": "wraith_knight", "anim": "boss_1",
-		"art": "boss_lord"},
-	{"name": "심연의 감시자", "key": "eye_mass", "anim": "boss_4",
-		"art": "boss_watcher"},
-	{"name": "뒤틀린 성녀", "key": "gargoyle", "anim": "boss_2",
-		"art": "boss_saint"},
-	{"name": "재의 폭군", "key": "dark_knight", "anim": "boss_5",
-		"art": "boss_tyrant"},
-	# 신규 4종 (2026-08-13). 앞의 넷은 본편 보스 자산을 빌렸지만 이들은 몸까지
-	# 전용이라 주간 보스에서만 볼 수 있다 — 8주 순환이 된다.
 	{"name": "역병의 산파", "key": "plague_hag", "anim": "plague_hag",
 		"art": "boss_hag"},
 	{"name": "뼈의 합창단", "key": "bone_choir", "anim": "bone_choir",
