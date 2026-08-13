@@ -21,8 +21,10 @@ func _init() -> void:
 		var m: Dictionary = EventDefs.MILESTONES[i]
 		assert(float(m["need"]) > prev, "이정표 %d 가 안 오른다" % i)
 		prev = float(m["need"])
-		assert(str(m["reward"]) in ["gem", "crystal", "sigil"],
-			"모르는 보상 종류: %s" % str(m["reward"]))
+		# 지급은 Main._grant_reward 한 곳이 한다 — QuestCheck 의 그 목록과 같은 이유로
+		# 여기 이름이 있는데 거기 없으면 조용히 안 들어온다.
+		assert(str(m["reward"]) in ["gem", "crystal", "sigil", "essence", "gold",
+			"ticket", "ticket_hi"], "모르는 보상 종류: %s" % str(m["reward"]))
 		assert(int(m["amount"]) > 0)
 	# 순환 — 주가 바뀌면 다음 보스, 한 바퀴 돌면 처음으로.
 	var n := EventDefs.BOSSES.size()
