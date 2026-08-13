@@ -31,10 +31,10 @@ const TIERS := {
 	# 주간 보스 전용 4종 (2026-08-13 사장님: "새로운 신규 보스"). 본편 로스터에는
 	# 안 들어간다 — StageDefs.ACTS 가 안 부르므로 주간 보스에서만 나온다.
 	# 걷기·공격·특수 애니를 전용으로 뽑았다(기존 보스 몸을 빌리면 "또 저놈"이 된다).
-	"plague_hag":   {"name": "역병의 산파", "hp_mult": 3.5, "size": 1.35},
-	"bone_choir":   {"name": "뼈의 합창단", "hp_mult": 3.6, "size": 1.45},
-	"blood_queen":  {"name": "피의 여왕", "hp_mult": 3.7, "size": 1.3},
-	"butcher":      {"name": "잊힌 도살자", "hp_mult": 4.0, "size": 1.45},
+	"plague_hag":   {"name": "역병의 산파", "hp_mult": 3.5, "size": 1.35, "event": true},
+	"bone_choir":   {"name": "뼈의 합창단", "hp_mult": 3.6, "size": 1.45, "event": true},
+	"blood_queen":  {"name": "피의 여왕", "hp_mult": 3.7, "size": 1.3, "event": true},
+	"butcher":      {"name": "잊힌 도살자", "hp_mult": 4.0, "size": 1.45, "event": true},
 }
 
 
@@ -90,8 +90,18 @@ static func codex_extra(r: Dictionary) -> Dictionary:
 	return {}
 
 
+# 도감에 오르는 몹 (주간 보스 제외). **주간 보스는 본편에 안 나오고 죽이는 게
+# 목표도 아니라**(피해 누적이 목표다) 도감에 넣으면 만렙이 영영 안 채워진다.
+static func codex_keys() -> Array:
+	var out: Array = []
+	for k in TIERS:
+		if not bool(TIERS[k].get("event", false)):
+			out.append(k)
+	return out
+
+
 static func codex_max_knowledge() -> int:
-	return TIERS.size() * CODEX_KILL_STEPS.size()
+	return codex_keys().size() * CODEX_KILL_STEPS.size()
 
 
 # 지식 합계에 해당하는 누적 배율. 단계별로 곱하지 않고 **더한다** —

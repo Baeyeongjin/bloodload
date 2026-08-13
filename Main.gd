@@ -4682,7 +4682,7 @@ func _refresh_codex() -> void:
 	# **말을 줄인다.** 버튼 둘을 뺀 폭(312px)에 세 토막을 넣으면 마지막이 잘려
 	# "다" 만 남았다(실측). 자릿수는 그대로 두고 이름만 짧게 — "다음 보상까지"는
 	# 화살표 하나로 읽힌다.
-	var parts := ["도감 %d/%d" % [codex_found, FoeTiers.TIERS.size()],
+	var parts := ["도감 %d/%d" % [codex_found, FoeTiers.codex_keys().size()],
 		"지식 %d" % codex_knowledge]
 	for r in FoeTiers.CODEX_REWARDS:
 		if int(r["need"]) > codex_knowledge:
