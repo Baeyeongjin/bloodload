@@ -1688,8 +1688,8 @@ var _relic_icons: Array[TextureRect] = []
 var _relic_names: Array[Label] = []
 var _relic_effs: Array[Label] = []
 var _relic_head: Label
-# 4열은 글자 칸이 66px 뿐이라 효과가 통째로 잘렸다(실측). 3열이면 110px 이고
-# 12개가 4줄에 들어가 창(384) 안에 선다.
+# 4열은 글자 칸이 66px 뿐이라 효과가 통째로 잘렸다(실측). 3열이면 100px 넘는다.
+# 18종이라 6줄이고 창을 넘으므로 스크롤 안에 담는다.
 const RELIC_COLS := 3
 const RELIC_CELL := Vector2(168.0, 72.0)
 
@@ -1702,14 +1702,26 @@ func _build_relic_view(root: Control) -> void:
 	root.add_child(_relic_view)
 	_relic_head = _panel_label(_relic_view, Vector2(PAD, PAD + 40.0), Type.SIZE_SMALL,
 		Color(0.92, 0.82, 0.62), CONTENT_W, 20.0)
+	# 18종이면 6줄이라 창(384)을 넘는다 — 스크롤 안에 격자를 둔다.
+	var top := PAD + 64.0
+	var sc := Ui.scroll(Vector2(PAD, top), Vector2(CONTENT_W, CONTENT_BOTTOM - top))
+	_relic_view.add_child(sc)
+	var grid := Control.new()
+	var rows := int(ceil(float(RelicDefs.RELICS.size()) / float(RELIC_COLS)))
+	grid.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W,
+		float(rows) * RELIC_CELL.y)
+	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sc.add_child(grid)
+	# 스크롤 안쪽 폭이 줄어든 만큼 칸도 좁아진다.
+	var cell_w := (CONTENT_W - Ui.SCROLL_W) / float(RELIC_COLS)
 	for i in RelicDefs.RELICS.size():
 		var r: Dictionary = RelicDefs.RELICS[i]
-		var at := Vector2(PAD + float(i % RELIC_COLS) * RELIC_CELL.x,
-			PAD + 66.0 + float(i / RELIC_COLS) * RELIC_CELL.y)
+		var at := Vector2(float(i % RELIC_COLS) * cell_w,
+			float(i / RELIC_COLS) * RELIC_CELL.y)
 		var cell := Control.new()
 		cell.position = at
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_relic_view.add_child(cell)
+		grid.add_child(cell)
 		# 등급 틀을 두른다 — 무엇이 귀한지가 색으로 먼저 읽힌다(소환 결과와 같은 규칙).
 		var frame := Ui.image("res://assets/ui/slot_common.png", Vector2(2.0, 4.0),
 			Vector2(46.0, 46.0))
@@ -1719,9 +1731,9 @@ func _build_relic_view(root: Control) -> void:
 		cell.add_child(ic)
 		_relic_icons.append(ic)
 		_relic_names.append(_panel_label(cell, Vector2(56.0, 2.0), Type.SIZE_SMALL,
-			Color(0.92, 0.82, 0.62), RELIC_CELL.x - 62.0, 18.0))
+			Color(0.92, 0.82, 0.62), cell_w - 62.0, 18.0))
 		_relic_effs.append(_panel_label(cell, Vector2(56.0, 22.0), Type.SIZE_SMALL,
-			Color(0.72, 0.72, 0.80), RELIC_CELL.x - 62.0, 36.0))
+			Color(0.72, 0.72, 0.80), cell_w - 62.0, 36.0))
 
 
 func _refresh_relics() -> void:

@@ -25,6 +25,7 @@ const SHARDS_PER_LV := 5    # 중복 5개 = 1레벨 (소환 장비와 같은 문
 #
 # value 는 **만렙 기준 총량**이고 레벨당 1/5 씩 붙는다(혈맥과 같은 규칙).
 # 공격 계열이 넷인 이유: 메우려는 간극이 공격력 쪽이다.
+# 18종 (전설 3 · 에픽 6 · 레어 9).
 const RELICS := [
 	{"id": "abyss_eye", "name": "심연의 눈", "rarity": "legend",
 		"kind": "damage", "value": 0.25, "icon": "relic_abyss_eye"},
@@ -50,6 +51,22 @@ const RELICS := [
 		"kind": "speed", "value": 0.10, "icon": "relic_witch_tear"},
 	{"id": "milky_map", "name": "별의 지도", "rarity": "rare",
 		"kind": "sweep", "value": 0.10, "icon": "relic_milky_map"},
+	# 2026-08-13 추가분 6종 (사장님: "유물 종류 몇 개 더"). 아이콘은 새로 뽑았다 —
+	# 앞의 12종과 달리 이건 우리 것이라 이름과 그림이 처음부터 맞는다.
+	# 공격 계열을 둘만 더한 이유: 넷이 이미 x1.82 라, 더 얹으면 곱연산 예산
+	# (RelicCheck 이 지키는 1.5~2.5)을 넘어 혈맥 몫까지 먹는다.
+	{"id": "broken_crown", "name": "부러진 왕관", "rarity": "legend",
+		"kind": "damage", "value": 0.20, "icon": "relic_broken_crown"},
+	{"id": "heart_stone", "name": "굳은 심장석", "rarity": "epic",
+		"kind": "hp", "value": 0.15, "icon": "relic_heart_stone"},
+	{"id": "blood_hourglass", "name": "피의 모래시계", "rarity": "epic",
+		"kind": "hours", "value": 2.0, "icon": "relic_blood_hourglass"},
+	{"id": "raven_feather", "name": "갈까마귀 깃", "rarity": "rare",
+		"kind": "speed", "value": 0.08, "icon": "relic_raven_feather"},
+	{"id": "green_candle", "name": "푸른 촛대", "rarity": "rare",
+		"kind": "critdmg", "value": 0.12, "icon": "relic_green_candle"},
+	{"id": "sealed_coffin", "name": "봉인된 관", "rarity": "rare",
+		"kind": "damage", "value": 0.08, "icon": "relic_sealed_coffin"},
 ]
 
 
