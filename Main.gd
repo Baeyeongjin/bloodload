@@ -4928,7 +4928,6 @@ func _claim_wquest(id: String) -> void:
 const QUEST_PANEL := Rect2(24.0, 150.0, 528.0, 560.0)
 const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
 const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세로 줄
-const SHOP_BTN_AT := Vector2(508.0, 264.0)    # 셋째 — 들러서 받는 곳끼리 모은다
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
 # 잘렸다(실측). 잘린 진행도는 거짓말이다.
 const QUEST_BAR_W := 220.0
@@ -4968,19 +4967,11 @@ func _build_quests() -> void:
 	_hud_root.add_child(t_btn)
 	_hud_root.add_child(Ui.icon("res://assets/ui/badge_title.png",
 		TITLE_BTN_AT + Vector2(8.0, 8.0), 40.0))
-	# 상점 — 임무·칭호와 같은 줄. 셋 다 "전투를 멈추지 않고 잠깐 들르는 곳"이다.
-	var s_btn := Button.new()
-	s_btn.flat = true
-	s_btn.position = SHOP_BTN_AT
-	s_btn.size = Vector2(56.0, 56.0)
-	s_btn.focus_mode = Control.FOCUS_NONE
-	s_btn.pressed.connect(func() -> void:
-		_shop_view.visible = not _shop_view.visible
-		if _shop_view.visible:
-			_refresh_shop())
-	_hud_root.add_child(s_btn)
-	_hud_root.add_child(Ui.icon("res://assets/ui/shop.png",
-		SHOP_BTN_AT + Vector2(4.0, 4.0), 48.0))
+	# 상점 진입점은 **일부러 안 만든다** (사장님 2026-08-12): 상점은 과금과 한
+	# 묶음으로 **별도 탭**이 되고 지금 이 판은 그 탭 안의 한 소탭으로 들어간다.
+	# 옆줄에 버튼을 세워 두면 곧 두 곳에서 같은 걸 파는 화면이 된다.
+	# 판과 로직은 그대로 살려 둔다 — 탭이 생기면 그때 여기만 갈아 끼운다.
+	# 지금 보려면 개발 플래그 `--shop`.
 	# 판 — 모달 팝업. 뒤가 비치면 어느 숫자가 어느 창 것인지 헷갈린다(불투명 규칙).
 	_quest_view = Control.new()
 	_quest_view.visible = false
