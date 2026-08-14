@@ -5356,7 +5356,7 @@ func _build_raid_detail(root: Control) -> void:
 	# **보이지 않는다** (사장님 2026-08-14: 검은 화면 없애 줘) — 돌판이 이미
 	# 불투명이라 가릴 것은 그놈이 가린다. 이 판이 하는 일은 **뒤 버튼을 막는
 	# 것** 하나다: 없애면 상세 뒤의 입장 버튼이 그대로 눌린다.
-	back.color = Color(0, 0, 0, 0)
+	back.color = Color(0.03, 0.02, 0.04, 0.55)
 	back.position = Vector2(PAD - 14.0, 218.0)
 	back.size = Vector2(CONTENT_W + 28.0, FULL_BOTTOM - 208.0)
 	back.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -5364,8 +5364,8 @@ func _build_raid_detail(root: Control) -> void:
 	# 그 위에 **던전 세트의 돌판**을 얹는다 — 검은 배경에 글자만 있으면 다른
 	# 화면들과 결이 안 맞아 이질적이다(사장님). 원본 비율(414x559)을 지킨다.
 	_shop_tex(_raid_detail, "res://assets/ui/sets/gate_detail.png",
-		Vector2((PANEL_W - 414.0) * 0.5, 222.0), Vector2(414.0, 460.0))
-	var top := 262.0
+		Vector2((PANEL_W - 400.0) * 0.5, 218.0), Vector2(400.0, 540.0))
+	var top := 278.0
 	_rd_name = _panel_label(_raid_detail, Vector2(0.0, top), Type.SIZE_TITLE,
 		Color(0.98, 0.88, 0.62), PANEL_W, 40.0)
 	_rd_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -5423,8 +5423,8 @@ func _build_raid_detail(root: Control) -> void:
 		_raid_enter(k)
 		_refresh_dungeon())
 	# 돌아가기 — 상세는 덮는 판이라 나갈 길이 반드시 있어야 한다.
-	var close := Ui.button("돌아가기", Vector2((PANEL_W - 160.0) * 0.5, top + 432.0),
-		Vector2(160.0, 38.0), Type.SIZE_SMALL)
+	var close := Ui.button("돌아가기", Vector2((PANEL_W - 150.0) * 0.5, top + 424.0),
+		Vector2(150.0, 36.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _raid_detail.visible = false)
 	_raid_detail.add_child(close)
 
