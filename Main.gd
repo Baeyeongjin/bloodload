@@ -5473,8 +5473,8 @@ func _refresh_dungeon() -> void:
 			% (RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs))
 	for kind in _raid_btn:
 		var n := int(raid_best.get(kind, 0)) + 1
-		_raid_info[kind].text = "도전 %d단계 — 본편 %d구간 수준" \
-			% [n, RaidDefs.eq_stage(n, kind)]
+		# **목표를 적는다** — 던전마다 이기는 방법이 다르다(사장님 2026-08-14).
+		_raid_info[kind].text = "%d단계 · %s" % [n, RaidDefs.goal_line(kind)]
 		# "격파 시 …"까지 적으면 세트 카드의 글자 폭을 넘어 잘린다(실측 두 번) —
 		# "격파"는 윗줄 안내("표는 격파할 때만 깎인다")가 이미 말한다.
 		_raid_reward[kind].text = "%s +%s · 오늘 %d/%d" \
@@ -8064,7 +8064,8 @@ func _c_kills_needed() -> int:
 	if raid_on == "boss":
 		return 1
 	if raid_on != "":
-		return RaidDefs.KILLS
+		# 던전마다 목표가 다르다 — 버티기(제단)는 처치가 판정이 아니다.
+		return RaidDefs.kills_needed(raid_on)
 	return DungeonDefs.kills_needed(dungeon_floor) if dungeon_on \
 		else StageDefs.kills_needed(stage)
 
@@ -8073,7 +8074,7 @@ func _c_time_limit() -> float:
 	if raid_on == "boss":
 		return EventDefs.TIME_LIMIT
 	if raid_on != "":
-		return RaidDefs.TIME_LIMIT
+		return RaidDefs.time_limit(raid_on)
 	return DungeonDefs.time_limit(dungeon_floor) if dungeon_on \
 		else StageDefs.time_limit(stage)
 
@@ -8355,12 +8356,22 @@ func _spawn_foe() -> void:
 	elif midboss:
 		tier["midboss"] = true
 		tier["name_prefix"] = _c_midboss_prefix() + " "
+	# 성소는 **수호자 한 마리**가 판이다 — 이름으로도 그게 읽혀야 한다.
+	if raid_on != "" and raid_on != "boss" and RaidDefs.goal(raid_on) == "slay":
+		tier["name_prefix"] = "수호자 "
 	var f := Foe.new()
 	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
 	if raid_on == "boss":
 		# 체력만 갈아 끼운다 — 40초에 못 눕히는 게 정상이고, 성과는 누적 피해다.
 		f.max_hp = EventDefs.boss_hp(_boss_dps_snap, boss_tier)
 		f.hp = f.max_hp
+	elif raid_on != "":
+		# 성소의 **수호자 한 마리**는 웨이브 몫을 혼자 짊어진다(hp_mult).
+		# 다른 던전은 배수가 1 이라 이 줄이 아무것도 안 한다.
+		var mult := RaidDefs.hp_mult(raid_on)
+		if mult != 1.0:
+			f.max_hp *= mult
+			f.hp = f.max_hp
 	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
 	if dungeon_on:
 		f.modulate = DungeonDefs.depth_tint(dungeon_floor)
@@ -8634,7 +8645,13 @@ func _tick_boss_timer(delta: float) -> bool:
 		_boss_exit("도전 종료")
 		return true
 	if raid_on != "":
-		_raid_exit("시간 초과 — 빈손")
+		# **버티기 던전은 시계가 성공 조건이다** (사장님 2026-08-14: 던전마다
+		# 테마가 달라야 한다). 끝까지 살아 있으면 그게 격파다 — 다른 던전은
+		# 시간이 가면 빈손으로 나온다.
+		if RaidDefs.goal(raid_on) == "endure":
+			_advance_stage()
+		else:
+			_raid_exit("시간 초과 — 빈손")
 		return true
 	_restart_stage("시간 초과")
 	return true
@@ -9139,6 +9156,15 @@ func _refresh_hud() -> void:
 	var prog := ("보스" if _c_is_boss() else "중간보스" if _c_is_midboss()
 		else "처치 %d / %d" % [kills, need]) if dungeon_on \
 		else stage_progress_text(stage, kills, need)
+	# 재화 던전은 **목표가 던전마다 다르다** — 진행 문구도 거기에 맞춘다.
+	# 버티기는 셀 처치가 없으니 시계가 진행도고, 진행바는 그동안 가득 차 있다.
+	if raid_on != "" and raid_on != "boss":
+		match RaidDefs.goal(raid_on):
+			"endure":
+				prog = "버티는 중"
+				ratio = 1.0
+			"slay": prog = "수호자 %d / %d" % [kills, need]
+			_: prog = "처치 %d / %d" % [kills, need]
 	_lbl_prog.text = lone.display_name if lone else prog
 	# 제한 시간이 없는 일반 구간에서는 **시계를 아예 감춘다.** 0초로 멈춰 있으면
 	# 고장으로 보이고, 채워진 채로 두면 곧 줄어들 것처럼 거짓 신호를 준다.

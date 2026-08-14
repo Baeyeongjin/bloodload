@@ -27,14 +27,60 @@ const TIME_LIMIT := 45.0      # 늘 시계가 돈다 — 도전이니까
 const STEP_PER_STAGE := 6     # 도전 단계당 등가 본편 구간 상승
 
 # 아이콘: 사장님 선택 — 동굴 입구 A · 보석 제단 C · 룬 제단 C (2026-08-12).
+#
+# **던전마다 목표가 다르다** (사장님 2026-08-14: "각 던전별 테마가 있어야 함").
+# 셋 다 "웨이브를 비운다"였는데, 그러면 이름과 보상만 다른 같은 판이 셋이다.
+#   swarm  — 물량. 제한 시간 안에 **많이** 잡는다(동굴: 벌이의 자리)
+#   slay   — 단일 강적. 한 마리를 **제한 시간 안에** 눕힌다(성소: 화력 시험)
+#   endure — 버티기. 시간이 다 갈 때까지 **살아남는다**(제단: 생존 시험)
+# 몹 세기는 판정과 따로 논다(_c_enemy_power) — 목표만 바뀐다.
 const RAIDS := {
-	"blood": {"name": "혈액의 동굴", "currency": "혈액",
+	"blood": {"name": "혈액의 동굴", "currency": "혈액", "goal": "swarm",
+		"goal_text": "제한 시간 안에 %d마리",
 		"icon": "res://assets/ui/raid_blood.png"},
-	"essence": {"name": "정수의 성소", "currency": "정수",
+	"essence": {"name": "정수의 성소", "currency": "정수", "goal": "slay",
+		"goal_text": "수호자 %d마리 격파",
 		"icon": "res://assets/ui/raid_essence.png"},
-	"pact": {"name": "계약의 제단", "currency": "인장",
+	"pact": {"name": "계약의 제단", "currency": "인장", "goal": "endure",
+		"goal_text": "%d초를 버틴다",
 		"icon": "res://assets/ui/raid_pact.png"},
 }
+
+# 목표별 판 규격. swarm 은 수가 많고, slay 는 한 마리가 두껍고, endure 는
+# 처치가 아니라 **시계**가 판정이라 목표 수가 없다.
+const SLAY_KILLS := 1         # 성소의 수호자 — 한 마리
+const SLAY_HP_MULT := 6.0     # 그 한 마리가 웨이브 몫을 다 짊어진다
+const ENDURE_TIME := 60.0     # 제단 — 버티는 시간
+const SWARM_KILLS := 12       # 동굴 — 물량(기본 웨이브보다 많다)
+
+
+static func goal(kind: String) -> String:
+	return str(RAIDS.get(kind, {}).get("goal", "swarm"))
+
+
+# 그 던전을 깨는 데 필요한 처치 수. endure 는 처치가 판정이 아니라 0 이다.
+static func kills_needed(kind: String) -> int:
+	match goal(kind):
+		"slay": return SLAY_KILLS
+		"endure": return 0
+	return SWARM_KILLS
+
+
+static func time_limit(kind: String) -> float:
+	return ENDURE_TIME if goal(kind) == "endure" else TIME_LIMIT
+
+
+# 몹 체력 배수 — slay 의 한 마리는 웨이브 몫을 혼자 짊어진다.
+static func hp_mult(kind: String) -> float:
+	return SLAY_HP_MULT if goal(kind) == "slay" else 1.0
+
+
+# 카드·판에 적는 목표 한 줄.
+static func goal_line(kind: String) -> String:
+	var t := str(RAIDS.get(kind, {}).get("goal_text", ""))
+	if goal(kind) == "endure":
+		return t % int(ENDURE_TIME)
+	return t % kills_needed(kind)
 
 
 # 축이 세 개 한꺼번에 열리면 새 유저가 어디에 써야 할지 못 고른다 — 계단은

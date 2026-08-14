@@ -58,8 +58,9 @@ func _init() -> void:
 	scene._raid_enter("essence")
 	assert(scene.raid_on == "blood", "던전 안에서 다른 던전에 들어갔다")
 	# 래퍼가 던전 값으로 갈렸는가.
-	assert(scene._c_kills_needed() == RaidDefs.KILLS)
-	assert(is_equal_approx(scene._c_time_limit(), RaidDefs.TIME_LIMIT))
+	# 목표가 **던전마다 다르다**(2026-08-14) — 상수를 박지 말고 표를 읽는다.
+	assert(scene._c_kills_needed() == RaidDefs.kills_needed("blood"))
+	assert(is_equal_approx(scene._c_time_limit(), RaidDefs.time_limit("blood")))
 	assert(is_equal_approx(scene._c_enemy_power(),
 		StageDefs.enemy_power(RaidDefs.eq_stage(1, "blood"))), "몹 세기가 등가 구간 값이 아니다")
 	assert("혈액의 동굴" in scene._c_label())
@@ -109,6 +110,40 @@ func _init() -> void:
 	scene.raid_left["blood"] = 0
 	scene._raid_enter("blood")
 	assert(scene.raid_on == "", "표가 0인데 들어갔다")
+
+	# ── 던전별 목표 (사장님 2026-08-14: 테마가 달라야 한다) ────────────────
+	# 셋이 **서로 다른 방법으로** 끝나야 한다 — 같으면 이름만 다른 판이 셋이다.
+	var goals := {}
+	for k in RaidDefs.RAIDS:
+		goals[RaidDefs.goal(str(k))] = true
+		assert(RaidDefs.goal_line(str(k)) != "", "%s 목표 문구가 없다" % k)
+	assert(goals.size() == 3, "던전 목표가 안 갈렸다: %d" % goals.size())
+	# 버티기는 처치가 판정이 아니고(0), 시계가 더 길다.
+	assert(RaidDefs.kills_needed("pact") == 0, "버티기에 처치 목표가 있다")
+	assert(RaidDefs.time_limit("pact") > RaidDefs.time_limit("blood"),
+		"버티기 시간이 안 길다")
+	# 단일 강적은 한 마리인 대신 두껍다 — 물량과 총량이 비슷해야 공짜가 안 된다.
+	assert(RaidDefs.kills_needed("essence") == 1, "단일 강적이 한 마리가 아니다")
+	assert(RaidDefs.hp_mult("essence") > 1.0, "수호자가 안 두껍다")
+	assert(is_equal_approx(RaidDefs.hp_mult("blood"), 1.0), "물량 몹이 두껍다")
+
+	# **버티기는 시간이 다 가면 격파다** — 다른 던전은 그때 빈손으로 나온다.
+	scene.raid_left = {"pact": 3}
+	scene.raid_date = Time.get_date_string_from_system()
+	scene.best_stage = RaidDefs.open_stage("pact")
+	scene._raid_enter("pact")
+	assert(scene.raid_on == "pact", "제단 입장이 안 됐다")
+	while scene._fade_t > 0.0:
+		await process_frame
+	var sigil_before: float = scene.sigil
+	scene._boss_time = 0.01                  # 시계를 끝으로 밀어 놓는다
+	scene._tick_boss_timer(0.02)
+	var w2 := 0.0
+	while scene._fade_t > 0.0 and w2 < 5.0:
+		await process_frame
+		w2 += scene.get_process_delta_time()
+	assert(scene.raid_on == "", "버티기가 안 끝났다")
+	assert(scene.sigil > sigil_before, "끝까지 버텼는데 보상이 없다")
 
 	print("RaidCheck OK")
 	quit()
