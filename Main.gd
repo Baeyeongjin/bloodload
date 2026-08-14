@@ -5353,9 +5353,10 @@ func _build_raid_detail(root: Control) -> void:
 	root.add_child(_raid_detail)
 	# 뒤 목록을 덮는다 — 반투명이면 두 판의 글자가 섞여 읽힌다(임무판과 같은 규칙).
 	var back := ColorRect.new()
-	# 불투명 + 판 전체를 덮는다 — 0.97 로 뒀더니 뒤 카드의 글자가 비쳐서 상세의
-	# 큰 글자와 섞였다(실측). 소탭 줄까지 덮어야 "다른 화면"으로 읽힌다.
-	back.color = Color(0.055, 0.05, 0.065)
+	# **보이지 않는다** (사장님 2026-08-14: 검은 화면 없애 줘) — 돌판이 이미
+	# 불투명이라 가릴 것은 그놈이 가린다. 이 판이 하는 일은 **뒤 버튼을 막는
+	# 것** 하나다: 없애면 상세 뒤의 입장 버튼이 그대로 눌린다.
+	back.color = Color(0, 0, 0, 0)
 	back.position = Vector2(PAD - 14.0, 218.0)
 	back.size = Vector2(CONTENT_W + 28.0, FULL_BOTTOM - 208.0)
 	back.mouse_filter = Control.MOUSE_FILTER_STOP
