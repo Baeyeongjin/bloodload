@@ -124,8 +124,21 @@ func _init() -> void:
 		"버티기 시간이 안 길다")
 	# 단일 강적은 한 마리인 대신 두껍다 — 물량과 총량이 비슷해야 공짜가 안 된다.
 	assert(RaidDefs.kills_needed("essence") == 1, "단일 강적이 한 마리가 아니다")
-	assert(RaidDefs.hp_mult("essence") > 1.0, "수호자가 안 두껍다")
 	assert(is_equal_approx(RaidDefs.hp_mult("blood"), 1.0), "물량 몹이 두껍다")
+	# 수호자의 **실효 체력**이 물량 판 총량과 같은 자리여야 한다. 그놈은 보스
+	# 판정을 받아 FoeTiers 배수가 이미 곱해지므로, 배수만 보면 1보다 작다 —
+	# 그걸 "안 두껍다"로 읽으면 630배짜리 못 잡는 판을 통과시킨다(실제 사고).
+	var guard := RaidDefs.hp_mult("essence") * FoeTiers.BOSS_HP_MULT
+	assert(guard >= float(RaidDefs.kills_needed("blood")) * 0.7,
+		"수호자가 웨이브 몫에 못 미친다: %.1f" % guard)
+	assert(guard <= float(RaidDefs.kills_needed("blood")) * 2.0,
+		"수호자가 웨이브 몫보다 지나치게 두껍다: %.1f" % guard)
+	# 성소는 **보스 판정**을 받아야 한 마리로 선다(그래야 웨이브가 안 깔린다).
+	scene.raid_on = "essence"
+	assert(scene._c_is_boss(), "수호자가 보스 판정을 못 받았다 — 웨이브로 깔린다")
+	scene.raid_on = "blood"
+	assert(not scene._c_is_boss(), "물량 던전에 보스 판정이 떴다")
+	scene.raid_on = ""
 
 	# **버티기는 시간이 다 가면 격파다** — 다른 던전은 그때 빈손으로 나온다.
 	scene.raid_left = {"pact": 3}

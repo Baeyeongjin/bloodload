@@ -813,6 +813,10 @@ func _ready() -> void:
 		# 소환권 · 유물 몇 · 스탯 상한. 세이브를 덮으므로 **검수 전용**이다.
 		if arg.begins_with("--god"):
 			_dev_god(int(arg.trim_prefix("--god=")) if "=" in arg else 100)
+		# [개발 도구] --cut : 보스 등장 컷신을 **띄운 채로** 잡는다. 연출은
+		# 1.7초면 끝나서 --wait 로는 타이밍을 못 맞춘다(찍으면 이미 끝나 있다).
+		if arg == "--cut":
+			_boss_cut("뼈의 합창단")
 		# [개발 도구] 영웅과 몹이 겹치는 순간만 골라 찍는다.
 		if arg == "--gaps":
 			_gap_probe = true
@@ -1027,6 +1031,7 @@ func _build_scene() -> void:
 	_hud_root = root
 	_build_frame()
 	_build_topbar()
+	_build_boss_cut()
 	_offline_banner = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 12.0), Type.SIZE_SMALL,
 		Color(0.95, 0.55, 0.55))
 	_offline_banner.visible = false
@@ -8066,7 +8071,10 @@ func _c_is_boss() -> bool:
 	if raid_on == "boss":
 		return true      # 주간 보스 — 한 마리로 판을 채운다(체력 바·마크가 같이 붙는다)
 	if raid_on != "":
-		return false
+		# **성소의 수호자도 그 판의 보스다** — 이 한 줄로 웨이브가 한 마리가 되고
+		# 상단 체력 바·등장 컷신까지 따라온다. 안 그러면 수호자가 여럿 서 있어서
+		# "보스가 두 마리 나온다"가 된다(사장님 실측 2026-08-14).
+		return RaidDefs.goal(raid_on) == "slay"
 	return DungeonDefs.is_boss_floor(dungeon_floor) if dungeon_on \
 		else StageDefs.is_boss_stage(stage)
 
@@ -8407,18 +8415,86 @@ func _spawn_foe() -> void:
 	# 이 시점의 f 는 아직 멀쩡하다 — _forget_foe 참고.
 	f.tree_exiting.connect(_forget_foe.bind(f))
 	add_child(f)
-	if boss or midboss:
-		_announce_elite(f.display_name)
 	if boss:
+		# 보스는 **컷신**이다 — 카메라가 가고(팬) 이름이 크게 뜬다(레퍼런스).
 		_boss_pan(f)
+		_boss_cut(f.display_name)
+	elif midboss:
+		_announce_elite(f.display_name)
 
 
 func _announce_elite(name: String) -> void:
+	# 중간보스는 배너 한 줄로 족하다 — 이름을 크게 띄우는 건 보스 몫이다.
 	_offline_banner.text = name
 	_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.55, 0.4))
 	_offline_banner.visible = true
 	_offline_t = 1.2
 	_shake_combat(4.0)
+
+
+# ── 보스 등장 연출 (사장님 2026-08-14, 레퍼런스: 카메라가 보스로 가고 이름이
+# 뜬 뒤 돌아온다) ─────────────────────────────────────────────────────────────
+# 레퍼런스는 3D 카메라를 실제로 옮기지만 우리는 옆보기 고정 화면이다. 같은
+# 인상을 **레터박스 + 큰 이름**으로 낸다: 위아래가 좁혀지면 "지금은 컷신"이
+# 읽히고, 카메라 팬(_boss_pan)이 이미 보스를 화면 가운데로 데려온다.
+const BOSS_CUT_BAR := 46.0     # 위아래 띠 높이
+var _boss_title: Label
+var _boss_bar_top: ColorRect
+var _boss_bar_bottom: ColorRect
+
+
+func _build_boss_cut() -> void:
+	var w := float(Grid.BG.x)
+	_boss_bar_top = ColorRect.new()
+	_boss_bar_top.color = Color(0.02, 0.01, 0.03, 0.86)
+	_boss_bar_top.size = Vector2(w, 0.0)
+	_boss_bar_top.position = Vector2.ZERO
+	_boss_bar_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_bar_top.z_index = 60
+	_hud_root.add_child(_boss_bar_top)
+	_boss_bar_bottom = ColorRect.new()
+	_boss_bar_bottom.color = _boss_bar_top.color
+	# **높이는 처음부터 준다.** 아래 띠를 size:y 음수로 자라게 했더니 아무것도
+	# 안 그려졌다(ColorRect 는 음수 크기를 안 그린다) — 자리를 내려 두고
+	# 위로 밀어 올리는 쪽으로 간다. 전투 화면 아래끝(판 위)까지만이다.
+	_boss_bar_bottom.size = Vector2(w, BOSS_CUT_BAR)
+	_boss_bar_bottom.position = Vector2(0.0, VIEW_BOTTOM)
+	_boss_bar_bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_bar_bottom.z_index = 60
+	_hud_root.add_child(_boss_bar_bottom)
+	# 이름은 띠 사이 가운데. 큰 글자 + 두꺼운 외곽선이라야 배경 위에서 산다.
+	_boss_title = _mk_label(Vector2(0.0, VIEW_BOTTOM * 0.42), Type.SIZE_TITLE,
+		Color(1.0, 0.92, 0.86))
+	_boss_title.size = Vector2(w, 44.0)
+	_boss_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_title.add_theme_constant_override("outline_size", 12)
+	_boss_title.add_theme_color_override("font_outline_color", Color(0.28, 0.0, 0.04))
+	_boss_title.z_index = 61
+	_boss_title.modulate.a = 0.0
+
+
+func _boss_cut(name: String) -> void:
+	if _boss_title == null:
+		return
+	_boss_title.text = name
+	# 팬과 같은 박자로 돈다: 0.45 들어가고 → BOSS_PAN_HOLD 머물고 → 0.5 나온다.
+	var t := create_tween().set_parallel()
+	t.tween_property(_boss_bar_top, "size:y", BOSS_CUT_BAR, 0.30) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(_boss_bar_bottom, "position:y", VIEW_BOTTOM - BOSS_CUT_BAR,
+		0.30).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(_boss_title, "modulate:a", 1.0, 0.25).set_delay(0.20)
+	# 이름은 살짝 커지며 뜬다 — 그냥 나타나면 자막이고, 커지면 등장이 된다.
+	_boss_title.pivot_offset = _boss_title.size * 0.5
+	_boss_title.scale = Vector2(0.86, 0.86)
+	t.tween_property(_boss_title, "scale", Vector2.ONE, 0.35).set_delay(0.20) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var out := 0.45 + BOSS_PAN_HOLD
+	t.tween_property(_boss_title, "modulate:a", 0.0, 0.30).set_delay(out)
+	t.tween_property(_boss_bar_top, "size:y", 0.0, 0.40).set_delay(out) \
+		.set_trans(Tween.TRANS_QUAD)
+	t.tween_property(_boss_bar_bottom, "position:y", VIEW_BOTTOM, 0.40) \
+		.set_delay(out).set_trans(Tween.TRANS_QUAD)
 
 
 # 보스가 나오면 화면을 보스 쪽으로 밀었다가 영웅에게 돌아온다.

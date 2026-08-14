@@ -49,7 +49,11 @@ const RAIDS := {
 # 목표별 판 규격. swarm 은 수가 많고, slay 는 한 마리가 두껍고, endure 는
 # 처치가 아니라 **시계**가 판정이라 목표 수가 없다.
 const SLAY_KILLS := 1         # 성소의 수호자 — 한 마리
-const SLAY_HP_MULT := 6.0     # 그 한 마리가 웨이브 몫을 다 짊어진다
+# 수호자는 **웨이브 몫**을 혼자 짊어진다(물량 던전 12마리치). 다만 그놈은
+# 보스 판정을 받으므로 FoeTiers 의 보스 배수(105)가 이미 곱해져 있다 —
+# 그걸 되나눠야 45초 안에 잡을 수 있는 판이 된다. 상수를 그냥 곱해 뒀더니
+# 630배가 되어 아무리 때려도 안 죽는 판이었다.
+const SLAY_WAVE_WORTH := 12.0
 const ENDURE_TIME := 60.0     # 제단 — 버티는 시간
 const SWARM_KILLS := 12       # 동굴 — 물량(기본 웨이브보다 많다)
 
@@ -72,7 +76,9 @@ static func time_limit(kind: String) -> float:
 
 # 몹 체력 배수 — slay 의 한 마리는 웨이브 몫을 혼자 짊어진다.
 static func hp_mult(kind: String) -> float:
-	return SLAY_HP_MULT if goal(kind) == "slay" else 1.0
+	if goal(kind) != "slay":
+		return 1.0
+	return SLAY_WAVE_WORTH / FoeTiers.BOSS_HP_MULT
 
 
 # 카드·판에 적는 목표 한 줄.
