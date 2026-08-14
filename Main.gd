@@ -4559,14 +4559,23 @@ func _build_codex(root: Control) -> void:
 	_codex_summary = _panel_label(root, Vector2(PAD, PAD), Type.SIZE_SMALL,
 		Color(0.82, 0.88, 0.72), CONTENT_W - 112.0, CODEX_HEAD_H)
 	_codex_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var status_btn := Ui.button("능력치", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
-		Vector2(100.0, 36.0), Type.SIZE_SMALL)
+	# 도감은 **기록과 지식**을 다루는 곳이라 점성소 세트를 쓴다(사장님 2026-08-14:
+	# 탭마다 결을 맞춘다) — 소환 탭의 스킬·유물과 같은 별판이다.
+	var sbx := Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0)
+	var stex := _shop_tex(root, "res://assets/ui/sets/astro_button.png",
+		sbx, Vector2(100.0, 36.0))
+	var slbl := _panel_label(root, Vector2(sbx.x, sbx.y + 9.0), Type.SIZE_SMALL,
+		Color(0.98, 0.95, 1.0), 100.0, 20.0)
+	slbl.text = "능력치"
+	slbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(slbl, 6)
+	var status_btn := _shop_ghost(root, Vector2(100.0, 36.0), stex)
+	status_btn.position = sbx
 	status_btn.pressed.connect(func() -> void:
 		_status_view.visible = not _status_view.visible
 		_title_view.visible = false
 		if _status_view.visible:
 			_refresh_status())
-	root.add_child(status_btn)
 	# **칭호는 여기서 뺐다** (사장님 2026-08-12): 능력치는 도감의 결산이지만
 	# 칭호는 완전히 다른 계열(본편 돌파·미궁 층·스킬 종수)이라 같은 줄에 두면
 	# 도감 첫 화면이 세 갈래로 갈린다. 임무판처럼 **전투 화면 오른쪽 버튼**으로
@@ -4870,8 +4879,9 @@ func _codex_row(key: String) -> Control:
 	var w := CODEX_LIST_W - Ui.SCROLL_W
 	var row := Control.new()
 	row.custom_minimum_size = Vector2(w, CODEX_ROW_H)
+	# 선택 표시는 **별빛 보라**다 — 도감이 점성소 결로 왔으니 금빛 띠는 겉돈다.
 	var mark := ColorRect.new()
-	mark.color = Color(0.85, 0.72, 0.45, 0.16)
+	mark.color = Color(0.62, 0.55, 0.85, 0.20)
 	mark.size = Vector2(w, CODEX_ROW_H - 4.0)
 	mark.position = Vector2(0, 2.0)
 	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
