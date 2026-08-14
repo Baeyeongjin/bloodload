@@ -813,6 +813,11 @@ func _ready() -> void:
 		# 소환권 · 유물 몇 · 스탯 상한. 세이브를 덮으므로 **검수 전용**이다.
 		if arg.begins_with("--god"):
 			_dev_god(int(arg.trim_prefix("--god=")) if "=" in arg else 100)
+		# [개발 도구] --detail=essence : 던전 상세 판을 연 채로 캡처한다.
+		if arg.begins_with("--detail="):
+			_select_tab("raid")
+			_raid_set_mode("raid")
+			_raid_detail_open(arg.trim_prefix("--detail="))
 		# [개발 도구] --cut : 보스 등장 컷신을 **띄운 채로** 잡는다. 연출은
 		# 1.7초면 끝나서 --wait 로는 타이밍을 못 맞춘다(찍으면 이미 끝나 있다).
 		if arg == "--cut":
@@ -5201,10 +5206,13 @@ func _build_raids(root: Control) -> void:
 	root.add_child(_boss_panel)
 	_build_boss_panel(_boss_panel)
 	_build_raid_list(_raid_list)
+	_build_raid_detail(root)
 	_raid_set_mode("raid")
 
 
 func _raid_set_mode(mode: String) -> void:
+	if _raid_detail:
+		_raid_detail.visible = false   # 소탭을 옮기면 상세는 닫는다
 	_raid_list.visible = mode == "raid"
 	_boss_panel.visible = mode == "boss"
 	_maze_scroll.visible = mode == "maze"
@@ -5313,6 +5321,116 @@ func _build_boss_panel(root: Control) -> void:
 		b.pressed.connect(func() -> void: _claim_milestone(idx))
 		_boss_rows.append({"prog": pr, "btn": b, "fill": fill,
 			"tex": mtex, "lbl": mlb, "icon": mic})
+
+
+# ── 던전 상세 판 (사장님 2026-08-14, 레퍼런스 "던전 입구") ──────────────────
+# 카드를 누르면 바로 안 들어가고 **한 판 더** 거친다: 그 던전의 이름·단계·목표·
+# 이번 판 보상·오늘 남은 표를 크게 보여 주고 거기서 도전을 누른다.
+#
+# 왜 한 겹 더 두나: 목록 카드는 셋을 견주는 자리라 한 줄씩밖에 못 적는다.
+# "무엇을 해야 이기는 판인지"는 들어가기 직전에 큰 글자로 읽혀야 한다.
+var _raid_detail: Control
+var _raid_detail_kind := ""
+var _rd_name: Label
+var _rd_stage: Label
+var _rd_goal: Label
+var _rd_reward: Label
+var _rd_left: Label
+var _rd_btn: Button
+var _rd_btn_tex: TextureRect
+var _rd_btn_lbl: Label
+var _rd_icon: TextureRect
+
+
+func _build_raid_detail(root: Control) -> void:
+	_raid_detail = Control.new()
+	_raid_detail.visible = false
+	_raid_detail.size = Vector2(PANEL_W, PANEL_FULL_H)
+	_raid_detail.z_index = 8
+	root.add_child(_raid_detail)
+	# 뒤 목록을 덮는다 — 반투명이면 두 판의 글자가 섞여 읽힌다(임무판과 같은 규칙).
+	var back := ColorRect.new()
+	# 불투명 + 판 전체를 덮는다 — 0.97 로 뒀더니 뒤 카드의 글자가 비쳐서 상세의
+	# 큰 글자와 섞였다(실측). 소탭 줄까지 덮어야 "다른 화면"으로 읽힌다.
+	back.color = Color(0.055, 0.05, 0.065)
+	back.position = Vector2(PAD - 14.0, 218.0)
+	back.size = Vector2(CONTENT_W + 28.0, FULL_BOTTOM - 208.0)
+	back.mouse_filter = Control.MOUSE_FILTER_STOP
+	_raid_detail.add_child(back)
+	var top := 236.0
+	_rd_name = _panel_label(_raid_detail, Vector2(0.0, top), Type.SIZE_TITLE,
+		Color(0.98, 0.88, 0.62), PANEL_W, 40.0)
+	_rd_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_rd_name, 8)
+	# 단계는 알약 안에 — 레퍼런스도 이름 아래 별도 칩이다.
+	_shop_tex(_raid_detail, "res://assets/ui/sets/gate_pill.png",
+		Vector2((PANEL_W - 200.0) * 0.5, top + 48.0), Vector2(200.0, 34.0))
+	_rd_stage = _panel_label(_raid_detail, Vector2(0.0, top + 56.0),
+		Type.SIZE_MID, Color(0.95, 0.92, 0.90), PANEL_W, 22.0)
+	_rd_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_rd_stage, 6)
+	# 목표 — 이 판의 핵심. 카드에서는 한 줄로 줄었지만 여기서는 크게 적는다.
+	_rd_goal = _panel_label(_raid_detail, Vector2(0.0, top + 104.0),
+		Type.SIZE_MID, Color(0.86, 0.90, 0.98), PANEL_W, 24.0)
+	_rd_goal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_rd_goal, 6)
+	# 보상 — 액자에 재화 그림, 아래 수량(레퍼런스 문법).
+	_shop_tex(_raid_detail, "card_art", Vector2((PANEL_W - 108.0) * 0.5,
+		top + 146.0), Vector2(108.0, 114.0))
+	_rd_icon = Ui.icon("", Vector2((PANEL_W - 64.0) * 0.5, top + 166.0), 64.0)
+	_rd_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raid_detail.add_child(_rd_icon)
+	_rd_reward = _panel_label(_raid_detail, Vector2(0.0, top + 268.0),
+		Type.SIZE_MID, Color(0.98, 0.90, 0.70), PANEL_W, 24.0)
+	_rd_reward.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_rd_reward, 6)
+	_rd_left = _panel_label(_raid_detail, Vector2(0.0, top + 300.0),
+		Type.SIZE_SMALL, Color(0.80, 0.78, 0.82), PANEL_W, 18.0)
+	_rd_left.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 도전 버튼 — 던전 세트의 철창.
+	var bx := Vector2((PANEL_W - 220.0) * 0.5, top + 340.0)
+	_rd_btn_tex = _shop_tex(_raid_detail, "res://assets/ui/sets/gate_button.png",
+		bx, Vector2(220.0, 56.0))
+	_rd_btn_lbl = _panel_label(_raid_detail, Vector2(bx.x, bx.y + 17.0),
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 220.0, 24.0)
+	_rd_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_rd_btn_lbl, 8)
+	_rd_btn = _shop_ghost(_raid_detail, Vector2(220.0, 56.0), _rd_btn_tex)
+	_rd_btn.position = bx
+	_rd_btn.pressed.connect(func() -> void:
+		var k := _raid_detail_kind
+		_raid_detail.visible = false
+		_raid_enter(k)
+		_refresh_dungeon())
+	# 돌아가기 — 상세는 덮는 판이라 나갈 길이 반드시 있어야 한다.
+	var close := Ui.button("돌아가기", Vector2((PANEL_W - 160.0) * 0.5, top + 410.0),
+		Vector2(160.0, 38.0), Type.SIZE_SMALL)
+	close.pressed.connect(func() -> void: _raid_detail.visible = false)
+	_raid_detail.add_child(close)
+
+
+func _raid_detail_open(kind: String) -> void:
+	if _raid_detail == null:
+		return
+	_raid_detail_kind = kind
+	_raid_detail.visible = true
+	var info: Dictionary = RaidDefs.RAIDS[kind]
+	var n := int(raid_best.get(kind, 0)) + 1
+	_rd_name.text = str(info["name"])
+	_rd_stage.text = "도전 %d단계" % n
+	_rd_goal.text = RaidDefs.goal_line(kind)
+	_rd_icon.texture = Assets.tex(str(info["icon"]))
+	_rd_reward.text = "%s  +%s" % [str(info["currency"]),
+		_n(RaidDefs.reward(kind, n))]
+	var left := _raid_left(kind)
+	var per_day := RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs)
+	_rd_left.text = "오늘 %d / %d판  ·  본편 %d구간 수준" \
+		% [left, per_day, RaidDefs.eq_stage(n, kind)]
+	var locked := best_stage < RaidDefs.open_stage(kind)
+	_rd_btn_lbl.text = "본편 %d 필요" % RaidDefs.open_stage(kind) if locked \
+		else ("도전" if left > 0 else "내일")
+	_rd_btn.disabled = locked or left <= 0 or dungeon_on or raid_on != ""
+	_gate_btn_dim(_rd_btn_tex, _rd_btn_lbl, _rd_btn.disabled)
 
 
 # 이정표 게이지는 임무보다 짧다 — 옆 수치가 "43.3K / 144.2K" 라 자리가 더 필요하다.
@@ -5471,12 +5589,14 @@ func _build_raid_list(root: Control) -> void:
 		_raid_btn_lbl[kind] = bl
 		var eb := _shop_ghost(root, Vector2(156.0, 50.0), _raid_btn_tex[kind])
 		eb.position = bx
+		# **바로 안 들어간다** — 레퍼런스처럼 상세 판을 한 번 거친다(사장님
+		# 2026-08-14). 거기서 목표·보상·단계를 보고 도전을 누른다.
 		eb.pressed.connect(func() -> void:
 			if raid_on == kind:
 				_raid_exit("이탈 — 빈손")
+				_refresh_dungeon()
 			else:
-				_raid_enter(kind)
-			_refresh_dungeon())
+				_raid_detail_open(kind))
 		_raid_btn[kind] = eb
 	_refresh_dungeon()
 
@@ -8543,6 +8663,9 @@ func _boss_cut(name: String) -> void:
 		.set_trans(Tween.TRANS_QUAD)
 	t.tween_property(_boss_bar_bottom, "position:y", VIEW_BOTTOM, 0.40) \
 		.set_delay(out).set_trans(Tween.TRANS_QUAD)
+	# **끝나면 끈다.** 자리만 되돌리고 켜 둔 채 두면, 아래 띠가 판 맨 위(416~462)를
+	# 계속 덮어 하단 UI 가 가려진다(사장님 실측). 트윈이 제 손으로 치우게 한다.
+	t.finished.connect(_boss_cut_clear)
 
 
 # 보스가 나오면 화면을 보스 쪽으로 밀었다가 영웅에게 돌아온다.
