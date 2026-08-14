@@ -2622,15 +2622,31 @@ func _add_summon_rarity_fx(parent: Control, rarity: Dictionary, frame_path: Stri
 
 # 장착 슬롯 3칸. 등급 테두리 색으로 지금 뭘 끼고 있는지 곁눈질에도 읽히게 한다.
 func _build_gear(root: Control) -> void:
+	# 소탭은 **대장간 세트**다 (사장님 2026-08-14: 탭마다 결을 맞춘다). 장비를
+	# 손보는 화면이라 소환 탭의 대장간과 같은 철판을 쓰는 게 뜻이 맞는다 —
+	# 새 세트를 뽑는 대신 있는 것을 제자리에 쓴다.
 	for i in 2:
 		var mode := "equipped" if i == 0 else "inventory"
-		var mode_button := Ui.button("장착 장비" if i == 0 else "보관함",
-			Vector2(PAD + i * 268.0, 18.0), Vector2(252.0, 36.0), Type.SIZE_SMALL)
-		mode_button.toggle_mode = true
-		mode_button.pressed.connect(func() -> void: _set_gear_mode(mode))
-		mode_button.z_index = 2
-		root.add_child(mode_button)
-		_gear_mode_buttons[mode] = mode_button
+		var tb := TextureButton.new()
+		tb.texture_normal = Assets.tex("res://assets/ui/sets/forge_tab_off.png")
+		tb.texture_pressed = Assets.tex("res://assets/ui/sets/forge_tab_on.png")
+		tb.ignore_texture_size = true
+		tb.stretch_mode = TextureButton.STRETCH_SCALE
+		tb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		tb.toggle_mode = true
+		tb.position = Vector2(PAD + float(i) * 268.0, 18.0)
+		tb.size = Vector2(252.0, 36.0)
+		tb.z_index = 2
+		Ui.hover_pop(tb)
+		tb.pressed.connect(func() -> void: _set_gear_mode(mode))
+		root.add_child(tb)
+		var tl := _panel_label(root, Vector2(tb.position.x, 25.0),
+			Type.SIZE_MID, Color(1.0, 0.97, 0.92), 252.0, 22.0)
+		tl.text = "장착 장비" if i == 0 else "보관함"
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tl.z_index = 2
+		_shop_outline(tl, 8)
+		_gear_mode_buttons[mode] = tb
 	_gear_equipped_view = Control.new()
 	_gear_equipped_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_equipped_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2653,12 +2669,21 @@ func _build_gear(root: Control) -> void:
 		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		# 이 폰트는 한글 글자 폭이 크기보다 넓다 — 칸이 좁으면 크기부터 내린다.
 		# 160px: 여백 24 + 아이콘 20 + 간격 4 를 빼면 112px, "정수 999.9t"(108)가 들어간다.
-		var b := Ui.button("", Vector2(at.x + SLOT_BOX * 0.5 - 80.0, 186.0),
-			Vector2(160.0, 48.0), Type.SIZE_SMALL)
-		Ui.cost_icon(b, "res://assets/items/gem.png")
+		# 강화 버튼도 대장간 철판. 값은 라벨·아이콘이 적는다(그림 버튼이라).
+		var bx := Vector2(at.x + SLOT_BOX * 0.5 - 80.0, 186.0)
+		var btex := _shop_tex(_gear_equipped_view,
+			"res://assets/ui/sets/forge_button.png", bx, Vector2(160.0, 48.0))
+		var bic := Ui.icon("res://assets/items/gem.png", bx + Vector2(18.0, 14.0), 20.0)
+		bic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_gear_equipped_view.add_child(bic)
+		var blb := _panel_label(_gear_equipped_view, bx + Vector2(44.0, 14.0),
+			Type.SIZE_SMALL, Color(1.0, 0.95, 0.90), 108.0, 20.0)
+		_shop_outline(blb, 6)
+		var b := _shop_ghost(_gear_equipped_view, Vector2(160.0, 48.0), btex)
+		b.position = bx
 		b.pressed.connect(func() -> void: _enhance(slot))
-		_gear_equipped_view.add_child(b)
-		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl, "btn": b}
+		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl,
+			"btn": b, "btn_tex": btex, "btn_lbl": blb, "btn_icon": bic}
 	# 정수 잔액 — 정수를 쓰는 화면이 여기다(강화). 상단바에서 내려왔다: 상단은
 	# 핵심 2개(혈액·보석)만 남기고, 재화는 쓰는 곳에 둔다(레퍼런스 방식).
 	var ep := Ui.pill(Vector2(PAD + CONTENT_W * 0.5 - 70.0, 252.0),
@@ -3276,9 +3301,10 @@ func _refresh_gear_slots() -> void:
 			nodes["frame"].modulate = Color(0.45, 0.45, 0.5)
 			nodes["label"].text = GearDefs.SLOT_NAME[slot]
 			nodes["label"].add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
-			btn.text = "비었음"
-			btn.icon = null
+			nodes["btn_lbl"].text = "비었음"
+			nodes["btn_icon"].visible = false
 			btn.disabled = true
+			_gate_btn_dim(nodes["btn_tex"], nodes["btn_lbl"], true)
 			continue
 		nodes["icon"].texture = Assets.tex(GearDefs.icon_path(item))
 		nodes["frame"].texture = Assets.tex(GearDefs.slot_frame(item))
@@ -3288,10 +3314,11 @@ func _refresh_gear_slots() -> void:
 		nodes["label"].text = "%s +%s" % [str(item["name"]), _n(GearDefs.power(item))]
 		nodes["label"].add_theme_color_override("font_color", Color(item["col"]))
 		var cost := GearDefs.upgrade_cost(item)
-		Ui.cost_icon(btn, "res://assets/items/gem.png")
+		nodes["btn_icon"].visible = true
 		# 한 줄로 둔다 — 두 줄이면 아랫줄이 버튼 테두리를 넘는다.
-		btn.text = "정수 %s" % _n(cost)
+		nodes["btn_lbl"].text = "정수 %s" % _n(cost)
 		btn.disabled = essence < cost
+		_gate_btn_dim(nodes["btn_tex"], nodes["btn_lbl"], btn.disabled)
 
 
 func _enhance(slot: String) -> void:
