@@ -1282,7 +1282,15 @@ func _build_topbar() -> void:
 	#   그 오른쪽: 교차검 아이콘 + 전투력 / 그 아래 칭호·닉네임 판
 	#   오른쪽 위: 재화 **바 하나**에 세 쌍 (알약 셋이 아니다)
 	#   가운데   : 막이름+단계 -> 상태 태그 -> 진행바(숫자는 홈통 안)
+	# 초상화 묶음은 **레이드에서 통째로 감춘다**(사장님 2026-08-14, 레퍼런스:
+	# 보스전 화면에는 상단 소품이 없다). 노드가 여럿이라 이름을 다 들고 있느니
+	# 만들어진 자리를 표시해 두고 그 뒤에 붙은 것을 담는다.
+	var portrait_mark := _hud_root.get_child_count()
 	_build_portrait()
+	for i in range(portrait_mark, _hud_root.get_child_count()):
+		var n := _hud_root.get_child(i)
+		if n is CanvasItem:
+			_hud_raid_hide.append(n)
 	# ── 재화. **재화마다 검은 알약 하나씩**, 앞에 아이콘 뒤에 숫자(레퍼런스).
 	# 예전엔 돌 바 하나에 세 쌍을 우겨넣었는데, 무늬 있는 바가 늘어나면서 뭉개지고
 	# 숫자가 그 위에 얹혀 안 읽혔다. 판이 무늬 없는 검정이면 숫자가 그냥 읽힌다.
@@ -3906,7 +3914,8 @@ func _refresh_chest() -> void:
 		return
 	# 상자 아래 글자는 뺐다 — 얼마인지는 눌러서 받을 때 알림으로 뜬다.
 	# 전면 판 탭에서는 안 보인다 — 전투 화면 소품이라 판 위에 떠 버린다(실측).
-	_chest_btn.visible = chest_gold > 0.0 and _tab not in FULL_TABS
+	# 레이드 중에도 안 보인다 — 그 화면은 보스 정보만 남는다(레퍼런스).
+	_chest_btn.visible = chest_gold > 0.0 and _tab not in FULL_TABS and not _in_raid()
 
 
 # 방치 보상은 **팝업으로 편다** (사장님 + 레퍼런스 "방치 보상" 창): 한 줄
@@ -4548,7 +4557,9 @@ func _tick_income() -> void:
 	for v in _income_ring:
 		per_min += v
 	if _lbl_income:
-		_lbl_income.visible = per_min > 0.0
+		# 레이드에서는 상단이 비어야 한다 — 여기서도 같은 규칙을 본다
+		# (이 함수가 매 초 다시 켜므로 _refresh_currency_visibility 만으로는 못 막는다).
+		_lbl_income.visible = per_min > 0.0 and not _in_raid()
 		_lbl_income.text = "사냥 중  혈액 %s/분" % _n(per_min)
 
 
@@ -8178,6 +8189,7 @@ func _boss_exit(reason: String) -> void:
 	_offline_banner.visible = true
 	_offline_t = 4.0
 	_restart_stage(reason)
+	_refresh_currency_visibility()
 	_refresh_dungeon()
 	_save_game()
 
@@ -8253,6 +8265,7 @@ func _raid_enter(kind: String) -> void:
 func _enter_battle_view() -> void:
 	if _tab in FULL_TABS:
 		_select_tab("growth")
+	_refresh_currency_visibility()   # 상단 소품이 레이드 규칙으로 바뀐다
 
 
 func _raid_exit(reason: String) -> void:
@@ -8261,6 +8274,7 @@ func _raid_exit(reason: String) -> void:
 	raid_on = ""
 	# `stage` 는 건드린 적이 없으므로 재시작만 하면 본편 그 자리다(미궁과 동일).
 	_restart_stage(reason)
+	_refresh_currency_visibility()
 	_refresh_dungeon()
 
 
@@ -8289,6 +8303,7 @@ func _dungeon_exit(reason: String) -> void:
 	dungeon_on = false
 	# `stage` 는 건드린 적이 없으므로 재시작만 하면 본편 그 자리다.
 	_restart_stage(reason)
+	_refresh_currency_visibility()
 	_refresh_dungeon()
 
 
@@ -9038,6 +9053,13 @@ func _notify_power(now: float) -> void:
 # 다 쓰고 0이 됐다고 다시 사라지면 그게 더 이상하다.
 var _currency_seen := {"gem": false}
 var _currency_pills: Array[Panel] = []
+# 레이드(재화 던전·미궁·보스)에서 감추는 상단 소품 — 초상화 묶음이 여기 담긴다.
+var _hud_raid_hide: Array[CanvasItem] = []
+
+
+# 지금이 레이드 화면인가. 상단 소품과 재화 알약이 이걸 보고 숨는다.
+func _in_raid() -> bool:
+	return raid_on != "" or dungeon_on
 
 
 # 잠긴 재화는 알약째로 숨기고, 남은 것을 **오른쪽 끝부터** 다시 붙인다.
@@ -9045,8 +9067,22 @@ var _currency_pills: Array[Panel] = []
 func _refresh_currency_visibility() -> void:
 	if _currency_pills.size() < 2:
 		return
+	# 레이드에서는 **상단이 통째로 빈다**(레퍼런스). 재화는 그 화면에서 쓸 일이
+	# 없고, 보스 이름·타이머·체력만 남아야 한판이 무엇인지가 곧바로 읽힌다.
+	var raid := _in_raid()
+	for n in _hud_raid_hide:
+		n.visible = not raid
+	if _lbl_income:
+		_lbl_income.visible = _lbl_income.visible and not raid
+	# 전투 화면에 떠 있는 소품들도 같이 빠진다 — 가이드는 본편 진도를 재는 것이고
+	# 방치 상자·바로가기는 레이드 안에서 누를 일이 없다(레퍼런스: 보스전은 비어 있다).
+	if _goal_widget:
+		_goal_widget.visible = not raid and _tab not in FULL_TABS
+	if _side_root:
+		_side_root.visible = not raid and _tab not in FULL_TABS
+	_refresh_chest()
 	_currency_seen["gem"] = _currency_seen["gem"] or gem > 0.0
-	var open := [true, bool(_currency_seen["gem"])]
+	var open := [not raid, bool(_currency_seen["gem"]) and not raid]
 	var x := float(Grid.BG.x) - 8.0
 	for i in range(_currency_pills.size() - 1, -1, -1):
 		_currency_pills[i].visible = open[i]
@@ -9078,8 +9114,18 @@ static func stage_progress_text(at_stage: int, done: int, need: int) -> String:
 func _refresh_hud() -> void:
 	var act: Dictionary = _c_act_data()
 	# 레퍼런스의 "미궁 54층-4" 자리. 미궁에서는 "미궁 N층"이 그대로 그 자리다.
-	_lbl_stage.text = _c_label() if dungeon_on \
-		else "스테이지 %s" % StageDefs.label(stage)
+	# 레이드에서는 **거기가 어디인지**를 적는다(레퍼런스 "필드보스 20단계") —
+	# 본편 구간 번호는 그 안에서 아무 뜻이 없다.
+	if raid_on == "boss":
+		_lbl_stage.text = "%s  %d단계" % [
+			str(EventDefs.boss_of(_boss_week_index())["name"]), boss_tier]
+	elif raid_on != "":
+		_lbl_stage.text = "%s  %d단계" % [str(RaidDefs.RAIDS[raid_on]["name"]),
+			int(raid_best.get(raid_on, 0)) + 1]
+	elif dungeon_on:
+		_lbl_stage.text = _c_label()
+	else:
+		_lbl_stage.text = "스테이지 %s" % StageDefs.label(stage)
 	var need := _c_kills_needed()
 	# 보스 구간은 처치 수가 0 아니면 1이라 진행바가 끝까지 비어 있다가 갑자기 찼다.
 	# **남은 체력을 대신 보여 준다** — 그게 이 구간의 진행도다.
