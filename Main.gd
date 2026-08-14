@@ -3323,6 +3323,7 @@ func _build_gacha(root: Control) -> void:
 		tb.toggle_mode = true
 		tb.position = Vector2(PAD + float(i) * (kw + 8.0), 232.0)
 		tb.size = Vector2(kw, 36.0)
+		Ui.hover_pop(tb)
 		tb.pressed.connect(func() -> void: _set_gacha_kind(kind))
 		root.add_child(tb)
 		var tl := _panel_label(root, Vector2(tb.position.x, 239.0),
@@ -3361,7 +3362,7 @@ func _build_gacha(root: Control) -> void:
 	_gacha_table_lbl.text = "확률표"
 	_gacha_table_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_gacha_table_lbl, 5)
-	var table_btn := _shop_ghost(root, Vector2(116.0, 34.0))
+	var table_btn := _shop_ghost(root, Vector2(116.0, 34.0), _gacha_table_tex)
 	table_btn.position = tpos
 	_gacha_table_btn = table_btn
 	table_btn.pressed.connect(func() -> void:
@@ -3397,7 +3398,7 @@ func _build_gacha(root: Control) -> void:
 		blb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(blb, 8)
 		_gacha_btn_lbl[key] = blb
-		var gb := _shop_ghost(root, Vector2(258.0, 58.0))
+		var gb := _shop_ghost(root, Vector2(258.0, 58.0), _gacha_btn_tex[key])
 		gb.position = bpos
 		gb.pressed.connect(func() -> void: _pull_gacha(count))
 		_gacha_buttons[key] = gb
@@ -5042,7 +5043,7 @@ func _build_dungeon(root: Control) -> void:
 		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 150.0, 22.0)
 	_dungeon_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_dungeon_btn_lbl, 8)
-	_dungeon_btn = _shop_ghost(root, Vector2(150.0, 44.0))
+	_dungeon_btn = _shop_ghost(root, Vector2(150.0, 44.0), _dungeon_btn_tex)
 	_dungeon_btn.position = dbx
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
@@ -5143,6 +5144,7 @@ func _build_raids(root: Control) -> void:
 		mb.toggle_mode = true
 		mb.position = Vector2(PAD + float(i) * (mw + 10.0), 232.0)
 		mb.size = Vector2(mw, 36.0)
+		Ui.hover_pop(mb)
 		mb.pressed.connect(func() -> void: _raid_set_mode(mode))
 		root.add_child(mb)
 		var ml := _panel_label(root, Vector2(mb.position.x, 239.0),
@@ -5220,7 +5222,7 @@ func _build_boss_panel(root: Control) -> void:
 		Color(1.0, 0.95, 0.90), 148.0, 22.0)
 	_boss_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_boss_btn_lbl, 8)
-	_boss_btn = _shop_ghost(root, Vector2(148.0, 50.0))
+	_boss_btn = _shop_ghost(root, Vector2(148.0, 50.0), _boss_btn_tex)
 	_boss_btn.position = bbx
 	_boss_btn.pressed.connect(func() -> void:
 		if raid_on == "boss":
@@ -5269,7 +5271,7 @@ func _build_boss_panel(root: Control) -> void:
 			mbx + Vector2(8.0, 12.0), 16.0)
 		mic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(mic)
-		var b := _shop_ghost(root, Vector2(114.0, 38.0))
+		var b := _shop_ghost(root, Vector2(114.0, 38.0), mtex)
 		b.position = mbx
 		b.pressed.connect(func() -> void: _claim_milestone(idx))
 		_boss_rows.append({"prog": pr, "btn": b, "fill": fill,
@@ -5420,7 +5422,7 @@ func _build_raid_list(root: Control) -> void:
 		bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(bl, 8)
 		_raid_btn_lbl[kind] = bl
-		var eb := _shop_ghost(root, Vector2(156.0, 50.0))
+		var eb := _shop_ghost(root, Vector2(156.0, 50.0), _raid_btn_tex[kind])
 		eb.position = bx
 		eb.pressed.connect(func() -> void:
 			if raid_on == kind:
@@ -5790,6 +5792,7 @@ func _build_shop(root: Control) -> void:
 		tb.toggle_mode = true
 		tb.position = Vector2(PAD + float(i) * (sw + 10.0), SHOP_TAB_Y)
 		tb.size = Vector2(sw, 36.0)
+		Ui.hover_pop(tb)
 		tb.pressed.connect(func() -> void: _shop_set_mode(mode))
 		root.add_child(tb)
 		# 박쥐 문양이 알약 정중앙이라 글자와 무조건 겹친다 — 11px 는 문양에
@@ -5846,12 +5849,23 @@ func _shop_tex(parent: Control, file: String, pos: Vector2,
 
 # 카드 전체를 덮는 투명 버튼 — 가격 띠가 이미 버튼처럼 그려져 있어서
 # 그림 위에 또 버튼 판을 얹으면 이중 액자가 된다.
-func _shop_ghost(parent: Control, size: Vector2) -> Button:
+#
+# 투명하니 **자기가 커져 봤자 안 보인다** — 호버 반응은 짝지어진 그림(tex)이
+# 대신 낸다(사장님 2026-08-14: 전 버튼에 호버). tex 를 안 넘기면 반응이 없다.
+func _shop_ghost(parent: Control, size: Vector2, tex: Control = null) -> Button:
 	var b := Button.new()
 	b.size = size
 	for st in ["normal", "hover", "pressed", "disabled", "focus"]:
 		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
 	parent.add_child(b)
+	if tex:
+		tex.pivot_offset = tex.size * 0.5
+		b.mouse_entered.connect(func() -> void:
+			if not b.disabled:
+				Ui._pop_to(tex, Ui.HOVER_SCALE))
+		b.mouse_exited.connect(func() -> void: Ui._pop_to(tex, 1.0))
+		b.button_down.connect(func() -> void: tex.scale = Vector2(0.95, 0.95))
+		b.button_up.connect(func() -> void: Ui._pop_to(tex, Ui.HOVER_SCALE))
 	return b
 
 
@@ -5935,7 +5949,7 @@ func _shop_vcard(parent: Control, pos: Vector2) -> Dictionary:
 	stamp.visible = false
 	var lock := _shop_tex(card, "lock", Vector2(94.0, 62.0), Vector2(52.0, 77.0))
 	lock.visible = false
-	var btn := _shop_ghost(card, card.size)
+	var btn := _shop_ghost(card, card.size, card)
 	return {"root": card, "title": title, "icon": icon, "amount": amount,
 		"left": left, "price": price, "stamp": stamp, "lock": lock, "btn": btn}
 
@@ -5966,7 +5980,7 @@ func _shop_wcard(parent: Control, y: float, name: String, icon_path: String,
 	price.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var lock := _shop_tex(card, "lock", Vector2(219.0, 52.0), Vector2(56.0, 83.0))
 	lock.visible = false
-	var btn := _shop_ghost(card, card.size)
+	var btn := _shop_ghost(card, card.size, card)
 	return {"root": card, "title": title, "icon": icon, "sub": sub,
 		"price": price, "lock": lock, "btn": btn}
 
@@ -8148,6 +8162,7 @@ func _boss_enter() -> void:
 	_boss_dps_snap = dps()
 	raid_on = "boss"
 	_restart_stage("주간 보스 도전")
+	_enter_battle_view()
 	_refresh_dungeon()
 	_save_game()
 
@@ -8227,8 +8242,17 @@ func _raid_enter(kind: String) -> void:
 	# 물리면 도전 자체를 안 하게 된다(사장님 2026-08-12).
 	raid_on = kind
 	_restart_stage("%s 입장" % str(RaidDefs.RAIDS[kind]["name"]))
+	_enter_battle_view()
 	_refresh_dungeon()
 	_save_game()
+
+
+# 던전·미궁·보스에 **들어가면 전투가 보여야 한다**. 이 셋의 탭이 전면 판이
+# 되면서(2026-08-13) 입장해도 판이 화면을 덮고 있어 "들어갔는데 아무 일도
+# 안 일어난 것"처럼 보였다(사장님 버그 신고). 반판 탭으로 옮겨 전투를 연다.
+func _enter_battle_view() -> void:
+	if _tab in FULL_TABS:
+		_select_tab("growth")
 
 
 func _raid_exit(reason: String) -> void:
@@ -8252,6 +8276,7 @@ func _dungeon_enter() -> void:
 	# 지금은 기록만 남지만 2단계에서 소탕 기준층이 되므로 도는 것 자체는 무의미하지 않다.
 	dungeon_floor = clampi(dungeon_best + 1, 1, open)
 	_restart_stage("미궁 입장")
+	_enter_battle_view()
 	_refresh_dungeon()
 
 

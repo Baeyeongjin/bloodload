@@ -90,7 +90,33 @@ static func button(text: String, pos: Vector2, size: Vector2,
 	b.pivot_offset = Grid.pxv(size) * 0.5
 	b.button_down.connect(func() -> void: b.scale = Vector2(0.93, 0.93))
 	b.button_up.connect(func() -> void: b.scale = Vector2.ONE)
+	hover_pop(b)
 	return b
+
+
+# 마우스가 올라가면 **살짝 부푼다** (사장님 2026-08-14: 전 버튼에 호버 반응).
+# 눌림(0.93)과 반대 방향이라 둘이 안 싸운다: 올라감 1.04 -> 누름 0.93 -> 뗌 1.04.
+# 트윈은 **한 번에 하나만** 돈다 — 빠르게 들락거리면 트윈이 겹쳐 크기가 튄다.
+const HOVER_SCALE := 1.04
+const HOVER_TIME := 0.07
+static func hover_pop(c: Control) -> void:
+	if c.pivot_offset == Vector2.ZERO:
+		c.pivot_offset = c.size * 0.5
+	c.mouse_entered.connect(func() -> void:
+		if c is BaseButton and (c as BaseButton).disabled:
+			return
+		_pop_to(c, HOVER_SCALE))
+	c.mouse_exited.connect(func() -> void: _pop_to(c, 1.0))
+
+
+static func _pop_to(c: Control, to: float) -> void:
+	var old: Variant = c.get_meta("hover_tw", null)
+	if old is Tween and (old as Tween).is_valid():
+		(old as Tween).kill()
+	var tw := c.create_tween()
+	c.set_meta("hover_tw", tw)
+	tw.tween_property(c, "scale", Vector2(to, to), HOVER_TIME) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 # 버튼 왼쪽 비용 아이콘. 20px 이 기본인데 **소환 버튼처럼 큰 버튼에서는 작다** —
