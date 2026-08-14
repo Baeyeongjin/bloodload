@@ -21,11 +21,16 @@ CLOTH = [(0x52, 0x16, 0x25), (0x4E, 0x10, 0x20), (0x40, 0x13, 0x17)]
 # 스킨 = 그 셋을 무엇으로 바꾸는가. 밝은 순서(하이라이트·중간·그림자)를 지킨다 —
 # 순서가 뒤집히면 옷의 입체가 뒤집혀 평평해 보인다.
 # [의상 3색, 머리 장식]. 장식이 실루엣을 바꾼다 — 색만으로는 약하다(사장님).
+# [의상 3색, 머리 장식, 어깨 갑옷]. 색만으로는 약해서 실루엣을 같이 바꾼다(사장님).
 SKINS = {
-    "valentino_silver": ([(0x8A, 0x92, 0xA8), (0x5C, 0x64, 0x78), (0x3A, 0x40, 0x50)], "plume"),
-    "valentino_gold":   ([(0xC8, 0x9B, 0x3C), (0x96, 0x70, 0x22), (0x5E, 0x45, 0x14)], "crown"),
-    "valentino_abyss":  ([(0x5B, 0x3A, 0x8C), (0x3E, 0x27, 0x62), (0x26, 0x17, 0x3E)], "horns"),
-    "valentino_plague": ([(0x5E, 0x8C, 0x3A), (0x3F, 0x62, 0x26), (0x25, 0x3E, 0x17)], "hood"),
+    "valentino_silver": ([(0x8A, 0x92, 0xA8), (0x5C, 0x64, 0x78), (0x3A, 0x40, 0x50)],
+        "plume", "round"),
+    "valentino_gold":   ([(0xC8, 0x9B, 0x3C), (0x96, 0x70, 0x22), (0x5E, 0x45, 0x14)],
+        "crown", "spike"),
+    "valentino_abyss":  ([(0x5B, 0x3A, 0x8C), (0x3E, 0x27, 0x62), (0x26, 0x17, 0x3E)],
+        "horns", "wing"),
+    "valentino_plague": ([(0x5E, 0x8C, 0x3A), (0x3F, 0x62, 0x26), (0x25, 0x3E, 0x17)],
+        "hood", "spike"),
 }
 
 
@@ -74,6 +79,19 @@ CRESTS = {
 SKIN_TONE = [(0xAA, 0x8D, 0x76), (0xD3, 0xB5, 0x9D)]
 
 
+# 어깨 갑옷 — 얼굴 아래 4~6행이 어깨다(실측: 몸통이 그 줄부터 넓어진다).
+# 가운데는 비워 둔다: 채우면 목이 사라져 덩어리로 보인다.
+# 어깨 갑옷 — **몸통 밖으로 뻗어야 실루엣이 바뀐다.** 문자 그림으로 중심에서
+# 재면 몸통 안에 갇혀 안 보였다(실측). 줄마다 몸통 좌우 끝을 찾아 그 바깥에
+# 붙인다 — 프레임마다 팔 위치가 달라도 따라간다.
+#   [줄별 뻗는 칸 수] — 위에서 아래로. 0 이면 그 줄은 안 그린다.
+SHOULDERS = {
+    "spike": [2, 4, 3, 1],     # 뾰족하게 벌어졌다 좁아진다
+    "round": [3, 4, 4, 2],     # 둥글고 두껍게
+    "wing":  [4, 3, 2, 5],     # 아래가 다시 벌어진다 — 날개깃
+}
+
+
 def head_anchor(im):
     """얼굴 꼭대기 (x 중심, y). 살색이 처음 나오는 줄이 이마다."""
     px = im.load()
@@ -85,28 +103,46 @@ def head_anchor(im):
     return None
 
 
-def add_crest(im, kind, table):
-    """머리 위에 장식을 얹는다. 1=밝은 색, 0=그림자 색(스킨 표에서 가져온다)."""
-    art = CRESTS.get(kind)
-    if not art:
-        return im
-    at = head_anchor(im)
-    if at is None:
-        return im
-    cx, top = at
-    w = len(art[0])
+def _stamp(im, art, cx, y0, table):
+    """문자 그림을 그 자리에 찍는다. 1=밝은 색, 0=그림자 색."""
     px = im.load()
+    w = len(art[0])
     for row, line in enumerate(art):
-        y = top - len(art) + row + 2
-        if y < 0:
+        y = y0 + row
+        if not (0 <= y < im.height):
             continue
         for col, ch in enumerate(line):
             if ch == ".":
                 continue
             x = cx - w // 2 + col
-            if not (0 <= x < im.width):
+            if 0 <= x < im.width:
+                px[x, y] = (table[0] if ch == "1" else table[2]) + (255,)
+
+
+def add_parts(im, crest, shoulder, table):
+    """머리 장식과 어깨 갑옷. 둘 다 얼굴 자리를 기준으로 잡는다."""
+    at = head_anchor(im)
+    if at is None:
+        return im
+    cx, top = at
+    px = im.load()
+    if shoulder and shoulder in SHOULDERS:
+        # 어깨가 먼저다 — 뒤에 그리면 머리 장식 위를 덮는다.
+        for row, out in enumerate(SHOULDERS[shoulder]):
+            y = top + 4 + row
+            if out <= 0 or not (0 <= y < im.height):
                 continue
-            px[x, y] = (table[0] if ch == "1" else table[2]) + (255,)
+            xs = [x for x in range(im.width) if px[x, y][3] > 40]
+            if not xs:
+                continue
+            for i in range(out):
+                for x in (min(xs) - 1 - i, max(xs) + 1 + i):
+                    if 0 <= x < im.width:
+                        # 바깥일수록 어둡게 — 평평한 덩어리로 안 보이게.
+                        px[x, y] = (table[0] if i == 0 else table[1]) + (255,)
+    if crest and crest in CRESTS:
+        art = CRESTS[crest]
+        _stamp(im, art, cx, top - len(art) + 2, table)
     return im
 
 
@@ -125,7 +161,7 @@ def recolor(im, table):
     return im
 
 
-def build(name, table, crest):
+def build(name, table, crest, shoulder):
     n = 0
     for entry in os.listdir(ANIM):
         if not entry.startswith(SRC + "_"):
@@ -137,11 +173,13 @@ def build(name, table, crest):
             if not f.endswith(".png"):
                 continue
             im = Image.open("%s/%s/%s" % (ANIM, entry, f))
-            add_crest(recolor(im, table), crest, table).save("%s/%s" % (out_dir, f))
+            add_parts(recolor(im, table), crest, shoulder, table).save(
+                "%s/%s" % (out_dir, f))
             n += 1
     # 초상화·카드에 쓰는 정지 그림도 같이.
     im = Image.open("%s/%s.png" % (HERO, SRC))
-    add_crest(recolor(im, table), crest, table).save("%s/%s.png" % (HERO, name))
+    add_parts(recolor(im, table), crest, shoulder, table).save(
+        "%s/%s.png" % (HERO, name))
     print("%-20s %3d 프레임" % (name, n))
 
 
@@ -151,8 +189,8 @@ def preview():
     w, h = base.size
     sheet = Image.new("RGBA", (w * (len(SKINS) + 1), h), (0, 0, 0, 0))
     sheet.paste(base, (0, 0))
-    for i, (name, (table, crest)) in enumerate(SKINS.items()):
-        sheet.paste(add_crest(recolor(base.copy(), table), crest, table),
+    for i, (name, (table, crest, shoulder)) in enumerate(SKINS.items()):
+        sheet.paste(add_parts(recolor(base.copy(), table), crest, shoulder, table),
                     (w * (i + 1), 0))
     sheet = sheet.resize((sheet.width * 6, sheet.height * 6), Image.NEAREST)
     sheet.save("skin_preview.png")
@@ -163,5 +201,5 @@ if __name__ == "__main__":
     if "--preview" in sys.argv:
         preview()
     else:
-        for name, (table, crest) in SKINS.items():
-            build(name, table, crest)
+        for name, (table, crest, shoulder) in SKINS.items():
+            build(name, table, crest, shoulder)
