@@ -441,6 +441,7 @@ var buy_step := 1          # 한 번에 올리는 단계 수 (x1 / x10 / x100)
 var _stat_rows := {}
 var _growth_mode := "stat"
 var _growth_mode_buttons := {}
+var _growth_mode_labels := {}   # 그림 탭이라 글자는 따로 얹는다
 var _stat_view: Control
 var _skill_view: Control
 var _skill_slots: Array[Dictionary] = []
@@ -1715,15 +1716,28 @@ func _build_growth(root: Control) -> void:
 	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"],
 		["pact", "혈맹"], ["relic", "유물"]]
 	var mode_w := (CONTENT_W - 12.0 * float(modes.size() - 1)) / float(modes.size())
+	# 성장은 **내 피를 다루는 곳**이라 전용 세트를 뽑았다(sets/blood_*).
+	# 켬/끔 그림이 따로 없어 밝기로 가른다 — 켠 쪽만 제 색이고 나머지는 눌린다.
 	for i in modes.size():
 		var mode: String = modes[i][0]
-		var mb := Ui.button(str(modes[i][1]),
-			Vector2(PAD + float(i) * (mode_w + 12.0), PAD - 4.0),
-			Vector2(mode_w, 34.0), Type.SIZE_SMALL)
+		var mb := TextureButton.new()
+		mb.texture_normal = Assets.tex("res://assets/ui/sets/blood_tab.png")
+		mb.ignore_texture_size = true
+		mb.stretch_mode = TextureButton.STRETCH_SCALE
+		mb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		mb.toggle_mode = true
+		mb.position = Vector2(PAD + float(i) * (mode_w + 12.0), PAD - 4.0)
+		mb.size = Vector2(mode_w, 34.0)
+		Ui.hover_pop(mb)
 		mb.pressed.connect(func() -> void: _set_growth_mode(mode))
 		root.add_child(mb)
+		var ml := _panel_label(root, Vector2(mb.position.x, PAD + 3.0),
+			Type.SIZE_SMALL, Color(1.0, 0.96, 0.92), mode_w, 20.0)
+		ml.text = str(modes[i][1])
+		ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(ml, 6)
 		_growth_mode_buttons[mode] = mb
+		_growth_mode_labels[mode] = ml
 
 	_stat_view = Control.new()
 	_stat_view.size = Vector2(PANEL_W, PANEL_H)
@@ -1771,7 +1785,14 @@ func _set_growth_mode(mode: String) -> void:
 	_pact_view.visible = mode == "pact"
 	_relic_view.visible = mode == "relic"
 	for key in _growth_mode_buttons:
-		_growth_mode_buttons[key].set_pressed_no_signal(key == mode)
+		var on: bool = key == mode
+		_growth_mode_buttons[key].set_pressed_no_signal(on)
+		# 켬/끔 그림이 따로 없으니 **밝기가 선택 표시**다.
+		_growth_mode_buttons[key].modulate = Color(1, 1, 1) if on \
+			else Color(0.52, 0.46, 0.50)
+		if _growth_mode_labels.has(key):
+			_growth_mode_labels[key].modulate = Color(1, 1, 1) if on \
+				else Color(0.72, 0.68, 0.70)
 	if mode == "skill":
 		_refresh_skills()
 	elif mode == "trait":
