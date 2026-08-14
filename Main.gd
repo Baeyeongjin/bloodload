@@ -5046,7 +5046,8 @@ func _build_dungeon(root: Control) -> void:
 	# 머리판은 **그림과 검은 테두리만**이다 (사장님). 금테 카드를 두르고 그 안에
 	# 버튼까지 넣었더니 테두리가 두 겹이고 버튼이 그림 위에 떠 있었다.
 	var edge := ColorRect.new()
-	edge.color = Color(0.02, 0.02, 0.03)
+	# 던전 세트의 돌·철 색. 새까맣게 두면 이 판만 다른 화면처럼 뜬다(사장님).
+	edge.color = Color(0.26, 0.24, 0.25)
 	# 테두리는 **6px** — 3px 로 뒀더니 오른쪽 변이 얇아 안 보여서 그림이 판을
 	# 튀어나온 것처럼 읽혔다(사장님).
 	edge.position = Vector2(PAD - 6.0, PAD - 10.0)
@@ -5087,12 +5088,13 @@ func _build_dungeon(root: Control) -> void:
 	_shop_outline(_dungeon_btn_lbl, 8)
 	_dungeon_btn = _shop_ghost(root, Vector2(150.0, 44.0), _dungeon_btn_tex)
 	_dungeon_btn.position = dbx
+	# 재화 던전·주간 보스와 같은 문법 — 상세 판을 한 번 거친다(사장님 2026-08-14).
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
 			_dungeon_exit("미궁 이탈")
+			_refresh_dungeon()
 		else:
-			_dungeon_enter()
-		_refresh_dungeon())
+			_raid_detail_open("maze"))
 	# 수치 칸 3개 — 최고층(왕관) · 개방층(철문) · 혈정. 돌 알약.
 	var chip_w := (MAZE_W - 20.0) / 3.0
 	var chip_icons := ["badge_mastery", "tab_dungeon", "res_crystal"]
@@ -5269,12 +5271,13 @@ func _build_boss_panel(root: Control) -> void:
 	_shop_outline(_boss_btn_lbl, 8)
 	_boss_btn = _shop_ghost(root, Vector2(148.0, 50.0), _boss_btn_tex)
 	_boss_btn.position = bbx
+	# 재화 던전과 같은 문법 — 바로 안 들어가고 상세 판을 한 번 거친다.
 	_boss_btn.pressed.connect(func() -> void:
 		if raid_on == "boss":
 			_boss_exit("도전 중단")
+			_refresh_dungeon()
 		else:
-			_boss_enter()
-		_refresh_dungeon())
+			_raid_detail_open("boss"))
 	# 이정표 넷 — **가로로 긴 전용 띠**(gate_bar). 알약(214px)을 544 로 펴면
 	# 끝 곡선이 뭉갠다(실측) — 그래서 이 비율 전용 자산을 따로 뽑았다.
 	for i in EventDefs.MILESTONES.size():
@@ -5420,7 +5423,10 @@ func _build_raid_detail(root: Control) -> void:
 	_rd_btn.pressed.connect(func() -> void:
 		var k := _raid_detail_kind
 		_raid_detail.visible = false
-		_raid_enter(k)
+		match k:
+			"boss": _boss_enter()
+			"maze": _dungeon_enter()
+			_: _raid_enter(k)
 		_refresh_dungeon())
 	# 돌아가기 — 상세는 덮는 판이라 나갈 길이 반드시 있어야 한다.
 	var close := Ui.button("돌아가기", Vector2((PANEL_W - 150.0) * 0.5, top + 424.0),
@@ -5465,6 +5471,51 @@ func _raid_detail_open(kind: String) -> void:
 		return
 	_raid_detail_kind = kind
 	_raid_detail.visible = true
+	# 주간 보스도 **같은 판**을 쓴다(사장님 2026-08-14) — 들어가기 전에 무엇을
+	# 상대하는지 보는 자리라는 뜻이 같다. 다른 건 재는 값뿐이다: 단계는 주간
+	# 티어, 보상은 이정표가 따로 있으니 이 판은 **누적 피해**를 보여 준다.
+	# 미궁도 같은 판이다 — 다른 건 재는 값뿐이다: 표가 없고(무제한) 다음 층과
+	# 그 층의 첫 돌파 혈정이 이 판의 값이다.
+	if kind == "maze":
+		var open := DungeonDefs.open_floors(best_stage)
+		var next := clampi(dungeon_best + 1, 1, maxi(1, open))
+		_rd_name.text = "핏빛 미궁"
+		_rd_stage.text = "%d층 도전" % next
+		_rd_goal.text = DungeonDefs.label(next)
+		_rd_icon.texture = Assets.tex("res://assets/ui/res_crystal.png")
+		# 이미 오른 층을 다시 돌면 혈정이 안 나온다 — 그 사실을 여기서 말해 준다.
+		_rd_reward.text = "혈정 +%s" % _n(DungeonDefs.first_clear_reward(next)) \
+			if next > dungeon_best else "기록 갱신 없음"
+		_rd_left.text = "최고 %d층  ·  개방 %d층  ·  표 없음" \
+			% [dungeon_best, open]
+		var can := open > 0 and raid_on == "" and not dungeon_on
+		_rd_btn_lbl.text = "도전" if can \
+			else "본편 %d 필요" % DungeonDefs.OPEN_STAGE
+		_rd_btn.disabled = not can
+		_gate_btn_dim(_rd_btn_tex, _rd_btn_lbl, _rd_btn.disabled)
+		# 미궁은 소탕이 없다 — 소탕 시급(혈맥)이 이미 그 몫을 딴 데서 치른다.
+		_rd_sweep_lbl.text = "소탕 없음"
+		_rd_sweep.disabled = true
+		_gate_btn_dim(_rd_sweep_tex, _rd_sweep_lbl, true)
+		return
+	if kind == "boss":
+		_boss_roll()
+		var eb := EventDefs.boss_of(_boss_week_index())
+		_rd_name.text = str(eb["name"])
+		_rd_stage.text = "%d단계" % boss_tier
+		_rd_goal.text = "40초 동안 최대한 때린다"
+		_rd_icon.texture = Assets.tex(EventDefs.art_path(eb))
+		_rd_reward.text = "누적 피해 %s" % _n(boss_dmg)
+		_rd_left.text = "오늘 %d / %d판  ·  이정표 넷을 받으면 다음 단계" \
+			% [boss_tries, EventDefs.TRIES_PER_DAY]
+		_rd_btn_lbl.text = "도전" if boss_tries > 0 else "내일"
+		_rd_btn.disabled = boss_tries <= 0 or dungeon_on or raid_on != ""
+		_gate_btn_dim(_rd_btn_tex, _rd_btn_lbl, _rd_btn.disabled)
+		# 보스는 소탕이 없다 — 성과가 누적 피해라 "대신 돌아 준다"가 성립 안 한다.
+		_rd_sweep_lbl.text = "소탕 없음"
+		_rd_sweep.disabled = true
+		_gate_btn_dim(_rd_sweep_tex, _rd_sweep_lbl, true)
+		return
 	var info: Dictionary = RaidDefs.RAIDS[kind]
 	var n := int(raid_best.get(kind, 0)) + 1
 	_rd_name.text = str(info["name"])
