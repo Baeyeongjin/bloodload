@@ -191,5 +191,30 @@ func _init() -> void:
 	assert(scene.raid_on == "", "표가 없는데 연속 도전이 들어갔다")
 	scene._raid_repeat = false
 
+	# ── 소탕 (사장님 2026-08-14, 레퍼런스) ─────────────────────────────────
+	# 이미 깬 단계를 전투 없이 받는다. 지키는 것 셋:
+	scene.raid_on = ""
+	scene.raid_left = {"blood": 3}
+	scene.raid_date = Time.get_date_string_from_system()
+	# 1) **깬 적이 없으면 못 한다** — 소탕이 선행 도전을 건너뛰면 아무도 안 돈다.
+	scene.raid_best["blood"] = 0
+	var g0: float = scene.gold
+	scene._raid_sweep("blood")
+	assert(is_equal_approx(scene.gold, g0), "기록도 없는데 소탕이 됐다")
+	assert(scene._raid_left("blood") == 3, "실패한 소탕이 표를 먹었다")
+	# 2) 기록이 있으면 **그 단계 뭉치**가 그대로 들어오고 표를 한 장 쓴다.
+	scene.raid_best["blood"] = 2
+	scene._raid_sweep("blood")
+	assert(scene.gold - g0 >= RaidDefs.reward("blood", 2) * 0.99,
+		"소탕 보상이 안 들어왔다")
+	assert(scene._raid_left("blood") == 2, "소탕이 표를 안 먹었다")
+	# 3) **단계는 안 오른다** — 소탕이 기록을 밀면 벽이 사라진다.
+	assert(int(scene.raid_best["blood"]) == 2, "소탕이 도전 단계를 올렸다")
+	# 표가 없으면 못 한다.
+	scene.raid_left["blood"] = 0
+	var g1: float = scene.gold
+	scene._raid_sweep("blood")
+	assert(is_equal_approx(scene.gold, g1), "표가 0인데 소탕이 됐다")
+
 	print("RaidCheck OK")
 	quit()

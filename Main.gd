@@ -5340,6 +5340,9 @@ var _rd_btn: Button
 var _rd_btn_tex: TextureRect
 var _rd_btn_lbl: Label
 var _rd_icon: TextureRect
+var _rd_sweep: Button          # 소탕 — 이미 깬 단계를 전투 없이
+var _rd_sweep_tex: TextureRect
+var _rd_sweep_lbl: Label
 
 
 func _build_raid_detail(root: Control) -> void:
@@ -5357,45 +5360,61 @@ func _build_raid_detail(root: Control) -> void:
 	back.size = Vector2(CONTENT_W + 28.0, FULL_BOTTOM - 208.0)
 	back.mouse_filter = Control.MOUSE_FILTER_STOP
 	_raid_detail.add_child(back)
-	var top := 236.0
+	# 그 위에 **던전 세트의 돌판**을 얹는다 — 검은 배경에 글자만 있으면 다른
+	# 화면들과 결이 안 맞아 이질적이다(사장님). 원본 비율(414x559)을 지킨다.
+	_shop_tex(_raid_detail, "res://assets/ui/sets/gate_detail.png",
+		Vector2((PANEL_W - 414.0) * 0.5, 222.0), Vector2(414.0, 460.0))
+	var top := 262.0
 	_rd_name = _panel_label(_raid_detail, Vector2(0.0, top), Type.SIZE_TITLE,
 		Color(0.98, 0.88, 0.62), PANEL_W, 40.0)
 	_rd_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_rd_name, 8)
 	# 단계는 알약 안에 — 레퍼런스도 이름 아래 별도 칩이다.
 	_shop_tex(_raid_detail, "res://assets/ui/sets/gate_pill.png",
-		Vector2((PANEL_W - 200.0) * 0.5, top + 48.0), Vector2(200.0, 34.0))
-	_rd_stage = _panel_label(_raid_detail, Vector2(0.0, top + 56.0),
+		Vector2((PANEL_W - 200.0) * 0.5, top + 52.0), Vector2(200.0, 34.0))
+	_rd_stage = _panel_label(_raid_detail, Vector2(0.0, top + 60.0),
 		Type.SIZE_MID, Color(0.95, 0.92, 0.90), PANEL_W, 22.0)
 	_rd_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_rd_stage, 6)
 	# 목표 — 이 판의 핵심. 카드에서는 한 줄로 줄었지만 여기서는 크게 적는다.
-	_rd_goal = _panel_label(_raid_detail, Vector2(0.0, top + 104.0),
+	_rd_goal = _panel_label(_raid_detail, Vector2(0.0, top + 100.0),
 		Type.SIZE_MID, Color(0.86, 0.90, 0.98), PANEL_W, 24.0)
 	_rd_goal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_rd_goal, 6)
 	# 보상 — 액자에 재화 그림, 아래 수량(레퍼런스 문법).
-	_shop_tex(_raid_detail, "card_art", Vector2((PANEL_W - 108.0) * 0.5,
-		top + 146.0), Vector2(108.0, 114.0))
-	_rd_icon = Ui.icon("", Vector2((PANEL_W - 64.0) * 0.5, top + 166.0), 64.0)
+	# 액자는 안 두른다 — 돌판에 알코브가 이미 파여 있다(두 겹이면 액자 속 액자).
+	_rd_icon = Ui.icon("", Vector2((PANEL_W - 72.0) * 0.5, top + 176.0), 72.0)
 	_rd_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raid_detail.add_child(_rd_icon)
-	_rd_reward = _panel_label(_raid_detail, Vector2(0.0, top + 268.0),
+	_rd_reward = _panel_label(_raid_detail, Vector2(0.0, top + 292.0),
 		Type.SIZE_MID, Color(0.98, 0.90, 0.70), PANEL_W, 24.0)
 	_rd_reward.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_rd_reward, 6)
-	_rd_left = _panel_label(_raid_detail, Vector2(0.0, top + 300.0),
+	_rd_left = _panel_label(_raid_detail, Vector2(0.0, top + 322.0),
 		Type.SIZE_SMALL, Color(0.80, 0.78, 0.82), PANEL_W, 18.0)
 	_rd_left.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 도전 버튼 — 던전 세트의 철창.
-	var bx := Vector2((PANEL_W - 220.0) * 0.5, top + 340.0)
+	# 버튼 둘 — **소탕**(이미 깬 단계를 전투 없이)과 **도전**. 레퍼런스도 이
+	# 자리에 둘을 나란히 둔다. 소탕이 왼쪽인 건 "빠른 길"이 먼저 눈에 들어와야
+	# 매일 여는 사람이 덜 지치기 때문이다.
+	var bw := 178.0
+	var sx := Vector2((PANEL_W - bw * 2.0 - 10.0) * 0.5, top + 352.0)
+	_rd_sweep_tex = _shop_tex(_raid_detail, "res://assets/ui/sets/gate_button.png",
+		sx, Vector2(bw, 56.0))
+	_rd_sweep_lbl = _panel_label(_raid_detail, Vector2(sx.x, sx.y + 17.0),
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), bw, 24.0)
+	_rd_sweep_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_rd_sweep_lbl, 8)
+	_rd_sweep = _shop_ghost(_raid_detail, Vector2(bw, 56.0), _rd_sweep_tex)
+	_rd_sweep.position = sx
+	_rd_sweep.pressed.connect(func() -> void: _raid_sweep(_raid_detail_kind))
+	var bx := Vector2(sx.x + bw + 10.0, sx.y)
 	_rd_btn_tex = _shop_tex(_raid_detail, "res://assets/ui/sets/gate_button.png",
-		bx, Vector2(220.0, 56.0))
+		bx, Vector2(bw, 56.0))
 	_rd_btn_lbl = _panel_label(_raid_detail, Vector2(bx.x, bx.y + 17.0),
-		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 220.0, 24.0)
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), bw, 24.0)
 	_rd_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_rd_btn_lbl, 8)
-	_rd_btn = _shop_ghost(_raid_detail, Vector2(220.0, 56.0), _rd_btn_tex)
+	_rd_btn = _shop_ghost(_raid_detail, Vector2(bw, 56.0), _rd_btn_tex)
 	_rd_btn.position = bx
 	_rd_btn.pressed.connect(func() -> void:
 		var k := _raid_detail_kind
@@ -5403,10 +5422,41 @@ func _build_raid_detail(root: Control) -> void:
 		_raid_enter(k)
 		_refresh_dungeon())
 	# 돌아가기 — 상세는 덮는 판이라 나갈 길이 반드시 있어야 한다.
-	var close := Ui.button("돌아가기", Vector2((PANEL_W - 160.0) * 0.5, top + 410.0),
+	var close := Ui.button("돌아가기", Vector2((PANEL_W - 160.0) * 0.5, top + 432.0),
 		Vector2(160.0, 38.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _raid_detail.visible = false)
 	_raid_detail.add_child(close)
+
+
+# 소탕 — **이미 깬 단계**를 전투 없이 받는다(레퍼런스 "소탕", 사장님 요청).
+# 표를 한 장 쓰고 그 던전 최고 기록 단계의 뭉치를 그대로 준다.
+#
+# 지키는 것 둘:
+#   1. **한 번은 손으로 깨야 한다** — 기록이 없으면 소탕할 것도 없다. 소탕이
+#      선행 도전을 건너뛰면 던전을 아무도 안 돈다
+#   2. **단계는 안 오른다** — 다음 단계는 직접 도전해서만 열린다. 소탕이 기록을
+#      밀면 벽이 사라지고 재화 배급이 무한이 된다(재화 격리)
+func _raid_sweep(kind: String) -> void:
+	var n := int(raid_best.get(kind, 0))
+	_raid_roll_day()
+	if n <= 0 or _raid_left(kind) <= 0 or raid_on != "" or dungeon_on:
+		return
+	raid_left[kind] = maxi(0, _raid_left(kind) - 1)
+	var amount := RaidDefs.reward(kind, n)
+	match kind:
+		"blood": gold += amount
+		"pact": sigil += amount
+		_: essence += amount
+	_quest_bump("raid")   # 손으로 깬 것과 같은 값이므로 임무도 같이 센다
+	_show_reward("%s 소탕" % str(RaidDefs.RAIDS[kind]["name"]),
+		[{"icon": str(RaidDefs.RAIDS[kind]["icon"]),
+		"label": "+%s" % _n(amount),
+		"sub": "%d단계" % n}])
+	_refresh_currency_visibility()
+	_refresh_hud()
+	_refresh_dungeon()
+	_raid_detail_open(kind)   # 남은 표가 줄었으니 판을 다시 그린다
+	_save_game()
 
 
 func _raid_detail_open(kind: String) -> void:
@@ -5431,6 +5481,11 @@ func _raid_detail_open(kind: String) -> void:
 		else ("도전" if left > 0 else "내일")
 	_rd_btn.disabled = locked or left <= 0 or dungeon_on or raid_on != ""
 	_gate_btn_dim(_rd_btn_tex, _rd_btn_lbl, _rd_btn.disabled)
+	# 소탕은 **깬 적이 있어야** 열린다 — 기록이 없으면 소탕할 것도 없다.
+	var best := int(raid_best.get(kind, 0))
+	_rd_sweep_lbl.text = "소탕" if best > 0 else "미개척"
+	_rd_sweep.disabled = best <= 0 or _rd_btn.disabled
+	_gate_btn_dim(_rd_sweep_tex, _rd_sweep_lbl, _rd_sweep.disabled)
 
 
 # 이정표 게이지는 임무보다 짧다 — 옆 수치가 "43.3K / 144.2K" 라 자리가 더 필요하다.
