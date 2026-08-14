@@ -806,6 +806,56 @@ func _ready() -> void:
 				_auto_equip_skills()
 			_select_tab("growth")
 			_set_growth_mode("skill")
+		# [개발 도구] --god[=N] : **한 방에 N구간(기본 100) 검수 상태로 올린다.**
+		# 던전 테마·보스 연출처럼 "해금 뒤에야 보이는 것"을 손으로 재려면 그
+		# 자리까지 몇 시간을 밀어야 한다 — 그건 검수 방법이 아니다(사장님 요청).
+		# 주는 것: 구간·미궁 기록 · 재화 뭉치 · 최고 등급 장비 한 벌 · 스킬 전종 ·
+		# 소환권 · 유물 몇 · 스탯 상한. 세이브를 덮으므로 **검수 전용**이다.
+		if arg.begins_with("--god"):
+			var want := int(arg.trim_prefix("--god=")) if "=" in arg else 100
+			best_stage = clampi(want, 1, StageDefs.total_stages())
+			stage = best_stage
+			# 미궁은 개방 상한 안에서 최고 기록을 세워 둔다 — 혈맥·소탕이 열린다.
+			dungeon_best = maxi(dungeon_best,
+				maxi(0, DungeonDefs.open_floors(best_stage) - 1))
+			gold = 1e12
+			essence = 1e9
+			gem = 1e6
+			crystal = 1e9
+			sigil = 1e9
+			for tk in TicketDefs.KINDS:
+				tickets[tk] = 99
+			# 장비는 **가장 높은 등급으로 한 벌** — 굴리면 등급이 들쭉날쭉해서
+			# "최신 장비로 잰다"가 안 된다.
+			var top: Dictionary = GearDefs.RARITY[GearDefs.RARITY.size() - 1]
+			for slot in GearDefs.SLOTS:
+				var item := GearDefs.make(str(slot), best_stage, top)
+				if item.is_empty():
+					continue
+				var ikey := str(item["icon"])
+				item["inventory_key"] = ikey
+				gear_inventory[ikey] = item
+				equipped[slot] = item.duplicate(true)
+			# 스킬은 전종을 높은 레벨로 — 무작위 보유로는 매번 다른 게 열려
+			# 어느 스킬이 어떤 판에 맞는지 비교가 안 된다.
+			for sk in SkillDefs.all_keys():
+				skill_owned[str(sk)] = 3
+			_auto_equip_skills()
+			# 스탯은 상한까지, 유물은 몇 개만 — 곱연산 축이 만렙이면 곡선 검수가
+			# 무의미해진다.
+			# **표를 돈다** — lv 는 올린 적 있는 스탯만 갖고 있어서, 그걸 돌면
+			# 새 저장본에서 아무것도 안 오른다(실측: 전부 1레벨).
+			var cap := StatDefs.train_cap(dungeon_best, best_stage)
+			for st in StatDefs.STATS:
+				if bool(st.get("impl", false)):
+					lv[str(st["key"])] = cap
+			for i in mini(6, RelicDefs.RELICS.size()):
+				relics[str(RelicDefs.RELICS[i]["id"])] = 2
+			hero_hp = max_hp()
+			_apply_stage_bg()
+			_refresh_currency_visibility()
+			_refresh_hud()
+			_save_game()
 		# [개발 도구] 영웅과 몹이 겹치는 순간만 골라 찍는다.
 		if arg == "--gaps":
 			_gap_probe = true
