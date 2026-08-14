@@ -5017,6 +5017,9 @@ var iap_daily_date := ""    # 구독 일일 지급을 오늘 줬는가
 var _boss_btn_tex: TextureRect
 var _boss_btn_lbl: Label
 var _raid_head: Label
+var _raid_repeat := false        # 연속 도전 — 격파하고 나오면 그 던전에 다시
+var _raid_repeat_btn: Button
+var _raid_again := ""            # 암전이 걷히면 들어갈 던전(연속 도전 대기)
 
 
 # 철창 버튼의 잠김 표시 — 그림 버튼이라 붉은 빛이 꺼지는 걸로 말한다.
@@ -5427,6 +5430,16 @@ func _build_raid_list(root: Control) -> void:
 	var sub := _panel_label(root, Vector2(PAD, 64.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.76), CONTENT_W, 16.0)
 	_raid_head = sub                     # 혈세가 붙으면 판 수가 바뀐다
+	# **연속 도전** (사장님 2026-08-14) — 켜 두면 격파하고 나온 뒤 표가 남아
+	# 있는 동안 그 던전에 다시 들어간다. 하루 3판을 손으로 세 번 누르는 건
+	# 방치형에서 할 일이 아니다. 저장하지 않는다: 켠 채로 잊고 표를 태우면
+	# 그건 도움이 아니라 사고다.
+	var rep := Ui.button("연속 도전", Vector2(PAD + CONTENT_W - 150.0, 60.0),
+		Vector2(150.0, 30.0), Type.SIZE_SMALL)
+	rep.toggle_mode = true
+	rep.toggled.connect(func(on: bool) -> void: _raid_repeat = on)
+	root.add_child(rep)
+	_raid_repeat_btn = rep
 	# 던전 전용 세트(사장님: 탭마다 다르게) — 사슬 감긴 돌벽 카드 + 철창 입장 버튼.
 	# 입장 버튼이 그림이라 글자·잠금 표시는 라벨과 modulate 가 맡는다.
 	var kinds := ["blood", "essence", "pact"]
@@ -6382,6 +6395,7 @@ func _select_tab(name: String) -> void:
 		_panels[key].visible = key == name
 	_panel_bg.visible = name not in FULL_TABS
 	_panel_bg_full.visible = name in FULL_TABS
+	_boss_cut_clear()      # 판을 열면 컷신 띠는 즉시 걷는다
 	# 전투 화면에 떠 있는 소품(가이드·방치 상자·오른쪽 바로가기 줄)은 전면 판과
 	# 겹친다 — 같이 숨긴다(사장님: 임무·업적 아이콘도 안 보이게, 완전 전체 화면).
 	_goal_widget.visible = name not in FULL_TABS
@@ -6536,6 +6550,11 @@ func _process(delta: float) -> void:
 		if _offline_t <= 0.0:
 			_offline_banner.visible = false
 	_boss_pan_t = maxf(0.0, _boss_pan_t - delta)
+	# 연속 도전 — 암전이 걷히고 판이 비었을 때 다시 들어간다.
+	if _raid_again != "" and _fade_t <= 0.0 and raid_on == "" and not dungeon_on:
+		var again_kind := _raid_again
+		_raid_again = ""
+		_raid_enter(again_kind)
 	_fade_t = maxf(0.0, _fade_t - delta)
 	# 소탕 — 미궁 최고 기록이 곧 광산이다. 어디에 있든 시간당 최고층x0.2 로 쌓인다
 	# (EXPANSION 6장). 초당으로 나누면 값이 작아 화면 숫자는 몇 분에 1씩 는다 —
@@ -8040,7 +8059,10 @@ func _queue_tail_x(foes: Array) -> float:
 # 다음 놈이 없으면 영웅이 전진할 대상도 없다.
 # 보스·중간보스 구간은 한 마리로 끝나므로 보충하지 않는다.
 func _refill_queue(foes: Array) -> void:
-	if _walk_only or StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage):
+	# **본편 구간이 아니라 지금 판을 봐야 한다.** StageDefs 로만 재면 던전·미궁·
+	# 주간 보스 안에서는 늘 "보스 구간이 아니다"가 되어, 수호자를 잡자마자 다음
+	# 놈을 세우고 등장 컷신이 또 돈다(사장님 실측: "보스 잡으면 또 나온다").
+	if _walk_only or _c_is_boss() or _c_is_midboss():
 		return
 	var live := 0
 	for f in foes:
@@ -8451,6 +8473,7 @@ func _build_boss_cut() -> void:
 	_boss_bar_top.position = Vector2.ZERO
 	_boss_bar_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_boss_bar_top.z_index = 60
+	_boss_bar_top.visible = false
 	_hud_root.add_child(_boss_bar_top)
 	_boss_bar_bottom = ColorRect.new()
 	_boss_bar_bottom.color = _boss_bar_top.color
@@ -8461,6 +8484,7 @@ func _build_boss_cut() -> void:
 	_boss_bar_bottom.position = Vector2(0.0, VIEW_BOTTOM)
 	_boss_bar_bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_boss_bar_bottom.z_index = 60
+	_boss_bar_bottom.visible = false
 	_hud_root.add_child(_boss_bar_bottom)
 	# 이름은 띠 사이 가운데. 큰 글자 + 두꺼운 외곽선이라야 배경 위에서 산다.
 	_boss_title = _mk_label(Vector2(0.0, VIEW_BOTTOM * 0.42), Type.SIZE_TITLE,
@@ -8473,12 +8497,36 @@ func _build_boss_cut() -> void:
 	_boss_title.modulate.a = 0.0
 
 
+# 컷신을 **즉시 걷는다**. 연출 도중에 판이 끝나거나(격파·이탈) 탭을 열면 트윈이
+# 중간에 멈춰 검은 띠가 화면에 남는다(사장님 캡처: 던전 목록 위에 검은 줄).
+func _boss_cut_clear() -> void:
+	if _boss_title == null:
+		return
+	if _boss_cut_tw and _boss_cut_tw.is_valid():
+		_boss_cut_tw.kill()
+	_boss_title.modulate.a = 0.0
+	_boss_bar_top.size.y = 0.0
+	_boss_bar_bottom.position.y = VIEW_BOTTOM
+	# **띠는 안 쓸 때 끈다.** 아래 띠를 화면 밖(VIEW_BOTTOM)으로 내려 두기만
+	# 했더니 z_index 60 이라 판 위에 그려져, 던전 목록 한가운데에 검은 줄이
+	# 남았다(사장님 캡처). 자리를 옮기는 것과 안 보이는 것은 다르다.
+	_boss_bar_top.visible = false
+	_boss_bar_bottom.visible = false
+
+
+var _boss_cut_tw: Tween
+
+
 func _boss_cut(name: String) -> void:
 	if _boss_title == null:
 		return
+	_boss_cut_clear()      # 앞 연출이 남아 있으면 겹쳐서 띠가 두 겹이 된다
+	_boss_bar_top.visible = true
+	_boss_bar_bottom.visible = true
 	_boss_title.text = name
 	# 팬과 같은 박자로 돈다: 0.45 들어가고 → BOSS_PAN_HOLD 머물고 → 0.5 나온다.
 	var t := create_tween().set_parallel()
+	_boss_cut_tw = t
 	t.tween_property(_boss_bar_top, "size:y", BOSS_CUT_BAR, 0.30) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	t.tween_property(_boss_bar_bottom, "position:y", VIEW_BOTTOM - BOSS_CUT_BAR,
@@ -8641,6 +8689,10 @@ func _advance_stage() -> void:
 		_offline_t = 4.0
 		raid_on = ""
 		_quest_bump("raid")   # 주간 임무(재화 던전 격파)가 센다
+		_boss_cut_clear()     # 수호자 판이면 컷신 띠가 떠 있을 수 있다
+		# 연속 도전 — 표가 남아 있으면 같은 던전에 다시 들어간다. 재입장은
+		# **암전이 끝난 뒤**여야 한다(_raid_enter 는 페이드 중엔 조용히 빠진다).
+		var again := _raid_repeat and _raid_left(kind) > 0
 		_fade(func() -> void:
 			kills = 0
 			# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
@@ -8650,7 +8702,12 @@ func _advance_stage() -> void:
 			_boss_time = _c_time_limit()
 			_begin_stage_pose()
 			_start_advance()
-			_apply_stage_bg())
+			_apply_stage_bg()
+			# 연속 도전은 **암전이 걷힌 뒤**에 들어간다. 이 콜백은 화면이 아직
+			# 검을 때(_fade_t > 0) 도는 자리라, 여기서 부르면 _raid_enter 의
+			# 가드에 걸려 조용히 빠진다(실측: 다시 안 들어갔다). 깃발만 세운다.
+			if again:
+				_raid_again = kind)
 		_refresh_dungeon()
 		_save_game()
 		return
