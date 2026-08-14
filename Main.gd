@@ -183,10 +183,15 @@ func _sweep_per_hour() -> float:
 		* (2.0 if MasteryDefs.has("sweep2", best_stage) else 1.0)
 
 
-# 방치 상한(시간) — 기본 8 + 혈맥 긴 잠 + 군림 IV.
+# 방치 상한(시간) — 기본 8 + 혈맥 긴 잠 + 군림 IV + 혈세.
+# **합산하되 16시간에서 끊는다** (설계서 미결 항목, 추천안). max 로 겹치기를
+# 막으면 군림 IV 를 딴 사람에게 혈세의 그 줄이 통째로 거짓말이 된다 — 대신
+# 상한을 두어 "하루 두 번 접속"이 무의미해지는 지점을 막는다.
+const IDLE_CAP_MAX := 16.0
 func _offline_cap_hours() -> float:
-	return 8.0 + _trait_add("hours") + RelicDefs.add("hours", relics) \
-		+ (4.0 if MasteryDefs.has("hours", best_stage) else 0.0)
+	return minf(IDLE_CAP_MAX, 8.0 + _trait_add("hours") + RelicDefs.add("hours", relics) \
+		+ (4.0 if MasteryDefs.has("hours", best_stage) else 0.0) \
+		+ IapDefs.idle_bonus_hours(iap_subs))
 
 
 # ── 칭호(TitleDefs) ────────────────────────────────────────────────────────
@@ -716,6 +721,11 @@ func _ready() -> void:
 			gacha_shards["relic:" + str(RelicDefs.RELICS[0]["id"])] = 3
 			_select_tab("growth")
 			_set_growth_mode("relic")
+		# [개발 도구] --buy=blood_tax : 결제 SDK 없이 구매 훅을 태운다.
+		# 지급·만료·상시 효과가 실제로 들어오는지 보려면 이 길밖에 없다.
+		if arg.begins_with("--buy="):
+			_iap_buy(arg.trim_prefix("--buy="))
+			_select_tab("shop")
 		# [개발 도구] --gacha=skill : 그 종류의 소환을 연 채로 캡처한다 —
 		# 점성소(스킬·유물) 판은 종류를 골라야 보이는데 그건 검수 방법이 아니다.
 		if arg.begins_with("--gacha="):
@@ -4962,8 +4972,16 @@ var _raid_btn_lbl := {}
 var _raid_btn_tex := {}
 var _dungeon_btn_tex: TextureRect
 var _dungeon_btn_lbl: Label
+# ── 과금 상태 (IapDefs) ────────────────────────────────────────────────────
+# **결제 SDK 는 아직 없다.** 여기는 "샀다"가 정해진 뒤의 세계 — SDK 가 붙으면
+# 결제 성공 콜백이 _iap_buy 를 부르면 된다. 지금은 개발 플래그로만 부른다.
+var iap_subs := {}          # 구독 id -> 만료 날짜 문자열
+var iap_bought := {}        # 1회성 팩 id -> true
+var iap_first_buy := false  # 첫 구매 2배를 이미 썼는가
+var iap_daily_date := ""    # 구독 일일 지급을 오늘 줬는가
 var _boss_btn_tex: TextureRect
 var _boss_btn_lbl: Label
+var _raid_head: Label
 
 
 # 철창 버튼의 잠김 표시 — 그림 버튼이라 붉은 빛이 꺼지는 걸로 말한다.
@@ -5372,7 +5390,7 @@ static func _reward_icon(kind: String) -> String:
 func _build_raid_list(root: Control) -> void:
 	var sub := _panel_label(root, Vector2(PAD, 64.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.76), CONTENT_W, 16.0)
-	sub.text = "하루 %d판 — 표는 격파할 때만 깎인다" % RaidDefs.TRIES_PER_DAY
+	_raid_head = sub                     # 혈세가 붙으면 판 수가 바뀐다
 	# 던전 전용 세트(사장님: 탭마다 다르게) — 사슬 감긴 돌벽 카드 + 철창 입장 버튼.
 	# 입장 버튼이 그림이라 글자·잠금 표시는 라벨과 modulate 가 맡는다.
 	var kinds := ["blood", "essence", "pact"]
@@ -5435,6 +5453,11 @@ func _refresh_dungeon() -> void:
 	_dungeon_chips[2].text = "혈정 %s" % _n(crystal)
 	# 재화 던전 카드 — 도전 단계·보상 미리보기·오늘 표.
 	_raid_roll_day()
+	# _build_dungeon 이 이 함수를 먼저 부르므로(재화 던전 줄은 그 뒤에 선다)
+	# 아직 없을 수 있다 — 그때는 _build_raid_list 끝의 호출이 채운다.
+	if _raid_head:
+		_raid_head.text = "하루 %d판 — 표는 격파할 때만 깎인다" \
+			% (RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs))
 	for kind in _raid_btn:
 		var n := int(raid_best.get(kind, 0)) + 1
 		_raid_info[kind].text = "도전 %d단계 — 본편 %d구간 수준" \
@@ -5443,7 +5466,8 @@ func _refresh_dungeon() -> void:
 		# "격파"는 윗줄 안내("표는 격파할 때만 깎인다")가 이미 말한다.
 		_raid_reward[kind].text = "%s +%s · 오늘 %d/%d" \
 			% [str(RaidDefs.RAIDS[kind]["currency"]), _n(RaidDefs.reward(kind, n)),
-			_raid_left(kind), RaidDefs.TRIES_PER_DAY]
+			_raid_left(kind),
+			RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs)]
 		var eb: Button = _raid_btn[kind]
 		var lbl: Label = _raid_btn_lbl[kind]
 		if raid_on == kind:
@@ -6042,15 +6066,104 @@ func _shop_set_mode(mode: String) -> void:
 
 
 # 패키지는 **벽 직전에 하나씩** 열린다 — 아직 못 간 구간의 것은 잠가 둔다.
+# 이미 산 것은 "구매 완료"로 못 박는다(계정당 1회).
 func _refresh_packs() -> void:
+	if _pack_rows.is_empty():
+		return
 	for i in IapDefs.PACKS.size():
 		var it: Dictionary = IapDefs.PACKS[i]
+		var id := str(it["id"])
 		var open := best_stage >= int(it["open"])
+		var got := iap_bought.has(id)
 		var row: Dictionary = _pack_rows[i]
 		row["lock"].visible = not open
-		row["root"].modulate = Color(1, 1, 1) if open else Color(0.5, 0.47, 0.52)
-		row["price"].text = IapDefs.price_text(int(it["price"])) if open \
-			else "%d구간 돌파 시" % int(it["open"])
+		row["root"].modulate = Color(1, 1, 1) if open and not got \
+			else Color(0.5, 0.47, 0.52)
+		row["price"].text = "구매 완료" if got \
+			else (IapDefs.price_text(int(it["price"])) if open \
+			else "%d구간 돌파 시" % int(it["open"]))
+		row["sub"].text = "계정당 %d / 1" % (0 if got else 1)
+
+
+# ── 구매 훅 **한 곳** ──────────────────────────────────────────────────────
+# 팩·구독·보석이 저마다 지급 코드를 갖고 있으면 SDK 가 붙을 때 세 곳을 잇게
+# 되고, 그중 하나를 빠뜨리면 돈은 받고 물건은 안 주는 사고가 된다.
+# 반환값은 "실제로 팔렸나" — 이미 산 1회성 팩은 false 다.
+func _iap_buy(id: String) -> bool:
+	var pack := IapDefs.pack_of(id)
+	if not pack.is_empty():
+		if iap_bought.has(id) or best_stage < int(pack["open"]):
+			return false
+		iap_bought[id] = true
+		_iap_grant(pack["reward"], str(pack["name"]))
+		_iap_after()
+		return true
+	var sub := IapDefs.sub_of(id)
+	if not sub.is_empty():
+		# 재구매는 **이어 붙인다** — 남은 날을 버리면 미리 사는 사람이 손해를 본다.
+		var base := str(iap_subs.get(id, ""))
+		var left := 0
+		if IapDefs.sub_active(iap_subs, id):
+			# 남은 날수 = 만료일 - 오늘. 날짜 문자열이라 유닉스로 되돌려 뺀다.
+			var a := Time.get_unix_time_from_datetime_string(base)
+			var b := Time.get_unix_time_from_datetime_string(
+				Time.get_date_string_from_system())
+			left = int(maxf(0.0, (a - b) / 86400.0))
+		iap_subs[id] = IapDefs.expiry_date(int(sub["days"]) + left)
+		_iap_grant(sub["instant"], str(sub["name"]))
+		_iap_daily_grant(true)     # 산 날에도 오늘치가 들어온다
+		_iap_after()
+		return true
+	for g in IapDefs.GEMS:
+		if str(g["id"]) != id:
+			continue
+		var amount := float(g["gem"])
+		var doubled := not iap_first_buy
+		if doubled:
+			amount *= IapDefs.FIRST_BUY_MULT
+			iap_first_buy = true
+		_iap_grant({"gem": amount}, "보석 충전 x2" if doubled else "보석 충전")
+		_iap_after()
+		return true
+	return false
+
+
+# 지급은 _grant_reward 로 흘린다 — 재화·소환권 이름을 아는 곳은 거기 하나다.
+func _iap_grant(reward: Dictionary, title: String) -> void:
+	var entries: Array = []
+	for k in reward:
+		var amount := float(reward[k])
+		if amount <= 0.0:
+			continue
+		_grant_reward(str(k), amount)
+		entries.append({"icon": _shop_kind_icon(str(k)),
+			"label": "+%s" % _n(amount), "sub": _reward_name(str(k))})
+	if not entries.is_empty():
+		_show_reward(title, entries)
+
+
+# 구독의 매일 지급. **접속해야 받는다**(설계서 5-1: 돌아올 이유를 만드는 상품).
+# force 면 날짜 검사를 건너뛴다 — 구독을 산 그날은 오늘치를 바로 준다.
+func _iap_daily_grant(force := false) -> void:
+	var today := Time.get_date_string_from_system()
+	if not force and iap_daily_date == today:
+		return
+	iap_daily_date = today
+	for sub in IapDefs.SUBS:
+		var id := str(sub["id"])
+		if not IapDefs.sub_active(iap_subs, id):
+			continue
+		var daily: Dictionary = sub["daily"]
+		if daily.is_empty():
+			continue
+		_iap_grant(daily, "%s — 오늘의 몫" % str(sub["name"]))
+
+
+func _iap_after() -> void:
+	_refresh_currency_visibility()
+	_refresh_hud()
+	_refresh_packs()
+	_save_game()
 
 
 func _shop_roll_day() -> void:
@@ -8087,13 +8200,18 @@ func _raid_roll_day() -> void:
 		return
 	raid_date = today
 	raid_left = {}
+	# 혈세는 **하루 판을 하나 더** 준다 (설계서 5-2) — 표를 나눠 줄 때 얹는다.
+	var per_day := RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs)
 	for k in RaidDefs.RAIDS:
-		raid_left[k] = RaidDefs.TRIES_PER_DAY
+		raid_left[k] = per_day
+	# 하루가 바뀌었으니 구독의 오늘치도 이 자리에서 들어온다.
+	_iap_daily_grant()
 
 
 # 오늘 남은 판. 표에 없는 키(새 던전·옛 저장본)는 가득 찬 것으로 본다.
 func _raid_left(kind: String) -> int:
-	return int(raid_left.get(kind, RaidDefs.TRIES_PER_DAY))
+	return int(raid_left.get(kind,
+		RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs)))
 
 
 func _raid_enter(kind: String) -> void:
@@ -9057,6 +9175,10 @@ func _save_game() -> void:
 	cfg.set_value("run", "promo_got", promo_got)
 	cfg.set_value("run", "pact_lv", pact_lv)
 	cfg.set_value("wallet", "mileage", mileage)
+	cfg.set_value("iap", "subs", iap_subs)
+	cfg.set_value("iap", "bought", iap_bought)
+	cfg.set_value("iap", "first_buy", iap_first_buy)
+	cfg.set_value("iap", "daily_date", iap_daily_date)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
@@ -9119,6 +9241,10 @@ func _load_game() -> void:
 	promo_got = cfg.get_value("run", "promo_got", {})
 	pact_lv = clampi(int(cfg.get_value("run", "pact_lv", 0)), 0, PactDefs.level_cap())
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
+	iap_subs = cfg.get_value("iap", "subs", {})
+	iap_bought = cfg.get_value("iap", "bought", {})
+	iap_first_buy = bool(cfg.get_value("iap", "first_buy", false))
+	iap_daily_date = str(cfg.get_value("iap", "daily_date", ""))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))

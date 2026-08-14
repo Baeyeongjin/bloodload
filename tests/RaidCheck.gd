@@ -41,6 +41,9 @@ func _init() -> void:
 	scene.raid_best = {"blood": 0, "essence": 0, "pact": 0}
 	scene.raid_left = {}
 	scene.raid_date = ""
+	# 구독도 지운다 — 혈세는 하루 표를 +1 하므로, 앞선 IapCheck 가 남긴 저장본을
+	# 물려받으면 이 검사가 재는 값이 조용히 달라진다(실제로 그렇게 깨졌다).
+	scene.iap_subs = {}
 	scene._restart_stage("측정")
 	while scene._phase != "fight" or scene._fade_t > 0.0:
 		await process_frame

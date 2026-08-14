@@ -83,6 +83,35 @@ static func open_packs(best_stage: int) -> Array:
 	return out
 
 
+# ── 구독 상태 ───────────────────────────────────────────────────────────────
+# 만료일은 **날짜 문자열**로 둔다(Time.get_date_string_from_system 과 같은 꼴).
+# 초 단위 타임스탬프를 쓰면 기기 시계 오차로 하루가 들쭉날쭉해진다 — 다른 하루
+# 판정(무료 뽑기·상점 한도·던전 표)이 전부 날짜 문자열이라 규칙을 맞춘다.
+static func expiry_date(days: int) -> String:
+	var t := Time.get_unix_time_from_system() + float(days) * 86400.0
+	return Time.get_date_string_from_unix_time(int(t))
+
+
+# 오늘이 만료일 **이전**이면 살아 있다. 문자열 비교로 충분하다(ISO 꼴이라
+# 사전순 = 시간순). 만료일 당일까지 준다 — 산 날부터 days 일이 온전히 남는다.
+static func sub_active(subs: Dictionary, id: String) -> bool:
+	var until := str(subs.get(id, ""))
+	return until != "" and Time.get_date_string_from_system() <= until
+
+
+# 상시 효과 셋(설계서 5-2). 어느 구독이 주는지는 여기 한 곳만 안다.
+static func idle_bonus_hours(subs: Dictionary) -> float:
+	return 4.0 if sub_active(subs, "blood_tax") else 0.0
+
+
+static func raid_bonus_tries(subs: Dictionary) -> int:
+	return 1 if sub_active(subs, "blood_tax") else 0
+
+
+static func ads_removed(subs: Dictionary) -> bool:
+	return sub_active(subs, "blood_tax")
+
+
 static func price_text(won: int) -> String:
 	return "%s원" % _comma(won)
 
