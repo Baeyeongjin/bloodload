@@ -816,6 +816,11 @@ func _ready() -> void:
 		# 소환권 · 유물 몇 · 스탯 상한. 세이브를 덮으므로 **검수 전용**이다.
 		if arg.begins_with("--god"):
 			_dev_god(int(arg.trim_prefix("--god=")) if "=" in arg else 100)
+		# [개발 도구] --skin=grimble_1 : 그 외형으로 갈아입고 전투를 캡처한다.
+		# 스킨 상품을 만들기 전에 **모션이 실제로 도는지** 눈으로 봐야 한다.
+		if arg.begins_with("--skin="):
+			skin = arg.trim_prefix("--skin=")
+			_play("idle")
 		# [개발 도구] --prestige[=N] : 회귀 판을 연다(N구간 도달 상태로).
 		if arg.begins_with("--prestige"):
 			var ps := int(arg.trim_prefix("--prestige=")) if "=" in arg else 250
