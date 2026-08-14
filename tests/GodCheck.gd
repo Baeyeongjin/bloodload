@@ -35,8 +35,11 @@ func _init() -> void:
 			"%s 가 최고 등급이 아니다: %s" % [slot, it.get("rarity", "")])
 
 	# 3) 스킬 — 전종 보유 + 실제 장착.
-	assert(scene.skill_owned.size() == SkillDefs.all_keys().size(),
-		"스킬이 전종이 아니다: %d" % scene.skill_owned.size())
+	# **크기가 아니라 내용을 본다** — 앞선 검사가 남긴 키가 섞이면 수가 안 맞는다
+	# (실측: PrestigeCheck 의 "keep_skill" 이 따라 들어와 깨졌다). 여기서 보려는
+	# 건 "치트가 전종을 줬는가"이지 사전 크기가 아니다.
+	for k in SkillDefs.all_keys():
+		assert(scene.skill_owned.has(str(k)), "스킬 %s 가 없다" % k)
 	assert(scene.skill_equipped.size() > 0, "스킬이 장착 안 됐다")
 
 	# 4) 스탯 — 상한까지. 여기가 실제로 깨졌던 자리다.

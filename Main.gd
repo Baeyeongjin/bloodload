@@ -594,7 +594,9 @@ func _equipped_shape(shape: String, active_only := false) -> Dictionary:
 func _base_hit_damage() -> float:
 	# 혈맥: 공격 배수(살육 I~III)와 치명 피해 가산(사혈)이 여기서 붙는다 —
 	# 화면 DPS(dps())와 실제 피해(_combat_damage)가 같은 함수를 지나므로 안 갈린다.
-	return damage() * _trait_mult("attack") \
+	# 회귀 배율도 여기 붙는다 — 화면 DPS 와 실제 피해가 같은 함수를 지나므로
+	# 한 곳만 곱하면 둘이 안 갈린다(혈맥·유물과 같은 자리).
+	return damage() * _trait_mult("attack") * _prestige_mult() \
 		* Balance.crit_mult(_stat_eff("crit"), _stat_eff("critdmg"),
 			_trait_add("critdmg") + RelicDefs.add("critdmg", relics))
 
@@ -814,6 +816,13 @@ func _ready() -> void:
 		# 소환권 · 유물 몇 · 스탯 상한. 세이브를 덮으므로 **검수 전용**이다.
 		if arg.begins_with("--god"):
 			_dev_god(int(arg.trim_prefix("--god=")) if "=" in arg else 100)
+		# [개발 도구] --prestige[=N] : 회귀 판을 연다(N구간 도달 상태로).
+		if arg.begins_with("--prestige"):
+			var ps := int(arg.trim_prefix("--prestige=")) if "=" in arg else 250
+			best_stage = maxi(best_stage, ps)
+			stage = best_stage
+			_select_tab("growth")
+			_set_growth_mode("prestige")
 		# [개발 도구] --pass[=N] : 성장 패스를 N단계까지 올린 채로 캡처한다.
 		# 30단계 트랙은 임무를 며칠 채워야 보이는데 그건 검수 방법이 아니다.
 		if arg.begins_with("--pass"):
@@ -1714,7 +1723,7 @@ func _build_growth(root: Control) -> void:
 	# 탭바가 꽉 차서 새 탭으로 못 낸다. 성장 창 안에서 나눈다 —
 	# 스탯도 스킬도 혈맥도 "무엇을 키울까"라서 자리가 맞다.
 	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"],
-		["pact", "혈맹"], ["relic", "유물"]]
+		["pact", "혈맹"], ["relic", "유물"], ["prestige", "회귀"]]
 	var mode_w := (CONTENT_W - 12.0 * float(modes.size() - 1)) / float(modes.size())
 	# 성장은 **내 피를 다루는 곳**이라 전용 세트를 뽑았다(sets/blood_*).
 	# 켬/끔 그림이 따로 없어 밝기로 가른다 — 켠 쪽만 제 색이고 나머지는 눌린다.
@@ -1773,6 +1782,7 @@ func _build_growth(root: Control) -> void:
 	_build_trait_view(root)
 	_build_pact_view(root)
 	_build_relic_view(root)
+	_build_prestige_view(root)
 	_set_step(buy_step)   # 처음 열었을 때도 선택된 배수가 보이게
 	_set_growth_mode("stat")
 
@@ -1784,6 +1794,7 @@ func _set_growth_mode(mode: String) -> void:
 	_trait_view.visible = mode == "trait"
 	_pact_view.visible = mode == "pact"
 	_relic_view.visible = mode == "relic"
+	_prestige_view.visible = mode == "prestige"
 	for key in _growth_mode_buttons:
 		var on: bool = key == mode
 		_growth_mode_buttons[key].set_pressed_no_signal(on)
@@ -1797,6 +1808,8 @@ func _set_growth_mode(mode: String) -> void:
 		_refresh_skills()
 	elif mode == "trait":
 		_refresh_traits()
+	elif mode == "prestige":
+		_refresh_prestige()
 	elif mode == "pact":
 		_refresh_pact()
 	elif mode == "relic":
@@ -1817,6 +1830,83 @@ var _relic_head: Label
 # 18종이라 6줄이고 창을 넘으므로 스크롤 안에 담는다.
 const RELIC_COLS := 3
 const RELIC_CELL := Vector2(168.0, 72.0)
+
+
+# 회귀 판 — 지금 혈흔·배율, 이번에 받을 몫, 그리고 무엇이 남는지.
+# **무엇이 사라지는지를 반드시 적는다**: 되돌릴 수 없는 버튼이라 누르기 전에
+# 알아야 한다(임무판·상점과 달리 여기는 한 번 누르면 끝이다).
+var _prestige_view: Control
+var _pr_now: Label
+var _pr_gain: Label
+var _pr_keep: Label
+var _pr_btn: Button
+var _pr_btn_tex: TextureRect
+var _pr_btn_lbl: Label
+
+
+func _build_prestige_view(root: Control) -> void:
+	_prestige_view = Control.new()
+	_prestige_view.size = Vector2(PANEL_W, PANEL_H)
+	_prestige_view.visible = false
+	_prestige_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_prestige_view)
+	var top := PAD + 46.0
+	var title := _panel_label(_prestige_view, Vector2(0.0, top), Type.SIZE_MID,
+		Color(0.98, 0.72, 0.72), PANEL_W, 26.0)
+	title.text = "핏빛 회귀"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(title, 6)
+	_pr_now = _panel_label(_prestige_view, Vector2(0.0, top + 36.0), Type.SIZE_MID,
+		Color(0.98, 0.90, 0.70), PANEL_W, 24.0)
+	_pr_now.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_pr_now, 6)
+	_pr_gain = _panel_label(_prestige_view, Vector2(0.0, top + 72.0), Type.SIZE_SMALL,
+		Color(0.86, 0.90, 0.98), PANEL_W, 20.0)
+	_pr_gain.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_pr_gain, 5)
+	_pr_keep = _panel_label(_prestige_view, Vector2(PAD, top + 100.0),
+		Type.SIZE_SMALL, Color(0.80, 0.78, 0.82), CONTENT_W, 66.0)
+	_pr_keep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 세 줄로 나눈다 — "남는 것"을 한 줄에 이으면 폭을 넘어 잘린다(실측).
+	# 무엇이 사라지는지는 이 판에서 가장 중요한 글이라 잘리면 안 된다.
+	_pr_keep.text = "잃는 것 — 구간 · 스탯 레벨 · 혈액\n" \
+		+ "남는 것 — 장비 · 스킬 · 유물 · 미궁 기록\n" \
+		+ "도감 · 칭호 · 혈맹 · 혈맥 · 혈정 · 인장"
+	_shop_outline(_pr_keep, 5)
+	# 되돌릴 수 없는 버튼 — 혈액 세트의 붉은 판이 이 자리에 맞는다.
+	var bx := Vector2((PANEL_W - 220.0) * 0.5, top + 184.0)
+	_pr_btn_tex = _shop_tex(_prestige_view, "res://assets/ui/sets/blood_button.png",
+		bx, Vector2(220.0, 52.0))
+	_pr_btn_lbl = _panel_label(_prestige_view, Vector2(bx.x, bx.y + 15.0),
+		Type.SIZE_MID, Color(1.0, 0.95, 0.92), 220.0, 24.0)
+	_pr_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_pr_btn_lbl, 8)
+	_pr_btn = _shop_ghost(_prestige_view, Vector2(220.0, 52.0), _pr_btn_tex)
+	_pr_btn.position = bx
+	# **한 번 더 묻는다.** 되돌릴 수 없는 일은 확인 창을 지난다(공용 _confirm).
+	_pr_btn.pressed.connect(func() -> void:
+		_ask("%d구간을 접고 혈흔 %d 을 받습니다.\n구간·스탯·혈액이 처음으로 돌아갑니다.\n\n되돌릴 수 없습니다."
+			% [best_stage, PrestigeDefs.marks_for(best_stage)], _prestige_do))
+	_refresh_prestige()
+
+
+func _refresh_prestige() -> void:
+	if _pr_now == null:
+		return
+	_pr_now.text = "혈흔 %d  ·  공격 x%.2f" % [prestige_marks, _prestige_mult()]
+	var can := PrestigeDefs.can(best_stage)
+	var got := PrestigeDefs.marks_for(best_stage)
+	if can:
+		# 받고 나면 얼마나 더 갈 수 있는지 — 그게 이 버튼을 누르는 이유다.
+		var after := PrestigeDefs.stages_worth(prestige_marks + got)
+		var now := PrestigeDefs.stages_worth(prestige_marks)
+		_pr_gain.text = "이번 회귀: 혈흔 +%d  ·  구간 +%d 만큼 더" % [got, after - now]
+		_pr_btn_lbl.text = "회귀 %d회" % (prestige_count + 1)
+	else:
+		_pr_gain.text = "%d구간을 넘으면 열린다" % PrestigeDefs.OPEN_STAGE
+		_pr_btn_lbl.text = "잠김"
+	_pr_btn.disabled = not can
+	_gate_btn_dim(_pr_btn_tex, _pr_btn_lbl, not can)
 
 
 func _build_relic_view(root: Control) -> void:
@@ -5089,6 +5179,51 @@ var iap_daily_date := ""    # 구독 일일 지급을 오늘 줬는가
 var pass_points := 0
 var pass_free_got := {}     # 단계 -> true (무료 줄 수령)
 var pass_paid_got := {}     # 단계 -> true (유료 줄 수령)
+# ── 프레스티지 "핏빛 회귀" (PrestigeDefs) ──────────────────────────────────
+var prestige_marks := 0     # 혈흔 — 누적. 리셋해도 안 사라진다
+var prestige_count := 0     # 몇 번 회귀했나(화면 표기용)
+
+
+# 회귀 배율. **공격력에만** 붙인다 — 체력·수입까지 곱하면 곡선을 다시 재야 한다.
+func _prestige_mult() -> float:
+	return PrestigeDefs.power_mult(prestige_marks)
+
+
+# 회귀 — 구간과 혈액으로 산 것을 되돌리고 혈흔을 받는다.
+#
+# **뽑은 것은 안 뺏는다**(사장님 승인): 장비·스킬·유물은 돈과 시간이 들어간
+# 자리라, 리셋이 그걸 지우면 과금 가치가 흔들린다. 기록(미궁·도감·칭호)과
+# 다른 재화 축(혈맹·혈맥)도 남는다 — 지우는 건 **혈액으로 산 것**뿐이다.
+func _prestige_do() -> void:
+	if not PrestigeDefs.can(best_stage) or _fade_t > 0.0:
+		return
+	var got := PrestigeDefs.marks_for(best_stage)
+	if got <= 0:
+		return
+	prestige_marks += got
+	prestige_count += 1
+	# 되돌리는 것: 구간과 스탯 레벨과 혈액.
+	stage = 1
+	best_stage = 1
+	kills = 0
+	gold = 0.0
+	lv = {}
+	# 던전·보스 안이었으면 데리고 나온다 — 판 한가운데서 구간이 1이 되면
+	# 그 판의 몹과 래퍼가 어긋난다.
+	raid_on = ""
+	dungeon_on = false
+	_raid_again = ""
+	hero_hp = max_hp()
+	_show_reward("핏빛 회귀 %d회" % prestige_count,
+		[{"icon": "res://assets/ui/res_blood.png",
+		"label": "혈흔 +%d" % got,
+		"sub": "공격 x%.2f" % _prestige_mult()}])
+	_apply_stage_bg()
+	_restart_stage("핏빛 회귀")
+	_refresh_currency_visibility()
+	_refresh_hud()
+	_refresh_prestige()
+	_save_game()
 
 
 # 패스를 샀는가 — 유료 줄은 이게 켜져야 받는다. 만료돼도 **받은 것은 남고**
@@ -9969,6 +10104,8 @@ func _save_game() -> void:
 	cfg.set_value("pass", "points", pass_points)
 	cfg.set_value("pass", "free", pass_free_got)
 	cfg.set_value("pass", "paid", pass_paid_got)
+	cfg.set_value("prestige", "marks", prestige_marks)
+	cfg.set_value("prestige", "count", prestige_count)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
@@ -10038,6 +10175,8 @@ func _load_game() -> void:
 	pass_points = maxi(0, int(cfg.get_value("pass", "points", 0)))
 	pass_free_got = cfg.get_value("pass", "free", {})
 	pass_paid_got = cfg.get_value("pass", "paid", {})
+	prestige_marks = maxi(0, int(cfg.get_value("prestige", "marks", 0)))
+	prestige_count = maxi(0, int(cfg.get_value("prestige", "count", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))
