@@ -114,7 +114,7 @@ static func bonus(stat: String, got: Dictionary) -> int:
 static func cond_text(cond: Dictionary) -> String:
 	var n := int(cond["n"])
 	match str(cond["kind"]):
-		"stage": return "본편 %d 돌파" % n
+		"stage": return "%d구간 돌파" % n
 		"floor": return "미궁 %d층" % n
 		# "Lv" 금지 — 블랙레터 폰트에서 "LD" 로 읽힌다(Main 3318줄의 그 함정).
 		"hero": return "영웅 %d레벨" % n

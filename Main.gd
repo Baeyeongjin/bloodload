@@ -5119,7 +5119,7 @@ func _build_dungeon(root: Control) -> void:
 		Vector2(MAZE_W + 16.0, CONTENT_BOTTOM - 178.0))
 	var mt := _panel_label(root, Vector2(PAD + 12.0, 190.0), Type.SIZE_SMALL,
 		Color(1.0, 0.86, 0.55), MAZE_W - 24.0, 18.0)
-	mt.text = "군림 — 본편 돌파가 스스로 연다"
+	mt.text = "군림 — 구간을 넘으면 스스로 열린다"
 	_shop_outline(mt, 6)
 	for i in MasteryDefs.RANKS.size():
 		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
@@ -5356,6 +5356,9 @@ const RD_PLAQUE_Y := 262.0     # 제목판(원본 y44~91)의 글자 자리
 const RD_STAGE_Y := 318.0      # 제목판 아래 여백
 const RD_GOAL_Y := 372.0       # 설명란 — 알코브 위 빈 자리
 const RD_ALCOVE_Y := 443.0     # 알코브 안쪽(원본 y233~436) 시작
+# 알코브 안쪽 폭. **여기 넘는 글자는 알코브 밖 돌판 위로 샌다**(사장님 실측) —
+# 알코브 안에 놓는 라벨은 화면 폭이 아니라 이 값으로 묶는다.
+const RD_ALCOVE_W := 168.0
 const RD_ICON := 96.0
 const RD_ICON_Y := 460.0
 const RD_VALUE_Y := 566.0      # 알코브 안 아래 — 그림이 뜻하는 값
@@ -5441,12 +5444,15 @@ func _build_raid_detail(root: Control) -> void:
 	_rd_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raid_detail.add_child(_rd_icon)
 	# 알코브 안 아래: 그 그림이 뜻하는 값(보상·성과)과 부가 한 줄
-	_rd_reward = _panel_label(_raid_detail, Vector2(0.0, RD_VALUE_Y),
-		Type.SIZE_MID, Color(0.98, 0.90, 0.70), PANEL_W, 24.0)
+	_rd_reward = _panel_label(_raid_detail,
+		Vector2((PANEL_W - RD_ALCOVE_W) * 0.5, RD_VALUE_Y),
+		Type.SIZE_MID, Color(0.98, 0.90, 0.70), RD_ALCOVE_W, 24.0)
 	_rd_reward.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_rd_reward, 6)
-	_rd_left = _panel_label(_raid_detail, Vector2(0.0, RD_SUB_Y),
-		Type.SIZE_SMALL, Color(0.84, 0.82, 0.86), PANEL_W, 18.0)
+	# 부가 정보는 **두 줄**이다 — 한 줄로 이으면 알코브 폭에 절대 안 들어간다.
+	_rd_left = _panel_label(_raid_detail,
+		Vector2((PANEL_W - RD_ALCOVE_W) * 0.5, RD_SUB_Y),
+		Type.SIZE_SMALL, Color(0.84, 0.82, 0.86), RD_ALCOVE_W, 40.0)
 	_rd_left.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_rd_left, 5)
 	# ── 알코브 아래: 버튼. 소탕이 없는 판(보스·미궁)은 도전 하나가 가운데에
@@ -5532,11 +5538,10 @@ func _raid_detail_open(kind: String) -> void:
 		# 이미 오른 층을 다시 돌면 혈정이 안 나온다 — 그 사실을 여기서 말해 준다.
 		_rd_reward.text = "혈정 +%s" % _n(DungeonDefs.first_clear_reward(next)) \
 			if next > dungeon_best else "기록 갱신 없음"
-		_rd_left.text = "최고 %d층  ·  개방 %d층  ·  표 없음" \
-			% [dungeon_best, open]
+		_rd_left.text = "최고 %d층 · 개방 %d층\n표 없음" % [dungeon_best, open]
 		var can := open > 0 and raid_on == "" and not dungeon_on
 		_rd_btn_lbl.text = "도전" if can \
-			else "본편 %d 필요" % DungeonDefs.OPEN_STAGE
+			else "%d구간 필요" % DungeonDefs.OPEN_STAGE
 		_rd_btn.disabled = not can
 		_gate_btn_dim(_rd_btn_tex, _rd_btn_lbl, _rd_btn.disabled)
 		# 미궁은 소탕이 없다 — 소탕 시급(혈맥)이 이미 그 몫을 딴 데서 치른다.
@@ -5550,7 +5555,7 @@ func _raid_detail_open(kind: String) -> void:
 		_rd_goal.text = "40초 동안 최대한 때린다"
 		_rd_icon.texture = Assets.tex(EventDefs.art_path(eb))
 		_rd_reward.text = "누적 피해 %s" % _n(boss_dmg)
-		_rd_left.text = "오늘 %d / %d판  ·  이정표 넷을 받으면 다음 단계" \
+		_rd_left.text = "오늘 %d / %d판\n이정표 넷이면 다음 단계" \
 			% [boss_tries, EventDefs.TRIES_PER_DAY]
 		_rd_btn_lbl.text = "도전" if boss_tries > 0 else "내일"
 		_rd_btn.disabled = boss_tries <= 0 or dungeon_on or raid_on != ""
@@ -5568,10 +5573,9 @@ func _raid_detail_open(kind: String) -> void:
 		_n(RaidDefs.reward(kind, n))]
 	var left := _raid_left(kind)
 	var per_day := RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs)
-	_rd_left.text = "오늘 %d / %d판  ·  본편 %d구간 수준" \
-		% [left, per_day, RaidDefs.eq_stage(n, kind)]
+	_rd_left.text = "오늘 %d / %d판" % [left, per_day]
 	var locked := best_stage < RaidDefs.open_stage(kind)
-	_rd_btn_lbl.text = "본편 %d 필요" % RaidDefs.open_stage(kind) if locked \
+	_rd_btn_lbl.text = "%d구간 필요" % RaidDefs.open_stage(kind) if locked \
 		else ("도전" if left > 0 else "내일")
 	_rd_btn.disabled = locked or left <= 0 or dungeon_on or raid_on != ""
 	_gate_btn_dim(_rd_btn_tex, _rd_btn_lbl, _rd_btn.disabled)
@@ -5759,7 +5763,7 @@ func _refresh_dungeon() -> void:
 		var got := best_stage > int(r["stage"])
 		# 줄이 길어 화면을 꽉 채웠다(사장님: "군림 폰트 좀 더 작게"). 폰트는 이미
 		# 최소(SIZE_SMALL)라 **글을 줄인다** — 이름과 효과만, 조건은 괄호 없이.
-		_dungeon_mastery[i].text = "%s · %s" % [str(r["name"]), str(r["desc"])] 			if got else "%s · %s  (본편 %d)" % [str(r["name"]), str(r["desc"]),
+		_dungeon_mastery[i].text = "%s · %s" % [str(r["name"]), str(r["desc"])] 			if got else "%s · %s  (%d구간)" % [str(r["name"]), str(r["desc"]),
 			int(r["stage"])]
 		_dungeon_mastery[i].add_theme_color_override("font_color",
 			Color(0.92, 0.82, 0.62) if got else Color(0.55, 0.53, 0.6))
@@ -5793,7 +5797,7 @@ func _refresh_dungeon() -> void:
 			lbl.text = "돌아가기"
 			eb.disabled = false
 		elif best_stage < RaidDefs.open_stage(kind):
-			lbl.text = "본편 %d" % RaidDefs.open_stage(kind)
+			lbl.text = "%d구간" % RaidDefs.open_stage(kind)
 			eb.disabled = true
 		elif _raid_left(kind) <= 0:
 			lbl.text = "내일"
@@ -5804,7 +5808,7 @@ func _refresh_dungeon() -> void:
 		_gate_btn_dim(_raid_btn_tex[kind], lbl, eb.disabled)
 	_refresh_boss()
 	if open <= 0:
-		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
+		_dungeon_info.text = "%d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
 		_dungeon_sub.text = "층을 오른 기록이 다음 성장(혈맥)의 열쇠가 된다"
 		_dungeon_btn_lbl.text = "잠김"
 		_dungeon_btn.disabled = true
@@ -5814,11 +5818,11 @@ func _refresh_dungeon() -> void:
 	_gate_btn_dim(_dungeon_btn_tex, _dungeon_btn_lbl, false)
 	if dungeon_on:
 		_dungeon_info.text = "%s 도전 중" % DungeonDefs.label(dungeon_floor)
-		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 본편으로 돌아온다 — 기록은 남는다"
+		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 밖으로 나온다 — 기록은 남는다"
 		_dungeon_btn_lbl.text = "돌아가기"
 		return
 	var next := clampi(dungeon_best + 1, 1, open)
-	_dungeon_info.text = "다음 %d층 — 본편 %d구간 수준" % [next, DungeonDefs.eq_stage(next)]
+	_dungeon_info.text = "다음 %d층" % next
 	_dungeon_sub.text = "첫 돌파 혈정 %d  ·  소탕 시간당 %.1f" \
 		% [int(DungeonDefs.first_clear_reward(next)), _sweep_per_hour()]
 	_dungeon_btn_lbl.text = "도전"
