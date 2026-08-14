@@ -813,6 +813,13 @@ func _ready() -> void:
 		# 소환권 · 유물 몇 · 스탯 상한. 세이브를 덮으므로 **검수 전용**이다.
 		if arg.begins_with("--god"):
 			_dev_god(int(arg.trim_prefix("--god=")) if "=" in arg else 100)
+		# [개발 도구] --pass[=N] : 성장 패스를 N단계까지 올린 채로 캡처한다.
+		# 30단계 트랙은 임무를 며칠 채워야 보이는데 그건 검수 방법이 아니다.
+		if arg.begins_with("--pass"):
+			var pw := int(arg.trim_prefix("--pass=")) if "=" in arg else 8
+			pass_points = pw * PassDefs.STEP_POINT
+			_select_tab("shop")
+			_shop_set_mode("pass")
 		# [개발 도구] --detail=essence : 던전 상세 판을 연 채로 캡처한다.
 		if arg.begins_with("--detail="):
 			_select_tab("raid")
@@ -5019,6 +5026,76 @@ var iap_subs := {}          # 구독 id -> 만료 날짜 문자열
 var iap_bought := {}        # 1회성 팩 id -> true
 var iap_first_buy := false  # 첫 구매 2배를 이미 썼는가
 var iap_daily_date := ""    # 구독 일일 지급을 오늘 줬는가
+# 성장 패스 — 점수는 **임무를 채울 때만** 들어온다(PassDefs). 패스를 사도 할
+# 일이 늘지 않는 게 이 상품의 원칙이라, 진행은 산 사람과 안 산 사람이 같다.
+var pass_points := 0
+var pass_free_got := {}     # 단계 -> true (무료 줄 수령)
+var pass_paid_got := {}     # 단계 -> true (유료 줄 수령)
+
+
+# 패스를 샀는가 — 유료 줄은 이게 켜져야 받는다. 만료돼도 **받은 것은 남고**
+# 안 받은 유료 줄은 잠긴다(구독의 일반 규칙과 같다).
+func _pass_active() -> bool:
+	return IapDefs.sub_active(iap_subs, "season_pass")
+
+
+# 임무를 채우면 점수가 오른다. 여기 한 곳만 부르면 트랙이 따라 오른다.
+func _pass_add(points: int) -> void:
+	if points <= 0:
+		return
+	pass_points += points
+	if _pass_rows.is_empty():
+		return
+	_refresh_pass()
+
+
+func _claim_pass(step: int, paid: bool) -> void:
+	if step <= 0 or step > PassDefs.step_of(pass_points):
+		return
+	if paid and not _pass_active():
+		return
+	var got: Dictionary = pass_paid_got if paid else pass_free_got
+	if got.has(step):
+		return
+	got[step] = true
+	var r := PassDefs.paid_reward(step) if paid else PassDefs.free_reward(step)
+	_grant_reward(str(r["kind"]), float(r["amount"]))
+	_show_reward("성장 패스 %d단계" % step, [{"icon": _shop_kind_icon(str(r["kind"])),
+		"label": "+%s" % _n(float(r["amount"])), "sub": _reward_name(str(r["kind"]))}])
+	_refresh_currency_visibility()
+	_refresh_hud()
+	_refresh_pass()
+	_save_game()
+
+
+# 받을 수 있는 것을 **한 번에** 받는다 — 30단계를 60번 누르게 하면 그건 보상이
+# 아니라 일이다(레퍼런스도 일괄 수령을 둔다).
+func _claim_pass_all() -> void:
+	var step := PassDefs.step_of(pass_points)
+	var entries: Array = []
+	var sums := {}
+	for i in range(1, step + 1):
+		for paid in [false, true]:
+			if paid and not _pass_active():
+				continue
+			var got: Dictionary = pass_paid_got if paid else pass_free_got
+			if got.has(i):
+				continue
+			got[i] = true
+			var r := PassDefs.paid_reward(i) if paid else PassDefs.free_reward(i)
+			var k := str(r["kind"])
+			sums[k] = float(sums.get(k, 0.0)) + float(r["amount"])
+	if sums.is_empty():
+		return
+	for k in sums:
+		_grant_reward(str(k), float(sums[k]))
+		entries.append({"icon": _shop_kind_icon(str(k)),
+			"label": "+%s" % _n(float(sums[k])), "sub": _reward_name(str(k))})
+	_show_reward("성장 패스 — 일괄 수령", entries)
+	_refresh_currency_visibility()
+	_refresh_hud()
+	_refresh_pass()
+	_save_game()
 var _boss_btn_tex: TextureRect
 var _boss_btn_lbl: Label
 var _raid_head: Label
@@ -5900,6 +5977,8 @@ func _claim_quest(id: String) -> void:
 	quest_wprog["daily"] = int(quest_wprog.get("daily", 0)) + 1
 	var q := QuestDefs.of(id)
 	_grant_reward(str(q["reward"]), float(q["amount"]))
+	# 성장 패스는 **이미 하는 행동에 얹는다** — 임무를 받는 순간 트랙이 오른다.
+	_pass_add(PassDefs.POINT_QUEST)
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_quests()
@@ -5917,6 +5996,7 @@ func _claim_wquest(id: String) -> void:
 	quest_wgot[id] = true
 	var q := QuestDefs.wof(id)
 	_grant_reward(str(q["reward"]), float(q["amount"]))
+	_pass_add(PassDefs.POINT_WEEKLY)
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_quests()
@@ -6100,8 +6180,11 @@ func _build_shop(root: Control) -> void:
 		Color(0.95, 0.88, 0.80), 300.0, 18.0)
 	_shop_outline(_shop_line, 4)
 	# 2) 소탭 — 박쥐 알약. 켬/끔이 그림이라 TextureButton 이다.
-	var modes := [["pack", "특가"], ["sub", "정기"], ["trade", "교환"]]
-	var sw := (CONTENT_W - 10.0 * 2.0) / 3.0
+	# 넷째로 **패스**가 붙었다 — 정기 소탭에서 사는 물건이지만 진행 트랙은
+	# 따로 볼 자리가 있어야 한다(30단계를 카드 한 장에 못 적는다).
+	var modes := [["pack", "특가"], ["sub", "정기"], ["pass", "패스"],
+		["trade", "교환"]]
+	var sw := (CONTENT_W - 8.0 * 3.0) / 4.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
 		var tb := TextureButton.new()
@@ -6111,7 +6194,7 @@ func _build_shop(root: Control) -> void:
 		tb.stretch_mode = TextureButton.STRETCH_SCALE
 		tb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		tb.toggle_mode = true
-		tb.position = Vector2(PAD + float(i) * (sw + 10.0), SHOP_TAB_Y)
+		tb.position = Vector2(PAD + float(i) * (sw + 8.0), SHOP_TAB_Y)
 		tb.size = Vector2(sw, 36.0)
 		Ui.hover_pop(tb)
 		tb.pressed.connect(func() -> void: _shop_set_mode(mode))
@@ -6129,6 +6212,8 @@ func _build_shop(root: Control) -> void:
 	_build_shop_packs(_pack_view)
 	_sub_view = _shop_scroll_view(root)
 	_build_shop_subs(_sub_view)
+	_pass_view = _shop_scroll_view(root)
+	_build_shop_pass(_pass_view)
 	_shop_view = _shop_scroll_view(root)
 	_build_shop_trade(_shop_view)
 	_shop_set_mode("pack")
@@ -6368,6 +6453,121 @@ func _build_shop_subs(view: Control) -> void:
 	view.custom_minimum_size.y = y + 2.0 * (SHOP_VCARD_H + 10.0)
 
 
+# 패스: 30단계 트랙. 한 줄이 한 단계고 **무료·유료 두 칸**이 나란히 선다 —
+# 안 산 사람도 같은 트랙을 오르되 받는 것이 적다(PassDefs 의 설계 원칙).
+const PASS_ROW_H := 56.0
+var _pass_view: Control
+var _pass_rows: Array[Dictionary] = []
+var _pass_head: Label
+var _pass_fill: ColorRect
+var _pass_all_btn: Button
+
+
+func _build_shop_pass(view: Control) -> void:
+	_shop_ribbon(view, 0.0, "성장 패스 — 임무를 채우면 오른다")
+	# 머리: 지금 단계와 다음 단계까지의 게이지. 트랙이 길어 위에 요약이 필요하다.
+	_pass_head = _panel_label(view, Vector2(0.0, 62.0), Type.SIZE_MID,
+		Color(0.98, 0.90, 0.70), SHOP_LIST_W, 24.0)
+	_pass_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_pass_head, 6)
+	var track := ColorRect.new()
+	track.color = Color(0.10, 0.09, 0.12)
+	track.position = Vector2(60.0, 94.0)
+	track.size = Vector2(SHOP_LIST_W - 120.0, 10.0)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.add_child(track)
+	_pass_fill = ColorRect.new()
+	_pass_fill.color = Color(0.88, 0.66, 0.30)
+	_pass_fill.position = track.position
+	_pass_fill.size = Vector2(0.0, 10.0)
+	_pass_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.add_child(_pass_fill)
+	# 일괄 수령 — 60칸을 손으로 누르게 하면 그건 보상이 아니라 일이다.
+	_pass_all_btn = Ui.button("일괄 수령", Vector2((SHOP_LIST_W - 160.0) * 0.5, 116.0),
+		Vector2(160.0, 34.0), Type.SIZE_SMALL)
+	_pass_all_btn.pressed.connect(_claim_pass_all)
+	view.add_child(_pass_all_btn)
+	for i in range(1, PassDefs.STEPS + 1):
+		var y := 162.0 + float(i - 1) * PASS_ROW_H
+		# **배경은 안 깐다.** 알약을 줄마다 늘렸더니 둥근 끝이 가운데로 몰려
+		# 한 줄이 세 덩어리로 보였다(실측 두 번). 30줄짜리 트랙은 선 하나로
+		# 나누는 편이 읽기 쉽고, 그림이 늘어날 일도 없다.
+		var sep := ColorRect.new()
+		sep.color = Color(0.30, 0.27, 0.32)
+		sep.position = Vector2(0.0, y + 52.0)
+		sep.size = Vector2(SHOP_LIST_W, 1.0)
+		sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.add_child(sep)
+		var lv := _panel_label(view, Vector2(0.0, y + 15.0), Type.SIZE_MID,
+			Color(0.95, 0.90, 0.90), 52.0, 22.0)
+		lv.text = "%d" % i
+		lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(lv, 5)
+		var row := {"step": i}
+		# 무료(왼쪽) · 유료(오른쪽) 두 칸. 각 칸은 아이콘 + 수량 + 누르는 자리.
+		var cw := (SHOP_LIST_W - 68.0) * 0.5 - 6.0
+		for j in 2:
+			var paid := j == 1
+			var cx := 62.0 + float(j) * (cw + 12.0)
+			# 유료 줄만 옅은 띠를 깔아 둘을 가른다 — 사면 열리는 쪽이 어디인지
+			# 글자를 안 읽고도 갈려야 한다.
+			if paid:
+				var band := ColorRect.new()
+				band.color = Color(0.42, 0.24, 0.30, 0.28)
+				band.position = Vector2(cx - 6.0, y)
+				band.size = Vector2(cw + 12.0, 50.0)
+				band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				view.add_child(band)
+			var ic := Ui.icon("", Vector2(cx + 16.0, y + 13.0), 24.0)
+			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.add_child(ic)
+			var tx := _panel_label(view, Vector2(cx + 46.0, y + 16.0),
+				Type.SIZE_SMALL, Color(0.92, 0.88, 0.86), cw - 56.0, 20.0)
+			_shop_outline(tx, 5)
+			var b := _shop_ghost(view, Vector2(cw, 50.0))
+			b.position = Vector2(cx, y)
+			var step := i
+			b.pressed.connect(func() -> void: _claim_pass(step, paid))
+			row["icon_paid" if paid else "icon_free"] = ic
+			row["lbl_paid" if paid else "lbl_free"] = tx
+			row["btn_paid" if paid else "btn_free"] = b
+		_pass_rows.append(row)
+	view.custom_minimum_size.y = 162.0 + float(PassDefs.STEPS) * PASS_ROW_H
+	_refresh_pass()
+
+
+func _refresh_pass() -> void:
+	if _pass_rows.is_empty():
+		return
+	var step := PassDefs.step_of(pass_points)
+	var active := _pass_active()
+	_pass_head.text = "%d / %d단계  ·  %s" % [step, PassDefs.STEPS,
+		"구매함" if active else "무료 줄만"]
+	var need := PassDefs.to_next(pass_points)
+	_pass_fill.size.x = (SHOP_LIST_W - 120.0) * (0.0 if need == 0 \
+		else float(PassDefs.STEP_POINT - need) / float(PassDefs.STEP_POINT))
+	var can_any := false
+	for row in _pass_rows:
+		var i: int = row["step"]
+		var open := i <= step
+		for paid in [false, true]:
+			var r := PassDefs.paid_reward(i) if paid else PassDefs.free_reward(i)
+			var key := "paid" if paid else "free"
+			var got: Dictionary = pass_paid_got if paid else pass_free_got
+			var ic: TextureRect = row["icon_" + key]
+			var lbl: Label = row["lbl_" + key]
+			var b: Button = row["btn_" + key]
+			ic.texture = Assets.tex(_shop_kind_icon(str(r["kind"])))
+			lbl.text = "받음" if got.has(i) else _n(float(r["amount"]))
+			# 잠긴 칸은 어둡게 — 유료 줄은 패스를 사야 열린다.
+			var live: bool = open and not got.has(i) and (active or not paid)
+			b.disabled = not live
+			ic.modulate = Color(1, 1, 1) if live else Color(0.45, 0.43, 0.48)
+			lbl.modulate = ic.modulate
+			can_any = can_any or live
+	_pass_all_btn.disabled = not can_any
+
+
 # 교환: 원래 있던 판 — 보석으로 오늘치 배급을 앞당긴다. 카드 5장, 2열.
 func _build_shop_trade(view: Control) -> void:
 	for i in ShopDefs.ITEMS.size():
@@ -6388,16 +6588,20 @@ func _shop_set_mode(mode: String) -> void:
 	_shop_view.get_parent().visible = mode == "trade"
 	_pack_view.get_parent().visible = mode == "pack"
 	_sub_view.get_parent().visible = mode == "sub"
+	_pass_view.get_parent().visible = mode == "pass"
 	for key in _shop_mode_btns:
 		_shop_mode_btns[key].set_pressed_no_signal(key == mode)
 	match mode:
 		"pack": _shop_line.text = "귀한 손님이군요… 좋은 것만 꺼내 왔어요."
 		"sub": _shop_line.text = "매일 들러 주시는 분께는 값을 맞춰 드려요."
+		"pass": _shop_line.text = "부지런한 분께는 매일 몫이 쌓이지요."
 		"trade": _shop_line.text = "보석이라면 무엇이든 바꿔 드리죠."
 	if mode == "trade":
 		_refresh_shop()
 	elif mode == "pack":
 		_refresh_packs()
+	elif mode == "pass":
+		_refresh_pass()
 
 
 # 패키지는 **벽 직전에 하나씩** 열린다 — 아직 못 간 구간의 것은 잠가 둔다.
@@ -9704,6 +9908,9 @@ func _save_game() -> void:
 	cfg.set_value("iap", "bought", iap_bought)
 	cfg.set_value("iap", "first_buy", iap_first_buy)
 	cfg.set_value("iap", "daily_date", iap_daily_date)
+	cfg.set_value("pass", "points", pass_points)
+	cfg.set_value("pass", "free", pass_free_got)
+	cfg.set_value("pass", "paid", pass_paid_got)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
@@ -9770,6 +9977,9 @@ func _load_game() -> void:
 	iap_bought = cfg.get_value("iap", "bought", {})
 	iap_first_buy = bool(cfg.get_value("iap", "first_buy", false))
 	iap_daily_date = str(cfg.get_value("iap", "daily_date", ""))
+	pass_points = maxi(0, int(cfg.get_value("pass", "points", 0)))
+	pass_free_got = cfg.get_value("pass", "free", {})
+	pass_paid_got = cfg.get_value("pass", "paid", {})
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))
