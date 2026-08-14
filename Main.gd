@@ -3569,9 +3569,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if key.keycode == KEY_F12:
 		_dev_reset_skill_cd()
 		return
-	# F8 — 검수 상태로 한 방에(100구간·전 콘텐츠 해금). 사장님은 빌드한 실행본을
-	# 플레이하므로 명령줄 플래그(--god)로는 못 쓴다 — 같은 일을 키로도 연다.
-	if key.keycode == KEY_F8:
+	# Ctrl+G — 검수 상태로 한 방에(100구간·전 콘텐츠 해금). 사장님은 빌드한
+	# 실행본을 플레이하므로 명령줄 플래그(--god)로는 못 쓴다 — 키로도 연다.
+	#
+	# **F5~F8 은 못 쓴다**: Godot 에디터가 실행/일시정지/중지로 먼저 먹는다
+	# (F8 로 뒀더니 게임이 그대로 꺼졌다 — 사장님 실측). 남은 F9~F12 는 이미
+	# 다른 치트가 쓰고 있어서 조합키로 간다. 실수로 눌릴 일도 없다.
+	if key.keycode == KEY_G and key.ctrl_pressed:
 		_dev_god(100)
 		_show_reward("검수 지급", [{"icon": "res://assets/ui/res_gem.png",
 			"label": "100구간", "sub": "전 콘텐츠 해금"}])
