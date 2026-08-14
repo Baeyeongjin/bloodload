@@ -20,18 +20,37 @@ const MARK_STEP := 10
 #   혈흔 20(3회차)   x2.20 -> +23구간
 #   혈흔 60(10회차)  x4.60 -> +41구간
 # 한 번으로는 조금, 반복하면 크게 — 그게 2차 루프의 모양이다.
-const MARK_POWER := 0.06
+# static var 인 이유: PaceProbe 가 후보를 훑는다(StageDefs.POWER_STEP 과 같은 자리).
+static var MARK_POWER := 0.06
 
 
-static func can(best_stage: int) -> bool:
-	return best_stage >= OPEN_STAGE
-
-
-# 지금 회귀하면 받는 혈흔. 조건 미달이면 0.
-static func marks_for(best_stage: int) -> int:
-	if not can(best_stage):
+# **이미 받은 몫은 다시 안 준다** (사장님 2026-08-14, 실측 뒤 결정).
+#
+# 왜: 200일 실측에서 **자주 누를수록 손해**였다 — 벽에 닿을 때마다 눌러 혈흔
+# 395개(x24.7)를 모은 쪽이 252구간, 7일씩 참아 131개(x8.9)만 모은 쪽이 300구간.
+# 이득(회귀당 혈흔 ~11개)은 매번 같은데 비용(스탯·혈액 리셋 + 되돌아오는 며칠)도
+# 매번 같아서, 반복하면 왕복 시간만 버렸다.
+#
+# 유저가 **참는 게 최선인 버튼**을 화면에 두면 안 되고, 얼마나 참아야 하는지는
+# 화면에 안 나왔다. 그래서 같은 자리에서 두 번째로 누르면 0 이 나오게 한다 —
+# 잘못 누를 방법이 없어지고, "N구간까지 가면 열린다"로 그대로 적힌다.
+static func marks_for(best_stage: int, peak: int = 0) -> int:
+	if best_stage < OPEN_STAGE:
 		return 0
-	return maxi(0, (best_stage - MARK_BASE) / MARK_STEP)
+	return maxi(0, _tier(best_stage) - _tier(peak))
+
+
+static func can(best_stage: int, peak: int = 0) -> bool:
+	return marks_for(best_stage, peak) > 0
+
+
+# 다음 회귀가 열리는 구간 — 화면에 "N구간까지 가면 열린다"로 적는다.
+static func next_stage(peak: int) -> int:
+	return maxi(OPEN_STAGE, MARK_BASE + (_tier(peak) + 1) * MARK_STEP)
+
+
+static func _tier(stage: int) -> int:
+	return maxi(0, (stage - MARK_BASE) / MARK_STEP)
 
 
 static func power_mult(marks: int) -> float:

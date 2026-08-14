@@ -25,6 +25,20 @@ func _init() -> void:
 	# 더 간 사람이 더 받는다 — 아니면 일찍 접는 게 이득이 된다.
 	assert(PrestigeDefs.marks_for(300) > PrestigeDefs.marks_for(200),
 		"멀리 가도 혈흔이 안 는다")
+
+	# **같은 자리에서 두 번은 없다** — 이게 안 지켜지면 벽에 닿을 때마다 누르는
+	# 게 최적이 되고, 실측에서 그쪽이 48구간 손해였다.
+	assert(PrestigeDefs.marks_for(250, 250) == 0, "같은 구간에서 또 받았다")
+	assert(not PrestigeDefs.can(250, 250), "같은 구간에서 또 열렸다")
+	# 나눠 받아도 총량은 한 번에 받은 것과 같다 — 아니면 쪼개는 게 이득이 된다.
+	assert(PrestigeDefs.marks_for(250, 0)
+		== PrestigeDefs.marks_for(220, 0) + PrestigeDefs.marks_for(250, 220),
+		"나눠 받으면 총량이 달라진다")
+	# 다음 문턱이 화면에 적을 수 있는 값인가.
+	assert(PrestigeDefs.next_stage(0) == PrestigeDefs.OPEN_STAGE,
+		"첫 문턱이 개방 구간이 아니다: %d" % PrestigeDefs.next_stage(0))
+	assert(PrestigeDefs.can(PrestigeDefs.next_stage(250), 250),
+		"적어 준 문턱에서 안 열린다")
 	assert(is_equal_approx(PrestigeDefs.power_mult(0), 1.0), "혈흔 0에 배율이 있다")
 	assert(PrestigeDefs.power_mult(20) > PrestigeDefs.power_mult(5),
 		"혈흔이 쌓여도 배율이 안 는다")
@@ -49,6 +63,7 @@ func _init() -> void:
 	# **결백성** — 앞선 검사가 남긴 저장본을 물려받으면 횟수가 이미 올라 있다.
 	scene.prestige_marks = 0
 	scene.prestige_count = 0
+	scene.prestige_peak = 0
 	scene.best_stage = 250
 	scene.stage = 250
 	scene.gold = 1e9
@@ -70,11 +85,15 @@ func _init() -> void:
 	# 2) 혈흔 — 받았고 누적된다.
 	assert(scene.prestige_marks == want, "혈흔이 안 들어왔다: %d" % scene.prestige_marks)
 	assert(scene.prestige_count == 1, "회귀 횟수가 안 올랐다")
+	assert(scene.prestige_peak == 250, "받은 자리를 기억 안 했다: %d" % scene.prestige_peak)
 
 	# 3) **되돌아간 것**: 구간·스탯·혈액.
 	assert(scene.best_stage == 1 and scene.stage == 1, "구간이 안 돌아갔다")
 	assert(scene.lv.is_empty(), "스탯 레벨이 남았다")
-	assert(is_equal_approx(scene.gold, 0.0), "혈액이 남았다")
+	# **0 을 재지 않는다.** 페이드가 끝나기를 기다리는 동안 1구간 적이 잡혀
+	# 혈액이 한 자리 들어온다(실측 1.0) — 그건 회귀가 아니라 그냥 게임이
+	# 굴러가는 것이다. 심어 둔 10억이 사라졌는지만 본다.
+	assert(scene.gold < 1000.0, "혈액이 안 돌아갔다: %f" % scene.gold)
 
 	# 3) **남아야 하는 것**: 뽑은 것과 기록과 다른 재화 축.
 	assert(scene.gear_inventory.has("keep_gear"), "장비가 사라졌다")
@@ -95,13 +114,34 @@ func _init() -> void:
 	assert(is_equal_approx(with_marks / without, PrestigeDefs.power_mult(keep)),
 		"배율 크기가 표와 다르다")
 
-	# 5) 저장.
+	# 4b) **같은 자리로 돌아와도 두 번째는 없다.** 여기가 이 판의 핵심 규칙이다 —
+	# 이게 새면 벽마다 누르는 게 최적이 되고, 실측에서 그쪽이 48구간 손해였다.
+	scene.best_stage = 250
+	scene._prestige_do()
+	assert(scene.prestige_count == 1, "같은 구간에서 두 번 회귀했다")
+	assert(scene.prestige_marks == want, "같은 구간에서 혈흔을 또 받았다")
+	# 더 멀리 가면 **그 차액만** 받는다 — 총량이 한 번에 간 것과 같아야
+	# "쪼개서 여러 번"이 이득이 되는 구멍이 안 생긴다.
+	scene.best_stage = 300
+	scene._prestige_do()
+	while scene._fade_t > 0.0:
+		await process_frame
+	assert(scene.prestige_count == 2, "더 멀리 갔는데 회귀가 안 됐다")
+	assert(scene.prestige_marks == PrestigeDefs.marks_for(300),
+		"나눠 받은 총량이 한 번에 받은 것과 다르다: %d" % scene.prestige_marks)
+	assert(scene.prestige_peak == 300, "문턱이 안 올라갔다")
+	want = scene.prestige_marks
+
+	# 5) 저장. **문턱도 같이 실려야 한다** — 안 실리면 껐다 켜서 같은 자리에서
+	# 또 받을 수 있고, 그게 이 판의 규칙을 통째로 무르는 구멍이다.
 	scene._save_game()
 	scene.prestige_marks = 0
 	scene.prestige_count = 0
+	scene.prestige_peak = 0
 	scene._load_game()
-	assert(scene.prestige_marks == want and scene.prestige_count == 1,
+	assert(scene.prestige_marks == want and scene.prestige_count == 2,
 		"혈흔이 복원 안 됐다")
+	assert(scene.prestige_peak == 300, "문턱이 복원 안 됐다: %d" % scene.prestige_peak)
 
 	print("PrestigeCheck OK")
 	quit()

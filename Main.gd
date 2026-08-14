@@ -1891,7 +1891,8 @@ func _build_prestige_view(root: Control) -> void:
 	# **한 번 더 묻는다.** 되돌릴 수 없는 일은 확인 창을 지난다(공용 _confirm).
 	_pr_btn.pressed.connect(func() -> void:
 		_ask("%d구간을 접고 혈흔 %d 을 받습니다.\n구간·스탯·혈액이 처음으로 돌아갑니다.\n\n되돌릴 수 없습니다."
-			% [best_stage, PrestigeDefs.marks_for(best_stage)], _prestige_do))
+			% [best_stage, PrestigeDefs.marks_for(best_stage, prestige_peak)],
+			_prestige_do))
 	_refresh_prestige()
 
 
@@ -1899,8 +1900,8 @@ func _refresh_prestige() -> void:
 	if _pr_now == null:
 		return
 	_pr_now.text = "혈흔 %d  ·  공격 x%.2f" % [prestige_marks, _prestige_mult()]
-	var can := PrestigeDefs.can(best_stage)
-	var got := PrestigeDefs.marks_for(best_stage)
+	var got := PrestigeDefs.marks_for(best_stage, prestige_peak)
+	var can := got > 0
 	if can:
 		# 받고 나면 얼마나 더 갈 수 있는지 — 그게 이 버튼을 누르는 이유다.
 		var after := PrestigeDefs.stages_worth(prestige_marks + got)
@@ -1908,7 +1909,8 @@ func _refresh_prestige() -> void:
 		_pr_gain.text = "이번 회귀: 혈흔 +%d  ·  구간 +%d 만큼 더" % [got, after - now]
 		_pr_btn_lbl.text = "회귀 %d회" % (prestige_count + 1)
 	else:
-		_pr_gain.text = "%d구간을 넘으면 열린다" % PrestigeDefs.OPEN_STAGE
+		# **얼마나 더 가야 하는지를 적는다** — 이 판의 유일한 잠금 이유다.
+		_pr_gain.text = "%d구간까지 가면 열린다" % PrestigeDefs.next_stage(prestige_peak)
 		_pr_btn_lbl.text = "잠김"
 	_pr_btn.disabled = not can
 	_gate_btn_dim(_pr_btn_tex, _pr_btn_lbl, not can)
@@ -5187,6 +5189,7 @@ var pass_paid_got := {}     # 단계 -> true (유료 줄 수령)
 # ── 프레스티지 "핏빛 회귀" (PrestigeDefs) ──────────────────────────────────
 var prestige_marks := 0     # 혈흔 — 누적. 리셋해도 안 사라진다
 var prestige_count := 0     # 몇 번 회귀했나(화면 표기용)
+var prestige_peak := 0      # 회귀로 혈흔을 받은 최고 구간 — 여기까진 이미 받았다
 
 
 # 회귀 배율. **공격력에만** 붙인다 — 체력·수입까지 곱하면 곡선을 다시 재야 한다.
@@ -5200,13 +5203,14 @@ func _prestige_mult() -> float:
 # 자리라, 리셋이 그걸 지우면 과금 가치가 흔들린다. 기록(미궁·도감·칭호)과
 # 다른 재화 축(혈맹·혈맥)도 남는다 — 지우는 건 **혈액으로 산 것**뿐이다.
 func _prestige_do() -> void:
-	if not PrestigeDefs.can(best_stage) or _fade_t > 0.0:
+	if _fade_t > 0.0:
 		return
-	var got := PrestigeDefs.marks_for(best_stage)
+	var got := PrestigeDefs.marks_for(best_stage, prestige_peak)
 	if got <= 0:
 		return
 	prestige_marks += got
 	prestige_count += 1
+	prestige_peak = maxi(prestige_peak, best_stage)
 	# 되돌리는 것: 구간과 스탯 레벨과 혈액.
 	stage = 1
 	best_stage = 1
@@ -10111,6 +10115,7 @@ func _save_game() -> void:
 	cfg.set_value("pass", "paid", pass_paid_got)
 	cfg.set_value("prestige", "marks", prestige_marks)
 	cfg.set_value("prestige", "count", prestige_count)
+	cfg.set_value("prestige", "peak", prestige_peak)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
@@ -10182,6 +10187,7 @@ func _load_game() -> void:
 	pass_paid_got = cfg.get_value("pass", "paid", {})
 	prestige_marks = maxi(0, int(cfg.get_value("prestige", "marks", 0)))
 	prestige_count = maxi(0, int(cfg.get_value("prestige", "count", 0)))
+	prestige_peak = maxi(0, int(cfg.get_value("prestige", "peak", 0)))
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))

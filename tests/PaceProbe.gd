@@ -60,13 +60,19 @@ const SWEEP := [
 func _init() -> void:
 	var days := 14
 	var sweep := false
+	var compare := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--days="):
 			days = maxi(1, int(arg.trim_prefix("--days=")))
 		if arg == "--sweep":
 			sweep = true
+		if arg == "--prestige":
+			compare = true
 	if sweep:
 		_sweep(days)
+		return
+	if compare:
+		_compare(days)
 		return
 	print("")
 	print("하루 모델: 접속 %d분 + 방치 %d시간 + 일일 배급"
@@ -76,9 +82,7 @@ func _init() -> void:
 	print("-".repeat(64))
 	var free := _run(days, false)
 	var paid := _run(days, true)
-	for i in range(1, days + 1):
-		if i != 1 and i != 3 and i != 7 and i != 14 and i != days:
-			continue
+	for i in _marks(days):
 		var f: int = free["log"][i - 1]
 		var p: int = paid["log"][i - 1]
 		print("%-10s %-12d %-12d %-14s %s"
@@ -86,15 +90,13 @@ func _init() -> void:
 			"<- 사장님 기준 105" if i == 14 else ""])
 	print("")
 	print("무과금 진단 — 무엇이 병목인가")
-	print("%-8s %-8s %-8s %-10s %-10s %-10s %s"
-		% ["일차", "구간", "미궁층", "훈련상한", "공격렙", "남은혈액", "전투력"])
-	for i in range(1, days + 1):
-		if i != 1 and i != 3 and i != 7 and i != 14 and i != days:
-			continue
+	print("%-8s %-8s %-8s %-10s %-10s %-8s %-10s %s"
+		% ["일차", "구간", "미궁층", "훈련상한", "공격렙", "혈흔", "남은혈액", "전투력"])
+	for i in _marks(days):
 		var d: Dictionary = free["diag"][i - 1]
-		print("%-8d %-8d %-8d %-10d %-10d %-10s %s"
+		print("%-8d %-8d %-8d %-10d %-10d %-8d %-10s %s"
 			% [i, int(d["stage"]), int(d["floor"]), int(d["cap"]), int(d["lv"]),
-			_n(float(d["gold"])), _n(float(d["power"]))])
+			int(d["marks"]), _n(float(d["gold"])), _n(float(d["power"]))])
 	print("")
 	print("전투력 — %d일차 무과금 %s · 멤버십 %s"
 		% [days, _n(float(free["power"])), _n(float(paid["power"]))])
@@ -103,10 +105,81 @@ func _init() -> void:
 	print("")
 	print("축별 기여 (%d일차 무과금, 공격력 기준 배수)" % days)
 	var a: Dictionary = free["axes"]
-	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "유물", "칭호"]:
+	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "유물", "칭호", "회귀"]:
 		print("  %-8s x%.2f" % [k, float(a.get(k, 1.0))])
 	print("PaceProbe OK")
 	quit()
+
+
+# **회귀를 얼마나 자주 누르는 게 이득인가.** 이걸 재는 이유: 200일 실측에서
+# 배율이 21배까지 갔는데 110일에 19구간뿐이었다. 회귀가 주는 것(공격 배율)과
+# 뺏는 것(스탯·혈액, 그리고 되돌아오는 날들)이 비긴다는 뜻이다.
+#
+# **누를수록 손해라면 그건 설계 결함이다** — 유저가 "안 누르는 게 최선"인
+# 버튼을 화면에 두면 안 된다. 안 누름을 견줄 기준으로 같이 찍는다.
+# 회귀 뒤 구간이 1 로 떨어지므로 그날 자리(log)가 아니라 **통산 최고**(peak)를
+# 본다 — 질문이 "며칠에 어디까지 갔나"이기 때문이다.
+func _compare(days: int) -> void:
+	print("")
+	print("회귀 정책 (무과금) — 정체 며칠 만에 누르나 · 통산 최고 구간")
+	var head := "%-12s" % "정책"
+	for d in _marks(days):
+		head += "%-7s" % ("%d일" % d)
+	head += "  혈흔"
+	print(head)
+	print("-".repeat(head.length()))
+	for after in [0, 1, 3, 7]:
+		var r := _run(days, false, after)
+		var line := "%-12s" % ("안 누름" if after == 0 else "정체 %d일" % after)
+		for d in _marks(days):
+			line += "%-7d" % int(r["peak"][d - 1])
+		line += "  %d" % int(r["diag"][days - 1]["marks"])
+		print(line)
+	# **혈흔 하나의 값어치.** 문턱을 두니 총 혈흔이 10개로 줄어(반복 수령이 유일한
+	# 성장 경로였다) 배율이 x1.6 뿐이다. MARK_POWER 가 그 세기를 되찾는 손잡이다 —
+	# MARK_STEP 과 곱으로만 작용하므로 손잡이는 이것 하나면 된다.
+	var keep_m: float = PrestigeDefs.MARK_POWER
+	_knob(days, "혈흔 하나의 값어치 (MARK_POWER)", [0.06, 0.2, 0.4, 0.6, 1.0],
+		func(v: float) -> void: PrestigeDefs.MARK_POWER = v)
+	PrestigeDefs.MARK_POWER = keep_m
+	# **스탯 비용 지수.** 200일 진단에서 혈액이 1.25조 남은 채 250구간에 고착했다 —
+	# 상한(682)도 재화도 아니고 **다음 레벨 가격**이 벽이다. 회귀 배율을 13배로
+	# 키워도 안 뚫렸던 이유가 여기 있다(배율은 공격력에만 붙어 가격표를 못 건드린다).
+	var keep_c: float = StatDefs.COST_EXP_SCALE
+	_knob(days, "스탯 비용 지수 (COST_EXP_SCALE)", [1.0, 0.8, 0.6, 0.35],
+		func(v: float) -> void: StatDefs.COST_EXP_SCALE = v)
+	StatDefs.COST_EXP_SCALE = keep_c
+	print("PaceProbe OK")
+	quit()
+
+
+# 손잡이 하나를 훑어 나란히 찍는다. 회귀 세기와 스탯 비용이 같은 모양의
+# 질문("이 값을 흔들면 며칠에 어디까지 가나")이라 표를 공유한다.
+func _knob(days: int, title: String, values: Array, apply: Callable) -> void:
+	print("")
+	print(title + " — 정체 3일 정책 · 통산 최고 구간")
+	var head := "%-12s" % "값"
+	for d in _marks(days):
+		head += "%-7s" % ("%d일" % d)
+	print(head)
+	print("-".repeat(head.length()))
+	for v in values:
+		apply.call(float(v))
+		var r := _run(days, false, 3)
+		var line := "%-12s" % ("%.2f" % float(v))
+		for d in _marks(days):
+			line += "%-7d" % int(r["peak"][d - 1])
+		print(line)
+
+
+# 찍어 볼 일차. 200일을 재면 14·30 만 보고는 어디서 멈췄는지 못 찾는다.
+static func _marks(days: int) -> Array[int]:
+	var out: Array[int] = []
+	for d in [1, 3, 7, 14, 30, 60, 90, 120, 150, 200]:
+		if d < days:
+			out.append(d)
+	out.append(days)
+	return out
 
 
 # 후보마다 7·14·30·60일차를 나란히. 고르는 자리는 **14일 멤버십**이다.
@@ -146,10 +219,16 @@ func _sweep(days: int) -> void:
 	quit()
 
 
-func _run(days: int, member: bool) -> Dictionary:
+# prestige_after — 며칠 정체하면 회귀하나. 0 이면 안 누른다(견줄 기준).
+func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
+	# **씨앗을 심는다.** 소환이 난수라 안 심으면 실행마다 답이 달라진다 —
+	# 실측: 같은 설정에서 200일 도달이 250 과 280 으로 갈렸다. 후보를 견주는
+	# 자리에서 그 흔들림은 곧 잘못된 결론이다(주석만 있고 구현이 없었다).
+	seed(20260814)
 	var game = load("res://Main.gd").new()
 	var gold := 0.0
 	var log: Array[int] = []
+	var peak: Array[int] = []
 	var diag: Array[Dictionary] = []
 	for day in days:
 		# 1) 방치 — 상한만큼 잔다. 실제로는 오프라인 절반 효율이 붙는다.
@@ -196,16 +275,43 @@ func _run(days: int, member: bool) -> Dictionary:
 			game.best_stage = maxi(game.best_stage, game.stage)
 		_earn_titles(game)
 		log.append(game.stage)
+		peak.append(maxi(game.stage, peak[-1] if not peak.is_empty() else 0))
+		# 11) 회귀 — **막히면 누른다.** 실제 유저의 방아쇠가 그거다(어제와 같은
+		#     자리면 벽이다). 화면 함수(_prestige_do)는 노드가 없어 못 부르므로
+		#     되돌리는 것만 같게 만든다 — 구간·스탯·혈액. 뽑은 것과 기록은 남는다.
+		#     best_stage 가 1 로 가면 던전·미궁·스탯 해금이 같이 닫히는데,
+		#     **그게 실제 경험이라** 모델도 그대로 둔다.
+		if prestige_after > 0 \
+				and PrestigeDefs.can(game.best_stage, game.prestige_peak) \
+				and _stuck_days(log) >= prestige_after:
+			game.prestige_marks += PrestigeDefs.marks_for(game.best_stage,
+				game.prestige_peak)
+			game.prestige_peak = maxi(game.prestige_peak, game.best_stage)
+			game.prestige_count += 1
+			game.stage = 1
+			game.best_stage = 1
+			game.lv = {}
+			gold = 0.0
 		# **어디서 막혔는가**를 같이 남긴다 — 구간만 보면 "느리다"까지만 알고
 		# 무엇이 병목인지는 모른다(멤버십 차이가 0 인 이유가 여기 있다).
 		diag.append({"stage": game.stage, "floor": game.dungeon_best,
 			"cap": StatDefs.train_cap(game.dungeon_best, game.best_stage),
-			"lv": int(game.stat_lv("damage")),
+			"lv": int(game.stat_lv("damage")), "marks": game.prestige_marks,
 			"gold": gold, "crystal": game.crystal,
 			"power": Balance.combat_power(game.dps(), game.max_hp(),
 				game.regen_per_sec())})
-	return {"log": log, "diag": diag, "axes": _axes(game),
+	return {"log": log, "peak": peak, "diag": diag, "axes": _axes(game),
 		"power": Balance.combat_power(game.dps(), game.max_hp(), game.regen_per_sec())}
+
+
+# 마지막 자리에서 며칠째 제자리인가. 어제와 같으면 1일 정체다.
+static func _stuck_days(log: Array[int]) -> int:
+	if log.size() < 2:
+		return 0
+	var n := 0
+	while n + 1 < log.size() and log[-1 - n] == log[-2 - n]:
+		n += 1
+	return n
 
 
 # 공격력 한 줄을 축별로 쪼갠다. damage() 는
@@ -227,6 +333,7 @@ func _axes(game) -> Dictionary:
 		"혈맥": TraitDefs.mult("attack", game.traits),
 		"유물": RelicDefs.mult("damage", game.relics),
 		"칭호": with_title / maxf(0.001, stat_only),
+		"회귀": game._prestige_mult(),
 	}
 
 
