@@ -64,6 +64,9 @@ SET_SHEETS = {
     "astro_tabs": ["astro_tab_on", "astro_tab_off"],
     "gate_card": ["gate_row", "gate_button", "gate_pill"],
     "gate_tabs": ["gate_tab_on", "gate_tab_off"],
+    # 사슬 카드는 세로로 늘리면 사슬이 판 가운데를 먹는다 — 넓은 판·긴 띠는
+    # 사슬 없는 전용 자산으로 따로 뽑았다(사장님: "깨지는 부분은 신규 UI").
+    "gate_bars": ["gate_bar", "gate_panel"],
 }
 
 

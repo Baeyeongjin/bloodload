@@ -4960,6 +4960,17 @@ var _raid_reward := {}
 var _raid_btn := {}          # 투명 버튼 — 글자는 _raid_btn_lbl, 그림은 _raid_btn_tex
 var _raid_btn_lbl := {}
 var _raid_btn_tex := {}
+var _dungeon_btn_tex: TextureRect
+var _dungeon_btn_lbl: Label
+var _boss_btn_tex: TextureRect
+var _boss_btn_lbl: Label
+
+
+# 철창 버튼의 잠김 표시 — 그림 버튼이라 붉은 빛이 꺼지는 걸로 말한다.
+# 던전 탭 버튼 넷(재화 3 · 미궁 · 보스 · 이정표 4)이 다 같은 규칙을 쓴다.
+static func _gate_btn_dim(tex: TextureRect, lbl: Label, off: bool) -> void:
+	tex.modulate = Color(0.45, 0.42, 0.45) if off else Color(1, 1, 1)
+	lbl.modulate = Color(0.6, 0.58, 0.6) if off else Color(1, 1, 1)
 
 
 # 미궁 화면 폭. **스크롤바 + 여백만큼 좁다** — 카드가 스크롤바 밑으로 들어가면
@@ -5004,45 +5015,60 @@ func _build_dungeon(root: Control) -> void:
 	_dungeon_info = _panel_label(root, Vector2(PAD + 12.0, PAD + 38.0), Type.SIZE_SMALL,
 		Color(0.92, 0.88, 0.92), MAZE_W - 190.0, 22.0)
 	# 도전 버튼은 **그림 안**에 둔다 (사장님). 그림 위 어둠막(scrim)이 이미 깔려
-	# 있어서 버튼 글자가 배경에 묻히지 않는다.
-	_dungeon_btn = Ui.button("도전", Vector2(PAD + MAZE_W - 162.0, PAD + 16.0),
-		Vector2(150.0, 44.0), Type.SIZE_MID)
+	# 있어서 버튼 글자가 배경에 묻히지 않는다. 던전 탭이므로 철창 버튼 그림이다
+	# (사장님 2026-08-13: 미궁·보스도 같은 세트로).
+	var dbx := Vector2(PAD + MAZE_W - 162.0, PAD + 16.0)
+	_dungeon_btn_tex = _shop_tex(root, "res://assets/ui/sets/gate_button.png",
+		dbx, Vector2(150.0, 44.0))
+	_dungeon_btn_lbl = _panel_label(root, Vector2(dbx.x, dbx.y + 11.0),
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 150.0, 22.0)
+	_dungeon_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_dungeon_btn_lbl, 8)
+	_dungeon_btn = _shop_ghost(root, Vector2(150.0, 44.0))
+	_dungeon_btn.position = dbx
 	_dungeon_btn.pressed.connect(func() -> void:
 		if dungeon_on:
 			_dungeon_exit("미궁 이탈")
 		else:
 			_dungeon_enter()
 		_refresh_dungeon())
-	root.add_child(_dungeon_btn)
-	# 수치 칸 3개 — 최고층(왕관) · 개방층(철문) · 혈정
+	# 수치 칸 3개 — 최고층(왕관) · 개방층(철문) · 혈정. 돌 알약.
 	var chip_w := (MAZE_W - 20.0) / 3.0
 	var chip_icons := ["badge_mastery", "tab_dungeon", "res_crystal"]
 	for i in 3:
 		var x := PAD + float(i) * (chip_w + 10.0)
-		root.add_child(Ui.currency_bar(Vector2(x, 122.0), Vector2(chip_w, 30.0)))
+		_shop_tex(root, "res://assets/ui/sets/gate_pill.png",
+			Vector2(x, 122.0), Vector2(chip_w, 32.0))
 		root.add_child(Ui.icon("res://assets/ui/%s.png" % chip_icons[i],
-			Vector2(x + 8.0, 127.0), 20.0))
-		_dungeon_chips.append(_panel_label(root, Vector2(x + 34.0, 122.0),
-			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), chip_w - 40.0, 30.0))
+			Vector2(x + 16.0, 127.0), 20.0))
+		var chip := _panel_label(root, Vector2(x + 42.0, 123.0),
+			Type.SIZE_SMALL, Color(0.95, 0.90, 0.90), chip_w - 50.0, 30.0)
+		_shop_outline(chip, 5)
+		_dungeon_chips.append(chip)
 	_dungeon_sub = _panel_label(root, Vector2(PAD, 156.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.76), MAZE_W, 18.0)
 	# 군림 판 — 본편 돌파가 자동으로 여는 기능 5개. 창은 미궁 탭을 빌린다:
 	# 교차 잠금의 다른 축들(가지·상한)이 다 이 창에 적혀 있어서 자리가 맞다.
 	# (재화 던전이 잠깐 이 자리를 썼다가 제 탭으로 갔다 — 성격이 다르다, 사장님.)
-	root.add_child(Ui.card(Vector2(PAD - 8.0, 178.0),
-		Vector2(MAZE_W + 16.0, CONTENT_BOTTOM - 178.0)))
-	var mt := _panel_label(root, Vector2(PAD + 6.0, 184.0), Type.SIZE_SMALL,
-		Color(1.0, 0.78, 0.45), MAZE_W, 18.0)
+	# **사슬 없는 전용 판**(gate_panel) — 사슬 카드를 세로로 늘렸더니 사슬이
+	# 판 가운데까지 들어와 글자를 먹었다(사장님: "깨지는 부분은 신규 UI").
+	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 178.0),
+		Vector2(MAZE_W + 16.0, CONTENT_BOTTOM - 178.0))
+	var mt := _panel_label(root, Vector2(PAD + 12.0, 190.0), Type.SIZE_SMALL,
+		Color(1.0, 0.86, 0.55), MAZE_W - 24.0, 18.0)
 	mt.text = "군림 — 본편 돌파가 스스로 연다"
+	_shop_outline(mt, 6)
 	for i in MasteryDefs.RANKS.size():
 		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
 		var bd := Ui.icon("res://assets/ui/badge_mastery.png",
-			Vector2(PAD + 8.0, 210.0 + float(i) * 28.0), 20.0)
+			Vector2(PAD + 14.0, 216.0 + float(i) * 28.0), 20.0)
 		root.add_child(bd)
 		_dungeon_badges.append(bd)
-		_dungeon_mastery.append(_panel_label(root,
-			Vector2(PAD + 34.0, 210.0 + float(i) * 28.0),
-			Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), MAZE_W - 40.0, 20.0))
+		var ml := _panel_label(root,
+			Vector2(PAD + 40.0, 216.0 + float(i) * 28.0),
+			Type.SIZE_SMALL, Color(0.86, 0.84, 0.86), MAZE_W - 52.0, 20.0)
+		_shop_outline(ml, 5)
+		_dungeon_mastery.append(ml)
 	_refresh_dungeon()
 
 
@@ -5147,41 +5173,57 @@ func _build_boss_panel(root: Control) -> void:
 	# 곳인데 이름 한 줄로는 그게 안 읽힌다 — 왼쪽에 72px 그림, 오른쪽에 이름·단계·
 	# 이번 주 성과, 그 아래 이정표 넷.
 	# 토글 버튼(y 20~54) 아래에서 시작한다 — 46 에 두면 글자가 버튼을 뚫는다.
-	root.add_child(Ui.card(Vector2(PAD - 8.0, 60.0), Vector2(CONTENT_W + 16.0, 78.0)))
-	var frame := Ui.image("res://assets/ui/slot_common.png", Vector2(PAD, 64.0),
-		Vector2(70.0, 70.0))
-	frame.modulate = Color(0.98, 0.62, 0.45)
-	root.add_child(frame)
-	_boss_art = Ui.icon("", Vector2(PAD + 5.0, 69.0), 60.0)
+	# **사슬 없는 전용 판** — 사슬 카드로는 초상화·이름·버튼이 다 사슬에 물렸다.
+	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 56.0),
+		Vector2(CONTENT_W + 16.0, 140.0))
+	# 초상화 액자는 아이템 칸 틀을 빌린다 — 판에 액자 홈이 없다.
+	var bframe := Ui.image("res://assets/ui/slot_common.png",
+		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0))
+	bframe.modulate = Color(0.98, 0.62, 0.45)
+	root.add_child(bframe)
+	_boss_art = Ui.icon("", Vector2(PAD + 10.0, 90.0), 64.0)
 	root.add_child(_boss_art)
-	var text_x := PAD + 82.0
-	_boss_name = _panel_label(root, Vector2(text_x, 66.0), Type.SIZE_MID,
-		Color(0.98, 0.72, 0.45), CONTENT_W - 212.0, 24.0)
+	var text_x := PAD + 92.0
+	var text_w := CONTENT_W - 92.0 - 168.0
+	_boss_name = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
+		Color(0.98, 0.82, 0.62), text_w, 24.0)
+	_shop_outline(_boss_name, 6)
 	# 이번 주 성과를 **큰 숫자로** 따로 세운다 — 누적 피해가 이 판의 점수판이다.
-	_boss_dmg_lbl = _panel_label(root, Vector2(text_x, 92.0), Type.SIZE_MID,
-		Color(0.98, 0.86, 0.62), CONTENT_W - 212.0, 24.0)
-	# 114 — 118 에 두면 카드 아래 테두리(60~138)에 글자가 닿는다(실측).
-	_boss_sub = _panel_label(root, Vector2(text_x, 113.0), Type.SIZE_SMALL,
-		Color(0.72, 0.70, 0.76), CONTENT_W - 212.0, 16.0)
-	_boss_btn = Ui.button("도전", Vector2(PAD + CONTENT_W - 122.0, 72.0),
-		Vector2(114.0, 46.0), Type.SIZE_MID)
+	_boss_dmg_lbl = _panel_label(root, Vector2(text_x, 106.0), Type.SIZE_MID,
+		Color(0.98, 0.90, 0.70), text_w, 24.0)
+	_shop_outline(_boss_dmg_lbl, 6)
+	_boss_sub = _panel_label(root, Vector2(text_x, 140.0), Type.SIZE_SMALL,
+		Color(0.86, 0.84, 0.86), CONTENT_W - 100.0, 16.0)
+	_shop_outline(_boss_sub, 5)
+	var bbx := Vector2(PAD + CONTENT_W - 156.0, 96.0)
+	_boss_btn_tex = _shop_tex(root, "res://assets/ui/sets/gate_button.png",
+		bbx, Vector2(148.0, 50.0))
+	_boss_btn_lbl = _panel_label(root, Vector2(bbx.x, bbx.y + 15.0), Type.SIZE_MID,
+		Color(1.0, 0.95, 0.90), 148.0, 22.0)
+	_boss_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_boss_btn_lbl, 8)
+	_boss_btn = _shop_ghost(root, Vector2(148.0, 50.0))
+	_boss_btn.position = bbx
 	_boss_btn.pressed.connect(func() -> void:
 		if raid_on == "boss":
 			_boss_exit("도전 중단")
 		else:
 			_boss_enter()
 		_refresh_dungeon())
-	root.add_child(_boss_btn)
+	# 이정표 넷 — **가로로 긴 전용 띠**(gate_bar). 알약(214px)을 544 로 펴면
+	# 끝 곡선이 뭉갠다(실측) — 그래서 이 비율 전용 자산을 따로 뽑았다.
 	for i in EventDefs.MILESTONES.size():
 		var m: Dictionary = EventDefs.MILESTONES[i]
-		var y := 148.0 + float(i) * 52.0
-		root.add_child(Ui.card(Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 48.0)))
+		var y := 210.0 + float(i) * 58.0
+		_shop_tex(root, "res://assets/ui/sets/gate_bar.png",
+			Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 50.0))
 		root.add_child(Ui.icon("res://assets/ui/%s.png" % _reward_icon(str(m["reward"])),
-			Vector2(PAD + 8.0, y + 10.0), 26.0))
+			Vector2(PAD + 8.0, y + 12.0), 26.0))
 		var nm := _panel_label(root, Vector2(PAD + 44.0, y + 6.0), Type.SIZE_SMALL,
-			Color(0.90, 0.86, 0.88), CONTENT_W - 170.0, 16.0)
+			Color(0.95, 0.90, 0.90), CONTENT_W - 200.0, 16.0)
 		# "이정표 3"보다 **무엇을 주는가**가 먼저다 — 번호는 옆 진행도가 말해 준다.
 		nm.text = "%d차 · %s" % [i + 1, _reward_name(str(m["reward"]))]
+		_shop_outline(nm, 5)
 		var track := ColorRect.new()
 		track.color = Color(0.10, 0.09, 0.12)
 		track.position = Vector2(PAD + 44.0, y + 30.0)
@@ -5195,14 +5237,25 @@ func _build_boss_panel(root: Control) -> void:
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(fill)
 		var pr := _panel_label(root, Vector2(PAD + 44.0 + BOSS_BAR_W + 8.0, y + 24.0),
-			Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), 182.0, 20.0)
+			Type.SIZE_SMALL, Color(0.86, 0.84, 0.86), 150.0, 20.0)
+		_shop_outline(pr, 5)
 		var idx := i
-		var b := Ui.button("", Vector2(PAD + CONTENT_W - 108.0, y + 9.0),
-			Vector2(100.0, 32.0), Type.SIZE_SMALL)
-		Ui.cost_icon(b, "res://assets/ui/%s.png" % _reward_icon(str(m["reward"])), 14)
+		var mbx := Vector2(PAD + CONTENT_W - 118.0, y + 6.0)
+		var mtex := _shop_tex(root, "res://assets/ui/sets/gate_button.png",
+			mbx, Vector2(110.0, 38.0))
+		var mlb := _panel_label(root, Vector2(mbx.x + 16.0, mbx.y + 10.0),
+			Type.SIZE_SMALL, Color(1.0, 0.95, 0.90), 78.0, 18.0)
+		mlb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(mlb, 6)
+		var mic := Ui.icon("res://assets/ui/%s.png" % _reward_icon(str(m["reward"])),
+			mbx + Vector2(8.0, 12.0), 16.0)
+		mic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(mic)
+		var b := _shop_ghost(root, Vector2(114.0, 38.0))
+		b.position = mbx
 		b.pressed.connect(func() -> void: _claim_milestone(idx))
-		root.add_child(b)
-		_boss_rows.append({"prog": pr, "btn": b, "fill": fill})
+		_boss_rows.append({"prog": pr, "btn": b, "fill": fill,
+			"tex": mtex, "lbl": mlb, "icon": mic})
 
 
 # 이정표 게이지는 임무보다 짧다 — 옆 수치가 "43.3K / 144.2K" 라 자리가 더 필요하다.
@@ -5221,11 +5274,12 @@ func _refresh_boss() -> void:
 	# 폭 316px 이라 긴 문장은 잘린다(실측: "넷을 다 받으면 다"). 짧게 쓴다.
 	_boss_sub.text = "도전 %d / %d  ·  넷을 받으면 다음 단계" 		% [boss_tries, EventDefs.TRIES_PER_DAY]
 	if raid_on == "boss":
-		_boss_btn.text = "돌아가기"
+		_boss_btn_lbl.text = "돌아가기"
 		_boss_btn.disabled = false
 	else:
-		_boss_btn.text = "도전" if boss_tries > 0 else "내일"
+		_boss_btn_lbl.text = "도전" if boss_tries > 0 else "내일"
 		_boss_btn.disabled = boss_tries <= 0 or dungeon_on or raid_on != ""
+	_gate_btn_dim(_boss_btn_tex, _boss_btn_lbl, _boss_btn.disabled)
 	# 이정표 기준은 **도전 시점의 화력**이다. 밖에서는 지금 화력으로 미리 보여 준다 —
 	# 안 그러면 도전 전에는 칸이 텅 비어서 얼마나 남았는지 감이 안 온다.
 	var base := _boss_dps_snap if raid_on == "boss" else dps()
@@ -5236,11 +5290,14 @@ func _refresh_boss() -> void:
 		row["fill"].size.x = BOSS_BAR_W * clampf(boss_dmg / maxf(1.0, need), 0.0, 1.0)
 		var b: Button = row["btn"]
 		if boss_got.has(i):
-			b.text = "완료"
+			row["lbl"].text = "완료"
 			b.disabled = true
 		else:
-			b.text = "+%d" % EventDefs.milestone_amount(i, boss_tier)
+			row["lbl"].text = "+%d" % EventDefs.milestone_amount(i, boss_tier)
 			b.disabled = boss_dmg < need
+		# 받은 줄은 아이콘도 끈다 — "완료"에 값 아이콘이 붙으면 아직 줄 게 남은 듯 읽힌다.
+		row["icon"].visible = not boss_got.has(i)
+		_gate_btn_dim(row["tex"], row["lbl"], b.disabled)
 
 
 # 보상 지급 **한 곳**. 임무·주간·이벤트·도감이 저마다 match 를 갖고 있었는데,
@@ -5401,28 +5458,27 @@ func _refresh_dungeon() -> void:
 		else:
 			lbl.text = "입장"
 			eb.disabled = dungeon_on or raid_on != ""
-		# 그림 버튼이라 잠김은 어두워지는 걸로 말한다(철창의 붉은 빛이 꺼진다).
-		_raid_btn_tex[kind].modulate = Color(0.45, 0.42, 0.45) if eb.disabled \
-			else Color(1, 1, 1)
-		lbl.modulate = Color(0.6, 0.58, 0.6) if eb.disabled else Color(1, 1, 1)
+		_gate_btn_dim(_raid_btn_tex[kind], lbl, eb.disabled)
 	_refresh_boss()
 	if open <= 0:
 		_dungeon_info.text = "본편 %d구간을 넘으면 열린다" % DungeonDefs.OPEN_STAGE
 		_dungeon_sub.text = "층을 오른 기록이 다음 성장(혈맥)의 열쇠가 된다"
-		_dungeon_btn.text = "잠김"
+		_dungeon_btn_lbl.text = "잠김"
 		_dungeon_btn.disabled = true
+		_gate_btn_dim(_dungeon_btn_tex, _dungeon_btn_lbl, true)
 		return
 	_dungeon_btn.disabled = false
+	_gate_btn_dim(_dungeon_btn_tex, _dungeon_btn_lbl, false)
 	if dungeon_on:
 		_dungeon_info.text = "%s 도전 중" % DungeonDefs.label(dungeon_floor)
 		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 본편으로 돌아온다 — 기록은 남는다"
-		_dungeon_btn.text = "돌아가기"
+		_dungeon_btn_lbl.text = "돌아가기"
 		return
 	var next := clampi(dungeon_best + 1, 1, open)
 	_dungeon_info.text = "다음 %d층 — 본편 %d구간 수준" % [next, DungeonDefs.eq_stage(next)]
 	_dungeon_sub.text = "첫 돌파 혈정 %d  ·  소탕 시간당 %.1f" \
 		% [int(DungeonDefs.first_clear_reward(next)), _sweep_per_hour()]
-	_dungeon_btn.text = "도전"
+	_dungeon_btn_lbl.text = "도전"
 
 
 # ── 일일 임무 (QuestDefs, REFERENCE_TEARDOWN 4장-1) ───────────────────────
