@@ -11,8 +11,8 @@ class_name PetDefs
 #   - 물어오는 재화는 방치 상자(혈액)와 **안 겹친다** — 혈정·정수·인장·먹이.
 #   - 버프는 **데리고 다니는 하나만** 준다. 수집은 가진 전부가 한다.
 #
-# anim 은 전부 **자리표시**다(기존 몹 walk 재활용). 아트 배치에서 25종을
-# 오리지널로 뽑아 교체한다(idle 4~6프레임, 후보는 사장님이 고른다).
+# anim 은 25종 전부 **오리지널**이다(pet_*_idle, 5프레임). 등급마다 A/B 후보를
+# 뽑아 사장님이 골랐다(2026-08-18, 아트 배치 1~5).
 
 const CAP_HOURS := 6.0        # 그릇이 차는 시간 — "한 번 더 들를 이유"의 크기
 const PET_OPEN := 10          # 펫 소환이 열리는 구간
@@ -117,19 +117,19 @@ const PETS := [
 		"gain": "sigil", "per_hour": 14.0, "stat": "tough", "value": 0.10,
 		"desc": "한 몸에서 여러 목소리가 난다."},
 	# 전설 — 13%.
-	{"id": "duskknight", "name": "황혼 기사", "rarity": "legend", "anim": "dark_knight",
+	{"id": "duskknight", "name": "황혼 기사", "rarity": "legend", "anim": "pet_duskknight",
 		"gain": "crystal", "per_hour": 75.0, "stat": "damage", "value": 0.13,
 		"desc": "해가 지는 쪽으로만 걷는다."},
-	{"id": "wraithlord", "name": "망령 군주", "rarity": "legend", "anim": "wraith_knight",
+	{"id": "wraithlord", "name": "망령 군주", "rarity": "legend", "anim": "pet_wraithlord",
 		"gain": "feed", "per_hour": 48.0, "stat": "speed", "value": 0.13,
 		"desc": "신하를 잃고도 왕관을 안 벗었다."},
-	{"id": "voidmaw", "name": "공허 아가리", "rarity": "legend", "anim": "void_wraith",
+	{"id": "voidmaw", "name": "공허 아가리", "rarity": "legend", "anim": "pet_voidmaw",
 		"gain": "essence", "per_hour": 26.0, "stat": "gold", "value": 0.13,
 		"desc": "삼킨 자리에 이름이 남지 않는다."},
-	{"id": "fleshreaper", "name": "살점 수확자", "rarity": "legend", "anim": "butcher",
+	{"id": "fleshreaper", "name": "살점 수확자", "rarity": "legend", "anim": "pet_fleshreaper",
 		"gain": "crystal", "per_hour": 78.0, "stat": "tough", "value": 0.13,
 		"desc": "수확철이 끝나지 않는다고 믿는다."},
-	{"id": "stonewing", "name": "돌날개", "rarity": "legend", "anim": "gargoyle",
+	{"id": "stonewing", "name": "돌날개", "rarity": "legend", "anim": "pet_stonewing",
 		"gain": "sigil", "per_hour": 20.0, "stat": "damage", "value": 0.13,
 		"desc": "낮에는 지붕이고 밤에는 이빨이다."},
 ]
