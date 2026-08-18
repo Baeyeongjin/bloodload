@@ -18,6 +18,12 @@ description: bloodlord 배경(막/스테이지 그림)을 새로 만들거나 �
 `make_seamless.py`는 **`.orig.png`에서 다시 만든다.** 먼저 돌리면 `fit_ground`의
 세로 자르기가 통째로 되돌려진다. 항상 `fit_ground` → `make_seamless`.
 
+**지뢰 1-1 (2026-08-18 실측)** — 생성물을 `{name}.orig.png` 로만 저장하면
+둘 다 헛돈다: fit_ground 는 `{name}.png` 를 읽어 "없음"으로 건너뛰고,
+make_seamless 는 orig(320줄)에서 다시 만들어 744x320 이 된다.
+**생성물은 `{name}.png` 로 저장하고(orig 는 make_seamless 가 알아서 남긴다),
+make_seamless 뒤에 fit_ground 가 208줄인지 확인하고 아니면 한 번 더 돌린다.**
+
 ## 지뢰 2 — 지면 행은 생성 단계에서 맞추지 않는다
 
 `fit_ground.py`가 실측해서 `[지면-145, 지면+63)` 창을 떠내므로, 생성물은 지면이

@@ -27,6 +27,21 @@ const RARITIES := [
 ]
 
 
+# ── 천장 상자 (참고작 마일리지 상자, REFERENCE_TEARDOWN §7) ──────────────
+# 어느 판에서 뽑든 **한 상자**가 찬다 — 판마다 나누면 한산한 판의 게이지가
+# 평생 안 찬다. 보상은 차던 판의 소환권(없는 판이면 보석) — 뽑으면 또 뽑을
+# 것을 준다. ponytail: 상수는 첫 감. 곡선 재측정(PaceProbe) 때 함께 잰다.
+const MILE_BASE := 30
+const MILE_STEP := 15
+const MILE_CAP_MAX := 150
+const MILE_TICKETS := 2       # 상자가 주는 소환권
+const MILE_GEM := 60          # 소환권 없는 판(유물)의 보상
+
+
+static func mile_cap(lv: int) -> int:
+	return mini(MILE_BASE + MILE_STEP * lv, MILE_CAP_MAX)
+
+
 static func unlocked(index: int, lv: int) -> bool:
 	return lv >= int(RARITIES[index].get("unlock", 0))
 

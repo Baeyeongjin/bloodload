@@ -140,6 +140,15 @@ var title_ms_got := {}
 var promo_got := {}
 var pact_lv := 0
 var mileage := 0
+# 천장 상자 — mileage 는 평생 누적이고, mile_fill 은 지금 상자의 몫이다.
+var mile_fill := 0
+var mile_lv := 0
+var _mile_pending: Array = []   # 공개 연출을 닫을 때 보여 줄 상자 보상
+var _mile_ui: Array = []
+# 군주의 기록 (참고작 캐릭터 정보 판) — 플레이 시간은 여기서만 쓴다.
+var play_sec := 0.0
+var _info_view: Control
+var _info_body: Control
 var best_stage := 1
 # ── 핏빛 미궁 (DungeonDefs, EXPANSION 7장) ────────────────────────────────
 # 미궁에 있는 동안에도 `stage` 는 본편 위치 그대로다 — 나가면 그 자리로 돌아온다.
@@ -224,6 +233,7 @@ func _tick_titles(delta: float) -> void:
 	if _title_check_t > 0.0:
 		return
 	_title_check_t = 1.0
+	play_sec += 1.0   # 켜 둔 시간 전부 — 방치형에서는 방치도 플레이다
 	# 임무도 이 1초 틱을 탄다 — 자정 넘김과 알림점(처치가 50에 닿는 순간 등)을
 	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
 	_refresh_quests()
@@ -625,6 +635,7 @@ func _base_hit_damage() -> float:
 	# 회귀 배율도 여기 붙는다 — 화면 DPS 와 실제 피해가 같은 함수를 지나므로
 	# 한 곳만 곱하면 둘이 안 갈린다(혈맥·유물과 같은 자리).
 	return damage() * _trait_mult("attack") * _prestige_mult() \
+		* TrialDefs.mult(trial_stage) \
 		* (1.0 + _pet_mult("damage")) \
 		* Balance.crit_mult(_stat_eff("crit"), _stat_eff("critdmg"),
 			_trait_add("critdmg") + RelicDefs.add("critdmg", relics))
@@ -679,7 +690,7 @@ func max_hp() -> float:
 	return Balance.hero_max_hp(_stat_eff("tough"), _gear_stat("tough")) \
 		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough") \
 		+ PactDefs.bonus(pact_lv)) \
-		* _trait_mult("hp") * _relic_mult("hp")
+		* _trait_mult("hp") * _relic_mult("hp") * TrialDefs.mult(trial_stage)
 
 
 func regen_per_sec() -> float:
@@ -820,6 +831,15 @@ func _ready() -> void:
 			sigil = 5000.0
 			_select_tab("growth")
 			_set_growth_mode("pact")
+		# [개발 도구] --info : 군주의 기록 판을 연 채로 캡처한다.
+		if arg == "--info":
+			_show_info()
+		# [개발 도구] --trial[=N] : 시련 판(N단계 격파 상태)으로 캡처한다.
+		if arg.begins_with("--trial"):
+			trial_stage = int(arg.trim_prefix("--trial=")) if "=" in arg else 4
+			dungeon_best = maxi(dungeon_best, TrialDefs.floor_need(trial_stage + 1))
+			_select_tab("raid")
+			_raid_set_mode("trial")
 		# [개발 도구] --raid=blood|essence : 재화 던전에 들어간 채로 캡처한다.
 		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
@@ -1555,6 +1575,70 @@ func _build_portrait() -> void:
 	_lbl_power.size = Vector2(96.0, 24.0)
 	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_lbl_power.clip_text = true
+	# 초상·전투력을 누르면 군주의 기록(참고작 캐릭터 정보) — 투명 판정 버튼.
+	var info_btn := Button.new()
+	info_btn.flat = true
+	info_btn.modulate = Color(1, 1, 1, 0)
+	info_btn.size = Vector2(210.0, 54.0)
+	info_btn.focus_mode = Control.FOCUS_NONE
+	info_btn.pressed.connect(_show_info)
+	_hud_root.add_child(info_btn)
+
+
+# 군주의 기록 (참고작 캐릭터 정보 판) — 전투력 하나 + 최종 능력치 + 기록.
+# 항목은 전부 **이미 있는 숫자의 집계**다. 이 판은 새 기계가 아니라 거울이다.
+func _show_info() -> void:
+	if _info_view == null:
+		return
+	for c in _info_body.get_children():
+		c.queue_free()
+	var title := _dlg_label(_info_body, Vector2(0.0, 18.0), Type.SIZE_BODY,
+		Color(1.0, 0.88, 0.55), 520.0, 32.0)
+	title.text = "군주의 기록"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 전투력 — 이 판의 머리 숫자. HUD 와 같은 식(Balance.combat_power)이다.
+	var big := _dlg_label(_info_body, Vector2(0.0, 58.0), Type.SIZE_BODY,
+		Color(1.0, 1.0, 1.0), 520.0, 34.0)
+	big.text = "전투력  %s" % _n(Balance.combat_power(dps(), max_hp(),
+		regen_per_sec()))
+	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var kills := 0.0
+	for k in codex:
+		kills += float(codex[k])
+	var mins := int(play_sec / 60.0)
+	var stats: Array = [
+		["초당 피해", _n(dps())],
+		["체력", _n(max_hp())],
+		["회복 (초당)", _n(regen_per_sec())],
+		["시련 보너스", "공격·체력 +%d%%" % int(round(
+			TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))],
+	]
+	var recs: Array = [
+		["최고 구간", StageDefs.label(best_stage)],
+		["핏빛 미궁", "%d층" % dungeon_best],
+		["핏빛 회귀", "%d회" % prestige_count],
+		["총 출석", "%d일" % attend_got],
+		["총 처치", _n(kills)],
+		["누적 소환", "%d회" % mileage],
+		["함께한 밤", "%d시간 %d분" % [mins / 60, mins % 60]],
+	]
+	var y := 108.0
+	for sec in [["능력치", stats], ["기록", recs]]:
+		var head := _dlg_label(_info_body, Vector2(36.0, y), Type.SIZE_SMALL,
+			Color(0.92, 0.82, 0.62), 448.0, 20.0)
+		head.text = str(sec[0])
+		y += 28.0
+		for row in sec[1]:
+			var l := _dlg_label(_info_body, Vector2(48.0, y), Type.SIZE_SMALL,
+				Color(0.78, 0.76, 0.80), 220.0, 18.0)
+			l.text = str(row[0])
+			var v := _dlg_label(_info_body, Vector2(240.0, y), Type.SIZE_SMALL,
+				Color(0.95, 0.93, 0.90), 232.0, 18.0)
+			v.text = str(row[1])
+			v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			y += 30.0
+		y += 10.0
+	_info_view.visible = true
 
 
 # ── 공용 확인창 / 보상창 ───────────────────────────────────────────────────
@@ -1627,6 +1711,23 @@ func _build_dialogs() -> void:
 	_reward_hint = _dlg_label(_reward_view, Vector2(48.0, 320.0 + reward_h + 12.0),
 		Type.SIZE_SMALL, Color(0.68, 0.66, 0.72), DLG_W, 20.0)
 	_reward_hint.text = "빈 곳을 눌러 닫기"
+
+	# 군주의 기록 — 내용은 열 때마다 다시 그린다(_show_info). 전부 집계라 싸다.
+	_info_view = _overlay(62)
+	var itap := Button.new()
+	itap.flat = true
+	itap.size = Vector2(Grid.BG)
+	itap.focus_mode = Control.FOCUS_NONE
+	itap.pressed.connect(func() -> void: _info_view.visible = false)
+	_info_view.add_child(itap)
+	_info_view.add_child(Ui.panel(Vector2(28.0, 130.0), Vector2(520.0, 574.0)))
+	_info_body = Control.new()
+	_info_body.position = Vector2(28.0, 130.0)
+	_info_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_info_view.add_child(_info_body)
+	var ihint := _dlg_label(_info_view, Vector2(28.0, 716.0), Type.SIZE_SMALL,
+		Color(0.68, 0.66, 0.72), 520.0, 20.0)
+	ihint.text = "빈 곳을 눌러 닫기"
 
 
 # 화면 전체를 덮는 반투명 판. 뒤 화면이 비쳐야 "어느 창 위에 떴는지"가 읽힌다.
@@ -3658,6 +3759,7 @@ func _build_gacha(root: Control) -> void:
 		gb.position = bpos
 		gb.pressed.connect(func() -> void: _pull_gacha(count))
 		_gacha_buttons[key] = gb
+	_mile_strip(root, 712.0)
 	_build_rates_table(root)
 	_gacha_reveal = Control.new()
 	_gacha_reveal.size = Vector2(PANEL_W, PANEL_FULL_H)
@@ -3895,7 +3997,7 @@ func _pull_gacha(count: int) -> void:
 		GachaDefs.level(int(gacha_pulls.get(_gacha_kind, 0))), _gacha_kind == "skill")
 	gacha_pity[_gacha_kind] = int(result["pity"])
 	gacha_pulls[_gacha_kind] = int(gacha_pulls.get(_gacha_kind, 0)) + count
-	mileage += count
+	_mile_add(_gacha_kind, count)
 	var received_items: Array[Dictionary] = []
 	for rarity_key in result["rarities"]:
 		var received: Dictionary = {}
@@ -4567,13 +4669,16 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	var kind_now := _gacha_kind
 	var ok := Ui.button("확인", Vector2(30.0, FULL_BOTTOM - 60.0),
 		Vector2(250.0, 50.0), Type.SIZE_SMALL)
-	ok.pressed.connect(func() -> void: _gacha_reveal.visible = false)
+	ok.pressed.connect(func() -> void:
+		_gacha_reveal.visible = false
+		_mile_pop())
 	_gacha_reveal.add_child(ok)
 	var go := Ui.button("보관함" if kind_now in GearDefs.SLOTS else "보러 가기",
 		Vector2(296.0, FULL_BOTTOM - 60.0),
 		Vector2(250.0, 50.0), Type.SIZE_SMALL)
 	go.pressed.connect(func() -> void:
 		_gacha_reveal.visible = false
+		_mile_pop()
 		if kind_now in GearDefs.SLOTS:
 			_select_tab("gear")
 			_set_gear_mode("inventory")
@@ -5316,6 +5421,10 @@ var _dungeon_badges: Array[TextureRect] = []
 var _dungeon_chips: Array[Label] = []
 var _raid_list: Control
 var _raid_mode_btns := {}
+# ── 시련 (TrialDefs) — 격파 수가 곧 영구 보너스다. 도전 중인 단계 = +1 ──
+var trial_stage := 0
+var _trial_panel: Control
+var _trial_ui := {}
 var _maze_panel: Control
 var _maze_scroll: Control
 var _boss_panel: Control
@@ -5612,8 +5721,9 @@ func _build_raids(root: Control) -> void:
 	# [미궁][재화 던전][주간 보스] — 셋 다 "들어가서 도는 곳"이다. 성격은 다르다:
 	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
 	# 상점·소환과 같은 박쥐 알약 — 그림 버튼이라 글자는 라벨로 얹는다.
-	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"]]
-	var mw := (CONTENT_W - 10.0 * 2.0) / 3.0
+	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"],
+		["trial", "시련"]]
+	var mw := (CONTENT_W - 10.0 * 3.0) / 4.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
 		var mb := TextureButton.new()
@@ -5644,6 +5754,12 @@ func _build_raids(root: Control) -> void:
 	_boss_panel.position.y = 214.0
 	root.add_child(_boss_panel)
 	_build_boss_panel(_boss_panel)
+	_trial_panel = Control.new()
+	_trial_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_trial_panel.visible = false
+	_trial_panel.position.y = 214.0
+	root.add_child(_trial_panel)
+	_build_trial_panel(_trial_panel)
 	_build_raid_list(_raid_list)
 	_build_raid_detail(root)
 	_raid_set_mode("raid")
@@ -5655,6 +5771,7 @@ func _raid_set_mode(mode: String) -> void:
 	_raid_list.visible = mode == "raid"
 	_boss_panel.visible = mode == "boss"
 	_maze_scroll.visible = mode == "maze"
+	_trial_panel.visible = mode == "trial"
 	# 헤더 이름표·대사 — 장소는 성문 하나지만 말은 소탭을 따라간다.
 	match mode:
 		"maze":
@@ -5666,6 +5783,9 @@ func _raid_set_mode(mode: String) -> void:
 		"boss":
 			_raid_place.text = "제물의 제단"
 			_raid_line.text = "이번 주의 제물은… 강하다."
+		"trial":
+			_raid_place.text = "고대 유적지"
+			_raid_line.text = "물러날 줄 아는 것도 실력이지."
 	for key in _raid_mode_btns:
 		_raid_mode_btns[key].button_pressed = key == mode
 	_refresh_dungeon()
@@ -5831,6 +5951,90 @@ func _rd_place_buttons(with_sweep: bool) -> void:
 	# 그림 버튼은 가운데를 기준으로 부풀므로 축도 다시 잡는다.
 	_rd_btn_tex.pivot_offset = _rd_btn_tex.size * 0.5
 	_rd_sweep_tex.pivot_offset = _rd_sweep_tex.size * 0.5
+
+
+# 시련 판 — 주간 보스 판과 같은 문법(초상 + 이름 + 큰 숫자 + 버튼). 이정표는
+# 없다: 이 판의 점수는 누적이 아니라 "몇 단계까지 넘었나" 하나다.
+func _build_trial_panel(root: Control) -> void:
+	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 56.0),
+		Vector2(CONTENT_W + 16.0, 140.0))
+	var frame := Ui.image("res://assets/ui/slot_common.png",
+		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0))
+	frame.modulate = Color(0.62, 0.88, 0.66)
+	root.add_child(frame)
+	_trial_ui["art"] = Ui.icon("", Vector2(PAD + 10.0, 90.0), 64.0)
+	root.add_child(_trial_ui["art"])
+	var text_x := PAD + 92.0
+	var text_w := CONTENT_W - 92.0 - 168.0
+	_trial_ui["name"] = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
+		Color(0.86, 0.96, 0.82), text_w, 24.0)
+	_shop_outline(_trial_ui["name"], 6)
+	_trial_ui["bonus"] = _panel_label(root, Vector2(text_x, 106.0), Type.SIZE_MID,
+		Color(0.98, 0.90, 0.70), text_w, 24.0)
+	_shop_outline(_trial_ui["bonus"], 6)
+	_trial_ui["sub"] = _panel_label(root, Vector2(text_x, 140.0), Type.SIZE_SMALL,
+		Color(0.86, 0.84, 0.86), CONTENT_W - 100.0, 16.0)
+	_shop_outline(_trial_ui["sub"], 5)
+	var bx := Vector2(PAD + CONTENT_W - 156.0, 96.0)
+	_trial_ui["btn_tex"] = _shop_tex(root, "res://assets/ui/sets/gate_button.png",
+		bx, Vector2(148.0, 50.0))
+	_trial_ui["btn_lbl"] = _panel_label(root, Vector2(bx.x, bx.y + 15.0),
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 148.0, 22.0)
+	_trial_ui["btn_lbl"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_trial_ui["btn_lbl"], 8)
+	var b := _shop_ghost(root, Vector2(148.0, 50.0), _trial_ui["btn_tex"])
+	b.position = bx
+	b.pressed.connect(func() -> void:
+		if raid_on == "trial":
+			_trial_exit("도전 중단")
+		else:
+			_trial_enter())
+	_trial_ui["btn"] = b
+	# 규칙 카드 — 이 판이 뭘 주는지 두 줄로.
+	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 220.0),
+		Vector2(CONTENT_W + 16.0, 96.0))
+	var r1 := _panel_label(root, Vector2(PAD + 18.0, 244.0), Type.SIZE_SMALL,
+		Color(0.86, 0.84, 0.86), CONTENT_W - 36.0, 16.0)
+	r1.text = "단계 보스를 눕히면 공격·체력이 영구히 오른다"
+	_shop_outline(r1, 5)
+	var r2 := _panel_label(root, Vector2(PAD + 18.0, 272.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.74), CONTENT_W - 36.0, 16.0)
+	r2.text = "실패해도 잃는 것은 없다 — 미궁을 오르면 다음 단계가 열린다"
+	_shop_outline(r2, 5)
+	_refresh_trial()
+
+
+func _refresh_trial() -> void:
+	if _trial_ui.is_empty():
+		return
+	var n := trial_stage + 1
+	var done := n > TrialDefs.max_stage()
+	var show_n := mini(n, TrialDefs.max_stage())
+	var act: Dictionary = StageDefs.act_data(TrialDefs.eq_stage(show_n))
+	_trial_ui["art"].texture = Assets.tex(
+		"res://assets/anim/%s_walk/0.png" % str(act["boss_anim"]))
+	# "시련"은 탭이 이미 말한다 — 붙이면 보스 이름이 잘렸다(실측 폭 268).
+	_trial_ui["name"].text = "완주" if done \
+		else "%d단계  ·  %s" % [show_n, str(act["boss_name"])]
+	_trial_ui["bonus"].text = "공격·체력 +%d%%" % int(round(
+		TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))
+	var need := TrialDefs.floor_need(n)
+	var open := not done and dungeon_best >= need
+	if done:
+		_trial_ui["sub"].text = "모든 시련을 넘었다"
+	elif open:
+		_trial_ui["sub"].text = "격파 시 +%d%%  ·  도전 무제한" % int(round(
+			TrialDefs.BONUS_PER * 100.0 * float(n)))
+	else:
+		_trial_ui["sub"].text = "미궁 %d층 정복 필요 (지금 %d층)" % [need, dungeon_best]
+	if raid_on == "trial":
+		_trial_ui["btn_lbl"].text = "돌아가기"
+		_trial_ui["btn"].disabled = false
+	else:
+		_trial_ui["btn_lbl"].text = "도전"
+		_trial_ui["btn"].disabled = not open or dungeon_on or raid_on != ""
+	_gate_btn_dim(_trial_ui["btn_tex"], _trial_ui["btn_lbl"],
+		_trial_ui["btn"].disabled)
 
 
 func _build_raid_detail(root: Control) -> void:
@@ -6211,6 +6415,7 @@ func _build_raid_list(root: Control) -> void:
 func _refresh_dungeon() -> void:
 	if _dungeon_info == null:
 		return
+	_refresh_trial()
 	for i in _dungeon_mastery.size():
 		var r: Dictionary = MasteryDefs.RANKS[i]
 		var got := best_stage > int(r["stage"])
@@ -8168,6 +8373,9 @@ func _tick_hero_state(delta: float) -> void:
 			if raid_on == "boss":
 				_boss_exit("쓰러짐")
 				return
+			if raid_on == "trial":
+				_trial_exit("쓰러짐")
+				return
 			# 재화 던전도 마찬가지 — 표는 이미 썼고, 빈손으로 나온다.
 			if raid_on != "":
 				_raid_exit("던전에서 쓰러짐 — 빈손")
@@ -9229,6 +9437,8 @@ func _apply_scroll() -> void:
 func _c_is_boss() -> bool:
 	if raid_on == "boss":
 		return true      # 주간 보스 — 한 마리로 판을 채운다(체력 바·마크가 같이 붙는다)
+	if raid_on == "trial":
+		return true      # 시련도 한 마리 보스 판이다
 	if raid_on != "":
 		# **성소의 수호자도 그 판의 보스다** — 이 한 줄로 웨이브가 한 마리가 되고
 		# 상단 체력 바·등장 컷신까지 따라온다. 안 그러면 수호자가 여럿 서 있어서
@@ -9246,7 +9456,7 @@ func _c_is_midboss() -> bool:
 
 
 func _c_kills_needed() -> int:
-	if raid_on == "boss":
+	if raid_on == "boss" or raid_on == "trial":
 		return 1
 	if raid_on != "":
 		# 던전마다 목표가 다르다 — 버티기(제단)는 처치가 판정이 아니다.
@@ -9258,6 +9468,8 @@ func _c_kills_needed() -> int:
 func _c_time_limit() -> float:
 	if raid_on == "boss":
 		return EventDefs.TIME_LIMIT
+	if raid_on == "trial":
+		return TrialDefs.TIME_LIMIT
 	if raid_on != "":
 		return RaidDefs.time_limit(raid_on)
 	return DungeonDefs.time_limit(dungeon_floor) if dungeon_on \
@@ -9267,6 +9479,8 @@ func _c_time_limit() -> float:
 func _c_enemy_power() -> float:
 	if raid_on == "boss":
 		return StageDefs.enemy_power(best_stage)
+	if raid_on == "trial":
+		return StageDefs.enemy_power(TrialDefs.eq_stage(trial_stage + 1))
 	if raid_on != "":
 		return StageDefs.enemy_power(RaidDefs.eq_stage(_raid_stage(), raid_on))
 	return StageDefs.enemy_power(DungeonDefs.eq_stage(dungeon_floor)) if dungeon_on \
@@ -9276,6 +9490,9 @@ func _c_enemy_power() -> float:
 func _c_act_data() -> Dictionary:
 	if raid_on == "boss":
 		return StageDefs.act_data(best_stage)
+	if raid_on == "trial":
+		# 그 막의 보스가 시련의 얼굴이다 — 배경은 wide_raid_trial 이 따로 맡는다.
+		return StageDefs.act_data(TrialDefs.eq_stage(trial_stage + 1))
 	if raid_on != "":
 		return StageDefs.act_data(RaidDefs.eq_stage(_raid_stage(), raid_on))
 	return StageDefs.act_data(DungeonDefs.eq_stage(dungeon_floor) if dungeon_on else stage)
@@ -9291,6 +9508,8 @@ func _c_gold_per_kill() -> float:
 func _c_label() -> String:
 	if raid_on == "boss":
 		return str(EventDefs.boss_of(_boss_week_index())["name"])
+	if raid_on == "trial":
+		return "시련 %d단계" % (trial_stage + 1)
 	if raid_on != "":
 		return RaidDefs.label(raid_on, _raid_stage())
 	return DungeonDefs.label(dungeon_floor) if dungeon_on else StageDefs.label(stage)
@@ -9372,6 +9591,33 @@ func _boss_exit(reason: String) -> void:
 	raid_on = ""
 	_offline_banner.text = "%s — 이번 주 누적 피해 %s" % [reason, _n(boss_dmg)]
 	_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
+	_offline_banner.visible = true
+	_offline_t = 4.0
+	_restart_stage(reason)
+	_refresh_currency_visibility()
+	_refresh_dungeon()
+	_save_game()
+
+
+# 시련 입장. 무제한이지만 미궁 층이 잠근다 — 못 여는 이유는 판이 말해 준다.
+func _trial_enter() -> void:
+	if raid_on != "" or dungeon_on or _fade_t > 0.0:
+		return
+	var n := trial_stage + 1
+	if n > TrialDefs.max_stage() or dungeon_best < TrialDefs.floor_need(n):
+		return
+	raid_on = "trial"
+	_restart_stage("시련 %d단계" % n)
+	_enter_battle_view()
+	_refresh_dungeon()
+
+
+func _trial_exit(reason: String) -> void:
+	if raid_on != "trial" or _fade_t > 0.0:
+		return
+	raid_on = ""
+	_offline_banner.text = reason
+	_offline_banner.add_theme_color_override("font_color", Color(0.62, 0.95, 0.68))
 	_offline_banner.visible = true
 	_offline_t = 4.0
 	_restart_stage(reason)
@@ -9542,7 +9788,8 @@ func _spawn_foe() -> void:
 		tier["midboss"] = true
 		tier["name_prefix"] = _c_midboss_prefix() + " "
 	# 성소는 **수호자 한 마리**가 판이다 — 이름으로도 그게 읽혀야 한다.
-	if raid_on != "" and raid_on != "boss" and RaidDefs.goal(raid_on) == "slay":
+	if raid_on != "" and raid_on != "boss" and raid_on != "trial" \
+			and RaidDefs.goal(raid_on) == "slay":
 		tier["name_prefix"] = "수호자 "
 	var f := Foe.new()
 	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
@@ -9550,7 +9797,7 @@ func _spawn_foe() -> void:
 		# 체력만 갈아 끼운다 — 40초에 못 눕히는 게 정상이고, 성과는 누적 피해다.
 		f.max_hp = EventDefs.boss_hp(_boss_dps_snap, boss_tier)
 		f.hp = f.max_hp
-	elif raid_on != "":
+	elif raid_on != "" and raid_on != "trial":
 		# 성소의 **수호자 한 마리**는 웨이브 몫을 혼자 짊어진다(hp_mult).
 		# 다른 던전은 배수가 1 이라 이 줄이 아무것도 안 한다.
 		var mult := RaidDefs.hp_mult(raid_on)
@@ -9807,6 +10054,14 @@ func _advance_stage() -> void:
 	if raid_on == "boss":
 		_boss_exit("주간 보스 격파")
 		return
+	# ── 시련: 단계 보스를 눕혔다 — 영구 보너스가 한 계단 오른다 ─────────────
+	if raid_on == "trial":
+		var old_max := max_hp()
+		trial_stage += 1
+		_apply_hp_growth(old_max)
+		_trial_exit("시련 %d단계 격파 — 공격·체력 +%d%%" % [trial_stage,
+			int(round(TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))])
+		return
 	# ── 재화 던전: 한 판이 끝났다 — 뭉치를 주고 본편으로 돌아간다 ──────────
 	if raid_on != "":
 		var kind := raid_on
@@ -9933,6 +10188,9 @@ func _tick_boss_timer(delta: float) -> bool:
 		return true
 	if raid_on == "boss":
 		_boss_exit("도전 종료")
+		return true
+	if raid_on == "trial":
+		_trial_exit("시간 초과")
 		return true
 	if raid_on != "":
 		# **버티기 던전은 시계가 성공 조건이다** (사장님 2026-08-14: 던전마다
@@ -10426,6 +10684,8 @@ func _refresh_hud() -> void:
 	if raid_on == "boss":
 		_lbl_stage.text = "%s  %d단계" % [
 			str(EventDefs.boss_of(_boss_week_index())["name"]), boss_tier]
+	elif raid_on == "trial":
+		_lbl_stage.text = "시련 %d단계" % (trial_stage + 1)
 	elif raid_on != "":
 		_lbl_stage.text = "%s  %d단계" % [str(RaidDefs.RAIDS[raid_on]["name"]),
 			int(raid_best.get(raid_on, 0)) + 1]
@@ -10562,6 +10822,10 @@ func _save_game() -> void:
 	cfg.set_value("run", "promo_got", promo_got)
 	cfg.set_value("run", "pact_lv", pact_lv)
 	cfg.set_value("wallet", "mileage", mileage)
+	cfg.set_value("trial", "stage", trial_stage)
+	cfg.set_value("wallet", "mile_fill", mile_fill)
+	cfg.set_value("wallet", "mile_lv", mile_lv)
+	cfg.set_value("record", "play_sec", int(play_sec))
 	cfg.set_value("iap", "subs", iap_subs)
 	cfg.set_value("iap", "bought", iap_bought)
 	cfg.set_value("iap", "first_buy", iap_first_buy)
@@ -10645,6 +10909,10 @@ func _load_game() -> void:
 	promo_got = cfg.get_value("run", "promo_got", {})
 	pact_lv = clampi(int(cfg.get_value("run", "pact_lv", 0)), 0, PactDefs.level_cap())
 	mileage = maxi(0, int(cfg.get_value("wallet", "mileage", 0)))
+	trial_stage = maxi(0, int(cfg.get_value("trial", "stage", 0)))
+	mile_fill = maxi(0, int(cfg.get_value("wallet", "mile_fill", 0)))
+	mile_lv = maxi(0, int(cfg.get_value("wallet", "mile_lv", 0)))
+	play_sec = float(maxi(0, int(cfg.get_value("record", "play_sec", 0))))
 	iap_subs = cfg.get_value("iap", "subs", {})
 	iap_bought = cfg.get_value("iap", "bought", {})
 	iap_first_buy = bool(cfg.get_value("iap", "first_buy", false))
@@ -11569,6 +11837,7 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	root.add_child(g2)
 	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten,
 		"one_gem": g1, "ten_gem": g2}
+	_mile_strip(root, PET_GRID_Y + 442.0)
 
 
 func _refresh_pet() -> void:
@@ -11772,16 +12041,79 @@ func _pet_tick() -> void:
 # 펫 뽑기. 유물과 같은 문법이다 — **중복은 조각이 되고 조각이 차면 한 단계**.
 # 빈손으로 돌려보내지 않는 게 이 문법의 값이다.
 
+# 천장 상자 — 뽑기 자체가 재화다. 가득 차면 **차던 판의 소환권**을 돌려주고
+# 상자가 한 단계 커진다. 보상 창은 공개 연출이 닫힌 뒤에 띄운다(_mile_pending):
+# 카드 위에 창을 얹으면 방금 뽑은 것이 가려진다.
+func _mile_add(kind: String, count: int) -> void:
+	mileage += count
+	mile_fill += count
+	while mile_fill >= GachaDefs.mile_cap(mile_lv):
+		mile_fill -= GachaDefs.mile_cap(mile_lv)
+		mile_lv += 1
+		if kind in TicketDefs.KINDS or kind in TicketDefs.PET_KINDS:
+			tickets[kind] = int(tickets.get(kind, 0)) + GachaDefs.MILE_TICKETS
+			_mile_pending.append({"icon": TicketDefs.icon_of(kind),
+				"label": "%s +%d" % [TicketDefs.name_of(kind),
+				GachaDefs.MILE_TICKETS]})
+		else:
+			gem += GachaDefs.MILE_GEM
+			_mile_pending.append({"icon": "res://assets/ui/res_gem.png",
+				"label": "보석 +%d" % GachaDefs.MILE_GEM})
+	_refresh_mile()
+
+
+func _mile_pop() -> void:
+	if _mile_pending.is_empty():
+		return
+	var rows := _mile_pending.duplicate()
+	_mile_pending = []
+	_show_reward("천장 상자 개봉", rows)
+	_save_game()
+
+
+# 천장 게이지 한 줄 — 소환 판마다 얹지만 상자는 하나다(값이 같이 움직인다).
+func _mile_strip(root: Control, y: float) -> void:
+	root.add_child(Ui.icon("res://assets/ui/mile_chest.png",
+		Vector2(PAD + 40.0, y - 12.0), 32.0))
+	var track := ColorRect.new()
+	track.color = Color(0.10, 0.09, 0.12)
+	track.position = Vector2(PAD + 84.0, y)
+	track.size = Vector2(CONTENT_W - 84.0 - 208.0, 10.0)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(track)
+	var fill := ColorRect.new()
+	fill.color = Color(0.88, 0.66, 0.30)
+	fill.position = track.position
+	fill.size = Vector2(0.0, 10.0)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fill)
+	var lbl := _panel_label(root, Vector2(PAD + CONTENT_W - 200.0, y - 5.0),
+		Type.SIZE_SMALL, Color(0.86, 0.82, 0.80), 200.0, 18.0)
+	_shop_outline(lbl, 5)
+	_mile_ui.append({"fill": fill, "lbl": lbl, "w": track.size.x})
+	_refresh_mile()
+
+
+func _refresh_mile() -> void:
+	var cap := GachaDefs.mile_cap(mile_lv)
+	for m in _mile_ui:
+		m["fill"].size.x = float(m["w"]) \
+			* clampf(float(mile_fill) / float(cap), 0.0, 1.0)
+		m["lbl"].text = "상자 %d단계 · %d/%d" % [mile_lv + 1, mile_fill, cap]
+
+
 # 소환권 우선, 없으면 보석 — 본편 소환(_pull_gacha)과 같은 문법·같은 시세다.
 # 시세를 따로 두면 "펫 뽑기는 왜 더 비싸냐"가 생긴다.
 func _pet_pay(kind: String) -> bool:
 	var have := int(tickets.get(kind, 0))
 	if have >= 1:
 		tickets[kind] = have - 1
+		_mile_add(kind, 1)
 		return true
 	if gem < GachaDefs.COST:
 		return false
 	gem -= GachaDefs.COST
+	_mile_add(kind, 1)
 	return true
 
 
@@ -12065,7 +12397,9 @@ func _show_pet_results(rows: Array) -> void:
 		cards.append(card)
 	var ok := Ui.button("확인", Vector2(PAD + CONTENT_W * 0.5 - 125.0,
 		FULL_BOTTOM - 60.0), Vector2(250.0, 50.0), Type.SIZE_SMALL)
-	ok.pressed.connect(func() -> void: _pet_reveal.visible = false)
+	ok.pressed.connect(func() -> void:
+		_pet_reveal.visible = false
+		_mile_pop())
 	_pet_reveal.add_child(ok)
 	# 순서대로 튀어나온다 — 열 장이 한꺼번에 뜨면 열 장이 아니라 한 장으로 읽힌다.
 	var tween := create_tween()
