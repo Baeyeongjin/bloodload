@@ -180,7 +180,7 @@ func _exec_bonus() -> float:
 # 소탕 시급 — 기록 x 혈맥(탐욕) x 군림 V. 접속 중·오프라인 둘 다 이걸 쓴다.
 func _sweep_per_hour() -> float:
 	return DungeonDefs.sweep_per_hour(dungeon_best) * _trait_mult("sweep") 		* _relic_mult("sweep") \
-		* (2.0 if MasteryDefs.has("sweep2", best_stage) else 1.0)
+		* (2.0 if MasteryDefs.has("sweep2", best_stage) else 1.0) 		* (1.0 + _boon("sweep"))
 
 
 # 방치 상한(시간) — 기본 8 + 혈맥 긴 잠 + 군림 IV + 혈세.
@@ -191,7 +191,7 @@ const IDLE_CAP_MAX := 16.0
 func _offline_cap_hours() -> float:
 	return minf(IDLE_CAP_MAX, 8.0 + _trait_add("hours") + RelicDefs.add("hours", relics) \
 		+ (4.0 if MasteryDefs.has("hours", best_stage) else 0.0) \
-		+ IapDefs.idle_bonus_hours(iap_subs))
+		+ IapDefs.idle_bonus_hours(iap_subs) + _boon("hours"))
 
 
 # ── 칭호(TitleDefs) ────────────────────────────────────────────────────────
@@ -513,7 +513,7 @@ func gold_mult() -> float:
 	return (1.0 + 0.15 * float(_stat_eff("gold") - 1) + _gear_stat("gold") * 0.02) \
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
-		* _trait_mult("gold") * _relic_mult("gold")
+		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold"))
 
 
 func dps() -> float:
@@ -705,12 +705,15 @@ func _ready() -> void:
 			_select_tab("codex")
 			_title_view.visible = true
 			_refresh_titles()
-		# [개발 도구] --quest : 일일 임무판을 연 채로 캡처한다.
-		if arg == "--quest" or arg == "--quest=week":
+		# [개발 도구] --quest[=day|week|attend|boon] : 그 소탭을 연 채로 캡처한다.
+		if arg == "--quest" or arg.begins_with("--quest="):
 			_quest_view.visible = true
 			_quest_bump("kills", 30)
 			quest_wprog = {"kills": 380, "train": 30, "daily": 11, "raid": 2}
-			_quest_set_mode("week" if arg.ends_with("week") else "day")
+			# 출석은 몇 칸 받아 둔 모습이라야 받은 칸/오늘 칸이 같이 보인다.
+			attend_got = 11
+			attend_date = ""
+			_quest_set_mode(arg.trim_prefix("--quest=") if "=" in arg else "day")
 		# [개발 도구] --maze : 던전 탭의 미궁 소탭을 연 채로 캡처한다.
 		if arg == "--maze":
 			_select_tab("raid")
@@ -5780,7 +5783,7 @@ func _raid_sweep(kind: String) -> void:
 	if n <= 0 or _raid_left(kind) <= 0 or raid_on != "" or dungeon_on:
 		return
 	raid_left[kind] = maxi(0, _raid_left(kind) - 1)
-	var amount := RaidDefs.reward(kind, n)
+	var amount := _raid_gain(kind, n)
 	match kind:
 		"blood": gold += amount
 		"pact": sigil += amount
@@ -5849,7 +5852,7 @@ func _raid_detail_open(kind: String) -> void:
 	_rd_goal.text = RaidDefs.goal_line(kind)
 	_rd_icon.texture = Assets.tex(str(info["icon"]))
 	_rd_reward.text = "%s  +%s" % [str(info["currency"]),
-		_n(RaidDefs.reward(kind, n))]
+		_n(_raid_gain(kind, n))]
 	var left := _raid_left(kind)
 	var per_day := RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs)
 	_rd_left.text = "오늘 %d / %d판" % [left, per_day]
@@ -6067,7 +6070,7 @@ func _refresh_dungeon() -> void:
 		# "격파 시 …"까지 적으면 세트 카드의 글자 폭을 넘어 잘린다(실측 두 번) —
 		# "격파"는 윗줄 안내("표는 격파할 때만 깎인다")가 이미 말한다.
 		_raid_reward[kind].text = "%s +%s · 오늘 %d/%d" \
-			% [str(RaidDefs.RAIDS[kind]["currency"]), _n(RaidDefs.reward(kind, n)),
+			% [str(RaidDefs.RAIDS[kind]["currency"]), _n(_raid_gain(kind, n)),
 			_raid_left(kind),
 			RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs)]
 		var eb: Button = _raid_btn[kind]
@@ -6123,6 +6126,32 @@ var _quest_week_root: Control
 var _quest_mode_btns := {}
 var _quest_claim_all: Button
 
+# ── 출석 (AttendDefs) ──────────────────────────────────────────────────────
+# **연속을 안 센다** — 누적이다. 하루 놓쳤다고 처음으로 되돌리면 그 순간이
+# 이탈 지점이 된다(AttendDefs 주석). 그래서 상태가 둘뿐이다:
+# 몇 칸까지 받았나, 오늘 받았나.
+var attend_got := 0          # 지금까지 받은 칸 수(30 을 넘으면 다음 바퀴)
+var attend_date := ""        # 마지막으로 받은 날
+var _attend_root: Control
+var _attend_cells: Array[Dictionary] = []
+var _attend_btn: Button
+
+# ── 은총 (BoonDefs) — 주마다 바뀌는 특전 ───────────────────────────────────
+var _boon_root: Control
+var _boon_labels := {}
+
+
+# 이번 주 은총이 그 종류면 값을, 아니면 0. 배율 훅마다 한 줄로 붙는다.
+func _boon(kind: String) -> float:
+	return BoonDefs.bonus(_quest_week_key(), kind)
+
+
+# 재화 던전 보상 — **표시와 지급이 같은 함수를 지난다.** 은총(풍요의 광맥)이
+# 붙는 자리라 한쪽만 곱하면 화면에 적힌 수와 실제 들어오는 양이 갈린다.
+# 부르는 곳이 넷이다: 소탕 지급 · 격파 지급 · 상세판 표시 · 목록 표시.
+func _raid_gain(kind: String, n: int) -> float:
+	return RaidDefs.reward(kind, n) * (1.0 + _boon("raid"))
+
 
 # 이번 주의 열쇠 — 가장 가까운 지난 월요일. 날짜만 쓰므로 시간대 경계의 몇 시간
 # 오차는 무시한다 (ponytail: 주 경계가 몇 시간 밀려도 게임은 안 깨진다).
@@ -6145,6 +6174,13 @@ func _quest_roll_day() -> void:
 	quest_date = today
 	quest_prog = QuestDefs.fresh_prog()
 	quest_got = {}
+	# 은총 "소환의 별" — 자정을 넘기면 소환권이 들어온다. **세 종류에 돌려가며**
+	# 준다: 한 종류로 몰면 나머지 천장이 안 찬다(TicketDefs 와 같은 이유).
+	var star := int(_boon("ticket"))
+	if star > 0:
+		var kinds := ["ticket_weapon", "ticket_armor", "ticket_skill"]
+		for i in star:
+			_grant_reward(str(kinds[i % kinds.size()]), 1.0)
 
 
 # 훅 하나가 일일·주간 두 카운터를 같이 올린다 — 훅을 두 벌 심으면 하나를
@@ -6184,6 +6220,28 @@ func _claim_quest(id: String) -> void:
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_quests()
+
+
+# ── 출석 (AttendDefs) ──────────────────────────────────────────────────────
+# 오늘 받았나만 본다. **어제 받았는지는 안 본다** — 연속이 아니라 누적이다.
+func _attend_claimable() -> bool:
+	return attend_date != Time.get_date_string_from_system()
+
+
+func _claim_attend() -> void:
+	if not _attend_claimable():
+		return
+	var a := AttendDefs.of(AttendDefs.next_day(attend_got))
+	attend_date = Time.get_date_string_from_system()
+	attend_got += 1
+	_grant_reward(str(a["reward"]), float(a["amount"]))
+	_pass_add(PassDefs.POINT_QUEST)
+	_show_reward("%d일차 출석" % int(a["day"]),
+		[{"icon": _reward_icon(str(a["reward"])),
+		"label": "%s +%d" % [_reward_name(str(a["reward"])), int(a["amount"])]}])
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_attend()
 
 
 func _wquest_claimable(id: String) -> bool:
@@ -6287,13 +6345,18 @@ func _build_quests() -> void:
 		Vector2(88.0, 34.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _quest_view.visible = false)
 	_quest_view.add_child(close)
-	# [일일] [주간] — 레퍼런스처럼 별도 판이다(사장님). 한 판에 다 쌓으면
-	# "오늘 할 일"과 "이번 주 목표"가 섞여 읽힌다.
-	for i in 2:
-		var mode := "day" if i == 0 else "week"
-		var mb := Ui.button("일일 임무" if i == 0 else "주간 임무",
-			Vector2(x + float(i) * 190.0, QUEST_PANEL.position.y + 12.0),
-			Vector2(180.0, 34.0), Type.SIZE_SMALL)
+	# [일일] [주간] [출석] [은총] — 하루에 들를 곳을 한 판에 모은다(사장님
+	# 2026-08-18). 넷이 별개 판이면 "오늘 뭐 남았지"를 네 번 열어 봐야 한다.
+	# **닫기와 같은 줄에 넷을 못 넣는다** — 폭 484 에서 닫기 88 을 빼면 버튼당
+	# 96px 이라 글자가 잘린다. 소탭은 아래 줄로 내리고 넷이 폭을 고르게 쓴다.
+	var tabs := [["day", "일일"], ["week", "주간"], ["attend", "출석"],
+		["boon", "은총"]]
+	var tw := (w - 18.0) / 4.0
+	for i in tabs.size():
+		var mode := str(tabs[i][0])
+		var mb := Ui.button(str(tabs[i][1]),
+			Vector2(x + float(i) * (tw + 6.0), QUEST_PANEL.position.y + 54.0),
+			Vector2(tw, 34.0), Type.SIZE_SMALL)
 		mb.toggle_mode = true
 		mb.pressed.connect(func() -> void: _quest_set_mode(mode))
 		_quest_view.add_child(mb)
@@ -6307,6 +6370,15 @@ func _build_quests() -> void:
 	_quest_view.add_child(_quest_week_root)
 	_quest_rows = _quest_build_rows(_quest_day_root, QuestDefs.QUESTS, false)
 	_quest_wrows = _quest_build_rows(_quest_week_root, QuestDefs.WEEKLY, true)
+	_attend_root = Control.new()
+	_attend_root.visible = false
+	_quest_view.add_child(_attend_root)
+	_attend_build(_attend_root)
+	_boon_root = Control.new()
+	_boon_root.visible = false
+	_boon_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_quest_view.add_child(_boon_root)
+	_boon_build(_boon_root)
 	var day_note := _panel_label(_quest_day_root,
 		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
 		Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), w, 16.0)
@@ -6980,7 +7052,7 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 	var rows: Array[Dictionary] = []
 	for i in table.size():
 		var q: Dictionary = table[i]
-		var y := QUEST_PANEL.position.y + 58.0 + float(i) * 56.0
+		var y := QUEST_PANEL.position.y + 96.0 + float(i) * 56.0
 		root.add_child(Ui.card(Vector2(x, y), Vector2(w, 50.0)))
 		root.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
 			Vector2(x + 10.0, y + 11.0), 28.0))
@@ -7016,12 +7088,142 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 	return rows
 
 
+# 출석 격자 — 30칸을 6열 5줄로. 칸 하나에 일차·보상 아이콘·수량이 들어간다.
+const ATTEND_COLS := 6
+const ATTEND_CELL := 68.0
+const ATTEND_GAP := 5.0
+
+
+func _attend_build(root: Control) -> void:
+	var x := QUEST_PANEL.position.x + 22.0
+	var w := QUEST_PANEL.size.x - 44.0
+	var span := ATTEND_CELL + ATTEND_GAP
+	# 6열이 판 안에서 가운데 오게. 남는 폭을 양쪽으로 나눈다.
+	var x0 := x + (w - (span * float(ATTEND_COLS) - ATTEND_GAP)) * 0.5
+	var y0 := QUEST_PANEL.position.y + 96.0
+	for i in AttendDefs.DAYS:
+		var a := AttendDefs.of(i + 1)
+		var cx := x0 + float(i % ATTEND_COLS) * span
+		var cy := y0 + float(i / ATTEND_COLS) * span
+		# 큰 날(7·14·21·30)은 카드 대신 탭 액자 — 한눈에 이정표가 보인다.
+		var frame := Ui.card_tab(Vector2(cx, cy), Vector2(ATTEND_CELL, ATTEND_CELL)) \
+			if bool(a["big"]) \
+			else Ui.card(Vector2(cx, cy), Vector2(ATTEND_CELL, ATTEND_CELL))
+		root.add_child(frame)
+		var day := _panel_label(root, Vector2(cx, cy + 4.0), Type.SIZE_SMALL,
+			Color(0.62, 0.60, 0.68), ATTEND_CELL, 14.0)
+		day.text = "%d일" % int(a["day"])
+		day.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var ico := Ui.icon("res://assets/ui/%s.png" % _reward_icon(str(a["reward"])),
+			Vector2(cx + (ATTEND_CELL - 26.0) * 0.5, cy + 22.0), 26.0)
+		root.add_child(ico)
+		var amt := _panel_label(root, Vector2(cx, cy + 52.0), Type.SIZE_SMALL,
+			Color(0.90, 0.86, 0.88), ATTEND_CELL, 14.0)
+		amt.text = "x%d" % int(a["amount"])
+		amt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		# 받은 칸 표시. **어둠막만으로는 구분이 안 된다** — 카드가 이미 어두워서
+		# 알파 0.66 을 덮어도 안 받은 칸과 비슷해 보였다(실측 캡처). 막을 진하게
+		# 하고 그 위에 표식을 얹는다.
+		var done := ColorRect.new()
+		done.color = Color(0.02, 0.01, 0.02, 0.80)
+		done.position = Vector2(cx, cy)
+		done.size = Vector2(ATTEND_CELL, ATTEND_CELL)
+		done.visible = false
+		done.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(done)
+		var mark := _panel_label(root, Vector2(cx, cy + 24.0), Type.NATIVE * 2,
+			Color(0.72, 0.16, 0.20), ATTEND_CELL, 26.0)
+		mark.text = "✓"
+		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		mark.visible = false
+		_attend_cells.append({"frame": frame, "done": done, "ico": ico,
+			"mark": mark})
+	_attend_btn = Ui.button("오늘 받기",
+		Vector2(x + w * 0.5 - 100.0,
+			QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0),
+		Vector2(200.0, 42.0), Type.SIZE_MID)
+	_attend_btn.pressed.connect(_claim_attend)
+	root.add_child(_attend_btn)
+
+
+func _refresh_attend() -> void:
+	if _attend_cells.is_empty():
+		return
+	# 이번 바퀴에서 받은 칸 수. 30 을 넘으면 다음 바퀴라 나머지로 센다.
+	var done := attend_got % AttendDefs.DAYS
+	# 딱 30 을 채운 순간은 나머지가 0 이 되는데, 그건 "한 칸도 안 받음"과
+	# 같은 값이다 — 오늘 아직 안 받았으면 다 채운 상태로 보여 준다.
+	if attend_got > 0 and done == 0 and not _attend_claimable():
+		done = AttendDefs.DAYS
+	for i in _attend_cells.size():
+		var c: Dictionary = _attend_cells[i]
+		var got := i < done
+		c["done"].visible = got
+		c["mark"].visible = got
+		# 오늘 받을 칸만 밝게 — 나머지는 살짝 죽여 시선이 한 곳에 간다.
+		c["ico"].modulate = Color(1, 1, 1, 1) if i == done else Color(1, 1, 1, 0.72)
+	_attend_btn.disabled = not _attend_claimable()
+	_attend_btn.text = "오늘 받기" if _attend_claimable() else "내일 또"
+
+
+func _boon_build(root: Control) -> void:
+	var x := QUEST_PANEL.position.x + 22.0
+	var w := QUEST_PANEL.size.x - 44.0
+	var y := QUEST_PANEL.position.y + 104.0
+	root.add_child(Ui.card(Vector2(x, y), Vector2(w, 150.0)))
+	var now := _panel_label(root, Vector2(x, y + 22.0), Type.NATIVE * 2,
+		Color(0.92, 0.80, 0.52), w, 30.0)
+	now.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var now_text := _panel_label(root, Vector2(x, y + 70.0), Type.SIZE_BODY,
+		Color(0.90, 0.86, 0.88), w, 26.0)
+	now_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var until := _panel_label(root, Vector2(x, y + 110.0), Type.SIZE_SMALL,
+		Color(0.62, 0.60, 0.68), w, 16.0)
+	until.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	until.text = "월요일에 바뀐다"
+	# **여섯 종을 다 늘어놓는다.** 다음 주 하나만 예고하면 "언제 그게 오나"를
+	# 못 세는데, 차례가 보이면 기다릴 주를 고를 수 있다. 긴 설명이 큰 글씨로는
+	# 카드를 넘쳐서(실측) 줄마다 작은 글씨 한 줄로 눕힌다.
+	var rows: Array = []
+	for i in BoonDefs.BOONS.size():
+		var ry := y + 180.0 + float(i) * 38.0
+		root.add_child(Ui.card(Vector2(x, ry), Vector2(w, 32.0)))
+		var l := _panel_label(root, Vector2(x + 14.0, ry + 8.0), Type.SIZE_SMALL,
+			Color(0.70, 0.66, 0.72), w - 28.0, 16.0)
+		rows.append(l)
+	_boon_labels = {"now": now, "text": now_text, "rows": rows}
+
+
+func _refresh_boon() -> void:
+	if _boon_labels.is_empty():
+		return
+	var wk := _quest_week_key()
+	var b := BoonDefs.of(wk)
+	_boon_labels["now"].text = str(b["name"])
+	_boon_labels["text"].text = str(b["text"])
+	var rows: Array = _boon_labels["rows"]
+	for i in rows.size():
+		var e: Dictionary = BoonDefs.BOONS[i]
+		var here := str(e["id"]) == str(b["id"])
+		rows[i].text = "%s%s — %s" % ["▶ " if here else "   ",
+			str(e["name"]), str(e["text"])]
+		rows[i].add_theme_color_override("font_color",
+			Color(0.92, 0.80, 0.52) if here else Color(0.62, 0.60, 0.68))
+
+
 func _quest_set_mode(mode: String) -> void:
 	_quest_day_root.visible = mode == "day"
 	_quest_week_root.visible = mode == "week"
+	_attend_root.visible = mode == "attend"
+	_boon_root.visible = mode == "boon"
 	for key in _quest_mode_btns:
 		_quest_mode_btns[key].button_pressed = key == mode
+	# 일괄 받기는 임무 소탭에서만 뜻이 있다 — 출석은 하루 한 칸이고 은총은
+	# 받을 게 없다. 남겨 두면 누를 수는 있는데 아무 일도 안 일어난다.
+	_quest_claim_all.visible = mode == "day" or mode == "week"
 	_refresh_quests()
+	_refresh_attend()
+	_refresh_boon()
 
 
 func _refresh_quests() -> void:
@@ -9280,7 +9482,7 @@ func on_foe_killed(f: Foe) -> void:
 	# 미궁 보스는 정수를 안 준다 — 정수는 장비 축의 재화이고 수도꼭지는 본편 보스
 	# 하나다(EXPANSION 6장의 재화 격리). 미궁의 보상은 2단계의 혈정이다.
 	if f.is_boss and not dungeon_on:
-		essence += StageDefs.boss_essence(stage)
+		essence += StageDefs.boss_essence(stage) * (1.0 + _boon("essence"))
 	kills += 1
 	_quest_bump("kills")
 	var prev_kills := int(codex.get(f.key, 0))
@@ -9356,7 +9558,7 @@ func _advance_stage() -> void:
 	if raid_on != "":
 		var kind := raid_on
 		var n := _raid_stage()
-		var amount := RaidDefs.reward(kind, n)
+		var amount := _raid_gain(kind, n)
 		raid_best[kind] = n
 		raid_left[kind] = maxi(0, _raid_left(kind) - 1)   # 표는 격파에만 깎인다
 		match kind:
@@ -10133,6 +10335,8 @@ func _save_game() -> void:
 	cfg.set_value("gacha", "owned", gacha_owned)
 	cfg.set_value("gacha", "shards", gacha_shards)
 	cfg.set_value("gacha", "free_date", free_pull_date)
+	cfg.set_value("attend", "got", attend_got)
+	cfg.set_value("attend", "date", attend_date)
 	cfg.set_value("quest", "date", quest_date)
 	cfg.set_value("quest", "prog", quest_prog)
 	cfg.set_value("quest", "got", quest_got)
@@ -10269,6 +10473,8 @@ func _load_game() -> void:
 				+ int(gacha_shards[old_owned_key])
 			gacha_shards.erase(old_owned_key)
 	free_pull_date = str(cfg.get_value("gacha", "free_date", ""))
+	attend_got = maxi(0, int(cfg.get_value("attend", "got", 0)))
+	attend_date = str(cfg.get_value("attend", "date", ""))
 	quest_date = str(cfg.get_value("quest", "date", ""))
 	quest_prog = cfg.get_value("quest", "prog", {})
 	quest_got = cfg.get_value("quest", "got", {})
