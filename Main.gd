@@ -11411,7 +11411,7 @@ func _pet_build_feed(root: Control) -> void:
 func _pet_build_roll(root: Control, kind: String) -> void:
 	root.add_child(Ui.set_body(NEST, Vector2(PAD, PET_GRID_Y),
 		Vector2(CONTENT_W, 300.0)))
-	var big := Ui.icon("res://assets/ui/tab_codex.png",
+	var big := Ui.icon(TicketDefs.icon_of(kind),
 		Vector2(PAD + (CONTENT_W - 72.0) * 0.5, PET_GRID_Y + 36.0), 72.0)
 	root.add_child(big)
 	var title := _panel_label(root, Vector2(PAD, PET_GRID_Y + 124.0),
@@ -11581,8 +11581,12 @@ func _refresh_pet_roll() -> void:
 		var open := best_stage >= PetDefs.PET_OPEN
 		ui["cnt"].text = ("%d장" % have) if open \
 			else "%d구간에 열린다" % PetDefs.PET_OPEN
-		ui["one"]["btn"].disabled = not open or have < 1
-		ui["ten"]["btn"].disabled = not open or have < 1
+		# 소환권이 없으면 보석 시세를 버튼에 적는다 — 안 적으면 "왜 눌리지"가 된다.
+		var by_gem := open and have < 1
+		ui["one"]["lbl"].text = "1회" if not by_gem 			else "1회  보석 %d" % int(GachaDefs.COST)
+		ui["ten"]["lbl"].text = "10연" if not by_gem 			else "10연  보석 %d" % int(GachaDefs.COST * 10.0)
+		ui["one"]["btn"].disabled = not open or not _pet_can_pay(kind)
+		ui["ten"]["btn"].disabled = ui["one"]["btn"].disabled
 
 
 # ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
@@ -11633,10 +11637,26 @@ func _pet_tick() -> void:
 
 # 펫 뽑기. 유물과 같은 문법이다 — **중복은 조각이 되고 조각이 차면 한 단계**.
 # 빈손으로 돌려보내지 않는 게 이 문법의 값이다.
+
+# 소환권 우선, 없으면 보석 — 본편 소환(_pull_gacha)과 같은 문법·같은 시세다.
+# 시세를 따로 두면 "펫 뽑기는 왜 더 비싸냐"가 생긴다.
+func _pet_pay(kind: String) -> bool:
+	var have := int(tickets.get(kind, 0))
+	if have >= 1:
+		tickets[kind] = have - 1
+		return true
+	if gem < GachaDefs.COST:
+		return false
+	gem -= GachaDefs.COST
+	return true
+
+
+func _pet_can_pay(kind: String) -> bool:
+	return int(tickets.get(kind, 0)) >= 1 or gem >= GachaDefs.COST
+
 func _pet_roll(show := true) -> Dictionary:
-	if best_stage < PetDefs.PET_OPEN or int(tickets.get("pet", 0)) < 1:
+	if best_stage < PetDefs.PET_OPEN or not _pet_pay("pet"):
 		return {}
-	tickets["pet"] = int(tickets.get("pet", 0)) - 1
 	# 등급을 굴리고 그 안에서 하나 — 유물과 같은 문법(_receive_gacha_relic).
 	var pool := PetDefs.of_rarity(PetDefs.roll_rarity())
 	var d: Dictionary = pool[randi() % pool.size()]
@@ -11675,9 +11695,8 @@ func _pet_roll(show := true) -> Dictionary:
 
 # 펫 장비 뽑기 — 펫과 같은 문법. UI 는 전면 판(2단계)에서 온다.
 func _petgear_roll(show := true) -> Dictionary:
-	if best_stage < PetDefs.PET_OPEN or int(tickets.get("petgear", 0)) < 1:
+	if best_stage < PetDefs.PET_OPEN or not _pet_pay("petgear"):
 		return {}
-	tickets["petgear"] = int(tickets.get("petgear", 0)) - 1
 	var pool := PetDefs.gear_of_rarity(PetDefs.roll_rarity())
 	var d: Dictionary = pool[randi() % pool.size()]
 	var id := str(d["id"])

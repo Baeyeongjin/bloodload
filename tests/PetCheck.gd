@@ -82,9 +82,18 @@ func _init() -> void:
 	scene.tickets = {}
 	scene.feed = 0.0
 
-	# ── 뽑기 — 펫권으로. 공짜 뽑기가 없는가. ──────────────────────────────
+	# ── 뽑기 — 펫권 우선, 없으면 보석(본편 소환과 같은 시세). ─────────────
 	scene.best_stage = PetDefs.PET_OPEN
-	assert(not scene._pet_roll(), "펫권이 없는데 뽑혔다")
+	scene.gem = 0.0
+	assert(not scene._pet_roll(), "권도 보석도 없는데 뽑혔다")
+	# 보석 결제 — 권이 없어도 GachaDefs.COST 로 뽑힌다.
+	scene.gem = GachaDefs.COST
+	assert(scene._pet_roll(), "보석이 있는데 안 뽑힌다")
+	assert(scene.gem < GachaDefs.COST, "보석이 안 깎였다")
+	scene.pets_got = {}
+	scene.pet_lv = {}
+	scene.pet_worn = ""
+	scene.gacha_shards = {}
 	scene.tickets = {"pet": 3}
 	scene.best_stage = 1
 	assert(not scene._pet_roll(), "안 열린 구간인데 뽑혔다")

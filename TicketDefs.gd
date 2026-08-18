@@ -28,11 +28,11 @@ const INFO := {
 		"icon": "res://assets/ui/ticket_trinket.png"},
 	"skill": {"name": "스킬 소환권", "short": "스킬권",
 		"icon": "res://assets/ui/ticket_skill.png"},
-	# 아이콘은 자리표시(아트 배치에서 전용으로 교체).
+	# 전용 아이콘(2026-08-18): 발자국 인장 꼬리표 / 검·목줄 인장 꼬리표.
 	"pet": {"name": "펫 소환권", "short": "펫권",
-		"icon": "res://assets/ui/ticket_trinket.png"},
+		"icon": "res://assets/ui/ticket_pet.png"},
 	"petgear": {"name": "펫 장비 소환권", "short": "펫장비권",
-		"icon": "res://assets/ui/ticket_armor.png"},
+		"icon": "res://assets/ui/ticket_petgear.png"},
 }
 
 # 보상 표에 적는 이름 — "ticket_weapon" 처럼 쓴다(Main._grant_reward 가 푼다).
