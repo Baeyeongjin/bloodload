@@ -36,7 +36,13 @@ func _init() -> void:
 	root.add_child(scene)
 	await process_frame
 	await process_frame
+	# **결백성.** 방치 상한(_offline_cap_hours)에 더해지는 자리가 넷이다 —
+	# 혈맥·유물·군림·구독. 여기서 재려는 건 **군림 몫**이므로 나머지 셋을 지운다.
+	# 격리 폴더를 함께 쓰는 묶음 실행에서 앞선 검사가 저장한 것이 그대로
+	# 딸려 왔다(실측: IapCheck 의 혈세가 +4시간, GodCheck 의 유물이 +5시간).
 	scene.traits = {}          # 혈맥이 섞이면 소탕·상한 비교가 흐려진다
+	scene.relics = {}          # soul_lantern +3h · blood_hourglass +2h
+	scene.iap_subs = {}        # 혈세(월정액) +4h
 	# 해금 전 — 전부 기본값.
 	scene.best_stage = 1
 	assert(scene._equip_cap() == SkillDefs.SLOTS, "해금 전인데 칸이 늘었다")
