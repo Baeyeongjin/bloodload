@@ -19,6 +19,20 @@ class_name PetDefs
 # 되고, 길면 하루 한 번으로 충분해져 짧은 시계라는 목적이 사라진다.
 const CAP_HOURS := 6.0
 
+# **뽑아서 얻는다**(사장님 2026-08-18). 구간은 이제 "뽑기 풀에 들어오는 때"다 —
+# 진행만으로 다 주면 뽑을 이유가 없고, 진행과 무관하면 1구간에 최종 펫이 나온다.
+#
+# 소환권을 다섯째로 만들지 않은 건 지갑 칸 때문이다(TicketDefs 가 고급권을 뺀
+# 그 이유) — **보석으로 뽑는다.** 보석은 원래 여러 곳에 쓰는 통화라 칸이 안 는다.
+const ROLL_COST := 150.0
+const MAX_LV := 5
+const SHARDS_PER_LV := 4       # 중복 4개 = 한 단계 (유물과 같은 문법)
+
+
+# 레벨이 오르면 물어오는 양과 버프가 같이 는다. 1레벨이 표값이고 만렙이 두 배다.
+static func level_mult(level: int) -> float:
+	return 1.0 + 0.25 * float(clampi(level, 1, MAX_LV) - 1)
+
 const PETS := [
 	{"id": "bat", "name": "핏빛 박쥐", "anim": "bat", "open": 10,
 		"gain": "crystal", "per_hour": 18.0, "stat": "damage", "value": 0.04,
@@ -55,26 +69,39 @@ static func unlocked(id: String, best_stage: int) -> bool:
 
 # 상한. 펫마다 시급이 달라 상한도 따라 다르다 — 시간으로 재야 "여섯 시간마다
 # 들르면 된다"가 모든 펫에서 같은 말이 된다.
-static func cap(id: String) -> float:
+static func per_hour(id: String, level: int) -> float:
 	var p := of(id)
-	return 0.0 if p.is_empty() else float(p["per_hour"]) * CAP_HOURS
+	return 0.0 if p.is_empty() 		else float(p["per_hour"]) * level_mult(level)
+
+
+static func cap(id: String, level := 1) -> float:
+	return per_hour(id, level) * CAP_HOURS
 
 
 # hours 만큼 지났을 때 쌓이는 양. 이미 있던 것에 더하고 상한에서 자른다.
-static func accrue(id: String, have: float, hours: float) -> float:
-	var p := of(id)
-	if p.is_empty() or hours <= 0.0:
+static func accrue(id: String, have: float, hours: float,
+		level := 1) -> float:
+	if of(id).is_empty() or hours <= 0.0:
 		return have
-	return minf(cap(id), have + float(p["per_hour"]) * hours)
+	return minf(cap(id, level), have + per_hour(id, level) * hours)
 
 
 # 장착한 펫이 그 능력치에 주는 몫. 안 데리고 다니면 0 이다 —
 # **가진 것 전부가 아니라 장착한 하나만** 준다(그래야 고를 이유가 생긴다).
-static func bonus(worn: String, stat: String) -> float:
+static func bonus(worn: String, stat: String, level := 1) -> float:
 	var p := of(worn)
 	if p.is_empty() or str(p["stat"]) != stat:
 		return 0.0
-	return float(p["value"])
+	return float(p["value"]) * level_mult(level)
+
+
+# 그 구간에서 뽑을 수 있는 펫들. 빈 배열이면 아직 뽑기가 안 열린 것이다.
+static func pool(best_stage: int) -> Array:
+	var out: Array = []
+	for p in PETS:
+		if best_stage >= int(p["open"]):
+			out.append(str(p["id"]))
+	return out
 
 
 static func icon_dir(id: String) -> String:

@@ -59,15 +59,35 @@ func _init() -> void:
 	scene.pet_worn = ""
 	scene.pet_at = 0.0
 	scene.crystal = 0.0
+	scene.gacha_shards = {}
 
-	# 구간이 열어 준다 — 소환에 종류를 더하지 않는다.
+	# ── 뽑기 ── **보석으로 뽑는다**(소환권 다섯째를 안 만든다 — 지갑 칸).
 	scene.best_stage = 1
-	scene._pet_unlock_check()
+	scene.gem = 99999.0
+	assert(not scene._pet_roll(), "뽑기가 안 열린 구간인데 나왔다")
 	assert(scene.pets_got.is_empty(), "1구간인데 펫이 생겼다")
 	scene.best_stage = int(PetDefs.PETS[0]["open"])
-	scene._pet_unlock_check()
-	assert(scene.pets_got.has(id), "해금 구간인데 안 왔다")
+	# 보석이 모자라면 안 나온다 — 여기가 새면 공짜 뽑기가 된다.
+	scene.gem = PetDefs.ROLL_COST - 1.0
+	assert(not scene._pet_roll(), "보석이 모자란데 뽑혔다")
+	scene.gem = PetDefs.ROLL_COST * 40.0
+	var before_gem: float = scene.gem
+	assert(scene._pet_roll(), "열린 구간인데 안 뽑힌다")
+	assert(scene.gem < before_gem, "뽑았는데 보석이 그대로다")
+	assert(scene.pets_got.has(id), "뽑았는데 안 들어왔다")
 	assert(scene.pet_worn == id, "첫 펫을 자동으로 안 데려간다")
+
+	# **중복은 조각이고, 조각이 차면 한 단계.** 빈손으로 돌려보내지 않는다.
+	var lv0: int = scene._pet_lv(id)
+	for i in PetDefs.SHARDS_PER_LV:
+		scene._pet_roll()
+	assert(scene._pet_lv(id) > lv0, "조각을 채웠는데 단계가 안 올랐다")
+	assert(scene._pet_lv(id) <= PetDefs.MAX_LV, "만렙을 넘겼다")
+	# 단계가 오르면 물어오는 양과 버프가 같이 는다.
+	assert(PetDefs.cap(id, 2) > PetDefs.cap(id, 1), "단계가 올라도 상한이 그대로")
+	assert(PetDefs.bonus(id, str(PetDefs.of(id)["stat"]), 2)
+		> PetDefs.bonus(id, str(PetDefs.of(id)["stat"]), 1),
+		"단계가 올라도 버프가 그대로")
 
 	# 시간이 지나면 쌓인다. pet_at 을 과거로 밀어 흉내 낸다.
 	scene.pet_at = Time.get_unix_time_from_system() - 3600.0 * 2.0
