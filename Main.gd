@@ -6137,18 +6137,22 @@ func _build_raid_list(root: Control) -> void:
 	# 던전 전용 세트(사장님: 탭마다 다르게) — 사슬 감긴 돌벽 카드 + 철창 입장 버튼.
 	# 입장 버튼이 그림이라 글자·잠금 표시는 라벨과 modulate 가 맡는다.
 	var kinds := ["blood", "essence", "pact", "hunt"]
-	# **스크롤에 넣는다.** 4줄 x 154 = 616 인데 판은 92 부터 774 까지라 네 번째
-	# (야수 우리)가 하단 네비에 깔렸다(사장님 캡처).
-	var rsc := _codex_thin_bar(Ui.scroll(Vector2(0.0, 92.0),
-		Vector2(PANEL_W, FULL_BOTTOM - 92.0)))
+	# **스크롤에 넣는다.** 4줄 x 154 = 616 인데 이 루트는 화면 214 에서 시작하고
+	# 판 아래는 774 다 — 쓸 수 있는 높이가 468 뿐이라 네 번째(야수 우리)가 하단
+	# 네비에 깔렸다(사장님 캡처 2회. 처음엔 루트 오프셋을 안 재고 682 로 잡아
+	# 스크롤 자신이 화면 밖까지 뻗었고, 내용이 그 안에 다 들어가 안 굴렀다).
+	var rsc := _codex_thin_bar(Ui.scroll(Vector2(0.0, 86.0),
+		Vector2(PANEL_W, FULL_BOTTOM - 214.0 - 86.0)))
 	root.add_child(rsc)
 	var rpane := Control.new()
 	rpane.custom_minimum_size = Vector2(PANEL_W - CODEX_BAR_W,
-		float(kinds.size()) * 154.0)
+		float(kinds.size()) * 148.0)
 	rsc.add_child(rpane)
 	for i in kinds.size():
 		var kind: String = kinds[i]
-		var y := float(i) * 154.0
+		# 피치 148 — 카드(140)에 틈 8. 판 높이 474 에서 4번째 줄이 30px 넘게
+		# 엿보인다: 엿보임이 곧 "굴려라"라는 표지판이다.
+		var y := float(i) * 148.0
 		_shop_tex(rpane, "res://assets/ui/sets/gate_row.png",
 			Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 140.0))
 		# 엠블럼 홈(사슬 안 사각 창) 실측 자리에 재화 아이콘.
@@ -11292,6 +11296,11 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 		var star := _panel_label(pane, Vector2(cx, cy + PET_CELL - 24.0),
 			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), PET_CELL, 16.0)
 		star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		# 장착중 표식(사장님) — 데리고 다니는 펫 / 어느 펫이 든 장비.
+		var mark := _panel_label(pane, Vector2(cx, cy + 6.0), Type.SIZE_SMALL,
+			Color(0.55, 0.95, 0.62), PET_CELL, 14.0)
+		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		mark.visible = false
 		var idx := i
 		var frame_art: Control = pane.get_child(pane.get_child_count()
 			- (3 if art != null else 2))    # 이 칸의 둥지 액자
@@ -11301,7 +11310,7 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 		btn.pressed.connect(func() -> void: on_pick.call(idx))
 		pane.add_child(btn)
 		_pet_hover(btn, frame_art)
-		cells.append({"art": art, "star": star})
+		cells.append({"art": art, "star": star, "mark": mark})
 
 
 func _pet_art(i: int) -> Control:
@@ -11512,6 +11521,8 @@ func _refresh_pet() -> void:
 			_pet_cells[i]["art"].modulate = Color(1, 1, 1, 1) if got \
 				else Color(0.10, 0.09, 0.11, 0.9)
 		_pet_cells[i]["star"].text = ("%d성" % _pet_star(id)) if got else ""
+		_pet_cells[i]["mark"].visible = pet_worn == id
+		_pet_cells[i]["mark"].text = "동행 중"
 	for i in _petgear_cells.size():
 		var gid := str(PetDefs.GEAR[i]["id"])
 		var ggot := int(pet_gear_got.get(gid, 0)) > 0
@@ -11520,6 +11531,13 @@ func _refresh_pet() -> void:
 				else Color(0.10, 0.09, 0.11, 0.9)
 		_petgear_cells[i]["star"].text = \
 			("%d성" % int(pet_gear_got.get(gid, 0))) if ggot else ""
+		var holder2 := ""
+		for k in pet_gear_worn:
+			if str(pet_gear_worn[k]) == gid:
+				holder2 = str(PetDefs.of(str(k)).get("name", ""))
+				break
+		_petgear_cells[i]["mark"].visible = holder2 != ""
+		_petgear_cells[i]["mark"].text = holder2
 	_refresh_pet_own()
 	_refresh_pet_gear()
 	_refresh_pet_feed()
