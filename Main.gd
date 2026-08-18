@@ -3813,7 +3813,7 @@ func _build_gacha(root: Control) -> void:
 		gb.position = bpos
 		gb.pressed.connect(func() -> void: _pull_gacha(count))
 		_gacha_buttons[key] = gb
-	_mile_strip(root, 712.0)
+	_mile_strip(root, Vector2(240.0, 442.0), 300.0)
 	_build_rates_table(root)
 	_gacha_reveal = Control.new()
 	_gacha_reveal.size = Vector2(PANEL_W, PANEL_FULL_H)
@@ -11894,7 +11894,8 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	root.add_child(g2)
 	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten,
 		"one_gem": g1, "ten_gem": g2}
-	_mile_strip(root, PET_GRID_Y + 442.0)
+	_mile_strip(root, Vector2(PAD + (CONTENT_W - 300.0) * 0.5,
+		PET_GRID_Y + 244.0), 300.0)
 
 
 func _refresh_pet() -> void:
@@ -12128,14 +12129,19 @@ func _mile_pop() -> void:
 	_save_game()
 
 
-# 천장 게이지 한 줄 — 소환 판마다 얹지만 상자는 하나다(값이 같이 움직인다).
-func _mile_strip(root: Control, y: float) -> void:
+# 천장 게이지 — 소환 카드 **안** 빈 띠(사장님이 잡은 자리)에 두 줄로 접는다:
+# 위에 글줄, 아래에 상자 아이콘 + 트랙. 상자는 하나라 어느 판이든 값이 같다.
+func _mile_strip(root: Control, at: Vector2, w: float) -> void:
+	var lbl := _panel_label(root, at, Type.SIZE_SMALL,
+		Color(0.86, 0.82, 0.80), w, 18.0)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(lbl, 5)
 	root.add_child(Ui.icon("res://assets/ui/mile_chest.png",
-		Vector2(PAD + 40.0, y - 12.0), 32.0))
+		Vector2(at.x, at.y + 18.0), 26.0))
 	var track := ColorRect.new()
 	track.color = Color(0.10, 0.09, 0.12)
-	track.position = Vector2(PAD + 84.0, y)
-	track.size = Vector2(CONTENT_W - 84.0 - 208.0, 10.0)
+	track.position = Vector2(at.x + 34.0, at.y + 26.0)
+	track.size = Vector2(w - 34.0, 10.0)
 	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(track)
 	var fill := ColorRect.new()
@@ -12144,9 +12150,6 @@ func _mile_strip(root: Control, y: float) -> void:
 	fill.size = Vector2(0.0, 10.0)
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fill)
-	var lbl := _panel_label(root, Vector2(PAD + CONTENT_W - 200.0, y - 5.0),
-		Type.SIZE_SMALL, Color(0.86, 0.82, 0.80), 200.0, 18.0)
-	_shop_outline(lbl, 5)
 	_mile_ui.append({"fill": fill, "lbl": lbl, "w": track.size.x})
 	_refresh_mile()
 
@@ -12156,7 +12159,7 @@ func _refresh_mile() -> void:
 	for m in _mile_ui:
 		m["fill"].size.x = float(m["w"]) \
 			* clampf(float(mile_fill) / float(cap), 0.0, 1.0)
-		m["lbl"].text = "상자 %d단계 · %d/%d" % [mile_lv + 1, mile_fill, cap]
+		m["lbl"].text = "천장 상자 %d단계  ·  %d/%d" % [mile_lv + 1, mile_fill, cap]
 
 
 # 소환권 우선, 없으면 보석 — 본편 소환(_pull_gacha)과 같은 문법·같은 시세다.
