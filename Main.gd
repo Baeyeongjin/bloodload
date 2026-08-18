@@ -228,6 +228,9 @@ func _tick_titles(delta: float) -> void:
 	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
 	_refresh_quests()
 	_tick_income()
+	# **펫 해금도 여기서 본다.** _refresh_pet 안에서만 확인했더니 펫 탭을 열기
+	# 전까지는 구간을 넘어도 안 왔다 — 해금은 화면을 보는 것과 무관해야 한다.
+	_pet_unlock_check()
 	# 장착 칭호 — 레벨 배지 아래. 여기서 갱신하면 로드 직후·장착 직후를 다 잡는다.
 	if _lbl_worn:
 		_lbl_worn.visible = title_worn != ""
@@ -276,6 +279,8 @@ var _engaged: Foe
 var _boss_entry := false
 var _bg: Sprite2D
 var _hero: Sprite2D
+var _pet_sprite: Sprite2D
+var _pet_anim_t := 0.0
 var _hero_frames: Array = []
 var _hero_anim := 0.0
 # 영웅 외형. 확장은 캐릭터 추가가 아니라 스킨이라, 이 값만 바꾸면 모션 전체가 갈린다.
@@ -344,6 +349,14 @@ var codex_knowledge := 0
 # 분해하면 사라져서 도감이 거꾸로 줄어든다. 스킬은 skill_owned 가 안 사라지므로
 # 따로 안 둔다(LoreDefs).
 var gear_seen := {}
+
+# ── 펫 (PetDefs) ───────────────────────────────────────────────────────────
+# 물어온 것은 **지갑이 아니라 그릇에 담긴다** — 눌러서 받는 게 보상이다
+# (방치 상자와 같은 문법). pet_at 은 마지막 정산 시각(유닉스 초)이다.
+var pets_got := {}           # id -> true (해금해서 데려온 펫)
+var pet_bank := {}           # id -> 쌓인 양
+var pet_worn := ""           # 지금 데리고 다니는 하나
+var pet_at := 0.0
 var _codex_view: Control
 var _codex_gain: Label
 var _codex_roots := {}
@@ -524,7 +537,8 @@ func gold_mult() -> float:
 	return (1.0 + 0.15 * float(_stat_eff("gold") - 1) + _gear_stat("gold") * 0.02) \
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
-		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold"))
+		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold")) \
+		* (1.0 + _pet_mult("gold"))
 
 
 func dps() -> float:
@@ -608,6 +622,7 @@ func _base_hit_damage() -> float:
 	# 회귀 배율도 여기 붙는다 — 화면 DPS 와 실제 피해가 같은 함수를 지나므로
 	# 한 곳만 곱하면 둘이 안 갈린다(혈맥·유물과 같은 자리).
 	return damage() * _trait_mult("attack") * _prestige_mult() \
+		* (1.0 + _pet_mult("damage")) \
 		* Balance.crit_mult(_stat_eff("crit"), _stat_eff("critdmg"),
 			_trait_add("critdmg") + RelicDefs.add("critdmg", relics))
 
@@ -1062,6 +1077,15 @@ func _build_scene() -> void:
 	_hero.flip_h = true
 	_hero.z_index = 3
 	add_child(_hero)
+	# **데리고 다니는 펫이 화면에 보인다.** 이게 펫의 절반이다 — 수집만 하면
+	# 창 안의 숫자로 끝나고, "성장이 눈에 안 보인다"는 문제가 그대로 남는다.
+	# 영웅보다 뒤(z 2)에 두고 조금 위로 띄운다: 앞에 서면 전투를 가린다.
+	_pet_sprite = Sprite2D.new()
+	_pet_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_pet_sprite.scale = Vector2(1.4, 1.4)
+	_pet_sprite.z_index = 2
+	_pet_sprite.visible = false
+	add_child(_pet_sprite)
 	_play("idle")
 
 	_hud = CanvasLayer.new()
@@ -7458,7 +7482,9 @@ func _select_tab(name: String) -> void:
 		m.modulate = Color(1, 1, 1) if key == name else Color(0.5, 0.5, 0.55)
 		m.pivot_offset = m.size * 0.5
 		m.scale = Vector2(1.06, 1.06) if key == name else Vector2.ONE
-	if name == "summon":
+	if name == "pet":
+		_refresh_pet()
+	elif name == "summon":
 		_refresh_gacha()
 	elif name == "raid":
 		_refresh_dungeon()
@@ -7874,6 +7900,7 @@ func _tick_dash(delta: float) -> void:
 	if fighting and _motion == "dash" and is_equal_approx(hero_x, was):
 		_play("idle")
 	_hero.position.x = hero_x
+	_pet_follow(delta)
 	# **배경은 영웅이 실제로 움직인 만큼만 흐른다**(PARALLAX 주석 참고). 전투 중에는
 	# 안 흘린다 — 결투의 앞뒤 발놀림까지 따라가면 배경이 좌우로 흔들린다.
 	if not fighting and not is_equal_approx(hero_x, was):
@@ -10485,6 +10512,10 @@ func _save_game() -> void:
 	cfg.set_value("gacha", "owned", gacha_owned)
 	cfg.set_value("gacha", "shards", gacha_shards)
 	cfg.set_value("gacha", "free_date", free_pull_date)
+	cfg.set_value("pet", "got", pets_got)
+	cfg.set_value("pet", "bank", pet_bank)
+	cfg.set_value("pet", "worn", pet_worn)
+	cfg.set_value("pet", "at", pet_at)
 	cfg.set_value("codex", "gear_seen", gear_seen)
 	cfg.set_value("attend", "got", attend_got)
 	cfg.set_value("attend", "date", attend_date)
@@ -10624,6 +10655,10 @@ func _load_game() -> void:
 				+ int(gacha_shards[old_owned_key])
 			gacha_shards.erase(old_owned_key)
 	free_pull_date = str(cfg.get_value("gacha", "free_date", ""))
+	pets_got = cfg.get_value("pet", "got", {})
+	pet_bank = cfg.get_value("pet", "bank", {})
+	pet_worn = str(cfg.get_value("pet", "worn", ""))
+	pet_at = float(cfg.get_value("pet", "at", 0.0))
 	gear_seen = cfg.get_value("codex", "gear_seen", {})
 	attend_got = maxi(0, int(cfg.get_value("attend", "got", 0)))
 	attend_date = str(cfg.get_value("attend", "date", ""))
@@ -11043,14 +11078,183 @@ func _codex_set_mode(mode: String) -> void:
 	_refresh_act()
 
 
-# 펫 — **아직 안 만들었다**(docs/PET_DESIGN.md). 도감이 팝업으로 비켜 준 자리라
-# 판만 서 있다. 빈 화면은 버그로 읽히므로 무엇이 올지 적어 둔다.
+# 펫 탭 — 줄 하나가 펫 하나다. 왼쪽에 그림, 가운데 이름·설명·쌓인 양,
+# 오른쪽에 [받기]와 [데리고 다니기].
+#
+# **격자가 아니라 줄**인 이유: 펫은 여섯이라 격자로 펴면 허전하고, 줄마다
+# "얼마나 찼나"를 막대로 보여야 들를 때가 됐는지 한눈에 읽힌다.
+const PET_ROW_H := 96.0
+const PET_BAR_W := 190.0
+var _pet_rows: Array[Dictionary] = []
+
+
 func _build_pet(root: Control) -> void:
-	var l := _panel_label(root, Vector2(PAD, 150.0), Type.SIZE_BODY,
-		Color(0.86, 0.80, 0.76), CONTENT_W, 30.0)
-	l.text = "펫"
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var sub := _panel_label(root, Vector2(PAD, 190.0), Type.SIZE_SMALL,
-		Color(0.62, 0.60, 0.68), CONTENT_W, 20.0)
-	sub.text = "곧 온다 — 자원을 물어오고, 데리고 다니면 힘이 붙는다"
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var head := _panel_label(root, Vector2(PAD, PAD - 4.0), Type.SIZE_SMALL,
+		Color(0.90, 0.86, 0.84), CONTENT_W, 18.0)
+	head.text = "동행"
+	var sub := _panel_label(root, Vector2(PAD, PAD + 16.0), Type.SIZE_SMALL,
+		Color(0.62, 0.60, 0.68), CONTENT_W, 18.0)
+	sub.text = "%d시간이면 그릇이 찬다 · 데리고 다니는 하나만 힘을 준다" 		% int(PetDefs.CAP_HOURS)
+	var y0 := PAD + 44.0
+	for i in PetDefs.PETS.size():
+		var d: Dictionary = PetDefs.PETS[i]
+		var y := y0 + float(i) * PET_ROW_H
+		root.add_child(Ui.card(Vector2(PAD, y), Vector2(CONTENT_W, PET_ROW_H - 8.0)))
+		# 그림은 walk 첫 프레임 — 몹 자산을 그대로 쓴다(새로 뽑지 않는다).
+		var frames := Assets.frames(PetDefs.icon_dir(str(d["id"])))
+		var art: TextureRect = null
+		if not frames.is_empty():
+			art = TextureRect.new()
+			art.texture = frames[0]
+			art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			art.size = Vector2(56.0, 56.0)
+			art.position = Vector2(PAD + 14.0, y + 14.0)
+			art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			root.add_child(art)
+		var nx := PAD + 84.0
+		var nm := _panel_label(root, Vector2(nx, y + 10.0), Type.SIZE_SMALL,
+			Color(0.94, 0.88, 0.72), 210.0, 16.0)
+		var ds := _panel_label(root, Vector2(nx, y + 30.0), Type.SIZE_SMALL,
+			Color(0.60, 0.58, 0.66), 260.0, 16.0)
+		ds.text = str(d["desc"])
+		# 얼마나 찼나 — 막대 하나로 "들를 때가 됐나"가 읽힌다.
+		var track := ColorRect.new()
+		track.color = Color(0.10, 0.09, 0.12)
+		track.position = Vector2(nx, y + 56.0)
+		track.size = Vector2(PET_BAR_W, 10.0)
+		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(track)
+		var fill := ColorRect.new()
+		fill.color = Color(0.72, 0.16, 0.20)
+		fill.position = track.position
+		fill.size = Vector2(0.0, 10.0)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(fill)
+		var amt := _panel_label(root, Vector2(nx + PET_BAR_W + 8.0, y + 50.0),
+			Type.SIZE_SMALL, Color(0.82, 0.80, 0.86), 120.0, 20.0)
+		var pid := str(d["id"])
+		var take := Ui.button("받기", Vector2(PAD + CONTENT_W - 116.0, y + 12.0),
+			Vector2(104.0, 32.0), Type.SIZE_SMALL)
+		take.pressed.connect(func() -> void: _pet_collect(pid))
+		root.add_child(take)
+		var wear := Ui.button("", Vector2(PAD + CONTENT_W - 116.0, y + 48.0),
+			Vector2(104.0, 32.0), Type.SIZE_SMALL)
+		wear.pressed.connect(func() -> void:
+			if not pets_got.has(pid):
+				return
+			pet_worn = "" if pet_worn == pid else pid
+			_save_game()
+			_refresh_pet())
+		root.add_child(wear)
+		_pet_rows.append({"name": nm, "amt": amt, "fill": fill, "take": take,
+			"wear": wear, "art": art, "desc": ds})
+
+
+func _refresh_pet() -> void:
+	if _pet_rows.is_empty():
+		return
+	_pet_unlock_check()
+	_pet_tick()
+	for i in _pet_rows.size():
+		var d: Dictionary = PetDefs.PETS[i]
+		var id := str(d["id"])
+		var row: Dictionary = _pet_rows[i]
+		var got: bool = pets_got.has(id)
+		var have := float(pet_bank.get(id, 0.0))
+		var cap := PetDefs.cap(id)
+		row["name"].text = str(d["name"]) if got 			else "%d구간에서 만난다" % int(d["open"])
+		# 아직 못 만난 펫은 실루엣만 — 빈 자리가 보여야 데려오고 싶다.
+		if row["art"] != null:
+			row["art"].modulate = Color(1, 1, 1, 1) if got 				else Color(0.12, 0.11, 0.13, 0.9)
+		row["desc"].visible = got
+		row["fill"].size.x = PET_BAR_W * (clampf(have / maxf(1.0, cap), 0.0, 1.0)
+			if got else 0.0)
+		row["amt"].text = "%s / %s  %s" % [_n(have), _n(cap),
+			_reward_name(str(d["gain"]))] if got else ""
+		row["take"].disabled = not got or have < 1.0
+		row["wear"].disabled = not got
+		row["wear"].text = "함께" if pet_worn == id else "데려가기"
+		# 버프가 뭔지 줄에 적는다 — 고를 이유가 보여야 한다.
+		if got:
+			row["desc"].text = "%s  ·  %s +%d%%" % [str(d["desc"]),
+				str(StatDefs.of(str(d["stat"])).get("name", d["stat"])), int(round(float(d["value"]) * 100.0))]
+
+
+# ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
+#
+# 시간이 얼마나 지났든 **한 번에 계산한다** — 초당 더하면 껐다 켠 사이가 비고
+# 상한도 프레임마다 재게 된다. 방치 보상(_grant_offline)과 같은 문법이다.
+
+# 데리고 다니는 펫을 영웅 뒤에 따라 붙인다.
+#
+# **뒤쪽 위에 둔다.** 앞이나 발밑에 서면 전투를 가리고, 그러면 예쁘라고 넣은
+# 것이 방해가 된다(VFX 원칙과 같은 자리). 위아래로 살짝 흔들어 떠 있는 티를
+# 낸다 — walk 프레임을 돌리면 걷는 시늉이 되는데, 공중에 뜬 박쥐에는 안 맞는다.
+const PET_LAG := 46.0        # 영웅에서 뒤로 물러난 거리
+const PET_LIFT := 54.0       # 지면에서 띄우는 높이
+const PET_BOB := 5.0         # 위아래 흔들림
+
+
+func _pet_follow(delta: float) -> void:
+	if _pet_sprite == null:
+		return
+	var frames := Assets.frames(PetDefs.icon_dir(pet_worn))
+	if pet_worn == "" or frames.is_empty():
+		_pet_sprite.visible = false
+		return
+	_pet_anim_t += delta
+	_pet_sprite.visible = true
+	_pet_sprite.texture = frames[int(_pet_anim_t * 6.0) % frames.size()]
+	_pet_sprite.flip_h = true
+	_pet_sprite.position = Vector2(hero_x - PET_LAG,
+		ground_y - PET_LIFT + sin(_pet_anim_t * 2.4) * PET_BOB)
+
+func _pet_tick() -> void:
+	var now := Time.get_unix_time_from_system()
+	if pet_at <= 0.0:
+		pet_at = now
+		return
+	var hours := (now - pet_at) / 3600.0
+	if hours <= 0.0:
+		return
+	pet_at = now
+	# **가진 펫 전부가 모은다.** 장착은 버프를 고르는 것이지 일을 시키는 게
+	# 아니다 — 하나만 모으면 나머지를 데려올 이유가 없어진다.
+	for id in pets_got:
+		pet_bank[id] = PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)), hours)
+
+
+# 구간이 열어 준 펫을 데려온다. **소환에 종류를 더하지 않는다** — 그쪽 천장을
+# 흔들지 않으려는 것이다(TicketDefs). 펫은 진행이 준다.
+func _pet_unlock_check() -> void:
+	for p in PetDefs.PETS:
+		var id := str(p["id"])
+		if not pets_got.has(id) and PetDefs.unlocked(id, best_stage):
+			pets_got[id] = true
+			pet_bank[id] = 0.0
+			if pet_worn == "":
+				pet_worn = id      # 첫 펫은 자동으로 데리고 다닌다
+			_show_reward("새 동행", [{"icon": "res://assets/ui/tab_codex.png",
+				"label": str(p["name"]), "sub": str(p["desc"])}])
+
+
+func _pet_collect(id: String) -> void:
+	_pet_tick()
+	var amount := float(pet_bank.get(id, 0.0))
+	if amount < 1.0:
+		return
+	var p := PetDefs.of(id)
+	pet_bank[id] = 0.0
+	_grant_reward(str(p["gain"]), amount)
+	_show_reward(str(p["name"]),
+		[{"icon": "res://assets/ui/%s.png" % _reward_icon(str(p["gain"])),
+		"label": "%s +%s" % [_reward_name(str(p["gain"])), _n(amount)]}])
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_pet()
+
+
+# 데리고 다니는 펫이 그 능력치에 주는 몫. 배율 훅마다 한 줄로 붙는다.
+func _pet_mult(stat: String) -> float:
+	return PetDefs.bonus(pet_worn, stat)
