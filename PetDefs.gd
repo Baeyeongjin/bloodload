@@ -137,7 +137,8 @@ const PETS := [
 
 # ── 펫 장비(무기) 25 ───────────────────────────────────────────────────────
 # 두 갈래만 있다: gather(수집 시급 +%) / amp(장착 펫 버프 +%). 영웅 장비와
-# 겹치지 않는 축이라 파워 예산 충돌이 없다. icon 은 아트 배치에서 채운다.
+# 겹치지 않는 축이라 파워 예산 충돌이 없다. 아이콘은 assets/items/petw_<id>.png
+# 규약이다(2026-08-18 아트 배치, 25종 전부).
 const GEAR := [
 	{"id": "bone_dirk", "name": "뼈 단검", "rarity": "common", "kind": "gather", "value": 0.10},
 	{"id": "rust_hook", "name": "녹슨 갈고리", "rarity": "common", "kind": "amp", "value": 0.08},

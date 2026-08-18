@@ -34,6 +34,9 @@ func _init() -> void:
 			"%s 의 애니 폴더가 비었다: %s" % [p["id"], p["anim"]])
 	for g in PetDefs.GEAR:
 		assert(str(g["kind"]) in ["gather", "amp"], "모르는 장비 갈래: %s" % g["kind"])
+		# 아이콘은 파일명 규약(petw_<id>)이라 표가 아니라 디스크가 진실이다.
+		assert(FileAccess.file_exists("res://assets/items/petw_%s.png" % g["id"]),
+			"%s 아이콘이 없다" % g["id"])
 
 	# ── 표: 성장 ───────────────────────────────────────────────────────────
 	assert(PetDefs.lv_cap(1) == 10 and PetDefs.lv_cap(PetDefs.MAX_STAR) == 50,

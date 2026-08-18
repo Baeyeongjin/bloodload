@@ -11262,11 +11262,9 @@ func _pet_art(i: int) -> Control:
 
 
 func _petgear_art(i: int) -> Control:
-	# 장비 아이콘은 아트 배치 전 — 갈래로 구분되는 자리표시.
-	var g: Dictionary = PetDefs.GEAR[i]
-	return Ui.icon("res://assets/ui/%s.png"
-		% ("res_crystal" if str(g["kind"]) == "gather" else "stat_damage"),
-		Vector2.ZERO, 36.0)
+	# 전용 아이콘(2026-08-18 아트 배치) — 파일명이 id 규약이라 표에 경로가 없다.
+	return Ui.icon("res://assets/items/petw_%s.png"
+		% str(PetDefs.GEAR[i]["id"]), Vector2.ZERO, 40.0)
 
 
 func _pet_build_own(root: Control) -> void:
