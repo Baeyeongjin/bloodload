@@ -82,13 +82,21 @@ func _init() -> void:
 	assert(scene.gear_seen.has(key), "장비 도감이 복원 안 됐다")
 
 	# 소탭 전환이 넷 다 도는가 — 하나라도 죽어 있으면 그 도감은 못 본다.
-	for m in ["foe", "gear", "skill", "act"]:
+	for m in ["foe", "gear", "skill", "title", "act"]:
 		scene._codex_set_mode(m)
 		assert(scene._codex_roots[m].visible, "%s 소탭이 안 열린다" % m)
-		for other in ["foe", "gear", "skill", "act"]:
+		for other in ["foe", "gear", "skill", "title", "act"]:
 			if other != m:
 				assert(not scene._codex_roots[other].visible,
 					"%s 를 열었는데 %s 도 보인다" % [m, other])
+
+	# **칭호가 도감 안으로 들어왔다** — 별도 판(_title_view)은 없앴다.
+	# 그 판을 다시 만들면 여는 곳이 둘이 되어 하나는 늘 낡은 값을 보인다.
+	assert(not ("_title_view" in scene), "칭호 판이 되살아났다")
+	scene._codex_set_mode("title")
+	assert(scene._title_head != null, "칭호 소탭에 머리글이 없다")
+	assert(scene._title_names.size() == TitleDefs.TITLES.size(),
+		"칭호 줄 수가 표와 다르다: %d" % scene._title_names.size())
 
 	print("LoreCheck OK")
 	quit()

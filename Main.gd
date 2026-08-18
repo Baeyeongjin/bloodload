@@ -344,6 +344,7 @@ var codex_knowledge := 0
 # 분해하면 사라져서 도감이 거꾸로 줄어든다. 스킬은 skill_owned 가 안 사라지므로
 # 따로 안 둔다(LoreDefs).
 var gear_seen := {}
+var _codex_view: Control
 var _codex_roots := {}
 var _codex_tab_art := {}
 var _codex_mode := "foe"
@@ -713,12 +714,11 @@ func _ready() -> void:
 		# [개발 도구] --titles : 도감 탭의 칭호 목록을 연 채로 캡처한다.
 		# [개발 도구] --codex=gear|skill|act : 도감 소탭을 연 채로 캡처한다.
 		if arg.begins_with("--codex="):
-			_select_tab("codex")
+			_codex_view.visible = true
 			_codex_set_mode(arg.trim_prefix("--codex="))
 		if arg == "--titles":
-			_select_tab("codex")
-			_title_view.visible = true
-			_refresh_titles()
+			_codex_view.visible = true
+			_codex_set_mode("title")
 		# [개발 도구] --quest[=day|week|attend|boon] : 그 소탭을 연 채로 캡처한다.
 		if arg == "--quest" or arg.begins_with("--quest="):
 			_quest_view.visible = true
@@ -977,7 +977,7 @@ func _ready() -> void:
 				_bulk_select_all(true)
 		# [개발 도구] --status : 도감의 능력치 창을 연 채로 캡처한다.
 		if arg == "--status":
-			_select_tab("codex")
+			_codex_view.visible = true
 			_status_view.visible = true
 			_refresh_status()
 		# [개발 도구] --gacha=armor : 해금된 소환 종류를 선택해 캡처한다.
@@ -1098,13 +1098,16 @@ func _build_scene() -> void:
 	_build_goal_widget()
 	_build_chest()
 	_build_tabbar()
-	# 임무판은 맨 나중 — 팝업이라 모든 창 위에 그려져야 한다.
+	# 임무판·도감판은 맨 나중 — 팝업이라 모든 창 위에 그려져야 한다.
+	# 도감을 _build_panels 안에서 지었더니 탭바보다 먼저 붙어 어둠막이 하단
+	# 탭을 못 덮었다(실측 캡처).
 	_build_quests()
+	_build_codex_view()
 	_build_dialogs()
 	# 창이 뜰 때의 반응을 **한 곳에서** 건다(사장님: "모든 창들 띄울 때 애니메이션").
 	# `visible` 을 켜는 자리가 34곳이라 호출부마다 넣으면 하나씩 빠진다 — Ui.pop_in
 	# 은 켜지는 순간을 시그널로 잡으므로 여기 목록에만 올리면 된다.
-	for v in [_title_view, _status_view, _quest_view, _rates_view, _bulk_view,
+	for v in [_codex_view, _status_view, _quest_view, _rates_view, _bulk_view,
 			_confirm_view, _reward_view]:
 		if v != null:
 			Ui.pop_in(v)
@@ -1693,7 +1696,7 @@ func _build_panels() -> void:
 	_panel_bg_full = Ui.panel(Grid.uv(0, 0), Grid.uv(36, 50))
 	_panel_bg_full.visible = false
 	_hud_root.add_child(_panel_bg_full)
-	for name in ["growth", "gear", "summon", "raid", "shop", "codex"]:
+	for name in ["growth", "gear", "summon", "raid", "shop", "pet"]:
 		var full: bool = name in FULL_TABS
 		var c := Control.new()
 		c.position = Grid.pxv(Grid.uv(PANEL_AT.x, 0 if full else PANEL_AT.y))
@@ -1706,7 +1709,7 @@ func _build_panels() -> void:
 	_build_gacha(_panels["summon"])
 	_build_shop(_panels["shop"])
 	_build_raids(_panels["raid"])
-	_build_codex(_panels["codex"])
+	_build_pet(_panels["pet"])
 
 
 # 창 안 라벨. _mk_label 은 HUD 루트에 붙지만 창 안 글씨는 창과 같이 숨어야 한다.
@@ -4670,6 +4673,50 @@ const LORE_GAP := 6.0
 
 
 # 도감. 방치형에서 "언젠가 다 채운다"는 장기 목표는 공짜다 — 처치 수는 이미 세고 있다.
+# 도감은 **팝업**이다 (사장님 2026-08-18). 하단 탭 자리는 펫이 가져간다.
+#
+# 안쪽 코드는 그대로 두고 **담는 그릇만** 바꾼다: 내용이 PAD~CODEX_BOTTOM
+# 좌표를 쓰므로, 그 좌표계를 통째로 판 안쪽으로 옮기는 Control 을 하나 끼운다
+# (미궁 스크롤이 쓰는 것과 같은 수법). 팝업은 세로 560 이라 반판(358)보다
+# 넓어서 격자가 더 보인다.
+const CODEX_BOTTOM := 552.0     # 팝업 안에서 쓸 수 있는 아래 끝
+# 내용 좌표(PAD 기준)를 판 안쪽으로 미는 값. 판 x+22 가 글이 시작하는 자리다.
+const CODEX_SHIFT := Vector2(QUEST_PANEL.position.x + 22.0 - PAD,
+	QUEST_PANEL.position.y + 8.0)
+
+
+func _build_codex_view() -> void:
+	_codex_view = Control.new()
+	_codex_view.size = Vector2(Grid.BG)
+	_codex_view.visible = false
+	_codex_view.z_index = 55       # 임무판과 같은 층
+	_hud_root.add_child(_codex_view)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.02, 0.03, 0.72)
+	dim.size = Vector2(Grid.BG)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_codex_view.add_child(dim)
+	# 가죽책 세트 — 임무판(양피지)과 한 벌이고 결은 다르다.
+	_codex_view.add_child(Ui.set_body(TOME, QUEST_PANEL.position,
+		QUEST_PANEL.size))
+	var cbx := Vector2(QUEST_PANEL.position.x + QUEST_PANEL.size.x - 110.0,
+		QUEST_PANEL.position.y + 12.0)
+	_codex_view.add_child(Ui.set_row(TOME, cbx, Vector2(88.0, 34.0)))
+	var clb := _panel_label(_codex_view, Vector2(cbx.x, cbx.y + 9.0),
+		Type.SIZE_SMALL, Color(0.96, 0.92, 0.88), 88.0, 20.0)
+	clb.text = "닫기"
+	clb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var cclose := Ui.button("", cbx, Vector2(88.0, 34.0), Type.SIZE_SMALL)
+	cclose.modulate = Color(1, 1, 1, 0)
+	cclose.pressed.connect(func() -> void: _codex_view.visible = false)
+	_codex_view.add_child(cclose)
+	var body := Control.new()
+	body.position = CODEX_SHIFT
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_codex_view.add_child(body)
+	_build_codex(body)
+
+
 func _build_codex(root: Control) -> void:
 	var keys := FoeTiers.all_keys()
 	# 지식 합계는 몹 하나가 아니라 도감 전체에 걸린 값이라 맨 위 한 줄에 둔다.
@@ -4680,7 +4727,7 @@ func _build_codex(root: Control) -> void:
 	_codex_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 도감은 **기록과 지식**을 다루는 곳이라 점성소 세트를 쓴다(사장님 2026-08-14:
 	# 탭마다 결을 맞춘다) — 소환 탭의 스킬·유물과 같은 별판이다.
-	var sbx := Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0)
+	var sbx := Vector2(CONTENT_W + PAD - 244.0, PAD - 10.0)
 	var stex := _shop_tex(root, "res://assets/ui/sets/astro_button.png",
 		sbx, Vector2(100.0, 36.0))
 	var slbl := _panel_label(root, Vector2(sbx.x, sbx.y + 9.0), Type.SIZE_SMALL,
@@ -4692,7 +4739,6 @@ func _build_codex(root: Control) -> void:
 	status_btn.position = sbx
 	status_btn.pressed.connect(func() -> void:
 		_status_view.visible = not _status_view.visible
-		_title_view.visible = false
 		if _status_view.visible:
 			_refresh_status())
 	# **칭호는 여기서 뺐다** (사장님 2026-08-12): 능력치는 도감의 결산이지만
@@ -4704,8 +4750,8 @@ func _build_codex(root: Control) -> void:
 	# 몬스터만 있던 판이라 오른쪽 상세가 늘 비어 보였다. 소탭은 임무판과
 	# 같은 문법이고, 세트만 가죽책(tome)으로 다르다.
 	var ctabs := [["foe", "몬스터"], ["gear", "장비"], ["skill", "스킬"],
-		["act", "연대기"]]
-	var ctw := (CONTENT_W - 18.0) / 4.0
+		["title", "칭호"], ["act", "연대기"]]
+	var ctw := (CONTENT_W - 24.0) / 5.0
 	for i in ctabs.size():
 		var cm := str(ctabs[i][0])
 		var cp := Vector2(PAD + float(i) * (ctw + 6.0), CODEX_TAB_Y)
@@ -4721,7 +4767,7 @@ func _build_codex(root: Control) -> void:
 		cb.pressed.connect(func() -> void: _codex_set_mode(cm))
 		root.add_child(cb)
 		_codex_tab_art[cm] = {"on": con, "lbl": cl}
-	for key in ["foe", "gear", "skill", "act"]:
+	for key in ["foe", "gear", "skill", "title", "act"]:
 		var r := Control.new()
 		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(r)
@@ -4729,10 +4775,10 @@ func _build_codex(root: Control) -> void:
 	_codex_build_foe(_codex_roots["foe"])
 	_lore_build(_codex_roots["gear"], "gear")
 	_lore_build(_codex_roots["skill"], "skill")
+	_title_build(_codex_roots["title"])
 	_act_build(_codex_roots["act"])
 	_codex_set_mode("foe")
 	_build_status(root)
-	_build_titles(root)
 
 
 # 몬스터 도감 본문 — 왼쪽 목록과 오른쪽 상세. 소탭이 생기면서 통째로
@@ -4742,7 +4788,7 @@ func _codex_build_foe(root: Control) -> void:
 	# 소탭 줄(CODEX_TAB_Y ~ +32) 아래에서 시작한다 — 예전 자리(58)에 그대로
 	# 두었더니 목록 첫 칸과 상세가 소탭에 깔렸다(실측 캡처).
 	var body_y := CODEX_TAB_Y + 40.0
-	var body_h := CONTENT_BOTTOM - body_y
+	var body_h := CODEX_BOTTOM - body_y
 	var sc := Ui.scroll(Vector2(PAD, body_y), Vector2(CODEX_LIST_W, body_h))
 	root.add_child(sc)
 	var col := VBoxContainer.new()
@@ -4758,7 +4804,7 @@ func _codex_build_foe(root: Control) -> void:
 	_codex_detail = {}
 	# 세로 배치는 아래에서부터 잡는다. 진행바(52px)가 제일 크고 자리가 고정이라
 	# 위에서부터 쌓으면 마지막에 바가 글자를 덮는다 — 실제로 한 번 덮었다.
-	var bar_y := CONTENT_BOTTOM - Ui.BAR_H - 12.0
+	var bar_y := CODEX_BOTTOM - Ui.BAR_H - 12.0
 	_codex_detail["name"] = _panel_label(root, Vector2(dx, body_y), Type.SIZE_BODY,
 		Color(0.96, 0.90, 0.86), dw, 28.0)
 	_codex_detail["big"] = Ui.icon("", Vector2(dx + (dw - CODEX_BIG) * 0.5,
@@ -4816,7 +4862,6 @@ func _tick_income() -> void:
 # ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
 var title_worn := ""        # 장착 칭호 id — 겉멋이다. 효과는 딴 것 전부에서 온다
 var _lbl_worn: Label
-var _title_view: Control
 var _title_head: Label
 var _title_ms: Label
 var _title_names: Array[Label] = []
@@ -4832,45 +4877,22 @@ const TITLE_STAT_ICON := {"damage": "stat_damage", "speed": "stat_speed",
 const TITLE_ROW_W := 528.0 - 44.0 - Ui.SCROLL_W
 
 
-func _build_titles(root: Control) -> void:
-	# **임무판과 같은 정가운데 모달이다** (사장님). 판 규격도 QUEST_PANEL 을
-	# 그대로 쓴다 — 옆줄 버튼 둘(임무·칭호)이 여는 창은 같은 자리에 떠야
-	# "여기가 팝업 자리"라는 감이 생긴다. root(도감 패널)는 이제 안 쓴다.
-	_title_view = Control.new()
-	_title_view.size = Vector2(Grid.BG)
-	_title_view.visible = false
-	_title_view.z_index = 55   # 확인·보상창(60·61) 바로 아래, 나머지 전부 위
-	_hud_root.add_child(_title_view)
-	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.02, 0.03, 0.72)
-	dim.size = Vector2(Grid.BG)
-	# 어둠막이 클릭을 삼킨다 — 팝업이 떠 있는데 뒤 버튼이 눌리면 헷갈린다.
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	_title_view.add_child(dim)
-	var back := ColorRect.new()
-	back.color = Color(0.055, 0.05, 0.065)
-	back.position = QUEST_PANEL.position
-	back.size = QUEST_PANEL.size
-	_title_view.add_child(back)
-	_title_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
-	var tx := QUEST_PANEL.position.x + 22.0
-	var tw := QUEST_PANEL.size.x - 44.0
-	_title_head = _panel_label(_title_view,
-		Vector2(tx, QUEST_PANEL.position.y + 16.0), Type.SIZE_BODY,
-		Color(0.92, 0.82, 0.62), tw - 100.0, 28.0)
-	var t_close := Ui.button("닫기",
-		Vector2(tx + tw - 88.0, QUEST_PANEL.position.y + 12.0),
-		Vector2(88.0, 34.0), Type.SIZE_SMALL)
-	t_close.pressed.connect(func() -> void: _title_view.visible = false)
-	_title_view.add_child(t_close)
+# 칭호 — **도감의 한 소탭**이다 (사장님 2026-08-18). 별도 판을 안 만든다.
+#
+# 칭호는 성격상 "모으는 것"이고 조건도 전부 도감·구간·미궁 기록을 본다 —
+# 도감과 같은 자리에 있어야 "무엇을 더 하면 따는지"가 보인다.
+func _title_build(root: Control) -> void:
+	var tx := PAD
+	var tw := CONTENT_W - Ui.SCROLL_W + Ui.SCROLL_W   # 판 안쪽 폭 그대로
+	_title_head = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 40.0),
+		Type.SIZE_BODY, Color(0.92, 0.82, 0.62), tw, 26.0)
 	# 이정표 줄 — 머리글(SIZE_BODY)에 붙였더니 "칭호 0 / 12 · "에서 잘렸다(실측).
 	# 한 줄 내리고 작은 글씨로 둔다.
-	_title_ms = _panel_label(_title_view,
-		Vector2(tx, QUEST_PANEL.position.y + 48.0), Type.SIZE_SMALL,
-		Color(0.72, 0.72, 0.80), tw, 18.0)
-	var sc := Ui.scroll(Vector2(tx, QUEST_PANEL.position.y + 72.0),
-		Vector2(tw, QUEST_PANEL.size.y - 72.0 - 16.0))
-	_title_view.add_child(sc)
+	_title_ms = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 70.0),
+		Type.SIZE_SMALL, Color(0.72, 0.72, 0.80), tw, 18.0)
+	var sy := CODEX_TAB_Y + 94.0
+	var sc := Ui.scroll(Vector2(tx, sy), Vector2(CONTENT_W, CODEX_BOTTOM - sy))
+	root.add_child(sc)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
 	col.custom_minimum_size.x = tw - Ui.SCROLL_W
@@ -5157,7 +5179,7 @@ func _refresh_codex_detail() -> void:
 # 순서는 사장님 지정(2026-08-13): 성장 / 장비 / 도감 / 소환 / 던전 / 상점 —
 # 왼쪽 셋은 내 것(성장·장비·기록), 오른쪽 셋은 나가는 곳(소환·던전·상점).
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
-	["codex", "tab_codex", "도감"], ["summon", "tab_battle", "소환"],
+	["pet", "tab_codex", "펫"], ["summon", "tab_battle", "소환"],
 	["raid", "tab_raid", "던전"], ["shop", "shop", "상점"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
@@ -6372,19 +6394,20 @@ func _build_quests() -> void:
 		QUEST_BTN_AT + Vector2(-4.0, -2.0), TAB_DOT)
 	_quest_dot.visible = false
 	_side_root.add_child(_quest_dot)
-	# **칭호도 같은 줄에 세운다** (사장님: 도감에서 빼고 임무 위쪽에). 임무와
-	# 칭호는 둘 다 "들러서 받는 곳"이라 세로 바로가기 줄에 나란히 두는 게 맞다.
+	# **둘째 버튼은 도감이다** (사장님 2026-08-18). 하단 탭에서 도감을 빼고
+	# 그 자리를 펫에게 줬다 — 도감은 임무판과 같은 자리에 뜨는 팝업이 된다.
+	# 칭호는 그 안의 소탭으로 들어갔다(별도 판을 안 만든다).
 	var t_btn := Button.new()
 	t_btn.flat = true
 	t_btn.position = TITLE_BTN_AT
 	t_btn.size = Vector2(56.0, 56.0)
 	t_btn.focus_mode = Control.FOCUS_NONE
 	t_btn.pressed.connect(func() -> void:
-		_title_view.visible = not _title_view.visible
-		if _title_view.visible:
-			_refresh_titles())
+		_codex_view.visible = not _codex_view.visible
+		if _codex_view.visible:
+			_codex_set_mode(_codex_mode))
 	_side_root.add_child(t_btn)
-	_side_root.add_child(Ui.icon("res://assets/ui/badge_title.png",
+	_side_root.add_child(Ui.icon("res://assets/ui/tab_codex.png",
 		TITLE_BTN_AT + Vector2(8.0, 8.0), 40.0))
 	# 상점 진입점은 **일부러 안 만든다** (사장님 2026-08-12): 상점은 과금과 한
 	# 묶음으로 **별도 탭**이 되고 지금 이 판은 그 탭 안의 한 소탭으로 들어간다.
@@ -7421,9 +7444,7 @@ func _select_tab(name: String) -> void:
 		m.modulate = Color(1, 1, 1) if key == name else Color(0.5, 0.5, 0.55)
 		m.pivot_offset = m.size * 0.5
 		m.scale = Vector2(1.06, 1.06) if key == name else Vector2.ONE
-	if name == "codex":
-		_refresh_codex()
-	elif name == "summon":
+	if name == "summon":
 		_refresh_gacha()
 	elif name == "raid":
 		_refresh_dungeon()
@@ -9624,8 +9645,6 @@ func on_foe_killed(f: Foe) -> void:
 	# 가이드 버튼의 "받을 개수"는 여기서만 갱신한다. _refresh_hud 는 매 프레임이라
 	# 거기 얹으면 초당 60번 라벨을 다시 쓴다.
 	_refresh_goal_widget()
-	if _tab == "codex":
-		_refresh_codex()
 	# 전투 드랍은 없앴다(2026-08-04). 장비가 나오는 곳은 **소환 하나**다 —
 	# 드랍이 알아서 장착까지 해 주면 소환으로 뽑은 장비를 고를 이유가 사라지고,
 	# 보관함에서 하는 선택이 전부 무의미해진다.
@@ -10833,7 +10852,7 @@ func _lore_build(root: Control, kind: String) -> void:
 	var keys := _lore_keys(kind)
 	var rows := int(ceil(float(keys.size()) / float(LORE_COLS)))
 	var sc := Ui.scroll(Vector2(PAD, y0),
-		Vector2(CONTENT_W, CONTENT_BOTTOM - y0))
+		Vector2(CONTENT_W, CODEX_BOTTOM - y0))
 	root.add_child(sc)
 	var pane := Control.new()
 	pane.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W,
@@ -10943,6 +10962,23 @@ func _codex_set_mode(mode: String) -> void:
 			Color(0.98, 0.86, 0.56) if key == mode else Color(0.72, 0.70, 0.68))
 	# 머리글은 몬스터 도감의 결산이라 그 소탭에서만 뜻이 있다.
 	_codex_summary.visible = mode == "foe"
+	if mode == "foe":
+		_refresh_codex()
+	elif mode == "title":
+		_refresh_titles()
 	_refresh_lore("gear")
 	_refresh_lore("skill")
 	_refresh_act()
+
+
+# 펫 — **아직 안 만들었다**(docs/PET_DESIGN.md). 도감이 팝업으로 비켜 준 자리라
+# 판만 서 있다. 빈 화면은 버그로 읽히므로 무엇이 올지 적어 둔다.
+func _build_pet(root: Control) -> void:
+	var l := _panel_label(root, Vector2(PAD, 150.0), Type.SIZE_BODY,
+		Color(0.86, 0.80, 0.76), CONTENT_W, 30.0)
+	l.text = "펫"
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sub := _panel_label(root, Vector2(PAD, 190.0), Type.SIZE_SMALL,
+		Color(0.62, 0.60, 0.68), CONTENT_W, 20.0)
+	sub.text = "곧 온다 — 자원을 물어오고, 데리고 다니면 힘이 붙는다"
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
