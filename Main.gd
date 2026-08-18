@@ -11176,7 +11176,15 @@ func _pet_btn(parent: Control, pos: Vector2, size: Vector2,
 	btn.modulate = Color(1, 1, 1, 0)
 	parent.add_child(btn)
 	_pet_hover(btn, art)
-	return {"btn": btn, "lbl": l}
+	return {"btn": btn, "lbl": l, "art": art}
+
+
+# 비활성이 안 보이면 "왜 안 눌리지"가 된다(사장님) — 판정 버튼이 투명이라
+# 그림과 글자를 같이 죽여야 상태가 보인다.
+func _pet_btn_enable(b: Dictionary, on: bool) -> void:
+	b["btn"].disabled = not on
+	b["art"].modulate = Color(1, 1, 1) if on else Color(0.5, 0.46, 0.48)
+	b["lbl"].modulate = Color(1, 1, 1, 1.0 if on else 0.45)
 
 
 # 호버 = 밝아지고 살짝 커진다, 눌림 = 눌린다. 비활성 버튼은 반응하지 않는다 —
@@ -11373,6 +11381,11 @@ func _pet_build_own(root: Control) -> void:
 		_save_game()
 		_refresh_pet())
 	_pet_detail["wear"] = wear
+	# 모두 받기(사장님) — 펫마다 눌러 받는 건 스물다섯 번 일이다.
+	var take_all := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0,
+		PET_DETAIL_Y + 114.0), Vector2(120.0, 36.0), "모두 받기")
+	take_all["btn"].pressed.connect(_pet_collect_all)
+	_pet_detail["all"] = take_all
 
 
 func _pet_build_gear(root: Control) -> void:
@@ -11439,7 +11452,7 @@ func _pet_build_feed(root: Control) -> void:
 		Type.SIZE_SMALL, Color(0.82, 0.78, 0.76), CONTENT_W, 16.0)
 	_pet_feed_ui["cost"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var one := _pet_btn(root, Vector2(PAD + 64.0, PET_GRID_Y + 268.0),
-		Vector2(190.0, 44.0), "먹이 주기")
+		Vector2(190.0, 44.0), "강화 시도")
 	one["btn"].pressed.connect(func() -> void: _pet_feed(_pet_sel))
 	_pet_feed_ui["one"] = one
 	var ten := _pet_btn(root,
@@ -11566,8 +11579,14 @@ func _refresh_pet_own() -> void:
 	_pet_detail["fill"].size.x = 230.0 * (clampf(have / maxf(1.0, cap), 0.0, 1.0)
 		if got else 0.0)
 	_pet_detail["amt"].text = "그릇  %s / %s" % [_n(have), _n(cap)] if got else ""
-	_pet_detail["take"]["btn"].disabled = not got or have < 1.0
-	_pet_detail["wear"]["btn"].disabled = not got
+	_pet_btn_enable(_pet_detail["take"], got and have >= 1.0)
+	_pet_btn_enable(_pet_detail["wear"], got)
+	var any_bank := false
+	for pid in pets_got:
+		if float(pet_bank.get(pid, 0.0)) >= 1.0:
+			any_bank = true
+			break
+	_pet_btn_enable(_pet_detail["all"], any_bank)
 	_pet_detail["wear"]["lbl"].text = "함께" if pet_worn == _pet_sel else "데려가기"
 
 
@@ -11596,7 +11615,8 @@ func _refresh_pet_gear() -> void:
 		if holder != "" else ("비어 있다" if got else "")
 	_petgear_detail["target"].text = "채울 펫: %s (보유 판에서 고른다)" \
 		% str(PetDefs.of(_pet_sel).get("name", "-"))
-	_petgear_detail["equip"]["btn"].disabled = not got or _pet_star(_pet_sel) <= 0
+	_pet_btn_enable(_petgear_detail["equip"],
+		got and _pet_star(_pet_sel) > 0)
 	_petgear_detail["equip"]["lbl"].text = "벗기기" \
 		if str(pet_gear_worn.get(_pet_sel, "")) == _petgear_sel else "채우기"
 
@@ -11624,9 +11644,11 @@ func _refresh_pet_feed() -> void:
 		* ((1.0 if capped else clampf(feed / maxf(1.0, cost), 0.0, 1.0)) \
 		if got else 0.0)
 	_pet_feed_ui["cost"].text = ("승급하면 더 클 수 있다" if capped \
-		else "다음 레벨  먹이 %s  ·  보유 %s" % [_n(cost), _n(feed)]) if got else ""
-	_pet_feed_ui["one"]["btn"].disabled = not got or capped or feed < cost
-	_pet_feed_ui["ten"]["btn"].disabled = _pet_feed_ui["one"]["btn"].disabled
+		else "다음 레벨  먹이 %s  ·  성공 %d%%  ·  보유 %s" % [_n(cost),
+		int(round(PetDefs.feed_chance(lv) * 100.0)), _n(feed)]) if got else ""
+	_pet_btn_enable(_pet_feed_ui["one"], got and not capped and feed >= cost)
+	_pet_btn_enable(_pet_feed_ui["ten"],
+		not _pet_feed_ui["one"]["btn"].disabled)
 	_pet_feed_ui["note"].text = "먹이는 야수 우리(%d구간)가 준다" \
 		% RaidDefs.open_stage("hunt")
 
@@ -11642,8 +11664,8 @@ func _refresh_pet_roll() -> void:
 		var by_gem := open and have < 1
 		ui["one"]["lbl"].text = "1회" if not by_gem 			else "1회  보석 %d" % int(GachaDefs.COST)
 		ui["ten"]["lbl"].text = "10연" if not by_gem 			else "10연  보석 %d" % int(GachaDefs.COST * 10.0)
-		ui["one"]["btn"].disabled = not open or not _pet_can_pay(kind)
-		ui["ten"]["btn"].disabled = ui["one"]["btn"].disabled
+		_pet_btn_enable(ui["one"], open and _pet_can_pay(kind))
+		_pet_btn_enable(ui["ten"], not ui["one"]["btn"].disabled)
 
 
 # ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
@@ -11797,8 +11819,13 @@ func _pet_feed(id: String) -> bool:
 	if feed < cost:
 		return false
 	feed -= cost
-	pet_lv[id] = lv + 1
-	_pet_feed_fx(lv + 1)
+	# **확률**(사장님) — 실패해도 먹이는 소모된다. 반환은 "시도했는가"다:
+	# x10 루프가 실패마다 멈추면 열 번 시도가 아니라 첫 실패까지가 된다.
+	if randf() > PetDefs.feed_chance(lv):
+		_pet_feed_fail_fx()
+	else:
+		pet_lv[id] = lv + 1
+		_pet_feed_fx(lv + 1)
 	_save_game()
 	_refresh_pet()
 	return true
@@ -11816,6 +11843,31 @@ func _pet_equip_gear(pet_id: String, gear_id: String) -> void:
 		pet_gear_worn.erase(pet_id)      # 같은 걸 다시 누르면 벗는다
 	else:
 		pet_gear_worn[pet_id] = gear_id
+	_save_game()
+	_refresh_pet()
+
+
+# 모두 받기 — 통화별로 합쳐 한 창에 보여 준다. 스물다섯 창이 뜨면 안 된다.
+func _pet_collect_all() -> void:
+	_pet_tick()
+	var got := {}
+	for id in pets_got:
+		var amt := float(pet_bank.get(id, 0.0))
+		if amt < 1.0:
+			continue
+		var g := str(PetDefs.of(str(id))["gain"])
+		got[g] = float(got.get(g, 0.0)) + amt
+		pet_bank[id] = 0.0
+	if got.is_empty():
+		return
+	_quest_bump("pet")
+	var rows: Array = []
+	for g in got:
+		_grant_reward(str(g), float(got[g]))
+		rows.append({"icon": "res://assets/ui/%s.png" % _reward_icon(str(g)),
+			"label": "%s +%s" % [_reward_name(str(g)), _n(float(got[g]))]})
+	_show_reward("둥지 정산", rows)
+	_refresh_currency_visibility()
 	_save_game()
 	_refresh_pet()
 
@@ -11968,6 +12020,30 @@ func _show_pet_results(rows: Array) -> void:
 		tween.tween_property(card, "modulate:a", 1.0, 0.07)
 		tween.parallel().tween_property(card, "scale", Vector2.ONE, 0.12) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+# 강화 실패 — 몸을 떨고 잿빛으로 식으며 "실패"가 떠오른다. 성공과 실패가
+# 같은 화면이면 어느 쪽이었는지 숫자를 읽어야 안다.
+func _pet_feed_fail_fx() -> void:
+	if _pet_feed_ui.is_empty() or not is_inside_tree():
+		return
+	var art: TextureRect = _pet_feed_ui["art"]
+	art.pivot_offset = art.size * 0.5
+	art.modulate = Color(0.55, 0.45, 0.5)
+	var base_x := art.position.x
+	var tw := create_tween()
+	for off in [6.0, -6.0, 4.0, -4.0, 0.0]:
+		tw.tween_property(art, "position:x", base_x + off, 0.05)
+	tw.parallel().tween_property(art, "modulate", Color(1, 1, 1), 0.4)
+	var pop := _panel_label(_pet_roots["feed"],
+		Vector2(PAD, PET_GRID_Y + 96.0), Type.SIZE_MID,
+		Color(0.72, 0.62, 0.66), CONTENT_W, 24.0)
+	pop.text = "실패"
+	pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var tw2 := create_tween().set_parallel()
+	tw2.tween_property(pop, "position:y", pop.position.y - 22.0, 0.5)
+	tw2.tween_property(pop, "modulate:a", 0.0, 0.5).set_delay(0.1)
+	tw2.chain().tween_callback(pop.queue_free)
 
 
 # 강화 성공 — 펫이 튀어 오르고 금빛으로 번쩍이며 "+N레벨" 이 떠오른다.

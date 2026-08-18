@@ -42,6 +42,10 @@ func _init() -> void:
 	assert(PetDefs.lv_cap(1) == 10 and PetDefs.lv_cap(PetDefs.MAX_STAR) == 50,
 		"레벨 상한이 표와 다르다")
 	assert(PetDefs.feed_cost(10) > PetDefs.feed_cost(1), "먹이 비용이 안 오른다")
+	# 확률 강화(사장님): 1레벨은 100% — 이게 깨지면 아래 강화 검사가 흔들린다.
+	assert(is_equal_approx(PetDefs.feed_chance(1), 1.0), "1레벨이 100%가 아니다")
+	assert(PetDefs.feed_chance(40) < PetDefs.feed_chance(10), "확률이 안 내려간다")
+	assert(PetDefs.feed_chance(999) >= 0.35, "확률 바닥이 없다 — 복권이 된다")
 	assert(PetDefs.growth_mult(10, 1) > PetDefs.growth_mult(1, 1), "레벨이 안 는다")
 	assert(PetDefs.growth_mult(1, 3) > PetDefs.growth_mult(1, 1), "승급이 안 는다")
 	var id := str(PetDefs.PETS[0]["id"])
@@ -165,6 +169,14 @@ func _init() -> void:
 	scene.pet_worn = ""
 	assert(with_pet > scene._base_hit_damage(), "데려가도 공격력이 그대로다")
 	scene.pet_worn = keep_worn
+
+	# ── 모두 받기 — 통화별 합산, 그릇 전부 비움 ───────────────────────────
+	scene.pet_bank[got] = 50.0
+	scene.pet_bank[other] = 30.0
+	var c0: float = scene.crystal
+	scene._pet_collect_all()
+	assert(float(scene.pet_bank.get(got, 0.0)) < 1.0 		and float(scene.pet_bank.get(other, 0.0)) < 1.0, "그릇이 안 비었다")
+	assert(scene.crystal > c0 or scene.essence > 0.0 or scene.sigil > 0.0 		or scene.feed > 0.0, "모두 받기가 지갑에 안 들어왔다")
 
 	# ── 먹이 지급 경로 ─────────────────────────────────────────────────────
 	var f0: float = scene.feed

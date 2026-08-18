@@ -35,6 +35,14 @@ static func feed_cost(lv: int) -> float:
 	return FEED_BASE * pow(FEED_EXP, float(lv - 1))
 
 
+# 강화 성공 확률 (사장님 2026-08-18: 먹이를 모으면 **확률로** 오른다).
+# 1레벨은 100% — 첫 경험이 실패면 규칙을 오해한다("먹이가 모자랐나?").
+# 레벨당 1.2%p 씩 내려가 만렙 근처 41%. 바닥이 있는 건 0%대가 나오는 순간
+# 강화가 복권이 되기 때문이다. **실패해도 먹이는 소모된다** — 그게 확률의 값.
+static func feed_chance(lv: int) -> float:
+	return clampf(1.0 - 0.012 * float(lv - 1), 0.40, 1.0)
+
+
 # 성장 배수 — 수집 시급과 버프에 같이 곱한다.
 # 레벨은 잘게(+6%/레벨), 승급은 굵게(+25%/별). 만렙 만별이면 약 x7.8.
 static func growth_mult(lv: int, star: int) -> float:
