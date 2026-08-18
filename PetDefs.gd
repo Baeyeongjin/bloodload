@@ -53,19 +53,19 @@ const RARITY_KEYS := ["common", "uncommon", "rare", "epic", "legend"]
 
 const PETS := [
 	# 커먼 — 시급 낮고 버프 3%.
-	{"id": "nightwing", "name": "밤날개", "rarity": "common", "anim": "bat",
+	{"id": "nightwing", "name": "밤날개", "rarity": "common", "anim": "pet_nightwing",
 		"gain": "crystal", "per_hour": 14.0, "stat": "damage", "value": 0.03,
 		"desc": "동굴 천장에서 떨어져 나왔다."},
-	{"id": "gravemoss", "name": "무덤이끼", "rarity": "common", "anim": "slime",
+	{"id": "gravemoss", "name": "무덤이끼", "rarity": "common", "anim": "pet_gravemoss",
 		"gain": "feed", "per_hour": 10.0, "stat": "tough", "value": 0.03,
 		"desc": "비석 밑에서 자랐다. 뭐든 천천히 삼킨다."},
-	{"id": "bonerattle", "name": "뼈울림", "rarity": "common", "anim": "skeleton",
+	{"id": "bonerattle", "name": "뼈울림", "rarity": "common", "anim": "pet_bonerattle",
 		"gain": "essence", "per_hour": 5.0, "stat": "speed", "value": 0.03,
 		"desc": "주인을 여섯 번 갈아치웠다."},
-	{"id": "embermote", "name": "불티", "rarity": "common", "anim": "fire_imp",
+	{"id": "embermote", "name": "불티", "rarity": "common", "anim": "pet_embermote",
 		"gain": "crystal", "per_hour": 15.0, "stat": "gold", "value": 0.03,
 		"desc": "꺼진 화로에서 주웠다."},
-	{"id": "webling", "name": "거미새끼", "rarity": "common", "anim": "spider",
+	{"id": "webling", "name": "거미새끼", "rarity": "common", "anim": "pet_webling",
 		"gain": "sigil", "per_hour": 3.0, "stat": "damage", "value": 0.03,
 		"desc": "제 그물에 자주 걸린다."},
 	# 언커먼 — 5%.
@@ -244,4 +244,9 @@ static func bonus(worn: String, stat: String, lv: int, star: int,
 
 static func icon_dir(id: String) -> String:
 	var p := of(id)
-	return "" if p.is_empty() else "res://assets/anim/%s_walk" % str(p["anim"])
+	if p.is_empty():
+		return ""
+	var a := str(p["anim"])
+	# 전용 아트(pet_*)는 idle 폴더, 자리표시(몹 재활용)는 walk 폴더다 —
+	# 아트 배치가 등급 단위로 오므로 한동안 둘이 섞여 산다.
+	return ("res://assets/anim/%s_idle" if a.begins_with("pet_") 		else "res://assets/anim/%s_walk") % a
