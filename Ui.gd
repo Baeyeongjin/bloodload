@@ -521,3 +521,55 @@ static func pop_in(node: Control) -> void:
 		tw.tween_property(node, "modulate:a", 1.0, 0.10)
 		tw.tween_property(node, "scale", Vector2.ONE, 0.16) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+
+
+# ── 임무판(duty, 양피지) · 도감(tome, 가죽책) 세트 ─────────────────────────
+#
+# 조각을 NinePatch 로 늘린다. **TextureRect 로 늘리면 안 된다** — 밀랍 인장과
+# 금박 모서리가 같이 늘어나 뭉개진다(판이 528x560 인데 조각은 481x161 이다).
+# 여백은 조각마다 실측했다: 장식이 차지하는 만큼을 잘라 줘야 가운데만 늘어난다.
+const SET_DIR := "res://assets/ui/sets/"
+
+
+static func set_body(prefix: String, pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(SET_DIR + prefix + "_body.png", 26, 24)
+	n.position = pos
+	n.size = size
+	return n
+
+
+# 긴 띠 — 판 안에서 한 덩어리를 묶는 자리.
+static func set_card(prefix: String, pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(SET_DIR + prefix + "_band.png", 22, 16)
+	n.position = pos
+	n.size = size
+	return n
+
+
+# 줄 하나. **버튼도 같은 조각을 쓴다** — 시트에 버튼 전용이 따로 없고, 줄과
+# 버튼은 어차피 같은 액자다(눌리는 느낌은 글자 색과 판정이 만든다).
+static func set_row(prefix: String, pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(SET_DIR + prefix + "_card.png", 18, 14)
+	n.position = pos
+	n.size = size
+	return n
+
+
+static func set_button(prefix: String, pos: Vector2, size: Vector2) -> NinePatchRect:
+	return set_row(prefix, pos, size)
+
+
+static func set_tab(prefix: String, on: bool, pos: Vector2,
+		size: Vector2) -> NinePatchRect:
+	var n := _slice(SET_DIR + prefix + ("_tab_on.png" if on else "_tab_off.png"),
+		16, 14)
+	n.position = pos
+	n.size = size
+	return n
+
+
+static func set_pill(prefix: String, pos: Vector2, size: Vector2) -> NinePatchRect:
+	var n := _slice(SET_DIR + prefix + "_pill.png", 16, 10)
+	n.position = pos
+	n.size = size
+	return n

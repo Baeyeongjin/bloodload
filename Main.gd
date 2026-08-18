@@ -1646,7 +1646,11 @@ func _mk_label(pos: Vector2, size: int, col: Color) -> Label:
 	l.position = pos
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
-	l.add_theme_constant_override("outline_size", 4)
+	# 외곽선은 **어두운 판**을 전제로 한 것이다 — 밝은 글자를 배경에서 떼어 낸다.
+	# 양피지(임무판)처럼 밝은 판에서는 어두운 글자에 어두운 테두리가 붙어 획이
+	# 뭉갠다(실측 캡처). 글자가 어두우면 테두리를 밝은 쪽으로 뒤집는다.
+	var pale := col.get_luminance() < 0.45
+	l.add_theme_constant_override("outline_size", 0 if pale else 4)
 	l.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.05, 0.95))
 	_hud_root.add_child(l)
 	return l
@@ -5575,7 +5579,7 @@ func _build_boss_panel(root: Control) -> void:
 		nm.text = "%d차 · %s" % [i + 1, _reward_name(str(m["reward"]))]
 		_shop_outline(nm, 5)
 		var track := ColorRect.new()
-		track.color = Color(0.10, 0.09, 0.12)
+		track.color = Color(0.52, 0.42, 0.33)
 		track.position = Vector2(PAD + 44.0, y + 30.0)
 		track.size = Vector2(BOSS_BAR_W, 8.0)
 		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -6124,7 +6128,9 @@ var _quest_wrows: Array[Dictionary] = []
 var _quest_day_root: Control
 var _quest_week_root: Control
 var _quest_mode_btns := {}
+var _quest_tab_art := {}
 var _quest_claim_all: Button
+var _quest_claim_art: Array[Control] = []
 
 # ── 출석 (AttendDefs) ──────────────────────────────────────────────────────
 # **연속을 안 센다** — 누적이다. 하루 놓쳤다고 처음으로 되돌리면 그 순간이
@@ -6135,6 +6141,7 @@ var attend_date := ""        # 마지막으로 받은 날
 var _attend_root: Control
 var _attend_cells: Array[Dictionary] = []
 var _attend_btn: Button
+var _attend_lbl: Label
 
 # ── 은총 (BoonDefs) — 주마다 바뀌는 특전 ───────────────────────────────────
 var _boon_root: Control
@@ -6264,6 +6271,15 @@ func _claim_wquest(id: String) -> void:
 
 # 임무판 팝업 배치 (레퍼런스: 화면 가운데 모달 + 줄마다 진행바).
 const QUEST_PANEL := Rect2(24.0, 150.0, 528.0, 560.0)
+# 임무판(양피지) · 도감(가죽책) 세트 이름과 **그 위에 얹는 잉크 색**.
+#
+# 다른 판은 어두운 바탕이라 글자가 밝았다. 양피지는 크림색이라 그 색을 그대로
+# 쓰면 글자가 사라진다 — 판을 갈면 글자 색도 같이 갈아야 한다.
+const DUTY := "duty"
+const TOME := "tome"
+const DUTY_INK := Color(0.22, 0.13, 0.09)      # 본문 — 짙은 갈색 잉크
+const DUTY_DIM := Color(0.42, 0.31, 0.24)      # 보조 — 바랜 글씨
+const DUTY_RED := Color(0.55, 0.11, 0.14)      # 강조 — 밀랍 인장과 같은 붉은색
 const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
 const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세로 줄
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
@@ -6332,17 +6348,20 @@ func _build_quests() -> void:
 	dim.size = Vector2(Grid.BG)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_quest_view.add_child(dim)
-	var back := ColorRect.new()
-	back.color = Color(0.055, 0.05, 0.065)
-	back.position = QUEST_PANEL.position
-	back.size = QUEST_PANEL.size
-	_quest_view.add_child(back)
-	_quest_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
+	# **양피지 세트**(사장님 2026-08-18). 임무는 "할 일 목록"이라 두루마리의 결을
+	# 쓴다 — 도감(가죽책)과 한 벌이고, 기존 넷(돌·보라·철)과는 겹치지 않는다.
+	# 뒤에 어두운 판을 깔지 않는다: 양피지가 불투명이라 그대로 덮인다.
+	_quest_view.add_child(Ui.set_body(DUTY, QUEST_PANEL.position, QUEST_PANEL.size))
 	var x := QUEST_PANEL.position.x + 22.0
 	var w := QUEST_PANEL.size.x - 44.0
-	var close := Ui.button("닫기",
-		Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0),
-		Vector2(88.0, 34.0), Type.SIZE_SMALL)
+	var cbx := Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0)
+	_quest_view.add_child(Ui.set_button(DUTY, cbx, Vector2(88.0, 34.0)))
+	var clbl := _panel_label(_quest_view, Vector2(cbx.x, cbx.y + 9.0),
+		Type.SIZE_SMALL, DUTY_INK, 88.0, 20.0)
+	clbl.text = "닫기"
+	clbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var close := Ui.button("", cbx, Vector2(88.0, 34.0), Type.SIZE_SMALL)
+	close.modulate = Color(1, 1, 1, 0)      # 그림이 이미 버튼이다 — 판정만 얹는다
 	close.pressed.connect(func() -> void: _quest_view.visible = false)
 	_quest_view.add_child(close)
 	# [일일] [주간] [출석] [은총] — 하루에 들를 곳을 한 판에 모은다(사장님
@@ -6354,13 +6373,24 @@ func _build_quests() -> void:
 	var tw := (w - 18.0) / 4.0
 	for i in tabs.size():
 		var mode := str(tabs[i][0])
-		var mb := Ui.button(str(tabs[i][1]),
-			Vector2(x + float(i) * (tw + 6.0), QUEST_PANEL.position.y + 54.0),
-			Vector2(tw, 34.0), Type.SIZE_SMALL)
+		var tp := Vector2(x + float(i) * (tw + 6.0), QUEST_PANEL.position.y + 54.0)
+		# 켜짐·꺼짐 그림을 겹쳐 두고 _quest_set_mode 가 보이는 쪽을 고른다 —
+		# 누를 때마다 텍스처를 갈아 끼우면 NinePatch 여백을 매번 다시 잰다.
+		var on := Ui.set_tab(DUTY, true, tp, Vector2(tw, 36.0))
+		var off := Ui.set_tab(DUTY, false, tp, Vector2(tw, 36.0))
+		_quest_view.add_child(off)
+		_quest_view.add_child(on)
+		var lbl := _panel_label(_quest_view, Vector2(tp.x, tp.y + 10.0),
+			Type.SIZE_SMALL, DUTY_INK, tw, 20.0)
+		lbl.text = str(tabs[i][1])
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var mb := Ui.button("", tp, Vector2(tw, 36.0), Type.SIZE_SMALL)
+		mb.modulate = Color(1, 1, 1, 0)
 		mb.toggle_mode = true
 		mb.pressed.connect(func() -> void: _quest_set_mode(mode))
 		_quest_view.add_child(mb)
 		_quest_mode_btns[mode] = mb
+		_quest_tab_art[mode] = {"on": on, "off": off, "lbl": lbl}
 	_quest_day_root = Control.new()
 	_quest_day_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_quest_view.add_child(_quest_day_root)
@@ -6381,15 +6411,25 @@ func _build_quests() -> void:
 	_boon_build(_boon_root)
 	var day_note := _panel_label(_quest_day_root,
 		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
-		Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), w, 16.0)
+		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
 	day_note.text = "자정에 새로 온다"
 	var week_note := _panel_label(_quest_week_root,
 		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
-		Type.SIZE_SMALL, Color(0.62, 0.60, 0.68), w, 16.0)
+		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
 	week_note.text = "월요일마다 새로 온다"
-	_quest_claim_all = Ui.button("일괄 받기",
-		Vector2(x + w * 0.5 - 100.0, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0),
-		Vector2(200.0, 42.0), Type.SIZE_MID)
+	var cap := Vector2(x + w * 0.5 - 100.0,
+		QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0)
+	var cap_art := Ui.set_row(DUTY, cap, Vector2(200.0, 42.0))
+	_quest_view.add_child(cap_art)
+	var cap_lbl := _panel_label(_quest_view, Vector2(cap.x, cap.y + 12.0),
+		Type.SIZE_MID, DUTY_INK, 200.0, 20.0)
+	cap_lbl.text = "일괄 받기"
+	cap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_quest_claim_all = Ui.button("", cap, Vector2(200.0, 42.0), Type.SIZE_MID)
+	_quest_claim_all.modulate = Color(1, 1, 1, 0)
+	# **그림과 글자도 같이 숨긴다** — 버튼만 숨기면 양피지 줄과 "일괄 받기"가
+	# 남아 출석의 "오늘 받기" 위에 겹친다(실측 캡처).
+	_quest_claim_art = [cap_art, cap_lbl]
 	_quest_claim_all.pressed.connect(func() -> void:
 		for q in QuestDefs.QUESTS:
 			_claim_quest(str(q["id"]))
@@ -7053,11 +7093,11 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 	for i in table.size():
 		var q: Dictionary = table[i]
 		var y := QUEST_PANEL.position.y + 96.0 + float(i) * 56.0
-		root.add_child(Ui.card(Vector2(x, y), Vector2(w, 50.0)))
+		root.add_child(Ui.set_row(DUTY, Vector2(x, y), Vector2(w, 50.0)))
 		root.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
 			Vector2(x + 10.0, y + 11.0), 28.0))
 		var nm := _panel_label(root, Vector2(x + 48.0, y + 6.0),
-			Type.SIZE_SMALL, Color(0.90, 0.86, 0.88), w - 170.0, 16.0)
+			Type.SIZE_SMALL, DUTY_INK, w - 170.0, 16.0)
 		nm.text = str(q["name"])
 		var track := ColorRect.new()
 		track.color = Color(0.10, 0.09, 0.12)
@@ -7066,19 +7106,24 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(track)
 		var fill := ColorRect.new()
-		fill.color = Color(0.88, 0.66, 0.30) if weekly else Color(0.72, 0.16, 0.20)
+		fill.color = Color(0.62, 0.42, 0.14) if weekly else DUTY_RED
 		fill.position = track.position
 		fill.size = Vector2(0.0, 8.0)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(fill)
 		var pr := _panel_label(root,
 			Vector2(x + 48.0 + QUEST_BAR_W + 8.0, y + 24.0), Type.SIZE_SMALL,
-			Color(0.62, 0.60, 0.68), 90.0, 20.0)
+			DUTY_DIM, 90.0, 20.0)
 		var qid := str(q["id"])
-		var b := Ui.button("", Vector2(x + w - 108.0, y + 9.0),
-			Vector2(100.0, 32.0), Type.SIZE_SMALL)
-		Ui.cost_icon(b, "res://assets/ui/%s.png"
-			% _reward_icon(str(q["reward"])), 14)
+		var bp := Vector2(x + w - 108.0, y + 9.0)
+		root.add_child(Ui.set_row(DUTY, bp, Vector2(100.0, 32.0)))
+		root.add_child(Ui.icon("res://assets/ui/%s.png"
+			% _reward_icon(str(q["reward"])), Vector2(bp.x + 12.0, bp.y + 8.0), 16.0))
+		var rw := _panel_label(root, Vector2(bp.x + 34.0, bp.y + 8.0),
+			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0)
+		rw.text = "+%d" % int(q["amount"])
+		var b := Ui.button("", bp, Vector2(100.0, 32.0), Type.SIZE_SMALL)
+		b.modulate = Color(1, 1, 1, 0)      # 양피지 줄이 이미 버튼이다
 		if weekly:
 			b.pressed.connect(func() -> void: _claim_wquest(qid))
 		else:
@@ -7106,42 +7151,47 @@ func _attend_build(root: Control) -> void:
 		var cx := x0 + float(i % ATTEND_COLS) * span
 		var cy := y0 + float(i / ATTEND_COLS) * span
 		# 큰 날(7·14·21·30)은 카드 대신 탭 액자 — 한눈에 이정표가 보인다.
-		var frame := Ui.card_tab(Vector2(cx, cy), Vector2(ATTEND_CELL, ATTEND_CELL)) \
-			if bool(a["big"]) \
-			else Ui.card(Vector2(cx, cy), Vector2(ATTEND_CELL, ATTEND_CELL))
+		var frame := Ui.set_tab(DUTY, true, Vector2(cx, cy),
+			Vector2(ATTEND_CELL, ATTEND_CELL)) if bool(a["big"]) \
+			else Ui.set_row(DUTY, Vector2(cx, cy),
+				Vector2(ATTEND_CELL, ATTEND_CELL))
 		root.add_child(frame)
 		var day := _panel_label(root, Vector2(cx, cy + 4.0), Type.SIZE_SMALL,
-			Color(0.62, 0.60, 0.68), ATTEND_CELL, 14.0)
+			DUTY_DIM, ATTEND_CELL, 14.0)
 		day.text = "%d일" % int(a["day"])
 		day.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var ico := Ui.icon("res://assets/ui/%s.png" % _reward_icon(str(a["reward"])),
 			Vector2(cx + (ATTEND_CELL - 26.0) * 0.5, cy + 22.0), 26.0)
 		root.add_child(ico)
 		var amt := _panel_label(root, Vector2(cx, cy + 52.0), Type.SIZE_SMALL,
-			Color(0.90, 0.86, 0.88), ATTEND_CELL, 14.0)
+			DUTY_INK, ATTEND_CELL, 14.0)
 		amt.text = "x%d" % int(a["amount"])
 		amt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		# 받은 칸 표시. **어둠막만으로는 구분이 안 된다** — 카드가 이미 어두워서
 		# 알파 0.66 을 덮어도 안 받은 칸과 비슷해 보였다(실측 캡처). 막을 진하게
 		# 하고 그 위에 표식을 얹는다.
 		var done := ColorRect.new()
-		done.color = Color(0.02, 0.01, 0.02, 0.80)
+		done.color = Color(0.30, 0.22, 0.16, 0.78)
 		done.position = Vector2(cx, cy)
 		done.size = Vector2(ATTEND_CELL, ATTEND_CELL)
 		done.visible = false
 		done.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(done)
 		var mark := _panel_label(root, Vector2(cx, cy + 24.0), Type.NATIVE * 2,
-			Color(0.72, 0.16, 0.20), ATTEND_CELL, 26.0)
+			DUTY_RED, ATTEND_CELL, 26.0)
 		mark.text = "✓"
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		mark.visible = false
 		_attend_cells.append({"frame": frame, "done": done, "ico": ico,
 			"mark": mark})
-	_attend_btn = Ui.button("오늘 받기",
-		Vector2(x + w * 0.5 - 100.0,
-			QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0),
-		Vector2(200.0, 42.0), Type.SIZE_MID)
+	var ap := Vector2(x + w * 0.5 - 100.0,
+		QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0)
+	root.add_child(Ui.set_row(DUTY, ap, Vector2(200.0, 42.0)))
+	_attend_lbl = _panel_label(root, Vector2(ap.x, ap.y + 12.0),
+		Type.SIZE_MID, DUTY_INK, 200.0, 20.0)
+	_attend_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_attend_btn = Ui.button("", ap, Vector2(200.0, 42.0), Type.SIZE_MID)
+	_attend_btn.modulate = Color(1, 1, 1, 0)
 	_attend_btn.pressed.connect(_claim_attend)
 	root.add_child(_attend_btn)
 
@@ -7163,22 +7213,24 @@ func _refresh_attend() -> void:
 		# 오늘 받을 칸만 밝게 — 나머지는 살짝 죽여 시선이 한 곳에 간다.
 		c["ico"].modulate = Color(1, 1, 1, 1) if i == done else Color(1, 1, 1, 0.72)
 	_attend_btn.disabled = not _attend_claimable()
-	_attend_btn.text = "오늘 받기" if _attend_claimable() else "내일 또"
+	_attend_lbl.text = "오늘 받기" if _attend_claimable() else "내일 또"
+	_attend_lbl.add_theme_color_override("font_color",
+		DUTY_INK if _attend_claimable() else DUTY_DIM)
 
 
 func _boon_build(root: Control) -> void:
 	var x := QUEST_PANEL.position.x + 22.0
 	var w := QUEST_PANEL.size.x - 44.0
 	var y := QUEST_PANEL.position.y + 104.0
-	root.add_child(Ui.card(Vector2(x, y), Vector2(w, 150.0)))
+	root.add_child(Ui.set_card(DUTY, Vector2(x, y), Vector2(w, 150.0)))
 	var now := _panel_label(root, Vector2(x, y + 22.0), Type.NATIVE * 2,
-		Color(0.92, 0.80, 0.52), w, 30.0)
+		DUTY_RED, w, 30.0)
 	now.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var now_text := _panel_label(root, Vector2(x, y + 70.0), Type.SIZE_BODY,
-		Color(0.90, 0.86, 0.88), w, 26.0)
+		DUTY_INK, w, 26.0)
 	now_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var until := _panel_label(root, Vector2(x, y + 110.0), Type.SIZE_SMALL,
-		Color(0.62, 0.60, 0.68), w, 16.0)
+		DUTY_DIM, w, 16.0)
 	until.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	until.text = "월요일에 바뀐다"
 	# **여섯 종을 다 늘어놓는다.** 다음 주 하나만 예고하면 "언제 그게 오나"를
@@ -7187,9 +7239,9 @@ func _boon_build(root: Control) -> void:
 	var rows: Array = []
 	for i in BoonDefs.BOONS.size():
 		var ry := y + 180.0 + float(i) * 38.0
-		root.add_child(Ui.card(Vector2(x, ry), Vector2(w, 32.0)))
+		root.add_child(Ui.set_pill(DUTY, Vector2(x, ry), Vector2(w, 32.0)))
 		var l := _panel_label(root, Vector2(x + 14.0, ry + 8.0), Type.SIZE_SMALL,
-			Color(0.70, 0.66, 0.72), w - 28.0, 16.0)
+			DUTY_DIM, w - 28.0, 16.0)
 		rows.append(l)
 	_boon_labels = {"now": now, "text": now_text, "rows": rows}
 
@@ -7208,7 +7260,7 @@ func _refresh_boon() -> void:
 		rows[i].text = "%s%s — %s" % ["▶ " if here else "   ",
 			str(e["name"]), str(e["text"])]
 		rows[i].add_theme_color_override("font_color",
-			Color(0.92, 0.80, 0.52) if here else Color(0.62, 0.60, 0.68))
+			DUTY_RED if here else DUTY_DIM)
 
 
 func _quest_set_mode(mode: String) -> void:
@@ -7218,9 +7270,17 @@ func _quest_set_mode(mode: String) -> void:
 	_boon_root.visible = mode == "boon"
 	for key in _quest_mode_btns:
 		_quest_mode_btns[key].button_pressed = key == mode
+	for key in _quest_tab_art:
+		var art: Dictionary = _quest_tab_art[key]
+		art["on"].visible = key == mode
+		art["lbl"].add_theme_color_override("font_color",
+			DUTY_RED if key == mode else DUTY_DIM)
 	# 일괄 받기는 임무 소탭에서만 뜻이 있다 — 출석은 하루 한 칸이고 은총은
 	# 받을 게 없다. 남겨 두면 누를 수는 있는데 아무 일도 안 일어난다.
-	_quest_claim_all.visible = mode == "day" or mode == "week"
+	var on_quest := mode == "day" or mode == "week"
+	_quest_claim_all.visible = on_quest
+	for n in _quest_claim_art:
+		n.visible = on_quest
 	_refresh_quests()
 	_refresh_attend()
 	_refresh_boon()

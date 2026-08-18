@@ -70,12 +70,46 @@ SET_SHEETS = {
 }
 
 
+# 임무판(duty, 양피지)과 도감(tome, 가죽책) — 2026-08-18.
+#
+# 두 시트의 구조가 같다: 3행, 열 구성 1/1/4 (실측). 위 세트들처럼 행만 나뉜 게
+# 아니라 **행 안에서 또 열로 나뉘어** 있어서 격자로 읽는다.
+# 이름은 왼쪽 위에서 오른쪽 아래 순서다 — 시트를 다시 뽑으면 순서만 확인하면 된다.
+SHEET5 = {
+    "duty": ["body", "band", "card", "pill", "tab_on", "tab_off"],
+    "tome": ["body", "band", "card", "pill", "tab_on", "tab_off"],
+}
+
+
+def slice_grid(prefix, names):
+    """행 투영으로 줄을 찾고, 줄 안에서 열 투영으로 조각을 뗀다.
+
+    **시트는 장식 없이 뽑는다.** 판은 NinePatch 로 늘려 쓰는데 인장·리본이
+    박혀 있으면 같이 늘어나고 탭에서는 글자를 덮는다(실측 캡처). 한 번 자동으로
+    지워 봤는데 확산 자국이 더 지저분했다 — 프롬프트에서 빼는 쪽이 답이다.
+    붉은 강조는 글자 색(Main.DUTY_RED)이 맡는다.
+    """
+    im = Image.open(f"{SETS}/{prefix}_sheet.png").convert("RGBA")
+    k = 0
+    for (y0, y1) in bands(im.getchannel("A"), along=0):
+        sub = im.crop((0, y0, im.width, y1))
+        for (x0, x1) in bands(sub.getchannel("A"), along=1):
+            if k >= len(names):
+                return
+            crop_trim(sub, (x0, 0, x1, sub.height)).save(
+                f"{SETS}/{prefix}_{names[k]}.png")
+            k += 1
+    assert k == len(names), f"{prefix}: {len(names)}조각이어야 하는데 {k}개"
+
+
 def slice_sets():
     global BASE
     keep = BASE
     BASE = SETS
     for sheet, names in SET_SHEETS.items():
         slice_v(Image.open(f"{SETS}/{sheet}.png").convert("RGBA"), names)
+    for prefix, names in SHEET5.items():
+        slice_grid(prefix, names)
     BASE = keep
 
 
