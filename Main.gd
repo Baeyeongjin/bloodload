@@ -4739,7 +4739,9 @@ func _build_codex(root: Control) -> void:
 # 떼어냈다(내용은 그대로다).
 func _codex_build_foe(root: Control) -> void:
 	var keys := FoeTiers.all_keys()
-	var body_y := PAD + CODEX_HEAD_H + 8.0
+	# 소탭 줄(CODEX_TAB_Y ~ +32) 아래에서 시작한다 — 예전 자리(58)에 그대로
+	# 두었더니 목록 첫 칸과 상세가 소탭에 깔렸다(실측 캡처).
+	var body_y := CODEX_TAB_Y + 40.0
 	var body_h := CONTENT_BOTTOM - body_y
 	var sc := Ui.scroll(Vector2(PAD, body_y), Vector2(CODEX_LIST_W, body_h))
 	root.add_child(sc)
