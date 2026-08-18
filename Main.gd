@@ -735,6 +735,10 @@ func _ready() -> void:
 		if arg == "--titles":
 			_codex_view.visible = true
 			_codex_set_mode("title")
+		# [개발 도구] --petmode=own|gear|feed|roll|rollgear : 펫 소탭 캡처.
+		if arg.begins_with("--petmode="):
+			_select_tab("pet")
+			_pet_set_mode(arg.trim_prefix("--petmode="))
 		# [개발 도구] --quest[=day|week|attend|boon] : 그 소탭을 연 채로 캡처한다.
 		if arg == "--quest" or arg.begins_with("--quest="):
 			_quest_view.visible = true
@@ -1706,7 +1710,7 @@ const CONTENT_BOTTOM := PANEL_H - PAD     # 358
 # 전면 판 — **화면 꼭대기부터** 하단 네비까지(사장님: 상단 HUD·사이드 아이콘도
 # 다 가리고 완전 전체 화면). 레퍼런스처럼 장소 헤더 + 큰 카드 진열이 들어가는
 # 탭들이 쓴다. 나머지 탭은 반판(전투가 보인다) 유지.
-const FULL_TABS := ["shop", "summon", "raid"]
+const FULL_TABS := ["shop", "summon", "raid", "pet"]
 const PANEL_FULL_H := 800.0               # Grid.uv 50칸 — 네비(96) 위 전부
 const FULL_BOTTOM := PANEL_FULL_H - PAD   # 774
 
@@ -11104,137 +11108,467 @@ func _codex_set_mode(mode: String) -> void:
 	_refresh_act()
 
 
-# 펫 탭 — 줄 하나가 펫 하나다. 왼쪽에 그림, 가운데 이름·설명·쌓인 양,
-# 오른쪽에 [받기]와 [데리고 다니기].
+# 펫 전면 판 — 달의 제단 문법 (PET_DESIGN v2 2단계, 사장님 2026-08-18).
 #
-# **격자가 아니라 줄**인 이유: 펫은 여섯이라 격자로 펴면 허전하고, 줄마다
-# "얼마나 찼나"를 막대로 보여야 들를 때가 됐는지 한눈에 읽힌다.
-const PET_ROW_H := 96.0
-const PET_BAR_W := 190.0
-var _pet_rows: Array[Dictionary] = []
-var _pet_roll_btn: Button
+# 소탭 다섯: 보유·장비·강화·소환·장비소환. 헤더 그림과 소탭 세트는 전부
+# **자리표시**다(점성소 헤더 + 가죽책 세트) — 아트 배치에서 전용으로 교체한다.
+# 연출(소환 애니·강화 이펙트)은 5단계다. 여기는 다섯 판이 실제로 도는 것까지.
+const PET_TABS := [["own", "보유"], ["gear", "장비"], ["feed", "강화"],
+	["roll", "펫 소환"], ["rollgear", "장비 소환"]]
+const PET_CELL := 96.0
+const PET_GAP := 6.0
+const PET_GRID_Y := 284.0
+const PET_GRID_H := 236.0
+const PET_DETAIL_Y := 532.0
+var _pet_mode := "own"
+var _pet_sel := ""              # 보유·강화·장착이 보는 펫
+var _petgear_sel := ""          # 장비 판이 보는 장비
+var _pet_roots := {}
+var _pet_tab_btns := {}
+var _pet_cells: Array[Dictionary] = []
+var _petgear_cells: Array[Dictionary] = []
+var _pet_detail := {}
+var _petgear_detail := {}
+var _pet_feed_ui := {}
+var _pet_roll_ui := {}
+
+
+# 세트 그림 버튼 — 가죽 줄 + 글자 + 투명 판정 (상점 문법).
+func _pet_btn(parent: Control, pos: Vector2, size: Vector2,
+		text: String) -> Dictionary:
+	parent.add_child(Ui.set_row(TOME, pos, size))
+	var l := _panel_label(parent, Vector2(pos.x, pos.y + size.y * 0.5 - 10.0),
+		Type.SIZE_SMALL, Color(0.96, 0.92, 0.88), size.x, 20.0)
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var btn := Ui.button("", pos, size, Type.SIZE_SMALL)
+	btn.modulate = Color(1, 1, 1, 0)
+	parent.add_child(btn)
+	return {"btn": btn, "lbl": l}
 
 
 func _build_pet(root: Control) -> void:
-	var head := _panel_label(root, Vector2(PAD, PAD - 4.0), Type.SIZE_SMALL,
-		Color(0.90, 0.86, 0.84), CONTENT_W, 18.0)
-	head.text = "동행"
-	var sub := _panel_label(root, Vector2(PAD, PAD + 16.0), Type.SIZE_SMALL,
-		Color(0.62, 0.60, 0.68), CONTENT_W - 150.0, 18.0)
-	sub.text = "%d시간이면 그릇이 찬다 · 데리고 다니는 하나만 힘을 준다" 		% int(PetDefs.CAP_HOURS)
-	# 뽑기 — 펫 소환권으로(사장님: 소환권 신설). 전면 판(2단계)이 오기 전까지의
-	# 임시 자리다.
-	_pet_roll_btn = Ui.button("", Vector2(PAD + CONTENT_W - 140.0, PAD - 8.0),
-		Vector2(140.0, 44.0), Type.SIZE_SMALL)
-	_pet_roll_btn.pressed.connect(func() -> void: _pet_roll())
-	root.add_child(_pet_roll_btn)
-	Ui.cost_icon(_pet_roll_btn, TicketDefs.icon_of("pet"), 16)
-	# **스크롤에 넣는다.** 여섯 줄 x 96 = 576 인데 반판은 358 이라 셋만 보이고
-	# 나머지는 판 밖으로 넘어갔다(실측 캡처).
-	var y0 := PAD + 44.0
-	var sc := Ui.scroll(Vector2(PAD, y0),
-		Vector2(CONTENT_W, CONTENT_BOTTOM - y0))
+	# 헤더 — 장소 그림(자리표시: 점성소). 펫의 집 이름은 "동행의 둥지".
+	var head := Control.new()
+	head.position = Vector2(PAD, 12.0)
+	head.size = Vector2(CONTENT_W, 210.0)
+	head.clip_contents = true
+	root.add_child(head)
+	var ht := TextureRect.new()
+	ht.texture = Assets.tex("res://assets/ui/head_astro.png")
+	ht.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ht.size = Vector2(CONTENT_W, CONTENT_W * 224.0 / 576.0)
+	ht.position = Vector2(0.0, -6.0)
+	ht.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ht.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(ht)
+	var place := _panel_label(head, Vector2(16.0, 10.0), Type.SIZE_MID,
+		Color(0.97, 0.92, 0.86), 220.0, 24.0)
+	place.text = "동행의 둥지"
+	_shop_outline(place, 8)
+	var bub := _panel_label(head, Vector2(16.0, 44.0), Type.SIZE_SMALL,
+		Color(0.90, 0.84, 0.80), 320.0, 18.0)
+	bub.text = "먹이면 자라고, 데리고 다니면 힘이 된다"
+	_shop_outline(bub, 4)
+	# 소탭 다섯 — 자리표시(가죽책). 전용 세트는 아트 배치에서.
+	var tw := (CONTENT_W - 8.0 * 4.0) / 5.0
+	for i in PET_TABS.size():
+		var mode := str(PET_TABS[i][0])
+		var tp := Vector2(PAD + float(i) * (tw + 8.0), 232.0)
+		var off := Ui.set_tab(TOME, false, tp, Vector2(tw, 36.0))
+		var on := Ui.set_tab(TOME, true, tp, Vector2(tw, 36.0))
+		root.add_child(off)
+		root.add_child(on)
+		var tl := _panel_label(root, Vector2(tp.x, 241.0), Type.SIZE_SMALL,
+			Color(0.96, 0.92, 0.88), tw, 20.0)
+		tl.text = str(PET_TABS[i][1])
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(tl, 5)
+		var tb := Ui.button("", tp, Vector2(tw, 36.0), Type.SIZE_SMALL)
+		tb.modulate = Color(1, 1, 1, 0)
+		tb.pressed.connect(func() -> void: _pet_set_mode(mode))
+		root.add_child(tb)
+		_pet_tab_btns[mode] = {"on": on, "lbl": tl}
+	for pair in PET_TABS:
+		var r := Control.new()
+		r.visible = false
+		root.add_child(r)
+		_pet_roots[str(pair[0])] = r
+	_pet_build_own(_pet_roots["own"])
+	_pet_build_gear(_pet_roots["gear"])
+	_pet_build_feed(_pet_roots["feed"])
+	_pet_build_roll(_pet_roots["roll"], "pet")
+	_pet_build_roll(_pet_roots["rollgear"], "petgear")
+	_pet_set_mode("own")
+
+
+func _pet_set_mode(mode: String) -> void:
+	_pet_mode = mode
+	for key in _pet_roots:
+		_pet_roots[key].visible = key == mode
+	for key in _pet_tab_btns:
+		_pet_tab_btns[key]["on"].visible = key == mode
+		_pet_tab_btns[key]["lbl"].add_theme_color_override("font_color",
+			Color(0.98, 0.86, 0.56) if key == mode else Color(0.80, 0.76, 0.74))
+	_refresh_pet()
+
+
+# 5x5 격자 — 펫과 장비가 같은 문법을 쓴다. 칸에는 그림과 별만 두고 이름·효과는
+# 아래 상세가 맡는다: 96px 칸에 이름까지 넣으면 글자가 잘린다.
+func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
+		on_pick: Callable, art_of: Callable) -> void:
+	var span := PET_CELL + PET_GAP
+	var sc := _codex_thin_bar(Ui.scroll(Vector2(PAD, PET_GRID_Y),
+		Vector2(CONTENT_W, PET_GRID_H)))
 	root.add_child(sc)
 	var pane := Control.new()
-	pane.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W,
-		float(PetDefs.PETS.size()) * PET_ROW_H)
+	pane.custom_minimum_size = Vector2(CONTENT_W - CODEX_BAR_W,
+		ceil(float(count) / 5.0) * span)
 	sc.add_child(pane)
-	for i in PetDefs.PETS.size():
-		var d: Dictionary = PetDefs.PETS[i]
-		var y := float(i) * PET_ROW_H
-		pane.add_child(Ui.card(Vector2(0.0, y),
-			Vector2(CONTENT_W - Ui.SCROLL_W, PET_ROW_H - 8.0)))
-		# 그림은 walk 첫 프레임 — 몹 자산을 그대로 쓴다(새로 뽑지 않는다).
-		var frames := Assets.frames(PetDefs.icon_dir(str(d["id"])))
-		var art: TextureRect = null
-		if not frames.is_empty():
-			art = TextureRect.new()
-			art.texture = frames[0]
-			art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-			art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			art.size = Vector2(56.0, 56.0)
-			art.position = Vector2(14.0, y + 14.0)
+	var x0 := (CONTENT_W - CODEX_BAR_W - (span * 5.0 - PET_GAP)) * 0.5
+	for i in count:
+		var cx := x0 + float(i % 5) * span
+		var cy := float(i / 5) * span
+		pane.add_child(Ui.set_row(TOME, Vector2(cx, cy),
+			Vector2(PET_CELL, PET_CELL)))
+		var art: Control = art_of.call(i)
+		if art != null:
+			art.position = Vector2(cx + (PET_CELL - art.size.x) * 0.5,
+				cy + (PET_CELL - art.size.y) * 0.5 - 6.0)
 			art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			pane.add_child(art)
-		var nx := 84.0
-		var nm := _panel_label(pane, Vector2(nx, y + 10.0), Type.SIZE_SMALL,
-			Color(0.94, 0.88, 0.72), 210.0, 16.0)
-		var ds := _panel_label(pane, Vector2(nx, y + 30.0), Type.SIZE_SMALL,
-			Color(0.60, 0.58, 0.66), 260.0, 16.0)
-		ds.text = str(d["desc"])
-		# 얼마나 찼나 — 막대 하나로 "들를 때가 됐나"가 읽힌다.
-		var track := ColorRect.new()
-		track.color = Color(0.10, 0.09, 0.12)
-		track.position = Vector2(nx, y + 56.0)
-		track.size = Vector2(PET_BAR_W, 10.0)
-		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pane.add_child(track)
-		var fill := ColorRect.new()
-		fill.color = Color(0.72, 0.16, 0.20)
-		fill.position = track.position
-		fill.size = Vector2(0.0, 10.0)
-		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pane.add_child(fill)
-		var amt := _panel_label(pane, Vector2(nx + PET_BAR_W + 8.0, y + 50.0),
-			Type.SIZE_SMALL, Color(0.82, 0.80, 0.86), 120.0, 20.0)
-		var pid := str(d["id"])
-		var take := Ui.button("받기",
-			Vector2(CONTENT_W - Ui.SCROLL_W - 116.0, y + 12.0),
-			Vector2(104.0, 32.0), Type.SIZE_SMALL)
-		take.pressed.connect(func() -> void: _pet_collect(pid))
-		pane.add_child(take)
-		var wear := Ui.button("",
-			Vector2(CONTENT_W - Ui.SCROLL_W - 116.0, y + 48.0),
-			Vector2(104.0, 32.0), Type.SIZE_SMALL)
-		wear.pressed.connect(func() -> void:
-			if not pets_got.has(pid):
-				return
-			pet_worn = "" if pet_worn == pid else pid
-			_save_game()
-			_refresh_pet())
-		pane.add_child(wear)
-		_pet_rows.append({"name": nm, "amt": amt, "fill": fill, "take": take,
-			"wear": wear, "art": art, "desc": ds})
+		var star := _panel_label(pane, Vector2(cx, cy + PET_CELL - 24.0),
+			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), PET_CELL, 16.0)
+		star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var idx := i
+		var btn := Ui.button("", Vector2(cx, cy), Vector2(PET_CELL, PET_CELL),
+			Type.SIZE_SMALL)
+		btn.modulate = Color(1, 1, 1, 0)
+		btn.pressed.connect(func() -> void: on_pick.call(idx))
+		pane.add_child(btn)
+		cells.append({"art": art, "star": star})
+
+
+func _pet_art(i: int) -> Control:
+	var frames := Assets.frames(PetDefs.icon_dir(str(PetDefs.PETS[i]["id"])))
+	if frames.is_empty():
+		return null
+	var t := TextureRect.new()
+	t.texture = frames[0]
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.size = Vector2(56.0, 56.0)
+	return t
+
+
+func _petgear_art(i: int) -> Control:
+	# 장비 아이콘은 아트 배치 전 — 갈래로 구분되는 자리표시.
+	var g: Dictionary = PetDefs.GEAR[i]
+	return Ui.icon("res://assets/ui/%s.png"
+		% ("res_crystal" if str(g["kind"]) == "gather" else "stat_damage"),
+		Vector2.ZERO, 36.0)
+
+
+func _pet_build_own(root: Control) -> void:
+	_pet_build_grid(root, PetDefs.PETS.size(), _pet_cells,
+		func(i: int) -> void:
+			_pet_sel = str(PetDefs.PETS[i]["id"])
+			_refresh_pet(),
+		_pet_art)
+	root.add_child(Ui.set_card(TOME, Vector2(PAD, PET_DETAIL_Y),
+		Vector2(CONTENT_W, 156.0)))
+	_pet_detail["name"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 14.0),
+		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W - 240.0, 22.0)
+	_pet_detail["desc"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 44.0),
+		Type.SIZE_SMALL, Color(0.78, 0.74, 0.72), CONTENT_W - 240.0, 16.0)
+	_pet_detail["buff"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 68.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), CONTENT_W - 240.0, 16.0)
+	var track := ColorRect.new()
+	track.color = Color(0.16, 0.12, 0.11)
+	track.position = Vector2(PAD + 18.0, PET_DETAIL_Y + 96.0)
+	track.size = Vector2(230.0, 10.0)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(track)
+	var fill := ColorRect.new()
+	fill.color = Color(0.72, 0.16, 0.20)
+	fill.position = track.position
+	fill.size = Vector2(0.0, 10.0)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fill)
+	_pet_detail["fill"] = fill
+	_pet_detail["amt"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 114.0),
+		Type.SIZE_SMALL, Color(0.82, 0.78, 0.76), 260.0, 16.0)
+	var take := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 18.0),
+		Vector2(120.0, 40.0), "받기")
+	take["btn"].pressed.connect(func() -> void: _pet_collect(_pet_sel))
+	_pet_detail["take"] = take
+	var wear := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 66.0),
+		Vector2(120.0, 40.0), "데려가기")
+	wear["btn"].pressed.connect(func() -> void:
+		if _pet_star(_pet_sel) <= 0:
+			return
+		pet_worn = "" if pet_worn == _pet_sel else _pet_sel
+		_save_game()
+		_refresh_pet())
+	_pet_detail["wear"] = wear
+
+
+func _pet_build_gear(root: Control) -> void:
+	_pet_build_grid(root, PetDefs.GEAR.size(), _petgear_cells,
+		func(i: int) -> void:
+			_petgear_sel = str(PetDefs.GEAR[i]["id"])
+			_refresh_pet(),
+		_petgear_art)
+	root.add_child(Ui.set_card(TOME, Vector2(PAD, PET_DETAIL_Y),
+		Vector2(CONTENT_W, 156.0)))
+	_petgear_detail["name"] = _panel_label(root,
+		Vector2(PAD + 18.0, PET_DETAIL_Y + 14.0), Type.SIZE_MID,
+		Color(0.96, 0.92, 0.88), CONTENT_W - 240.0, 22.0)
+	_petgear_detail["info"] = _panel_label(root,
+		Vector2(PAD + 18.0, PET_DETAIL_Y + 44.0), Type.SIZE_SMALL,
+		Color(0.78, 0.74, 0.72), CONTENT_W - 240.0, 16.0)
+	_petgear_detail["who"] = _panel_label(root,
+		Vector2(PAD + 18.0, PET_DETAIL_Y + 68.0), Type.SIZE_SMALL,
+		Color(0.98, 0.86, 0.56), CONTENT_W - 240.0, 16.0)
+	# 장착 상대는 **보유 판에서 고른 펫**이다 — 데리고 다니는 펫과 수집 펫이
+	# 다를 수 있어야 gather 장비가 뜻을 가진다.
+	_petgear_detail["target"] = _panel_label(root,
+		Vector2(PAD + 18.0, PET_DETAIL_Y + 96.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.74), CONTENT_W - 240.0, 16.0)
+	var eq := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 42.0),
+		Vector2(120.0, 40.0), "채우기")
+	eq["btn"].pressed.connect(func() -> void:
+		_pet_equip_gear(_pet_sel, _petgear_sel))
+	_petgear_detail["equip"] = eq
+
+
+func _pet_build_feed(root: Control) -> void:
+	root.add_child(Ui.set_body(TOME, Vector2(PAD, PET_GRID_Y),
+		Vector2(CONTENT_W, 404.0)))
+	var art := TextureRect.new()
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	art.size = Vector2(96.0, 96.0)
+	art.position = Vector2(PAD + (CONTENT_W - 96.0) * 0.5, PET_GRID_Y + 28.0)
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(art)
+	_pet_feed_ui["art"] = art
+	_pet_feed_ui["name"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 134.0),
+		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W, 22.0)
+	_pet_feed_ui["name"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pet_feed_ui["stat"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 164.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), CONTENT_W, 16.0)
+	_pet_feed_ui["stat"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 게이지 — 가진 먹이 대 다음 레벨 비용. 차면 버튼이 산다.
+	var track := ColorRect.new()
+	track.color = Color(0.16, 0.12, 0.11)
+	track.position = Vector2(PAD + 64.0, PET_GRID_Y + 206.0)
+	track.size = Vector2(CONTENT_W - 128.0, 14.0)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(track)
+	var fill := ColorRect.new()
+	fill.color = Color(0.62, 0.42, 0.14)
+	fill.position = track.position
+	fill.size = Vector2(0.0, 14.0)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fill)
+	_pet_feed_ui["fill"] = fill
+	_pet_feed_ui["cost"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 228.0),
+		Type.SIZE_SMALL, Color(0.82, 0.78, 0.76), CONTENT_W, 16.0)
+	_pet_feed_ui["cost"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var one := _pet_btn(root, Vector2(PAD + 64.0, PET_GRID_Y + 268.0),
+		Vector2(190.0, 44.0), "먹이 주기")
+	one["btn"].pressed.connect(func() -> void: _pet_feed(_pet_sel))
+	_pet_feed_ui["one"] = one
+	var ten := _pet_btn(root,
+		Vector2(PAD + CONTENT_W - 64.0 - 190.0, PET_GRID_Y + 268.0),
+		Vector2(190.0, 44.0), "x10")
+	ten["btn"].pressed.connect(func() -> void:
+		for i in 10:
+			if not _pet_feed(_pet_sel):
+				break)
+	_pet_feed_ui["ten"] = ten
+	_pet_feed_ui["note"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 336.0),
+		Type.SIZE_SMALL, Color(0.72, 0.70, 0.74), CONTENT_W, 16.0)
+	_pet_feed_ui["note"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+
+# 소환 판 — 펫권(kind="pet")과 장비권(kind="petgear")이 같은 문법을 쓴다.
+func _pet_build_roll(root: Control, kind: String) -> void:
+	root.add_child(Ui.set_body(TOME, Vector2(PAD, PET_GRID_Y),
+		Vector2(CONTENT_W, 300.0)))
+	var big := Ui.icon("res://assets/ui/tab_codex.png",
+		Vector2(PAD + (CONTENT_W - 72.0) * 0.5, PET_GRID_Y + 36.0), 72.0)
+	root.add_child(big)
+	var title := _panel_label(root, Vector2(PAD, PET_GRID_Y + 124.0),
+		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W, 22.0)
+	title.text = "펫 소환" if kind == "pet" else "펫 장비 소환"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 확률 — GachaDefs 무게를 그대로 읽어 적는다(표를 두 곳에서 관리하지 않는다).
+	var total := 0.0
+	for r in GachaDefs.RARITIES:
+		if str(r["key"]) in PetDefs.RARITY_KEYS:
+			total += float(r["weight"])
+	var parts := PackedStringArray()
+	for r in GachaDefs.RARITIES:
+		if str(r["key"]) in PetDefs.RARITY_KEYS:
+			parts.append("%s %.1f%%" % [str(r["name"]),
+				float(r["weight"]) / total * 100.0])
+	var rates := _panel_label(root, Vector2(PAD + 20.0, PET_GRID_Y + 156.0),
+		Type.SIZE_SMALL, Color(0.62, 0.82, 0.68), CONTENT_W - 40.0, 0.0)
+	rates.text = "  ·  ".join(parts)
+	rates.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rates.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rates.size = Vector2(CONTENT_W - 40.0, 40.0)
+	var note := _panel_label(root, Vector2(PAD, PET_GRID_Y + 214.0),
+		Type.SIZE_SMALL, Color(0.72, 0.70, 0.74), CONTENT_W, 16.0)
+	note.text = "중복은 조각 %d개로 승급한다" % PetDefs.SHARDS_PER_STAR
+	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 소환권 잔량 알약.
+	var pp := Vector2(PAD + (CONTENT_W - 180.0) * 0.5, PET_GRID_Y + 320.0)
+	root.add_child(Ui.set_pill(TOME, pp, Vector2(180.0, 34.0)))
+	root.add_child(Ui.icon(TicketDefs.icon_of(kind), pp + Vector2(20.0, 7.0), 20.0))
+	var cnt := _panel_label(root, Vector2(pp.x + 48.0, pp.y + 8.0),
+		Type.SIZE_SMALL, Color(0.96, 0.92, 0.88), 120.0, 18.0)
+	var one := _pet_btn(root, Vector2(PAD + 24.0, PET_GRID_Y + 372.0),
+		Vector2(220.0, 52.0), "1회")
+	var ten := _pet_btn(root, Vector2(PAD + CONTENT_W - 244.0, PET_GRID_Y + 372.0),
+		Vector2(220.0, 52.0), "10연")
+	if kind == "pet":
+		one["btn"].pressed.connect(func() -> void: _pet_roll())
+		ten["btn"].pressed.connect(func() -> void: _pet_roll_many(10))
+	else:
+		one["btn"].pressed.connect(func() -> void: _petgear_roll())
+		ten["btn"].pressed.connect(func() -> void: _petgear_roll_many(10))
+	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten}
 
 
 func _refresh_pet() -> void:
-	if _pet_rows.is_empty():
+	if _pet_roots.is_empty():
 		return
 	_pet_tick()
-	if _pet_roll_btn != null:
+	if _pet_sel == "":
+		_pet_sel = pet_worn if pet_worn != "" else str(PetDefs.PETS[0]["id"])
+	if _petgear_sel == "":
+		_petgear_sel = str(PetDefs.GEAR[0]["id"])
+	# 격자 — 못 만난 것은 실루엣. 빈 칸이 보여야 데려오고 싶다.
+	for i in _pet_cells.size():
+		var id := str(PetDefs.PETS[i]["id"])
+		var got := pets_got.has(id)
+		if _pet_cells[i]["art"] != null:
+			_pet_cells[i]["art"].modulate = Color(1, 1, 1, 1) if got \
+				else Color(0.10, 0.09, 0.11, 0.9)
+		_pet_cells[i]["star"].text = ("%d성" % _pet_star(id)) if got else ""
+	for i in _petgear_cells.size():
+		var gid := str(PetDefs.GEAR[i]["id"])
+		var ggot := int(pet_gear_got.get(gid, 0)) > 0
+		if _petgear_cells[i]["art"] != null:
+			_petgear_cells[i]["art"].modulate = Color(1, 1, 1, 1) if ggot \
+				else Color(0.10, 0.09, 0.11, 0.9)
+		_petgear_cells[i]["star"].text = \
+			("%d성" % int(pet_gear_got.get(gid, 0))) if ggot else ""
+	_refresh_pet_own()
+	_refresh_pet_gear()
+	_refresh_pet_feed()
+	_refresh_pet_roll()
+
+
+func _refresh_pet_own() -> void:
+	if _pet_detail.is_empty():
+		return
+	var d := PetDefs.of(_pet_sel)
+	var got := pets_got.has(_pet_sel)
+	var star := _pet_star(_pet_sel)
+	var lv := _pet_lv(_pet_sel)
+	var rar := GachaDefs.rarity(str(d["rarity"]))
+	_pet_detail["name"].text = "%s  %d성 %d레벨" % [str(d["name"]), star, lv] \
+		if got else "%s  ·  ???" % str(rar["name"])
+	_pet_detail["name"].add_theme_color_override("font_color",
+		rar["col"] if got else Color(0.60, 0.58, 0.62))
+	_pet_detail["desc"].text = str(d["desc"]) if got else "소환에서 만난다"
+	_pet_detail["buff"].text = "%s +%d%%  ·  %s을 물어온다" % [
+		str(StatDefs.of(str(d["stat"])).get("name", d["stat"])),
+		int(round(PetDefs.bonus(_pet_sel, str(d["stat"]), lv, star) * 100.0)),
+		_reward_name(str(d["gain"]))] if got else ""
+	var have := float(pet_bank.get(_pet_sel, 0.0))
+	var cap := PetDefs.cap(_pet_sel, lv, maxi(1, star))
+	_pet_detail["fill"].size.x = 230.0 * (clampf(have / maxf(1.0, cap), 0.0, 1.0)
+		if got else 0.0)
+	_pet_detail["amt"].text = "그릇  %s / %s" % [_n(have), _n(cap)] if got else ""
+	_pet_detail["take"]["btn"].disabled = not got or have < 1.0
+	_pet_detail["wear"]["btn"].disabled = not got
+	_pet_detail["wear"]["lbl"].text = "함께" if pet_worn == _pet_sel else "데려가기"
+
+
+func _refresh_pet_gear() -> void:
+	if _petgear_detail.is_empty():
+		return
+	var g := PetDefs.gear_of(_petgear_sel)
+	var star := int(pet_gear_got.get(_petgear_sel, 0))
+	var got := star > 0
+	var rar := GachaDefs.rarity(str(g["rarity"]))
+	_petgear_detail["name"].text = "%s  %d성" % [str(g["name"]), star] if got \
+		else "%s  ·  ???" % str(rar["name"])
+	_petgear_detail["name"].add_theme_color_override("font_color",
+		rar["col"] if got else Color(0.60, 0.58, 0.62))
+	var v := float(g["value"]) * PetDefs.star_mult(maxi(1, star))
+	_petgear_detail["info"].text = (("수집 +%d%%" if str(g["kind"]) == "gather" \
+		else "버프 증폭 +%d%%") % int(round(v * 100.0))) if got \
+		else "장비 소환에서 나온다"
+	var holder := ""
+	for k in pet_gear_worn:
+		if str(pet_gear_worn[k]) == _petgear_sel:
+			holder = str(k)
+			break
+	_petgear_detail["who"].text = \
+		("%s 이(가) 들고 있다" % str(PetDefs.of(holder).get("name", ""))) \
+		if holder != "" else ("비어 있다" if got else "")
+	_petgear_detail["target"].text = "채울 펫: %s (보유 판에서 고른다)" \
+		% str(PetDefs.of(_pet_sel).get("name", "-"))
+	_petgear_detail["equip"]["btn"].disabled = not got or _pet_star(_pet_sel) <= 0
+	_petgear_detail["equip"]["lbl"].text = "벗기기" \
+		if str(pet_gear_worn.get(_pet_sel, "")) == _petgear_sel else "채우기"
+
+
+func _refresh_pet_feed() -> void:
+	if _pet_feed_ui.is_empty():
+		return
+	var d := PetDefs.of(_pet_sel)
+	var got := pets_got.has(_pet_sel)
+	var star := _pet_star(_pet_sel)
+	var lv := _pet_lv(_pet_sel)
+	var frames := Assets.frames(PetDefs.icon_dir(_pet_sel))
+	_pet_feed_ui["art"].texture = frames[0] if not frames.is_empty() else null
+	_pet_feed_ui["art"].modulate = Color(1, 1, 1, 1) if got \
+		else Color(0.10, 0.09, 0.11, 0.9)
+	_pet_feed_ui["name"].text = "%s  %d성 %d레벨" % [str(d["name"]), star, lv] \
+		if got else "보유 판에서 펫을 고른다"
+	_pet_feed_ui["stat"].text = "%s +%d%%  ·  수집 x%.2f" % [
+		str(StatDefs.of(str(d["stat"])).get("name", d["stat"])),
+		int(round(PetDefs.bonus(_pet_sel, str(d["stat"]), lv, star) * 100.0)),
+		PetDefs.growth_mult(lv, maxi(1, star))] if got else ""
+	var capped := got and lv >= PetDefs.lv_cap(star)
+	var cost := PetDefs.feed_cost(lv)
+	_pet_feed_ui["fill"].size.x = (CONTENT_W - 128.0) \
+		* ((1.0 if capped else clampf(feed / maxf(1.0, cost), 0.0, 1.0)) \
+		if got else 0.0)
+	_pet_feed_ui["cost"].text = ("승급하면 더 클 수 있다" if capped \
+		else "다음 레벨  먹이 %s  ·  보유 %s" % [_n(cost), _n(feed)]) if got else ""
+	_pet_feed_ui["one"]["btn"].disabled = not got or capped or feed < cost
+	_pet_feed_ui["ten"]["btn"].disabled = _pet_feed_ui["one"]["btn"].disabled
+	_pet_feed_ui["note"].text = "먹이는 야수 우리(%d구간)가 준다" \
+		% RaidDefs.open_stage("hunt")
+
+
+func _refresh_pet_roll() -> void:
+	for kind in _pet_roll_ui:
+		var ui: Dictionary = _pet_roll_ui[kind]
+		var have := int(tickets.get(kind, 0))
 		var open := best_stage >= PetDefs.PET_OPEN
-		var have_tk := int(tickets.get("pet", 0))
-		_pet_roll_btn.disabled = not open or have_tk < 1
-		_pet_roll_btn.text = ("%d" % have_tk) if open 			else "%d구간" % PetDefs.PET_OPEN
-	for i in _pet_rows.size():
-		var d: Dictionary = PetDefs.PETS[i]
-		var id := str(d["id"])
-		var row: Dictionary = _pet_rows[i]
-		var got: bool = pets_got.has(id)
-		var star := _pet_star(id)
-		var lv := _pet_lv(id)
-		var have := float(pet_bank.get(id, 0.0))
-		var cap := PetDefs.cap(id, lv, maxi(1, star))
-		var rar := GachaDefs.rarity(str(d["rarity"]))
-		row["name"].text = "%s  %d성 %d레벨" % [str(d["name"]), star, lv] if got 			else "%s  ·  ???" % str(rar["name"])
-		row["name"].add_theme_color_override("font_color",
-			rar["col"] if got else Color(0.52, 0.50, 0.56))
-		# 아직 못 만난 펫은 실루엣만 — 빈 자리가 보여야 데려오고 싶다.
-		if row["art"] != null:
-			row["art"].modulate = Color(1, 1, 1, 1) if got 				else Color(0.12, 0.11, 0.13, 0.9)
-		row["desc"].visible = got
-		row["fill"].size.x = PET_BAR_W * (clampf(have / maxf(1.0, cap), 0.0, 1.0)
-			if got else 0.0)
-		row["amt"].text = "%s / %s  %s" % [_n(have), _n(cap),
-			_reward_name(str(d["gain"]))] if got else ""
-		row["take"].disabled = not got or have < 1.0
-		row["wear"].disabled = not got
-		row["wear"].text = "함께" if pet_worn == id else "데려가기"
-		# 버프가 뭔지 줄에 적는다 — 고를 이유가 보여야 한다.
-		if got:
-			row["desc"].text = "%s  ·  %s +%d%%" % [str(d["desc"]),
-				str(StatDefs.of(str(d["stat"])).get("name", d["stat"])),
-				int(round(PetDefs.bonus(id, str(d["stat"]), lv, star) * 100.0))]
+		ui["cnt"].text = ("%d장" % have) if open \
+			else "%d구간에 열린다" % PetDefs.PET_OPEN
+		ui["one"]["btn"].disabled = not open or have < 1
+		ui["ten"]["btn"].disabled = not open or have < 1
 
 
 # ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
@@ -11285,9 +11619,9 @@ func _pet_tick() -> void:
 
 # 펫 뽑기. 유물과 같은 문법이다 — **중복은 조각이 되고 조각이 차면 한 단계**.
 # 빈손으로 돌려보내지 않는 게 이 문법의 값이다.
-func _pet_roll() -> bool:
+func _pet_roll(show := true) -> Dictionary:
 	if best_stage < PetDefs.PET_OPEN or int(tickets.get("pet", 0)) < 1:
-		return false
+		return {}
 	tickets["pet"] = int(tickets.get("pet", 0)) - 1
 	# 등급을 굴리고 그 안에서 하나 — 유물과 같은 문법(_receive_gacha_relic).
 	var pool := PetDefs.of_rarity(PetDefs.roll_rarity())
@@ -11315,19 +11649,20 @@ func _pet_roll() -> bool:
 		gacha_shards[key] = sh
 	else:
 		sub = "이미 끝까지 컸다"
-	_show_reward(str(d["name"]),
-		[{"icon": "res://assets/ui/tab_codex.png",
-		"label": "%d성" % _pet_star(id), "sub": sub}])
-	_refresh_currency_visibility()
-	_save_game()
-	_refresh_pet()
-	return true
+	var row := {"icon": "res://assets/ui/tab_codex.png",
+		"label": "%s  %d성" % [str(d["name"]), _pet_star(id)], "sub": sub}
+	if show:
+		_show_reward(str(d["name"]), [row])
+		_refresh_currency_visibility()
+		_save_game()
+		_refresh_pet()
+	return row
 
 
 # 펫 장비 뽑기 — 펫과 같은 문법. UI 는 전면 판(2단계)에서 온다.
-func _petgear_roll() -> bool:
+func _petgear_roll(show := true) -> Dictionary:
 	if best_stage < PetDefs.PET_OPEN or int(tickets.get("petgear", 0)) < 1:
-		return false
+		return {}
 	tickets["petgear"] = int(tickets.get("petgear", 0)) - 1
 	var pool := PetDefs.gear_of_rarity(PetDefs.roll_rarity())
 	var d: Dictionary = pool[randi() % pool.size()]
@@ -11349,13 +11684,15 @@ func _petgear_roll() -> bool:
 		gacha_shards[key] = sh
 	else:
 		sub = "이미 끝까지 컸다"
-	_show_reward(str(d["name"]),
-		[{"icon": "res://assets/ui/tab_codex.png",
-		"label": "%d성" % clampi(int(pet_gear_got.get(id, 0)), 0,
-			PetDefs.MAX_STAR), "sub": sub}])
-	_save_game()
-	_refresh_pet()
-	return true
+	var row := {"icon": "res://assets/ui/tab_codex.png",
+		"label": "%s  %d성" % [str(d["name"]),
+			clampi(int(pet_gear_got.get(id, 0)), 0, PetDefs.MAX_STAR)],
+		"sub": sub}
+	if show:
+		_show_reward(str(d["name"]), [row])
+		_save_game()
+		_refresh_pet()
+	return row
 
 
 # 먹이 강화 — 레벨 하나. 상한은 승급(별)이 연다.
@@ -11397,6 +11734,7 @@ func _pet_collect(id: String) -> void:
 	var amount := float(pet_bank.get(id, 0.0))
 	if amount < 1.0:
 		return
+	_quest_bump("pet")
 	var d := PetDefs.of(id)
 	pet_bank[id] = 0.0
 	_grant_reward(str(d["gain"]), amount)
@@ -11430,3 +11768,37 @@ func _pet_gear_value(pet_id: String, kind: String) -> float:
 		return 0.0
 	var star := clampi(int(pet_gear_got.get(gid, 0)), 1, PetDefs.MAX_STAR)
 	return float(g["value"]) * PetDefs.star_mult(star)
+
+
+# 10연 — 결과를 **한 창에 모아** 보여 준다. 한 번마다 창을 열면 열 번 닫아야 한다.
+func _pet_roll_many(n: int) -> void:
+	var rows: Array = []
+	for i in n:
+		if int(tickets.get("pet", 0)) < 1:
+			break
+		var r := _pet_roll(false)
+		if r.is_empty():
+			break
+		rows.append(r)
+	if rows.is_empty():
+		return
+	_show_reward("펫 소환 %d연" % rows.size(), rows)
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_pet()
+
+
+func _petgear_roll_many(n: int) -> void:
+	var rows: Array = []
+	for i in n:
+		if int(tickets.get("petgear", 0)) < 1:
+			break
+		var r := _petgear_roll(false)
+		if r.is_empty():
+			break
+		rows.append(r)
+	if rows.is_empty():
+		return
+	_show_reward("펫 장비 소환 %d연" % rows.size(), rows)
+	_save_game()
+	_refresh_pet()

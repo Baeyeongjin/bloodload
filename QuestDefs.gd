@@ -26,6 +26,8 @@ const QUESTS := [
 		"reward": "ticket_skill", "amount": 1, "icon": "quest_summon"},
 	{"id": "dungeon", "name": "미궁 1층 돌파", "need": 1,
 		"reward": "crystal", "amount": 20, "icon": "quest_maze"},
+	{"id": "pet", "name": "동행의 그릇 받기", "need": 1,
+		"reward": "ticket_pet", "amount": 1, "icon": "quest_login"},
 	{"id": "all", "name": "임무 4개 완료", "need": 4,
 		"reward": "ticket_armor", "amount": 2, "icon": "badge_mastery"},
 ]
@@ -50,6 +52,8 @@ const WEEKLY := [
 		"reward": "ticket_weapon", "amount": 5, "icon": "raid_blood"},
 	{"id": "wdaily", "kind": "daily", "name": "일일 임무 25개 받기", "need": 25,
 		"reward": "ticket_skill", "amount": 5, "icon": "badge_mastery"},
+	{"id": "wpet", "kind": "pet", "name": "동행의 그릇 12회", "need": 12,
+		"reward": "ticket_petgear", "amount": 3, "icon": "quest_login"},
 ]
 
 

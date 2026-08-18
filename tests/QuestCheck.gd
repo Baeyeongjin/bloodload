@@ -13,7 +13,7 @@ extends SceneTree
 # 소환권은 **TicketDefs 가 안다** — 종류가 늘어도 여기를 고칠 일이 없다.
 static func known_rewards() -> Array:
 	var out: Array = ["gem", "crystal", "sigil", "essence", "gold"]
-	for k in TicketDefs.KINDS:
+	for k in TicketDefs.KINDS + TicketDefs.PET_KINDS:
 		out.append(TicketDefs.reward_of(k))
 	return out
 
