@@ -11293,8 +11293,9 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 	for i in count:
 		var cx := x0 + float(i % 5) * span
 		var cy := float(i / 5) * span
-		pane.add_child(Ui.set_row(NEST, Vector2(cx, cy),
-			Vector2(PET_CELL, PET_CELL)))
+		var cell_frame := Ui.set_row(NEST, Vector2(cx, cy),
+			Vector2(PET_CELL, PET_CELL))
+		pane.add_child(cell_frame)
 		var art: Control = art_of.call(i)
 		if art != null:
 			art.position = Vector2(cx + (PET_CELL - art.size.x) * 0.5,
@@ -11310,14 +11311,15 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		mark.visible = false
 		var idx := i
-		var frame_art: Control = pane.get_child(pane.get_child_count()
-			- (3 if art != null else 2))    # 이 칸의 둥지 액자
+		# 호버는 **액자를 직접 잡는다.** 자식 순서로 세다가 표식 라벨이 끼면서
+		# 한 칸 밀려 펫 그림을 집었고, 호버가 끝날 때 그림의 실루엣 어둠을
+		# 흰색으로 되돌려 못 만난 펫이 드러났다(사장님 실측).
 		var btn := Ui.button("", Vector2(cx, cy), Vector2(PET_CELL, PET_CELL),
 			Type.SIZE_SMALL)
 		btn.modulate = Color(1, 1, 1, 0)
 		btn.pressed.connect(func() -> void: on_pick.call(idx))
 		pane.add_child(btn)
-		_pet_hover(btn, frame_art)
+		_pet_hover(btn, cell_frame)
 		cells.append({"art": art, "star": star, "mark": mark})
 
 
@@ -11515,7 +11517,18 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	else:
 		one["btn"].pressed.connect(func() -> void: _petgear_roll())
 		ten["btn"].pressed.connect(func() -> void: _petgear_roll_many(10))
-	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten}
+	# 보석 결제일 때 값 옆에 뜨는 재화 아이콘(사장님) — 글자만 있으면 무슨
+	# 재화인지 한 번 더 읽어야 한다.
+	var g1 := Ui.icon("res://assets/ui/res_gem.png",
+		Vector2(PAD + 24.0 + 42.0, PET_GRID_Y + 372.0 + 15.0), 22.0)
+	g1.visible = false
+	root.add_child(g1)
+	var g2 := Ui.icon("res://assets/ui/res_gem.png",
+		Vector2(PAD + CONTENT_W - 244.0 + 42.0, PET_GRID_Y + 372.0 + 15.0), 22.0)
+	g2.visible = false
+	root.add_child(g2)
+	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten,
+		"one_gem": g1, "ten_gem": g2}
 
 
 func _refresh_pet() -> void:
@@ -11662,8 +11675,10 @@ func _refresh_pet_roll() -> void:
 			else "%d구간에 열린다" % PetDefs.PET_OPEN
 		# 소환권이 없으면 보석 시세를 버튼에 적는다 — 안 적으면 "왜 눌리지"가 된다.
 		var by_gem := open and have < 1
-		ui["one"]["lbl"].text = "1회" if not by_gem 			else "1회  보석 %d" % int(GachaDefs.COST)
-		ui["ten"]["lbl"].text = "10연" if not by_gem 			else "10연  보석 %d" % int(GachaDefs.COST * 10.0)
+		ui["one"]["lbl"].text = "1회" if not by_gem 			else "1회 · %d" % int(GachaDefs.COST)
+		ui["ten"]["lbl"].text = "10연" if not by_gem 			else "10연 · %d" % int(GachaDefs.COST * 10.0)
+		ui["one_gem"].visible = by_gem
+		ui["ten_gem"].visible = by_gem
 		_pet_btn_enable(ui["one"], open and _pet_can_pay(kind))
 		_pet_btn_enable(ui["ten"], not ui["one"]["btn"].disabled)
 
