@@ -735,6 +735,17 @@ func _ready() -> void:
 		if arg == "--titles":
 			_codex_view.visible = true
 			_codex_set_mode("title")
+		# [개발 도구] --petroll[=N] : 펫권을 채우고 N연 공개 연출을 캡처한다.
+		if arg.begins_with("--petroll"):
+			best_stage = maxi(best_stage, PetDefs.PET_OPEN)
+			tickets["pet"] = 99
+			_select_tab("pet")
+			_pet_set_mode("roll")
+			var n := int(arg.trim_prefix("--petroll=")) if "=" in arg else 1
+			if n > 1:
+				_pet_roll_many(n)
+			else:
+				_pet_roll()
 		# [개발 도구] --petmode=own|gear|feed|roll|rollgear : 펫 소탭 캡처.
 		if arg.begins_with("--petmode="):
 			_select_tab("pet")
@@ -6399,6 +6410,7 @@ const QUEST_PANEL := Rect2(24.0, 150.0, 528.0, 560.0)
 # 쓰면 글자가 사라진다 — 판을 갈면 글자 색도 같이 갈아야 한다.
 const DUTY := "duty"
 const TOME := "tome"
+const NEST := "nest"      # 펫 탭 전용(나무판·밧줄·뼈)
 # **흰 글씨 + 검은 테두리**(사장님 2026-08-18). 짙은 갈색 잉크는 판과 대비가
 # 맞는데도 안 읽혔다 — 11px 도트 폰트는 획이 얇아서 색 대비만으로는 부족하고,
 # 검은 테두리가 글자를 배경에서 떼어 내야 보인다. 판이 밝든 어둡든 같은 규칙이다.
@@ -11111,7 +11123,7 @@ func _codex_set_mode(mode: String) -> void:
 # 펫 전면 판 — 달의 제단 문법 (PET_DESIGN v2 2단계, 사장님 2026-08-18).
 #
 # 소탭 다섯: 보유·장비·강화·소환·장비소환. 헤더 그림과 소탭 세트는 전부
-# **자리표시**다(점성소 헤더 + 가죽책 세트) — 아트 배치에서 전용으로 교체한다.
+# 전용이다: 둥지 헤더(head_pet) + 둥지 세트(nest_*, 2026-08-18 아트 배치).
 # 연출(소환 애니·강화 이펙트)은 5단계다. 여기는 다섯 판이 실제로 도는 것까지.
 const PET_TABS := [["own", "보유"], ["gear", "장비"], ["feed", "강화"],
 	["roll", "펫 소환"], ["rollgear", "장비 소환"]]
@@ -11136,7 +11148,7 @@ var _pet_roll_ui := {}
 # 세트 그림 버튼 — 가죽 줄 + 글자 + 투명 판정 (상점 문법).
 func _pet_btn(parent: Control, pos: Vector2, size: Vector2,
 		text: String) -> Dictionary:
-	parent.add_child(Ui.set_row(TOME, pos, size))
+	parent.add_child(Ui.set_row(NEST, pos, size))
 	var l := _panel_label(parent, Vector2(pos.x, pos.y + size.y * 0.5 - 10.0),
 		Type.SIZE_SMALL, Color(0.96, 0.92, 0.88), size.x, 20.0)
 	l.text = text
@@ -11175,8 +11187,8 @@ func _build_pet(root: Control) -> void:
 	for i in PET_TABS.size():
 		var mode := str(PET_TABS[i][0])
 		var tp := Vector2(PAD + float(i) * (tw + 8.0), 232.0)
-		var off := Ui.set_tab(TOME, false, tp, Vector2(tw, 36.0))
-		var on := Ui.set_tab(TOME, true, tp, Vector2(tw, 36.0))
+		var off := Ui.set_tab(NEST, false, tp, Vector2(tw, 36.0))
+		var on := Ui.set_tab(NEST, true, tp, Vector2(tw, 36.0))
 		root.add_child(off)
 		root.add_child(on)
 		var tl := _panel_label(root, Vector2(tp.x, 241.0), Type.SIZE_SMALL,
@@ -11199,6 +11211,10 @@ func _build_pet(root: Control) -> void:
 	_pet_build_feed(_pet_roots["feed"])
 	_pet_build_roll(_pet_roots["roll"], "pet")
 	_pet_build_roll(_pet_roots["rollgear"], "petgear")
+	_pet_reveal = Control.new()
+	_pet_reveal.visible = false
+	_pet_reveal.z_index = 5
+	root.add_child(_pet_reveal)
 	_pet_set_mode("own")
 
 
@@ -11229,7 +11245,7 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 	for i in count:
 		var cx := x0 + float(i % 5) * span
 		var cy := float(i / 5) * span
-		pane.add_child(Ui.set_row(TOME, Vector2(cx, cy),
+		pane.add_child(Ui.set_row(NEST, Vector2(cx, cy),
 			Vector2(PET_CELL, PET_CELL)))
 		var art: Control = art_of.call(i)
 		if art != null:
@@ -11273,7 +11289,7 @@ func _pet_build_own(root: Control) -> void:
 			_pet_sel = str(PetDefs.PETS[i]["id"])
 			_refresh_pet(),
 		_pet_art)
-	root.add_child(Ui.set_card(TOME, Vector2(PAD, PET_DETAIL_Y),
+	root.add_child(Ui.set_card(NEST, Vector2(PAD, PET_DETAIL_Y),
 		Vector2(CONTENT_W, 156.0)))
 	_pet_detail["name"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 14.0),
 		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W - 240.0, 22.0)
@@ -11317,7 +11333,7 @@ func _pet_build_gear(root: Control) -> void:
 			_petgear_sel = str(PetDefs.GEAR[i]["id"])
 			_refresh_pet(),
 		_petgear_art)
-	root.add_child(Ui.set_card(TOME, Vector2(PAD, PET_DETAIL_Y),
+	root.add_child(Ui.set_card(NEST, Vector2(PAD, PET_DETAIL_Y),
 		Vector2(CONTENT_W, 156.0)))
 	_petgear_detail["name"] = _panel_label(root,
 		Vector2(PAD + 18.0, PET_DETAIL_Y + 14.0), Type.SIZE_MID,
@@ -11341,7 +11357,7 @@ func _pet_build_gear(root: Control) -> void:
 
 
 func _pet_build_feed(root: Control) -> void:
-	root.add_child(Ui.set_body(TOME, Vector2(PAD, PET_GRID_Y),
+	root.add_child(Ui.set_body(NEST, Vector2(PAD, PET_GRID_Y),
 		Vector2(CONTENT_W, 404.0)))
 	var art := TextureRect.new()
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -11393,7 +11409,7 @@ func _pet_build_feed(root: Control) -> void:
 
 # 소환 판 — 펫권(kind="pet")과 장비권(kind="petgear")이 같은 문법을 쓴다.
 func _pet_build_roll(root: Control, kind: String) -> void:
-	root.add_child(Ui.set_body(TOME, Vector2(PAD, PET_GRID_Y),
+	root.add_child(Ui.set_body(NEST, Vector2(PAD, PET_GRID_Y),
 		Vector2(CONTENT_W, 300.0)))
 	var big := Ui.icon("res://assets/ui/tab_codex.png",
 		Vector2(PAD + (CONTENT_W - 72.0) * 0.5, PET_GRID_Y + 36.0), 72.0)
@@ -11424,7 +11440,7 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 소환권 잔량 알약.
 	var pp := Vector2(PAD + (CONTENT_W - 180.0) * 0.5, PET_GRID_Y + 320.0)
-	root.add_child(Ui.set_pill(TOME, pp, Vector2(180.0, 34.0)))
+	root.add_child(Ui.set_pill(NEST, pp, Vector2(180.0, 34.0)))
 	root.add_child(Ui.icon(TicketDefs.icon_of(kind), pp + Vector2(20.0, 7.0), 20.0))
 	var cnt := _panel_label(root, Vector2(pp.x + 48.0, pp.y + 8.0),
 		Type.SIZE_SMALL, Color(0.96, 0.92, 0.88), 120.0, 18.0)
@@ -11633,7 +11649,7 @@ func _pet_roll(show := true) -> Dictionary:
 		pet_bank[id] = 0.0
 		if pet_worn == "":
 			pet_worn = id          # 첫 펫은 자동으로 데리고 다닌다
-		sub = str(d["desc"])
+		sub = "새 동행"
 	elif star < PetDefs.MAX_STAR:
 		# 중복은 조각, 조각이 차면 승급 — 빈손으로 돌려보내지 않는다.
 		var key := "pet:" + id
@@ -11647,10 +11663,10 @@ func _pet_roll(show := true) -> Dictionary:
 		gacha_shards[key] = sh
 	else:
 		sub = "이미 끝까지 컸다"
-	var row := {"icon": "res://assets/ui/tab_codex.png",
-		"label": "%s  %d성" % [str(d["name"]), _pet_star(id)], "sub": sub}
+	var row := {"pet": true, "id": id, "name": str(d["name"]),
+		"rarity": str(d["rarity"]), "star": _pet_star(id), "sub": sub}
 	if show:
-		_show_reward(str(d["name"]), [row])
+		_show_pet_results([row])
 		_refresh_currency_visibility()
 		_save_game()
 		_refresh_pet()
@@ -11669,7 +11685,7 @@ func _petgear_roll(show := true) -> Dictionary:
 	var sub := ""
 	if star <= 0:
 		pet_gear_got[id] = 1
-		sub = "수집 +%d%%" % int(float(d["value"]) * 100.0) 			if str(d["kind"]) == "gather" 			else "버프 증폭 +%d%%" % int(float(d["value"]) * 100.0)
+		sub = "새 장비"
 	elif star < PetDefs.MAX_STAR:
 		var key := "petgear:" + id
 		var sh := int(gacha_shards.get(key, 0)) + 1
@@ -11682,12 +11698,12 @@ func _petgear_roll(show := true) -> Dictionary:
 		gacha_shards[key] = sh
 	else:
 		sub = "이미 끝까지 컸다"
-	var row := {"icon": "res://assets/ui/tab_codex.png",
-		"label": "%s  %d성" % [str(d["name"]),
-			clampi(int(pet_gear_got.get(id, 0)), 0, PetDefs.MAX_STAR)],
+	var row := {"pet": false, "id": id, "name": str(d["name"]),
+		"rarity": str(d["rarity"]),
+		"star": clampi(int(pet_gear_got.get(id, 0)), 0, PetDefs.MAX_STAR),
 		"sub": sub}
 	if show:
-		_show_reward(str(d["name"]), [row])
+		_show_pet_results([row])
 		_save_game()
 		_refresh_pet()
 	return row
@@ -11706,6 +11722,7 @@ func _pet_feed(id: String) -> bool:
 		return false
 	feed -= cost
 	pet_lv[id] = lv + 1
+	_pet_feed_fx(lv + 1)
 	_save_game()
 	_refresh_pet()
 	return true
@@ -11780,7 +11797,7 @@ func _pet_roll_many(n: int) -> void:
 		rows.append(r)
 	if rows.is_empty():
 		return
-	_show_reward("펫 소환 %d연" % rows.size(), rows)
+	_show_pet_results(rows)
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_pet()
@@ -11797,6 +11814,111 @@ func _petgear_roll_many(n: int) -> void:
 		rows.append(r)
 	if rows.is_empty():
 		return
-	_show_reward("펫 장비 소환 %d연" % rows.size(), rows)
+	_show_pet_results(rows)
 	_save_game()
 	_refresh_pet()
+
+
+# ── 펫 소환 공개 연출 (5단계, "실감나게") ──────────────────────────────────
+#
+# 소환 탭의 _show_gacha_results 문법을 그대로 따른다: 어둠막 + 카드 + 등급 글로
+# + 순서대로 튀어나오는 트윈. 다른 점 하나 — 펫은 그림이 애니 첫 프레임이고,
+# 새 펫 / 조각 / 승급이 부제로 갈린다.
+var _pet_reveal: Control
+
+
+func _show_pet_results(rows: Array) -> void:
+	if _pet_reveal == null or not is_inside_tree():
+		return
+	for child in _pet_reveal.get_children():
+		child.queue_free()
+	_pet_reveal.visible = true
+	var shade := ColorRect.new()
+	shade.color = Color(0.015, 0.01, 0.025, 0.94)
+	shade.size = Vector2(PANEL_W, PANEL_FULL_H)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_pet_reveal.add_child(shade)
+	var title := _panel_label(_pet_reveal, Vector2(PAD, 20.0), Type.SIZE_MID,
+		Color(0.96, 0.84, 0.58), CONTENT_W, 28.0)
+	title.text = "소환 결과" if rows.size() > 1 else "새 동행" \
+		if int(rows[0].get("star", 0)) <= 1 else "다시 만났다"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var cards: Array[Control] = []
+	for i in rows.size():
+		var row: Dictionary = rows[i]
+		var one := rows.size() == 1
+		var card := Control.new()
+		card.position = Vector2(232.0, 120.0) if one else \
+			Vector2(48.0 + float(i % 5) * 100.0, 90.0 + float(i / 5) * 150.0)
+		card.size = Vector2(112.0, 160.0) if one else Vector2(80.0, 120.0)
+		_pet_reveal.add_child(card)
+		var rar := GachaDefs.rarity(str(row["rarity"]))
+		var icon_path: String = ("res://assets/anim/pet_%s_idle/0.png" \
+			if bool(row["pet"]) else "res://assets/items/petw_%s.png") \
+			% str(row["id"])
+		var box := 56.0 if one else 48.0
+		var art_at := Vector2(28.0, 30.0) if one else Vector2(16.0, 18.0)
+		var glow := ColorRect.new()
+		glow.position = art_at
+		glow.size = Vector2(box, box)
+		glow.color = Color(rar["col"], 0.30)
+		glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(glow)
+		card.add_child(Ui.image("res://assets/ui/gear_card.png" if one \
+			else "res://assets/ui/gear_card_small.png", Vector2.ZERO,
+			Vector2(112.0, 128.0) if one else Vector2(80.0, 96.0)))
+		card.add_child(Ui.icon(icon_path, art_at, box))
+		_add_summon_rarity_fx(card, rar,
+			"res://assets/ui/gear_card.png" if one \
+			else "res://assets/ui/gear_card_small.png", Vector2.ZERO,
+			Vector2(112.0, 128.0) if one else Vector2(80.0, 96.0))
+		var nm := _panel_label(card, Vector2(-14.0 if one else -10.0,
+			132.0 if one else 96.0), Type.SIZE_SMALL, Color(rar["col"]),
+			140.0 if one else 100.0, 18.0)
+		nm.text = "%s %d성" % [str(row["name"]), int(row["star"])]
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var sb := _panel_label(card, Vector2(-14.0 if one else -10.0,
+			152.0 if one else 114.0), Type.SIZE_SMALL,
+			Color(0.72, 0.70, 0.74), 140.0 if one else 100.0, 16.0)
+		sb.text = str(row["sub"])
+		sb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cards.append(card)
+	var ok := Ui.button("확인", Vector2(PAD + CONTENT_W * 0.5 - 125.0,
+		FULL_BOTTOM - 60.0), Vector2(250.0, 50.0), Type.SIZE_SMALL)
+	ok.pressed.connect(func() -> void: _pet_reveal.visible = false)
+	_pet_reveal.add_child(ok)
+	# 순서대로 튀어나온다 — 열 장이 한꺼번에 뜨면 열 장이 아니라 한 장으로 읽힌다.
+	var tween := create_tween()
+	for card in cards:
+		card.modulate.a = 0.0
+		card.scale = Vector2(0.6, 0.6)
+		card.pivot_offset = card.size * 0.5
+		tween.tween_property(card, "modulate:a", 1.0, 0.07)
+		tween.parallel().tween_property(card, "scale", Vector2.ONE, 0.12) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+# 강화 성공 — 펫이 튀어 오르고 금빛으로 번쩍이며 "+N레벨" 이 떠오른다.
+# 숫자만 바뀌면 강화가 "된 건가?" 로 읽힌다(사장님: 실감나게).
+func _pet_feed_fx(new_lv: int) -> void:
+	if _pet_feed_ui.is_empty() or not is_inside_tree():
+		return
+	var art: TextureRect = _pet_feed_ui["art"]
+	if art == null or not art.visible:
+		return
+	art.pivot_offset = art.size * 0.5
+	art.modulate = Color(1.6, 1.35, 0.7)
+	art.scale = Vector2(1.25, 1.25)
+	var tw := create_tween().set_parallel()
+	tw.tween_property(art, "modulate", Color(1, 1, 1), 0.35)
+	tw.tween_property(art, "scale", Vector2.ONE, 0.3) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var pop := _panel_label(_pet_roots["feed"],
+		Vector2(PAD, PET_GRID_Y + 96.0), Type.SIZE_MID,
+		Color(0.98, 0.86, 0.46), CONTENT_W, 24.0)
+	pop.text = "+%d레벨" % new_lv
+	pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var tw2 := create_tween().set_parallel()
+	tw2.tween_property(pop, "position:y", pop.position.y - 28.0, 0.6)
+	tw2.tween_property(pop, "modulate:a", 0.0, 0.6).set_delay(0.15)
+	tw2.chain().tween_callback(pop.queue_free)

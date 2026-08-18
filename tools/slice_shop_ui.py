@@ -78,6 +78,10 @@ SET_SHEETS = {
 SHEET5 = {
     "duty": ["body", "band", "card", "pill", "tab_on", "tab_off"],
     "tome": ["body", "band", "card", "pill", "tab_on", "tab_off"],
+    # 둥지(펫 탭, 2026-08-18) — 5행 1/1/4/1/1. 행2가 [card, tab_on, tab_off,
+    # pill] 이고 행3 작은 알약, 행4 원형 배지는 지금 안 쓴다(여분).
+    "nest": ["body", "band", "card", "tab_on", "tab_off", "pill",
+             "pill2", "badge"],
 }
 
 
