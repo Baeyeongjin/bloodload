@@ -345,11 +345,11 @@ var codex_knowledge := 0
 # 따로 안 둔다(LoreDefs).
 var gear_seen := {}
 var _codex_view: Control
+var _codex_gain: Label
 var _codex_roots := {}
 var _codex_tab_art := {}
 var _codex_mode := "foe"
 var _lore_cells := {}         # "gear"/"skill" -> [{"ico","dim"}...]
-var _lore_note := {}          # 소탭별 "몇 종 · 다음 이정표" 한 줄
 var _act_rows: Array[Dictionary] = []
 # 트랙 kind -> 지금까지 깬 단계 수. 가이드는 여기서 "다음 목표"를 계산한다.
 # 지금까지 깬 가이드 수 = 지금 도전 중인 가이드의 번호(0부터). 가이드가 한 줄로
@@ -4666,7 +4666,7 @@ const CODEX_HEAD_H := 24.0        # 맨 위 종수 보상 한 줄
 const CODEX_LIST_W := 156.0       # 칸 글자폭 74px — "999.9t"(72) 가 들어가는 최소값
 const CODEX_ROW_H := 62.0
 const CODEX_BIG := 72.0           # 상세의 큰 그림
-const CODEX_TAB_Y := 54.0         # 머리글 아래 소탭 줄
+const CODEX_TAB_Y := 58.0         # 머리 두 줄 아래 소탭 줄
 # 격자 열 수. **8 로 두면 pane(454)을 66px 넘겨** 중앙 정렬이 음수가 되고
 # 격자가 왼쪽으로 밀린다(실측 캡처). 스크롤바가 24px 라 생각보다 좁다.
 const LORE_COLS := 6
@@ -4727,26 +4727,26 @@ func _build_codex(root: Control) -> void:
 	# 지식 합계는 몹 하나가 아니라 도감 전체에 걸린 값이라 맨 위 한 줄에 둔다.
 	# 오른쪽 버튼은 그 합계가 실제로 무슨 능력치가 됐는지 펼쳐 본다.
 	# 칭호가 빠져 버튼이 하나(능력치)다 — 머리글이 그만큼 넓어졌다.
-	_codex_summary = _panel_label(root, Vector2(PAD, PAD), Type.SIZE_SMALL,
-		Color(0.82, 0.88, 0.72), CODEX_W - 230.0, CODEX_HEAD_H)
-	_codex_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# 도감은 **기록과 지식**을 다루는 곳이라 점성소 세트를 쓴다(사장님 2026-08-14:
-	# 탭마다 결을 맞춘다) — 소환 탭의 스킬·유물과 같은 별판이다.
-	var sbx := Vector2(PAD + CODEX_W - 202.0, PAD - 10.0)
-	# **가죽책 세트로.** 점성소(보라) 버튼을 쓰고 있어서 도감만 다른 게임처럼
-	# 보였다(사장님: 테마 통일).
-	root.add_child(Ui.set_row(TOME, sbx, Vector2(100.0, 36.0)))
-	var slbl := _panel_label(root, Vector2(sbx.x, sbx.y + 10.0), Type.SIZE_SMALL,
-		Color(0.96, 0.92, 0.88), 100.0, 20.0)
-	slbl.text = "능력치"
-	slbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var status_btn := Ui.button("", sbx, Vector2(100.0, 36.0), Type.SIZE_SMALL)
-	status_btn.modulate = Color(1, 1, 1, 0)
-	root.add_child(status_btn)
-	status_btn.pressed.connect(func() -> void:
+	# ── 머리 두 줄 ── 위: 얼마나 모았나. 아래: **그래서 지금 뭘 받고 있나**.
+	# 소탭마다 같은 자리에 같은 형식으로 적는다(사장님 2026-08-18) — 예전에는
+	# 몬스터 전용 "능력치" 버튼 하나가 오른쪽에 떠 있어서, 다른 소탭에서는
+	# 자리도 안 맞고 그 소탭이 주는 것도 알 수 없었다.
+	_codex_summary = _panel_label(root, Vector2(PAD, 12.0), Type.SIZE_SMALL,
+		Color(0.90, 0.86, 0.84), CODEX_W - 120.0, 18.0)
+	_codex_gain = _panel_label(root, Vector2(PAD, 32.0), Type.SIZE_SMALL,
+		Color(0.98, 0.82, 0.46), CODEX_W - 120.0, 18.0)
+	# 몬스터 소탭만 상세 창이 따로 있다(지식이 무슨 능력치가 됐는지 7줄).
+	# 머리줄을 누르면 열린다 — 버튼 하나를 덜 세운다.
+	var head_btn := Ui.button("", Vector2(PAD, 10.0),
+		Vector2(CODEX_W - 120.0, 42.0), Type.SIZE_SMALL)
+	head_btn.modulate = Color(1, 1, 1, 0)
+	head_btn.pressed.connect(func() -> void:
+		if _codex_mode != "foe":
+			return
 		_status_view.visible = not _status_view.visible
 		if _status_view.visible:
 			_refresh_status())
+	root.add_child(head_btn)
 	# **칭호는 여기서 뺐다** (사장님 2026-08-12): 능력치는 도감의 결산이지만
 	# 칭호는 완전히 다른 계열(본편 돌파·미궁 층·스킬 종수)이라 같은 줄에 두면
 	# 도감 첫 화면이 세 갈래로 갈린다. 임무판처럼 **전투 화면 오른쪽 버튼**으로
@@ -4879,7 +4879,6 @@ func _tick_income() -> void:
 # ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
 var title_worn := ""        # 장착 칭호 id — 겉멋이다. 효과는 딴 것 전부에서 온다
 var _lbl_worn: Label
-var _title_head: Label
 var _title_ms: Label
 var _title_names: Array[Label] = []
 var _title_conds: Array[Label] = []
@@ -4902,13 +4901,10 @@ const TITLE_ROW_W := 484.0 - 16.0 - CODEX_BAR_W
 func _title_build(root: Control) -> void:
 	var tx := PAD
 	var tw := CODEX_W
-	_title_head = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 40.0),
-		Type.SIZE_BODY, Color(0.92, 0.82, 0.62), tw, 26.0)
-	# 이정표 줄 — 머리글(SIZE_BODY)에 붙였더니 "칭호 0 / 12 · "에서 잘렸다(실측).
-	# 한 줄 내리고 작은 글씨로 둔다.
-	_title_ms = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 70.0),
+	# 칭호 수는 머리 두 줄이 적는다 — 여기는 이정표(다음 뭉치)만 남긴다.
+	_title_ms = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 42.0),
 		Type.SIZE_SMALL, Color(0.72, 0.72, 0.80), tw, 18.0)
-	var sy := CODEX_TAB_Y + 94.0
+	var sy := CODEX_TAB_Y + 66.0
 	var sc := _codex_thin_bar(Ui.scroll(Vector2(tx, sy),
 		Vector2(CODEX_W - 16.0, CODEX_BOTTOM - sy)))
 	root.add_child(sc)
@@ -4956,7 +4952,6 @@ func _refresh_titles() -> void:
 	var state := _title_state()
 	# 긴 설명("조건 둘을 채우면 스스로 딴다")은 SIZE_BODY 폭에서 잘렸다(실측) —
 	# 줄마다 ✓/─ 가 이미 그 규칙을 보여 준다.
-	_title_head.text = "칭호 %d / %d" % [titles_got.size(), TitleDefs.TITLES.size()]
 	# **다음 이정표**를 한 줄로 — 칭호는 조건이 제각각이라 하나씩 보면 순서가
 	# 안 보이는데, "몇 개 더 모으면 무엇"이 그 줄을 세워 준다.
 	_title_ms.text = "모두 모았다"
@@ -5150,7 +5145,6 @@ func _refresh_codex() -> void:
 		if int(r["need"]) > codex_knowledge:
 			parts.append("다음 %d" % (int(r["need"]) - codex_knowledge))
 			break
-	_codex_summary.text = " · ".join(parts)
 	_refresh_codex_detail()
 	_refresh_status()
 
@@ -10862,12 +10856,11 @@ func _dev_god(want: int) -> void:
 # 스크롤해야 해서 "얼마나 모았나"가 한눈에 안 들어온다 — 수집판의 값은
 # 빈 칸이 보이는 데 있다.
 func _lore_build(root: Control, kind: String) -> void:
-	var note := _panel_label(root, Vector2(PAD, CODEX_TAB_Y + 40.0),
-		Type.SIZE_SMALL, Color(0.82, 0.88, 0.72), CODEX_W, 18.0)
-	_lore_note[kind] = note
+	# 요약은 머리 두 줄이 쥔다(_codex_head_text) — 여기 또 적으면 두 곳이
+	# 같은 값을 따로 세다가 하나가 낡는다.
 	# **스크롤에 넣는다.** 장비는 72칸이라 9줄이고, 반판 높이(358)로는 4줄만
 	# 들어간다 — 그냥 깔면 나머지가 판 밖으로 넘어간다(실측 캡처).
-	var y0 := CODEX_TAB_Y + 64.0
+	var y0 := CODEX_TAB_Y + 46.0
 	var span := LORE_CELL + LORE_GAP
 	var keys := _lore_keys(kind)
 	var rows := int(ceil(float(keys.size()) / float(LORE_COLS)))
@@ -10936,17 +10929,13 @@ func _refresh_lore(kind: String) -> void:
 		# 못 얻은 칸은 **까맣게 눌러 실루엣만** 남긴다 — 빈 칸이 보여야 모으고 싶다.
 		cells[i].modulate = Color(1, 1, 1, 1) if got \
 			else Color(0.10, 0.09, 0.11, 0.85)
-	var got := _lore_got(kind)
-	var marks: Array = LoreDefs.SKILL_MARKS if kind == "skill" \
-		else LoreDefs.GEAR_MARKS
-	var left := LoreDefs.to_next(marks, got)
-	_lore_note[kind].text = "%d / %d 종%s" % [got, keys.size(),
-		"" if left <= 0 else "  ·  다음 이정표까지 %d종" % left]
+	# 종수·이정표·받는 것은 머리 두 줄이 쥔다(_codex_head_text) — 두 곳이
+	# 같은 값을 따로 세면 하나는 반드시 낡는다.
 
 
 # 연대기 — 막마다 한 줄. **밟은 막만 읽힌다**(기록이지 수집이 아니다).
 func _act_build(root: Control) -> void:
-	var y0 := CODEX_TAB_Y + 44.0
+	var y0 := CODEX_TAB_Y + 46.0
 	for i in StageDefs.ACTS.size():
 		var ry := y0 + float(i) * 84.0
 		root.add_child(Ui.set_card(TOME, Vector2(PAD, ry),
@@ -10977,6 +10966,62 @@ func _refresh_act() -> void:
 			else "아직 발을 들이지 않았다"
 
 
+
+# 머리 두 줄을 소탭에 맞춰 채운다. **여기가 "이 도감이 뭘 주나"의 단일 출처다** —
+# 소탭마다 다른 표를 보므로, 한 곳에 모아 두지 않으면 어느 소탭은 조용히 빈다.
+func _codex_head_text(mode: String) -> Array:
+	match mode:
+		"foe":
+			var parts := PackedStringArray()
+			parts.append("도감 %d / %d" % [codex_found, FoeTiers.all_keys().size()])
+			parts.append("지식 %d" % codex_knowledge)
+			for r in FoeTiers.CODEX_REWARDS:
+				if codex_knowledge < int(r["need"]):
+					parts.append("다음 %d" % (int(r["need"]) - codex_knowledge))
+					break
+			return [" · ".join(parts), _gain_text(
+				FoeTiers.codex_bonus(codex_knowledge, "damage"),
+				FoeTiers.codex_bonus(codex_knowledge, "hp"),
+				FoeTiers.codex_bonus(codex_knowledge, "gold"))]
+		"gear", "skill":
+			var marks: Array = LoreDefs.SKILL_MARKS if mode == "skill" 				else LoreDefs.GEAR_MARKS
+			var got := _lore_got(mode)
+			var total := _lore_keys(mode).size()
+			var left := LoreDefs.to_next(marks, got)
+			var head := "%s %d / %d 종" % ["스킬" if mode == "skill" else "장비",
+				got, total]
+			if left > 0:
+				head += "  ·  다음 이정표까지 %d종" % left
+			return [head, _gain_text(LoreDefs.bonus(marks, got, "damage"),
+				LoreDefs.bonus(marks, got, "hp"),
+				LoreDefs.bonus(marks, got, "gold"))]
+		"title":
+			# 칭호는 배율이 아니라 **훈련 공짜 레벨**을 준다(TitleDefs).
+			var lv := 0
+			for t in TitleDefs.TITLES:
+				if titles_got.has(str(t["id"])):
+					lv += int(t.get("amount", 0))
+			return ["칭호 %d / %d" % [titles_got.size(), TitleDefs.TITLES.size()],
+				"지금 받는 것: 훈련 +%d레벨" % lv if lv > 0 else "아직 딴 칭호가 없다"]
+		"act":
+			var reached := StageDefs.act_of(best_stage)
+			return ["연대기 %d / %d 막" % [reached + 1, StageDefs.ACTS.size()],
+				_gain_text(LoreDefs.act_bonus(reached, "damage"),
+					LoreDefs.act_bonus(reached, "hp"), 0.0)]
+	return ["", ""]
+
+
+# "지금 받는 것: 공격 +12% · 체력 +8%" — 0 인 항목은 안 적는다(빈 줄이 낫다).
+func _gain_text(dmg: float, hp: float, gold: float) -> String:
+	var parts := PackedStringArray()
+	if dmg > 0.0:
+		parts.append("공격 +%d%%" % int(round(dmg * 100.0)))
+	if hp > 0.0:
+		parts.append("체력 +%d%%" % int(round(hp * 100.0)))
+	if gold > 0.0:
+		parts.append("흡혈 +%d%%" % int(round(gold * 100.0)))
+	return "아직 받는 게 없다" if parts.is_empty() 		else "지금 받는 것: " + " · ".join(parts)
+
 func _codex_set_mode(mode: String) -> void:
 	_codex_mode = mode
 	for key in _codex_roots:
@@ -10986,8 +11031,9 @@ func _codex_set_mode(mode: String) -> void:
 		art["on"].visible = key == mode
 		art["lbl"].add_theme_color_override("font_color",
 			Color(0.98, 0.86, 0.56) if key == mode else Color(0.72, 0.70, 0.68))
-	# 머리글은 몬스터 도감의 결산이라 그 소탭에서만 뜻이 있다.
-	_codex_summary.visible = mode == "foe"
+	var ht := _codex_head_text(mode)
+	_codex_summary.text = str(ht[0])
+	_codex_gain.text = str(ht[1])
 	if mode == "foe":
 		_refresh_codex()
 	elif mode == "title":

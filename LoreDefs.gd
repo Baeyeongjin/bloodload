@@ -31,8 +31,12 @@ const SKILL_MARKS := [
 ]
 
 # 연대기는 막을 **밟기만 하면** 열린다 — 기록이지 수집이 아니다.
-# 한 줄씩 붙는 이야기가 보상이고, 능력치는 안 준다(읽을거리에 배율을 붙이면
-# 안 읽는 사람이 손해를 본다).
+#
+# 막마다 작은 영구 보너스를 준다(사장님 2026-08-18: 소탭마다 무엇을 주는지
+# 보여야 한다). **밟으면 자동이라 읽지 않아도 받는다** — 읽을거리에 조건을
+# 걸면 안 읽는 사람이 벌을 받는다. 값이 작은 건 다섯 막뿐이라서다.
+const ACT_RATE := 0.02        # 막 하나당 공격
+const ACT_HP_RATE := 0.02     # 막 하나당 체력
 const CHRONICLE := [
 	"무덤이 먼저 깨어났다. 흙을 밀고 나온 것들은 아직 제 이름을 기억했다.",
 	"언덕은 오래 탔다. 재 아래에서 뿔이 자라고, 불은 주인을 골랐다.",
@@ -75,6 +79,16 @@ static func to_next(marks: Array, got: int) -> int:
 		if got < int(m["need"]):
 			return int(m["need"]) - got
 	return 0
+
+
+# 밟은 막 수가 주는 몫. reached 는 0-기반 막 번호다(StageDefs.act_of).
+static func act_bonus(reached: int, stat: String) -> float:
+	var n := clampi(reached + 1, 0, CHRONICLE.size())
+	if stat == "damage":
+		return ACT_RATE * float(n)
+	if stat == "hp":
+		return ACT_HP_RATE * float(n)
+	return 0.0
 
 
 static func act_text(index: int) -> String:
