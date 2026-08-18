@@ -883,8 +883,12 @@ func _ready() -> void:
 		if arg.begins_with("--pass"):
 			var pw := int(arg.trim_prefix("--pass=")) if "=" in arg else 8
 			pass_points = pw * PassDefs.STEP_POINT
+			# 받음·받을 수 있음·잠김이 한 판에 다 보이게(--traits 와 같은 규칙).
+			for i2 in range(1, mini(4, pw + 1)):
+				pass_free_got[i2] = true
 			_select_tab("shop")
 			_shop_set_mode("pass")
+			_refresh_pass()
 		# [개발 도구] --detail=essence : 던전 상세 판을 연 채로 캡처한다.
 		if arg.begins_with("--detail="):
 			_select_tab("raid")
@@ -7000,6 +7004,13 @@ func _build_shop_pass(view: Control) -> void:
 				band.size = Vector2(cw + 12.0, 50.0)
 				band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				view.add_child(band)
+			# 상태 띠 — 받은 칸(초록)·받을 수 있는 칸(금빛)을 색으로 가른다.
+			var st := ColorRect.new()
+			st.position = Vector2(cx - 6.0, y)
+			st.size = Vector2(cw + 12.0, 50.0)
+			st.visible = false
+			st.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.add_child(st)
 			var ic := Ui.icon("", Vector2(cx + 16.0, y + 13.0), 24.0)
 			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			view.add_child(ic)
@@ -7010,6 +7021,7 @@ func _build_shop_pass(view: Control) -> void:
 			b.position = Vector2(cx, y)
 			var step := i
 			b.pressed.connect(func() -> void: _claim_pass(step, paid))
+			row["band_paid" if paid else "band_free"] = st
 			row["icon_paid" if paid else "icon_free"] = ic
 			row["lbl_paid" if paid else "lbl_free"] = tx
 			row["btn_paid" if paid else "btn_free"] = b
@@ -7040,12 +7052,26 @@ func _refresh_pass() -> void:
 			var lbl: Label = row["lbl_" + key]
 			var b: Button = row["btn_" + key]
 			ic.texture = Assets.tex(_shop_kind_icon(str(r["kind"])))
-			lbl.text = "받음" if got.has(i) else _n(float(r["amount"]))
-			# 잠긴 칸은 어둡게 — 유료 줄은 패스를 사야 열린다.
-			var live: bool = open and not got.has(i) and (active or not paid)
+			var claimed := got.has(i)
+			lbl.text = "받음" if claimed else _n(float(r["amount"]))
+			var live: bool = open and not claimed and (active or not paid)
 			b.disabled = not live
-			ic.modulate = Color(1, 1, 1) if live else Color(0.45, 0.43, 0.48)
-			lbl.modulate = ic.modulate
+			# 세 상태를 색으로 가른다(사장님: 받은 건지 못 받은 건지 헷갈린다) —
+			# 받음 = 초록 띠·초록 글씨, 받을 수 있음 = 금빛 띠·밝은 글씨,
+			# 잠김 = 띠 없이 회색. "받음" 글씨만으론 잠김과 같은 회색이었다.
+			var st: ColorRect = row["band_" + key]
+			st.visible = claimed or live
+			if claimed:
+				st.color = Color(0.30, 0.52, 0.34, 0.26)
+				ic.modulate = Color(0.55, 0.62, 0.56)
+				lbl.modulate = Color(0.62, 0.95, 0.68)
+			elif live:
+				st.color = Color(0.92, 0.70, 0.30, 0.16)
+				ic.modulate = Color(1, 1, 1)
+				lbl.modulate = Color(1.0, 0.94, 0.72)
+			else:
+				ic.modulate = Color(0.45, 0.43, 0.48)
+				lbl.modulate = ic.modulate
 			can_any = can_any or live
 	_pass_all_btn.disabled = not can_any
 
