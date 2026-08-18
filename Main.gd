@@ -490,7 +490,9 @@ var _confirm_body: Label
 var _confirm_action := Callable()
 var _reward_view: Control
 var _reward_title: Label
-var _reward_row: HBoxContainer
+var _reward_row: Control
+var _reward_panel: NinePatchRect
+var _reward_hint: Label
 var _offline_t := 0.0
 var _visual_hitstop_t := 0.0
 var _combat_shake: Tween
@@ -1598,7 +1600,8 @@ func _build_dialogs() -> void:
 	# **창 높이를 칸에서 뽑는다.** 176 으로 박아 뒀더니 아이콘을 키우는 순간 글자가
 	# 창 밖으로 흘러 아래 성장 창 위에 찍혔다(사장님 지적).
 	var reward_h := 56.0 + REWARD_CELL.y + 16.0
-	_reward_view.add_child(Ui.panel(Vector2(48.0, 320.0), Vector2(DLG_W, reward_h)))
+	_reward_panel = Ui.panel(Vector2(48.0, 320.0), Vector2(DLG_W, reward_h))
+	_reward_view.add_child(_reward_panel)
 	# 창 위에 얹는 문장. 보상은 "알림"이 아니라 "받았다"라서 머리 장식이 하나 필요하다.
 	# 크기를 적어 두지 않고 **원본에서 재서** 정확히 2배로 그린다 — 그림을 바꿔도
 	# 도트 밀도가 유지되고 가운데도 저절로 맞는다(원본이 캔버스 가운데가 아닐 수 있다).
@@ -1611,17 +1614,15 @@ func _build_dialogs() -> void:
 			Vector2(48.0 + (DLG_W - cw) * 0.5, 320.0 - ch), Vector2(cw, ch)))
 	_reward_title = _dlg_label(_reward_view, Vector2(48.0, 336.0), Type.SIZE_BODY,
 		Color(1.0, 0.88, 0.55), DLG_W, 32.0)
-	_reward_row = HBoxContainer.new()
+	# HBox 였다가 맨손 배치로 — 줄바꿈이 필요해졌다(_show_reward 가 좌표를 잰다).
+	_reward_row = Control.new()
 	_reward_row.position = Vector2(48.0, 376.0)
-	_reward_row.size = Vector2(DLG_W, REWARD_CELL.y)
-	_reward_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_reward_row.add_theme_constant_override("separation", 16)
 	_reward_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_reward_view.add_child(_reward_row)
 	# 안내는 **창 밖**에 둔다. 안에 넣으면 보상과 같은 무게로 읽혀서 눈이 한 번 더 멈춘다.
-	var hint := _dlg_label(_reward_view, Vector2(48.0, 320.0 + reward_h + 12.0),
+	_reward_hint = _dlg_label(_reward_view, Vector2(48.0, 320.0 + reward_h + 12.0),
 		Type.SIZE_SMALL, Color(0.68, 0.66, 0.72), DLG_W, 20.0)
-	hint.text = "빈 곳을 눌러 닫기"
+	_reward_hint.text = "빈 곳을 눌러 닫기"
 
 
 # 화면 전체를 덮는 반투명 판. 뒤 화면이 비쳐야 "어느 창 위에 떴는지"가 읽힌다.
@@ -1656,8 +1657,8 @@ func _ask(text: String, on_ok: Callable) -> void:
 
 
 # 보상 칸. 아이콘이 64px 이라 **뭘 받았는지 한눈에 안 들어왔다**(사장님 지적) —
-# 96 으로 키운다. 5개까지 늘어놓아도 5 x 116 = 580 이라 창(576)에 거의 맞고,
-# 실제로 5개가 뜨는 건 소환 결과뿐이라 그때는 별도 연출(_show_gacha_results)이 돈다.
+# 96 으로 키운다. 창(DLG_W 480)엔 한 줄 3칸(3x116+틈32=380)이 한계라
+# 넷째 재화부터 _show_reward 가 줄을 바꾼다(사장님: 둥지 정산 4칸이 잘렸다).
 const REWARD_BOX := 96.0
 const REWARD_CELL := Vector2(116.0, 140.0)
 
@@ -1667,9 +1668,22 @@ func _show_reward(title: String, entries: Array) -> void:
 	_reward_title.text = title
 	for child in _reward_row.get_children():
 		child.queue_free()
-	for e in entries:
+	# 한 줄 3칸 — 4칸(4x116+틈48=512)은 창(480)을 넘쳐 끝 재화가 잘렸다(사장님).
+	# 넷째부터 **한 칸 내려** 놓고 창 높이·안내 위치도 줄 수에 맞춘다.
+	var per := 3
+	var rows := int(ceil(float(entries.size()) / float(per)))
+	var reward_h := 56.0 + float(rows) * REWARD_CELL.y + float(rows - 1) * 8.0 + 16.0
+	_reward_panel.size = Vector2(DLG_W, reward_h)
+	_reward_hint.position.y = 320.0 + reward_h + 12.0
+	for i in entries.size():
+		var e: Dictionary = entries[i]
+		var r := floori(float(i) / float(per))
+		var in_row := mini(per, entries.size() - r * per)
+		var row_w := float(in_row) * REWARD_CELL.x + float(in_row - 1) * 16.0
 		var cell := Control.new()
-		cell.custom_minimum_size = Vector2(REWARD_CELL.x, REWARD_CELL.y)
+		cell.position = Vector2(
+			(DLG_W - row_w) * 0.5 + float(i % per) * (REWARD_CELL.x + 16.0),
+			float(r) * (REWARD_CELL.y + 8.0))
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		# 등급 틀을 두르면 무엇을 얻었는지가 **색으로 먼저** 읽힌다. 이름만 있으면
 		# 커먼을 받았는지 레전더리를 받았는지 글자를 다 읽어야 안다.
@@ -11851,12 +11865,13 @@ func _pet_feed(id: String) -> bool:
 func _pet_equip_gear(pet_id: String, gear_id: String) -> void:
 	if _pet_star(pet_id) <= 0 or int(pet_gear_got.get(gear_id, 0)) <= 0:
 		return
+	# 벗기기 판정은 회수 루프 **앞**에서 잰다 — 루프가 이 펫 것까지 걷어 가서
+	# "다시 누르면 벗는다"가 늘 장착으로 굴렀다(사장님: 벗기기가 안 된다).
+	var strip := str(pet_gear_worn.get(pet_id, "")) == gear_id
 	for k in pet_gear_worn.keys():
 		if str(pet_gear_worn[k]) == gear_id:
 			pet_gear_worn.erase(k)
-	if str(pet_gear_worn.get(pet_id, "")) == gear_id:
-		pet_gear_worn.erase(pet_id)      # 같은 걸 다시 누르면 벗는다
-	else:
+	if not strip:
 		pet_gear_worn[pet_id] = gear_id
 	_save_game()
 	_refresh_pet()

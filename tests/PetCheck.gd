@@ -156,6 +156,12 @@ func _init() -> void:
 	scene.pet_lv[other] = 1
 	scene._pet_equip_gear(other, gid)
 	assert(str(scene.pet_gear_worn.get(got, "")) != gid, "한 장비가 두 펫에 걸렸다")
+	# 같은 펫에 같은 장비를 **다시** 채우면 벗겨져야 한다 — 회수 루프가 자기
+	# 것까지 걷어 가며 토글 판정을 죽였던 버그(사장님: 벗기기가 안 된다).
+	scene._pet_equip_gear(other, gid)
+	assert(str(scene.pet_gear_worn.get(other, "")) == "", "다시 눌렀는데 안 벗겨졌다")
+	scene._pet_equip_gear(other, gid)
+	assert(str(scene.pet_gear_worn.get(other, "")) == gid, "벗긴 뒤 다시 안 채워진다")
 
 	# ── 버프가 실제로 붙는가 ───────────────────────────────────────────────
 	for p2 in PetDefs.PETS:
