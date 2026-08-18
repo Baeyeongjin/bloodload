@@ -4667,7 +4667,9 @@ const CODEX_LIST_W := 156.0       # 칸 글자폭 74px — "999.9t"(72) 가 들�
 const CODEX_ROW_H := 62.0
 const CODEX_BIG := 72.0           # 상세의 큰 그림
 const CODEX_TAB_Y := 54.0         # 머리글 아래 소탭 줄
-const LORE_COLS := 8              # 격자 열 수 — 528 폭에 칸 60 + 간격 6
+# 격자 열 수. **8 로 두면 pane(454)을 66px 넘겨** 중앙 정렬이 음수가 되고
+# 격자가 왼쪽으로 밀린다(실측 캡처). 스크롤바가 24px 라 생각보다 좁다.
+const LORE_COLS := 6
 const LORE_CELL := 60.0
 const LORE_GAP := 6.0
 
@@ -4679,7 +4681,7 @@ const LORE_GAP := 6.0
 # 좌표를 쓰므로, 그 좌표계를 통째로 판 안쪽으로 옮기는 Control 을 하나 끼운다
 # (미궁 스크롤이 쓰는 것과 같은 수법). 팝업은 세로 560 이라 반판(358)보다
 # 넓어서 격자가 더 보인다.
-const CODEX_BOTTOM := 552.0     # 팝업 안에서 쓸 수 있는 아래 끝
+const CODEX_BOTTOM := 526.0     # 팝업 안에서 쓸 수 있는 아래 끝(테두리 앞)
 # 팝업 안쪽 폭. **CONTENT_W(528, 탭 폭)를 쓰면 오른쪽이 판을 넘는다** —
 # 좌우 22 여백을 뺀 값이다(실측 캡처: 소탭 "연대기"가 테두리에 걸쳤다).
 const CODEX_W := QUEST_PANEL.size.x - 44.0
@@ -4787,13 +4789,24 @@ func _build_codex(root: Control) -> void:
 
 # 몬스터 도감 본문 — 왼쪽 목록과 오른쪽 상세. 소탭이 생기면서 통째로
 # 떼어냈다(내용은 그대로다).
+
+# 도감 안의 스크롤바를 얇게. 공용 폭(24)은 이 판에서 굵어 붉은 막대가 벽처럼
+# 선다(사장님 지적) — 판마다 목록 폭이 달라 전역 값을 바꿀 수는 없다.
+const CODEX_BAR_W := 10.0
+
+
+func _codex_thin_bar(sc: ScrollContainer) -> ScrollContainer:
+	sc.get_v_scroll_bar().custom_minimum_size.x = CODEX_BAR_W
+	return sc
+
 func _codex_build_foe(root: Control) -> void:
 	var keys := FoeTiers.all_keys()
 	# 소탭 줄(CODEX_TAB_Y ~ +32) 아래에서 시작한다 — 예전 자리(58)에 그대로
 	# 두었더니 목록 첫 칸과 상세가 소탭에 깔렸다(실측 캡처).
 	var body_y := CODEX_TAB_Y + 40.0
 	var body_h := CODEX_BOTTOM - body_y
-	var sc := Ui.scroll(Vector2(PAD, body_y), Vector2(CODEX_LIST_W, body_h))
+	var sc := _codex_thin_bar(
+		Ui.scroll(Vector2(PAD, body_y), Vector2(CODEX_LIST_W, body_h)))
 	root.add_child(sc)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 0)
@@ -4804,7 +4817,7 @@ func _codex_build_foe(root: Control) -> void:
 
 	# ── 상세 ──
 	var dx := PAD + CODEX_LIST_W + 16.0
-	var dw := CONTENT_W + PAD - dx
+	var dw := CODEX_W + PAD - dx
 	_codex_detail = {}
 	# 세로 배치는 아래에서부터 잡는다. 진행바(52px)가 제일 크고 자리가 고정이라
 	# 위에서부터 쌓으면 마지막에 바가 글자를 덮는다 — 실제로 한 번 덮었다.
@@ -4878,7 +4891,8 @@ var _title_badges: Array[TextureRect] = []
 const TITLE_STAT_ICON := {"damage": "stat_damage", "speed": "stat_speed",
 	"tough": "stat_tough", "gold": "res_blood"}
 # 임무판과 같은 판(QUEST_PANEL) 안에 산다 — 줄 폭도 그 판 기준이다.
-const TITLE_ROW_W := 528.0 - 44.0 - Ui.SCROLL_W
+# 칭호 줄 폭 — 도감 팝업 안쪽(484)에서 스크롤 여백 16 과 얇은 바 10 을 뺀다.
+const TITLE_ROW_W := 484.0 - 16.0 - CODEX_BAR_W
 
 
 # 칭호 — **도감의 한 소탭**이다 (사장님 2026-08-18). 별도 판을 안 만든다.
@@ -4895,8 +4909,8 @@ func _title_build(root: Control) -> void:
 	_title_ms = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 70.0),
 		Type.SIZE_SMALL, Color(0.72, 0.72, 0.80), tw, 18.0)
 	var sy := CODEX_TAB_Y + 94.0
-	var sc := Ui.scroll(Vector2(tx, sy),
-		Vector2(CODEX_W - 8.0, CODEX_BOTTOM - sy))
+	var sc := _codex_thin_bar(Ui.scroll(Vector2(tx, sy),
+		Vector2(CODEX_W - 16.0, CODEX_BOTTOM - sy)))
 	root.add_child(sc)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
@@ -10857,14 +10871,14 @@ func _lore_build(root: Control, kind: String) -> void:
 	var span := LORE_CELL + LORE_GAP
 	var keys := _lore_keys(kind)
 	var rows := int(ceil(float(keys.size()) / float(LORE_COLS)))
-	var sc := Ui.scroll(Vector2(PAD, y0),
-		Vector2(CODEX_W - 8.0, CODEX_BOTTOM - y0))
+	var sc := _codex_thin_bar(Ui.scroll(Vector2(PAD, y0),
+		Vector2(CODEX_W - 16.0, CODEX_BOTTOM - y0)))
 	root.add_child(sc)
 	var pane := Control.new()
-	pane.custom_minimum_size = Vector2(CODEX_W - 8.0 - Ui.SCROLL_W,
+	pane.custom_minimum_size = Vector2(CODEX_W - 16.0 - CODEX_BAR_W,
 		float(rows) * span)
 	sc.add_child(pane)
-	var x0 := (CODEX_W - 8.0 - Ui.SCROLL_W
+	var x0 := (CODEX_W - 16.0 - CODEX_BAR_W
 		- (span * float(LORE_COLS) - LORE_GAP)) * 0.5
 	var cells: Array = []
 	for i in keys.size():
