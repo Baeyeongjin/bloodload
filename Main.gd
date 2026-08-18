@@ -1646,11 +1646,7 @@ func _mk_label(pos: Vector2, size: int, col: Color) -> Label:
 	l.position = pos
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
-	# 외곽선은 **어두운 판**을 전제로 한 것이다 — 밝은 글자를 배경에서 떼어 낸다.
-	# 양피지(임무판)처럼 밝은 판에서는 어두운 글자에 어두운 테두리가 붙어 획이
-	# 뭉갠다(실측 캡처). 글자가 어두우면 테두리를 밝은 쪽으로 뒤집는다.
-	var pale := col.get_luminance() < 0.45
-	l.add_theme_constant_override("outline_size", 0 if pale else 4)
+	l.add_theme_constant_override("outline_size", 4)
 	l.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.05, 0.95))
 	_hud_root.add_child(l)
 	return l
@@ -6277,9 +6273,12 @@ const QUEST_PANEL := Rect2(24.0, 150.0, 528.0, 560.0)
 # 쓰면 글자가 사라진다 — 판을 갈면 글자 색도 같이 갈아야 한다.
 const DUTY := "duty"
 const TOME := "tome"
-const DUTY_INK := Color(0.22, 0.13, 0.09)      # 본문 — 짙은 갈색 잉크
-const DUTY_DIM := Color(0.42, 0.31, 0.24)      # 보조 — 바랜 글씨
-const DUTY_RED := Color(0.55, 0.11, 0.14)      # 강조 — 밀랍 인장과 같은 붉은색
+# **흰 글씨 + 검은 테두리**(사장님 2026-08-18). 짙은 갈색 잉크는 판과 대비가
+# 맞는데도 안 읽혔다 — 11px 도트 폰트는 획이 얇아서 색 대비만으로는 부족하고,
+# 검은 테두리가 글자를 배경에서 떼어 내야 보인다. 판이 밝든 어둡든 같은 규칙이다.
+const DUTY_INK := Color(0.99, 0.97, 0.95)      # 본문 — 흰색
+const DUTY_DIM := Color(0.84, 0.80, 0.76)      # 보조 — 조금 죽인 흰색
+const DUTY_RED := Color(0.98, 0.42, 0.40)      # 강조 — 밝은 핏빛
 const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
 const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세로 줄
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
