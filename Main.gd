@@ -11148,14 +11148,14 @@ func _pet_btn(parent: Control, pos: Vector2, size: Vector2,
 
 
 func _build_pet(root: Control) -> void:
-	# 헤더 — 장소 그림(자리표시: 점성소). 펫의 집 이름은 "동행의 둥지".
+	# 헤더 — 동행의 둥지 전용 그림(2026-08-18 아트 배치).
 	var head := Control.new()
 	head.position = Vector2(PAD, 12.0)
 	head.size = Vector2(CONTENT_W, 210.0)
 	head.clip_contents = true
 	root.add_child(head)
 	var ht := TextureRect.new()
-	ht.texture = Assets.tex("res://assets/ui/head_astro.png")
+	ht.texture = Assets.tex("res://assets/ui/head_pet.png")
 	ht.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	ht.size = Vector2(CONTENT_W, CONTENT_W * 224.0 / 576.0)
 	ht.position = Vector2(0.0, -6.0)
