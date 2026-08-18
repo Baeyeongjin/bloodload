@@ -1025,6 +1025,7 @@ func _ready() -> void:
 			if pull_kind == "gear":
 				pull_kind = "weapon"
 			var pull_count := int(pull_args[1]) if pull_args.size() > 1 else 1
+			_select_tab("summon")   # 공개 층이 소환 판 안에 산다 — 탭을 안 열면 안 보인다
 			_set_gacha_kind(pull_kind)
 			free_pull_date = Time.get_date_string_from_system()
 			gem = maxf(gem, GachaDefs.COST * float(pull_count))
@@ -4481,10 +4482,12 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	_gacha_reveal.visible = true
 	var shade := ColorRect.new()
 	shade.color = Color(0.015, 0.01, 0.025, 0.94)
-	shade.size = Vector2(PANEL_W, PANEL_H)
+	# **전면 판 전체를 덮는다** (사장님) — 반판 크기로 두면 아래 반이 비쳐서
+	# 결과 창 밑으로 확률표·버튼이 그대로 보였다.
+	shade.size = Vector2(PANEL_W, PANEL_FULL_H)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_gacha_reveal.add_child(shade)
-	_gacha_reveal.add_child(Ui.panel(Vector2.ZERO, Vector2(PANEL_W, PANEL_H)))
+	_gacha_reveal.add_child(Ui.panel(Vector2.ZERO, Vector2(PANEL_W, PANEL_FULL_H)))
 	var title := _panel_label(_gacha_reveal, Vector2(PAD, 16.0), Type.SIZE_MID,
 		Color(0.96, 0.84, 0.58), CONTENT_W, 28.0)
 	title.text = "%s 소환 결과" % _gacha_kind_name()
@@ -4544,12 +4547,12 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	# 연달아 뽑으려면 보관함에 들렀다가 되돌아와야 했다. 창을 닫기만 하는 "확인"과
 	# 그 자리로 데려가는 "보러 가기"를 나눈다 — 뽑은 것마다 갈 곳이 다르다.
 	var kind_now := _gacha_kind
-	var ok := Ui.button("확인", Vector2(30.0, CONTENT_BOTTOM - 50.0),
+	var ok := Ui.button("확인", Vector2(30.0, FULL_BOTTOM - 60.0),
 		Vector2(250.0, 50.0), Type.SIZE_SMALL)
 	ok.pressed.connect(func() -> void: _gacha_reveal.visible = false)
 	_gacha_reveal.add_child(ok)
 	var go := Ui.button("보관함" if kind_now in GearDefs.SLOTS else "보러 가기",
-		Vector2(296.0, CONTENT_BOTTOM - 50.0),
+		Vector2(296.0, FULL_BOTTOM - 60.0),
 		Vector2(250.0, 50.0), Type.SIZE_SMALL)
 	go.pressed.connect(func() -> void:
 		_gacha_reveal.visible = false
@@ -5233,7 +5236,7 @@ func _refresh_codex_detail() -> void:
 # 순서는 사장님 지정(2026-08-13): 성장 / 장비 / 도감 / 소환 / 던전 / 상점 —
 # 왼쪽 셋은 내 것(성장·장비·기록), 오른쪽 셋은 나가는 곳(소환·던전·상점).
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
-	["pet", "tab_codex", "펫"], ["summon", "tab_battle", "소환"],
+	["pet", "tab_pet", "펫"], ["summon", "tab_battle", "소환"],
 	["raid", "tab_raid", "던전"], ["shop", "shop", "상점"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
@@ -6134,33 +6137,42 @@ func _build_raid_list(root: Control) -> void:
 	# 던전 전용 세트(사장님: 탭마다 다르게) — 사슬 감긴 돌벽 카드 + 철창 입장 버튼.
 	# 입장 버튼이 그림이라 글자·잠금 표시는 라벨과 modulate 가 맡는다.
 	var kinds := ["blood", "essence", "pact", "hunt"]
+	# **스크롤에 넣는다.** 4줄 x 154 = 616 인데 판은 92 부터 774 까지라 네 번째
+	# (야수 우리)가 하단 네비에 깔렸다(사장님 캡처).
+	var rsc := _codex_thin_bar(Ui.scroll(Vector2(0.0, 92.0),
+		Vector2(PANEL_W, FULL_BOTTOM - 92.0)))
+	root.add_child(rsc)
+	var rpane := Control.new()
+	rpane.custom_minimum_size = Vector2(PANEL_W - CODEX_BAR_W,
+		float(kinds.size()) * 154.0)
+	rsc.add_child(rpane)
 	for i in kinds.size():
 		var kind: String = kinds[i]
-		var y := 92.0 + float(i) * 154.0
-		_shop_tex(root, "res://assets/ui/sets/gate_row.png",
+		var y := float(i) * 154.0
+		_shop_tex(rpane, "res://assets/ui/sets/gate_row.png",
 			Vector2(PAD - 8.0, y), Vector2(CONTENT_W + 16.0, 140.0))
 		# 엠블럼 홈(사슬 안 사각 창) 실측 자리에 재화 아이콘.
-		root.add_child(Ui.icon(str(RaidDefs.RAIDS[kind]["icon"]),
+		rpane.add_child(Ui.icon(str(RaidDefs.RAIDS[kind]["icon"]),
 			Vector2(PAD + 36.0, y + 36.0), 64.0))
-		var nm := _panel_label(root, Vector2(PAD + 132.0, y + 22.0), Type.SIZE_MID,
+		var nm := _panel_label(rpane, Vector2(PAD + 132.0, y + 22.0), Type.SIZE_MID,
 			Color(0.95, 0.88, 0.80), CONTENT_W - 320.0, 20.0)
 		nm.text = str(RaidDefs.RAIDS[kind]["name"])
 		_shop_outline(nm, 6)
-		_raid_info[kind] = _panel_label(root, Vector2(PAD + 132.0, y + 54.0),
+		_raid_info[kind] = _panel_label(rpane, Vector2(PAD + 132.0, y + 54.0),
 			Type.SIZE_SMALL, Color(0.80, 0.78, 0.80), CONTENT_W - 296.0, 14.0)
 		_shop_outline(_raid_info[kind], 4)
-		_raid_reward[kind] = _panel_label(root, Vector2(PAD + 132.0, y + 78.0),
+		_raid_reward[kind] = _panel_label(rpane, Vector2(PAD + 132.0, y + 78.0),
 			Type.SIZE_SMALL, Color(0.92, 0.84, 0.72), CONTENT_W - 296.0, 14.0)
 		_shop_outline(_raid_reward[kind], 4)
 		var bx := Vector2(PAD + CONTENT_W - 164.0, y + 42.0)
-		_raid_btn_tex[kind] = _shop_tex(root,
+		_raid_btn_tex[kind] = _shop_tex(rpane,
 			"res://assets/ui/sets/gate_button.png", bx, Vector2(156.0, 50.0))
-		var bl := _panel_label(root, Vector2(bx.x, bx.y + 15.0), Type.SIZE_MID,
+		var bl := _panel_label(rpane, Vector2(bx.x, bx.y + 15.0), Type.SIZE_MID,
 			Color(1.0, 0.95, 0.90), 156.0, 22.0)
 		bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(bl, 8)
 		_raid_btn_lbl[kind] = bl
-		var eb := _shop_ghost(root, Vector2(156.0, 50.0), _raid_btn_tex[kind])
+		var eb := _shop_ghost(rpane, Vector2(156.0, 50.0), _raid_btn_tex[kind])
 		eb.position = bx
 		# **바로 안 들어간다** — 레퍼런스처럼 상세 판을 한 번 거친다(사장님
 		# 2026-08-14). 거기서 목표·보상·단계를 보고 도전을 누른다.
@@ -11145,10 +11157,13 @@ var _pet_feed_ui := {}
 var _pet_roll_ui := {}
 
 
-# 세트 그림 버튼 — 가죽 줄 + 글자 + 투명 판정 (상점 문법).
+# 세트 그림 버튼 — 둥지 줄 + 글자 + 투명 판정 (상점 문법).
+# 판정 버튼이 투명이라 호버·눌림 반응은 **그림이** 받는다(사장님: 효과 필요) —
+# 버튼에 걸면 아무 일도 안 보인다.
 func _pet_btn(parent: Control, pos: Vector2, size: Vector2,
 		text: String) -> Dictionary:
-	parent.add_child(Ui.set_row(NEST, pos, size))
+	var art := Ui.set_row(NEST, pos, size)
+	parent.add_child(art)
 	var l := _panel_label(parent, Vector2(pos.x, pos.y + size.y * 0.5 - 10.0),
 		Type.SIZE_SMALL, Color(0.96, 0.92, 0.88), size.x, 20.0)
 	l.text = text
@@ -11156,7 +11171,27 @@ func _pet_btn(parent: Control, pos: Vector2, size: Vector2,
 	var btn := Ui.button("", pos, size, Type.SIZE_SMALL)
 	btn.modulate = Color(1, 1, 1, 0)
 	parent.add_child(btn)
+	_pet_hover(btn, art)
 	return {"btn": btn, "lbl": l}
+
+
+# 호버 = 밝아지고 살짝 커진다, 눌림 = 눌린다. 비활성 버튼은 반응하지 않는다 —
+# 죽은 버튼이 살아 있는 척하면 "왜 안 눌리지"가 된다.
+func _pet_hover(btn: Button, art: Control) -> void:
+	art.pivot_offset = art.size * 0.5
+	btn.mouse_entered.connect(func() -> void:
+		if btn.disabled:
+			return
+		art.modulate = Color(1.18, 1.14, 1.08)
+		art.scale = Vector2(1.03, 1.03))
+	btn.mouse_exited.connect(func() -> void:
+		art.modulate = Color(1, 1, 1)
+		art.scale = Vector2.ONE)
+	btn.button_down.connect(func() -> void:
+		if not btn.disabled:
+			art.scale = Vector2(0.96, 0.96))
+	btn.button_up.connect(func() -> void:
+		art.scale = Vector2.ONE if not btn.is_hovered() else Vector2(1.03, 1.03))
 
 
 func _build_pet(root: Control) -> void:
@@ -11200,6 +11235,7 @@ func _build_pet(root: Control) -> void:
 		tb.modulate = Color(1, 1, 1, 0)
 		tb.pressed.connect(func() -> void: _pet_set_mode(mode))
 		root.add_child(tb)
+		_pet_hover(tb, off)
 		_pet_tab_btns[mode] = {"on": on, "lbl": tl}
 	for pair in PET_TABS:
 		var r := Control.new()
@@ -11257,11 +11293,14 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), PET_CELL, 16.0)
 		star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var idx := i
+		var frame_art: Control = pane.get_child(pane.get_child_count()
+			- (3 if art != null else 2))    # 이 칸의 둥지 액자
 		var btn := Ui.button("", Vector2(cx, cy), Vector2(PET_CELL, PET_CELL),
 			Type.SIZE_SMALL)
 		btn.modulate = Color(1, 1, 1, 0)
 		btn.pressed.connect(func() -> void: on_pick.call(idx))
 		pane.add_child(btn)
+		_pet_hover(btn, frame_art)
 		cells.append({"art": art, "star": star})
 
 
@@ -11808,8 +11847,6 @@ func _pet_gear_value(pet_id: String, kind: String) -> float:
 func _pet_roll_many(n: int) -> void:
 	var rows: Array = []
 	for i in n:
-		if int(tickets.get("pet", 0)) < 1:
-			break
 		var r := _pet_roll(false)
 		if r.is_empty():
 			break
@@ -11825,8 +11862,6 @@ func _pet_roll_many(n: int) -> void:
 func _petgear_roll_many(n: int) -> void:
 	var rows: Array = []
 	for i in n:
-		if int(tickets.get("petgear", 0)) < 1:
-			break
 		var r := _petgear_roll(false)
 		if r.is_empty():
 			break

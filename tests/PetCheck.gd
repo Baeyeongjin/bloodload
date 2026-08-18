@@ -106,6 +106,13 @@ func _init() -> void:
 	assert(scene._pet_star(got) == 1 and scene._pet_lv(got) == 1,
 		"시작이 1성 1레벨이 아니다")
 
+	# **10연도 보석 폴백을 안다** — 소환권 선검사가 남아 있으면 권 0장에
+	# 보석만 있을 때 한 장도 안 열린다(사장님 실측).
+	scene.tickets = {}
+	scene.gem = GachaDefs.COST * 3.0
+	scene._pet_roll_many(3)
+	assert(scene.gem < GachaDefs.COST, "보석 10연이 안 돈다: %f" % scene.gem)
+
 	# **중복 -> 조각 -> 승급** — 언젠가는 어느 펫이든 별이 올라야 한다.
 	scene.tickets = {"pet": 999}
 	var guard := 0
