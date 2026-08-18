@@ -4680,6 +4680,9 @@ const LORE_GAP := 6.0
 # (미궁 스크롤이 쓰는 것과 같은 수법). 팝업은 세로 560 이라 반판(358)보다
 # 넓어서 격자가 더 보인다.
 const CODEX_BOTTOM := 552.0     # 팝업 안에서 쓸 수 있는 아래 끝
+# 팝업 안쪽 폭. **CONTENT_W(528, 탭 폭)를 쓰면 오른쪽이 판을 넘는다** —
+# 좌우 22 여백을 뺀 값이다(실측 캡처: 소탭 "연대기"가 테두리에 걸쳤다).
+const CODEX_W := QUEST_PANEL.size.x - 44.0
 # 내용 좌표(PAD 기준)를 판 안쪽으로 미는 값. 판 x+22 가 글이 시작하는 자리다.
 const CODEX_SHIFT := Vector2(QUEST_PANEL.position.x + 22.0 - PAD,
 	QUEST_PANEL.position.y + 8.0)
@@ -4723,20 +4726,21 @@ func _build_codex(root: Control) -> void:
 	# 오른쪽 버튼은 그 합계가 실제로 무슨 능력치가 됐는지 펼쳐 본다.
 	# 칭호가 빠져 버튼이 하나(능력치)다 — 머리글이 그만큼 넓어졌다.
 	_codex_summary = _panel_label(root, Vector2(PAD, PAD), Type.SIZE_SMALL,
-		Color(0.82, 0.88, 0.72), CONTENT_W - 112.0, CODEX_HEAD_H)
+		Color(0.82, 0.88, 0.72), CODEX_W - 230.0, CODEX_HEAD_H)
 	_codex_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 도감은 **기록과 지식**을 다루는 곳이라 점성소 세트를 쓴다(사장님 2026-08-14:
 	# 탭마다 결을 맞춘다) — 소환 탭의 스킬·유물과 같은 별판이다.
-	var sbx := Vector2(CONTENT_W + PAD - 244.0, PAD - 10.0)
-	var stex := _shop_tex(root, "res://assets/ui/sets/astro_button.png",
-		sbx, Vector2(100.0, 36.0))
-	var slbl := _panel_label(root, Vector2(sbx.x, sbx.y + 9.0), Type.SIZE_SMALL,
-		Color(0.98, 0.95, 1.0), 100.0, 20.0)
+	var sbx := Vector2(PAD + CODEX_W - 202.0, PAD - 10.0)
+	# **가죽책 세트로.** 점성소(보라) 버튼을 쓰고 있어서 도감만 다른 게임처럼
+	# 보였다(사장님: 테마 통일).
+	root.add_child(Ui.set_row(TOME, sbx, Vector2(100.0, 36.0)))
+	var slbl := _panel_label(root, Vector2(sbx.x, sbx.y + 10.0), Type.SIZE_SMALL,
+		Color(0.96, 0.92, 0.88), 100.0, 20.0)
 	slbl.text = "능력치"
 	slbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_shop_outline(slbl, 6)
-	var status_btn := _shop_ghost(root, Vector2(100.0, 36.0), stex)
-	status_btn.position = sbx
+	var status_btn := Ui.button("", sbx, Vector2(100.0, 36.0), Type.SIZE_SMALL)
+	status_btn.modulate = Color(1, 1, 1, 0)
+	root.add_child(status_btn)
 	status_btn.pressed.connect(func() -> void:
 		_status_view.visible = not _status_view.visible
 		if _status_view.visible:
@@ -4751,7 +4755,7 @@ func _build_codex(root: Control) -> void:
 	# 같은 문법이고, 세트만 가죽책(tome)으로 다르다.
 	var ctabs := [["foe", "몬스터"], ["gear", "장비"], ["skill", "스킬"],
 		["title", "칭호"], ["act", "연대기"]]
-	var ctw := (CONTENT_W - 24.0) / 5.0
+	var ctw := (CODEX_W - 24.0) / 5.0
 	for i in ctabs.size():
 		var cm := str(ctabs[i][0])
 		var cp := Vector2(PAD + float(i) * (ctw + 6.0), CODEX_TAB_Y)
@@ -4883,7 +4887,7 @@ const TITLE_ROW_W := 528.0 - 44.0 - Ui.SCROLL_W
 # 도감과 같은 자리에 있어야 "무엇을 더 하면 따는지"가 보인다.
 func _title_build(root: Control) -> void:
 	var tx := PAD
-	var tw := CONTENT_W - Ui.SCROLL_W + Ui.SCROLL_W   # 판 안쪽 폭 그대로
+	var tw := CODEX_W
 	_title_head = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 40.0),
 		Type.SIZE_BODY, Color(0.92, 0.82, 0.62), tw, 26.0)
 	# 이정표 줄 — 머리글(SIZE_BODY)에 붙였더니 "칭호 0 / 12 · "에서 잘렸다(실측).
@@ -4891,7 +4895,8 @@ func _title_build(root: Control) -> void:
 	_title_ms = _panel_label(root, Vector2(tx, CODEX_TAB_Y + 70.0),
 		Type.SIZE_SMALL, Color(0.72, 0.72, 0.80), tw, 18.0)
 	var sy := CODEX_TAB_Y + 94.0
-	var sc := Ui.scroll(Vector2(tx, sy), Vector2(CONTENT_W, CODEX_BOTTOM - sy))
+	var sc := Ui.scroll(Vector2(tx, sy),
+		Vector2(CODEX_W - 8.0, CODEX_BOTTOM - sy))
 	root.add_child(sc)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
@@ -4903,7 +4908,8 @@ func _title_build(root: Control) -> void:
 		var row := Control.new()
 		row.custom_minimum_size = Vector2(TITLE_ROW_W, 48.0)
 		col.add_child(row)
-		row.add_child(Ui.card(Vector2.ZERO, Vector2(TITLE_ROW_W, 48.0)))
+		row.add_child(Ui.set_row(TOME, Vector2.ZERO,
+			Vector2(TITLE_ROW_W, 48.0)))
 		var tid := str(TitleDefs.TITLES[i]["id"])
 		var wear := Button.new()
 		wear.flat = true
@@ -10843,7 +10849,7 @@ func _dev_god(want: int) -> void:
 # 빈 칸이 보이는 데 있다.
 func _lore_build(root: Control, kind: String) -> void:
 	var note := _panel_label(root, Vector2(PAD, CODEX_TAB_Y + 40.0),
-		Type.SIZE_SMALL, Color(0.82, 0.88, 0.72), CONTENT_W, 18.0)
+		Type.SIZE_SMALL, Color(0.82, 0.88, 0.72), CODEX_W, 18.0)
 	_lore_note[kind] = note
 	# **스크롤에 넣는다.** 장비는 72칸이라 9줄이고, 반판 높이(358)로는 4줄만
 	# 들어간다 — 그냥 깔면 나머지가 판 밖으로 넘어간다(실측 캡처).
@@ -10852,13 +10858,13 @@ func _lore_build(root: Control, kind: String) -> void:
 	var keys := _lore_keys(kind)
 	var rows := int(ceil(float(keys.size()) / float(LORE_COLS)))
 	var sc := Ui.scroll(Vector2(PAD, y0),
-		Vector2(CONTENT_W, CODEX_BOTTOM - y0))
+		Vector2(CODEX_W - 8.0, CODEX_BOTTOM - y0))
 	root.add_child(sc)
 	var pane := Control.new()
-	pane.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W,
+	pane.custom_minimum_size = Vector2(CODEX_W - 8.0 - Ui.SCROLL_W,
 		float(rows) * span)
 	sc.add_child(pane)
-	var x0 := (CONTENT_W - Ui.SCROLL_W
+	var x0 := (CODEX_W - 8.0 - Ui.SCROLL_W
 		- (span * float(LORE_COLS) - LORE_GAP)) * 0.5
 	var cells: Array = []
 	for i in keys.size():
@@ -10921,20 +10927,26 @@ func _refresh_lore(kind: String) -> void:
 		else LoreDefs.GEAR_MARKS
 	var left := LoreDefs.to_next(marks, got)
 	_lore_note[kind].text = "%d / %d 종%s" % [got, keys.size(),
-		"" if left <= 0 else "   ·   다음 이정표까지 %d종" % left]
+		"" if left <= 0 else "  ·  다음 이정표까지 %d종" % left]
 
 
 # 연대기 — 막마다 한 줄. **밟은 막만 읽힌다**(기록이지 수집이 아니다).
 func _act_build(root: Control) -> void:
 	var y0 := CODEX_TAB_Y + 44.0
 	for i in StageDefs.ACTS.size():
-		var ry := y0 + float(i) * 58.0
+		var ry := y0 + float(i) * 84.0
 		root.add_child(Ui.set_card(TOME, Vector2(PAD, ry),
-			Vector2(CONTENT_W, 52.0)))
-		var nm := _panel_label(root, Vector2(PAD + 14.0, ry + 6.0),
-			Type.SIZE_SMALL, Color(0.96, 0.86, 0.62), CONTENT_W - 28.0, 16.0)
-		var tx := _panel_label(root, Vector2(PAD + 14.0, ry + 26.0),
-			Type.SIZE_SMALL, Color(0.80, 0.78, 0.76), CONTENT_W - 28.0, 16.0)
+			Vector2(CODEX_W, 76.0)))
+		var nm := _panel_label(root, Vector2(PAD + 16.0, ry + 8.0),
+			Type.SIZE_SMALL, Color(0.96, 0.86, 0.62), CODEX_W - 32.0, 16.0)
+		var tx := _panel_label(root, Vector2(PAD + 16.0, ry + 30.0),
+			Type.SIZE_SMALL, Color(0.80, 0.78, 0.76), CODEX_W - 32.0, 0.0)
+		# **줄바꿈을 켠다.** 기록 한 줄이 카드 폭에 안 들어가 마지막 글자가
+		# 잘렸다(실측 캡처: "기억했"). _panel_label 은 폭을 주면 clip 을 켜므로
+		# 여기서 되돌리고 두 줄을 허용한다 — 카드도 그만큼 키웠다.
+		tx.clip_text = false
+		tx.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		tx.size = Vector2(CODEX_W - 32.0, 40.0)
 		_act_rows.append({"name": nm, "text": tx})
 
 
