@@ -149,6 +149,8 @@ var _mile_ui: Array = []
 var play_sec := 0.0
 var _info_view: Control
 var _info_body: Control
+var _info_power: Label
+var _info_note: Label
 var best_stage := 1
 # ── 핏빛 미궁 (DungeonDefs, EXPANSION 7장) ────────────────────────────────
 # 미궁에 있는 동안에도 `stage` 는 본편 위치 그대로다 — 나가면 그 자리로 돌아온다.
@@ -834,12 +836,15 @@ func _ready() -> void:
 		# [개발 도구] --info : 군주의 기록 판을 연 채로 캡처한다.
 		if arg == "--info":
 			_show_info()
-		# [개발 도구] --trial[=N] : 시련 판(N단계 격파 상태)으로 캡처한다.
+		# [개발 도구] --trial[=N|=in] : 시련 판(N단계 격파)으로, =in 이면 전투까지.
 		if arg.begins_with("--trial"):
-			trial_stage = int(arg.trim_prefix("--trial=")) if "=" in arg else 4
+			if "=" in arg and arg.trim_prefix("--trial=").is_valid_int():
+				trial_stage = int(arg.trim_prefix("--trial="))
 			dungeon_best = maxi(dungeon_best, TrialDefs.floor_need(trial_stage + 1))
 			_select_tab("raid")
 			_raid_set_mode("trial")
+			if arg.ends_with("=in"):
+				_trial_enter()
 		# [개발 도구] --raid=blood|essence : 재화 던전에 들어간 채로 캡처한다.
 		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
@@ -1585,59 +1590,73 @@ func _build_portrait() -> void:
 	_hud_root.add_child(info_btn)
 
 
-# 군주의 기록 (참고작 캐릭터 정보 판) — 전투력 하나 + 최종 능력치 + 기록.
+# 군주의 기록 (참고작 캐릭터 정보 판) — 전투력 + 능력치 + 배수의 출처 + 기록.
 # 항목은 전부 **이미 있는 숫자의 집계**다. 이 판은 새 기계가 아니라 거울이다.
+# "배수" 부는 사장님 요청(상세한 설명): 어느 시스템이 얼마를 얹는지 이름을 단다.
 func _show_info() -> void:
 	if _info_view == null:
 		return
 	for c in _info_body.get_children():
 		c.queue_free()
-	var title := _dlg_label(_info_body, Vector2(0.0, 18.0), Type.SIZE_BODY,
-		Color(1.0, 0.88, 0.55), 520.0, 32.0)
-	title.text = "군주의 기록"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 전투력 — 이 판의 머리 숫자. HUD 와 같은 식(Balance.combat_power)이다.
-	var big := _dlg_label(_info_body, Vector2(0.0, 58.0), Type.SIZE_BODY,
-		Color(1.0, 1.0, 1.0), 520.0, 34.0)
-	big.text = "전투력  %s" % _n(Balance.combat_power(dps(), max_hp(),
+	_info_power.text = "전투력  %s" % _n(Balance.combat_power(dps(), max_hp(),
 		regen_per_sec()))
-	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var kills := 0.0
 	for k in codex:
 		kills += float(codex[k])
 	var mins := int(play_sec / 60.0)
-	var stats: Array = [
-		["초당 피해", _n(dps())],
-		["체력", _n(max_hp())],
-		["회복 (초당)", _n(regen_per_sec())],
-		["시련 보너스", "공격·체력 +%d%%" % int(round(
-			TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))],
+	# 치명 두 축은 Balance.crit_mult 와 같은 눈금으로 읽는다(1레벨 = 0%).
+	var crit_pct := int(minf(100.0, maxf(0.0, float(_stat_eff("crit")) - 1.0)))
+	var critdmg := 1.5 + 0.05 * (float(_stat_eff("critdmg")) - 1.0) \
+		+ _trait_add("critdmg") + RelicDefs.add("critdmg", relics)
+	var sections: Array = [
+		["능력치", [
+			["평타 한 방", _n(_base_hit_damage() * (1.0 + _codex_act_bonus()))],
+			["초당 피해", _n(dps())],
+			["공격 속도", "초당 %.2f회" % (1.0 / attack_interval())],
+			["체력", _n(max_hp())],
+			["회복 (초당)", _n(regen_per_sec())],
+			["치명타 확률", "%d%%" % crit_pct],
+			["치명타 피해", "x%.2f" % critdmg],
+		]],
+		["배수 — 어디서 오는 힘인가", [
+			["혈맥 (공격)", "x%.2f" % _trait_mult("attack")],
+			["핏빛 회귀", "x%.2f" % _prestige_mult()],
+			["시련", "x%.2f" % TrialDefs.mult(trial_stage)],
+			["펫 동행 (공격)", "+%d%%" % int(round(_pet_mult("damage") * 100.0))],
+			["지식 (도감 평균)", "+%d%%" % int(round(_codex_act_bonus() * 100.0))],
+			["혈맹 (체력)", "+%d%%" % int(round(PactDefs.bonus(pact_lv) * 100.0))],
+			["혈액 획득", "x%.2f" % gold_mult()],
+		]],
+		["기록", [
+			["최고 구간", StageDefs.label(best_stage)],
+			["핏빛 미궁", "%d층" % dungeon_best],
+			["시련", "%d단계 격파" % trial_stage],
+			["주간 보스", "%d단계" % boss_tier],
+			["핏빛 회귀", "%d회" % prestige_count],
+			["펫 도감", "%d / %d" % [pets_got.size(), PetDefs.PETS.size()]],
+			["총 출석", "%d일" % attend_got],
+			["총 처치", _n(kills)],
+			["누적 소환", "%d회" % mileage],
+			["함께한 밤", "%d시간 %d분" % [mins / 60, mins % 60]],
+		]],
 	]
-	var recs: Array = [
-		["최고 구간", StageDefs.label(best_stage)],
-		["핏빛 미궁", "%d층" % dungeon_best],
-		["핏빛 회귀", "%d회" % prestige_count],
-		["총 출석", "%d일" % attend_got],
-		["총 처치", _n(kills)],
-		["누적 소환", "%d회" % mileage],
-		["함께한 밤", "%d시간 %d분" % [mins / 60, mins % 60]],
-	]
-	var y := 108.0
-	for sec in [["능력치", stats], ["기록", recs]]:
-		var head := _dlg_label(_info_body, Vector2(36.0, y), Type.SIZE_SMALL,
-			Color(0.92, 0.82, 0.62), 448.0, 20.0)
+	var y := 8.0
+	for sec in sections:
+		var head := _dlg_label(_info_body, Vector2(6.0, y), Type.SIZE_SMALL,
+			Color(0.92, 0.82, 0.62), 460.0, 20.0)
 		head.text = str(sec[0])
 		y += 28.0
 		for row in sec[1]:
-			var l := _dlg_label(_info_body, Vector2(48.0, y), Type.SIZE_SMALL,
-				Color(0.78, 0.76, 0.80), 220.0, 18.0)
+			var l := _dlg_label(_info_body, Vector2(18.0, y), Type.SIZE_SMALL,
+				Color(0.78, 0.76, 0.80), 230.0, 18.0)
 			l.text = str(row[0])
-			var v := _dlg_label(_info_body, Vector2(240.0, y), Type.SIZE_SMALL,
-				Color(0.95, 0.93, 0.90), 232.0, 18.0)
+			var v := _dlg_label(_info_body, Vector2(226.0, y), Type.SIZE_SMALL,
+				Color(0.95, 0.93, 0.90), 240.0, 18.0)
 			v.text = str(row[1])
 			v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-			y += 30.0
-		y += 10.0
+			y += 28.0
+		y += 12.0
+	_info_body.custom_minimum_size = Vector2(504.0 - Ui.SCROLL_W, y)
 	_info_view.visible = true
 
 
@@ -1713,6 +1732,7 @@ func _build_dialogs() -> void:
 	_reward_hint.text = "빈 곳을 눌러 닫기"
 
 	# 군주의 기록 — 내용은 열 때마다 다시 그린다(_show_info). 전부 집계라 싸다.
+	# 래퍼런스 캐릭터 정보 판 문법: 프로필 버튼 셋(이름·외형·칭호) 아래 집계 스크롤.
 	_info_view = _overlay(62)
 	var itap := Button.new()
 	itap.flat = true
@@ -1720,14 +1740,48 @@ func _build_dialogs() -> void:
 	itap.focus_mode = Control.FOCUS_NONE
 	itap.pressed.connect(func() -> void: _info_view.visible = false)
 	_info_view.add_child(itap)
-	_info_view.add_child(Ui.panel(Vector2(28.0, 130.0), Vector2(520.0, 574.0)))
+	_info_view.add_child(Ui.panel(Vector2(24.0, 96.0), Vector2(528.0, 648.0)))
+	var ititle := _dlg_label(_info_view, Vector2(24.0, 112.0), Type.SIZE_BODY,
+		Color(1.0, 0.88, 0.55), 528.0, 32.0)
+	ititle.text = "군주의 기록"
+	ititle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 버튼 셋 — 이름·외형은 **자리만** 먼저 잡는다(사장님: 나중 추가 대비).
+	# 칭호 설정은 이미 있는 도감 칭호 판으로 이어진다.
+	var bw2 := (528.0 - 36.0 * 2.0 - 12.0 * 2.0) / 3.0
+	for b2 in [["이름 변경", 0], ["외형 변경", 1], ["칭호 설정", 2]]:
+		var idx: int = b2[1]
+		var bb := Ui.button(str(b2[0]),
+			Vector2(24.0 + 36.0 + (bw2 + 12.0) * float(idx), 152.0),
+			Vector2(bw2, 40.0), Type.SIZE_SMALL)
+		bb.pressed.connect(func() -> void:
+			if idx == 2:
+				_info_view.visible = false
+				_codex_view.visible = true
+				_codex_set_mode("title")
+			else:
+				_info_note.text = "다음 업데이트에서 열린다"
+				_info_note.modulate.a = 1.0
+				var tw2 := create_tween()
+				tw2.tween_property(_info_note, "modulate:a", 0.0, 1.6) \
+					.set_delay(0.8))
+		_info_view.add_child(bb)
+	_info_power = _dlg_label(_info_view, Vector2(24.0, 206.0), Type.SIZE_BODY,
+		Color(1.0, 1.0, 1.0), 528.0, 34.0)
+	_info_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var isc := Ui.scroll(Vector2(36.0, 250.0), Vector2(504.0, 470.0))
+	_info_view.add_child(isc)
 	_info_body = Control.new()
-	_info_body.position = Vector2(28.0, 130.0)
 	_info_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_info_view.add_child(_info_body)
-	var ihint := _dlg_label(_info_view, Vector2(28.0, 716.0), Type.SIZE_SMALL,
-		Color(0.68, 0.66, 0.72), 520.0, 20.0)
+	isc.add_child(_info_body)
+	_info_note = _dlg_label(_info_view, Vector2(24.0, 726.0), Type.SIZE_SMALL,
+		Color(0.98, 0.80, 0.55), 528.0, 20.0)
+	_info_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_info_note.modulate.a = 0.0
+	var ihint := _dlg_label(_info_view, Vector2(24.0, 752.0), Type.SIZE_SMALL,
+		Color(0.68, 0.66, 0.72), 528.0, 20.0)
+	ihint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ihint.text = "빈 곳을 눌러 닫기"
+
 
 
 # 화면 전체를 덮는 반투명 판. 뒤 화면이 비쳐야 "어느 창 위에 떴는지"가 읽힌다.
@@ -6010,12 +6064,11 @@ func _refresh_trial() -> void:
 	var n := trial_stage + 1
 	var done := n > TrialDefs.max_stage()
 	var show_n := mini(n, TrialDefs.max_stage())
-	var act: Dictionary = StageDefs.act_data(TrialDefs.eq_stage(show_n))
 	_trial_ui["art"].texture = Assets.tex(
-		"res://assets/anim/%s_walk/0.png" % str(act["boss_anim"]))
-	# "시련"은 탭이 이미 말한다 — 붙이면 보스 이름이 잘렸다(실측 폭 268).
+		"res://assets/anim/ruin_warden_walk/0.png")
+	# "시련"은 탭이 이미 말한다 — 붙이면 이름이 잘렸다(실측 폭 268).
 	_trial_ui["name"].text = "완주" if done \
-		else "%d단계  ·  %s" % [show_n, str(act["boss_name"])]
+		else "%d단계  ·  유적의 파수꾼" % show_n
 	_trial_ui["bonus"].text = "공격·체력 +%d%%" % int(round(
 		TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))
 	var need := TrialDefs.floor_need(n)
@@ -9781,6 +9834,10 @@ func _spawn_foe() -> void:
 		tier = FoeTiers.get_tier(str(eb["key"]))
 		tier["name"] = str(eb["name"])
 		tier["anim_key"] = str(eb["anim"])
+	elif raid_on == "trial":
+		# 전용 보스 — 막 보스를 빌리면 "또 저놈"이 된다(주간 보스와 같은 규칙).
+		tier = FoeTiers.get_tier("ruin_warden")
+		tier["anim_key"] = "ruin_warden"
 	elif boss:
 		tier["name"] = str(act["boss_name"])
 		tier["anim_key"] = str(act["boss_anim"])

@@ -35,6 +35,9 @@ const TIERS := {
 	"bone_choir":   {"name": "뼈의 합창단", "hp_mult": 3.6, "size": 1.45, "event": true},
 	"blood_queen":  {"name": "피의 여왕", "hp_mult": 3.7, "size": 1.3, "event": true},
 	"butcher":      {"name": "잊힌 도살자", "hp_mult": 4.0, "size": 1.45, "event": true},
+	# 시련 전용 보스 (2026-08-18 사장님: "재활용하지 말고 하나 만들어라") —
+	# 단계가 몇이든 얼굴은 이 하나다. 힘은 TrialDefs.eq_stage 가 정한다.
+	"ruin_warden":  {"name": "유적의 파수꾼", "hp_mult": 3.6, "size": 1.4, "event": true},
 }
 
 
