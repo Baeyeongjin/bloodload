@@ -44,6 +44,12 @@ const RAIDS := {
 	"pact": {"name": "계약의 제단", "currency": "인장", "goal": "endure",
 		"goal_text": "%d초를 버틴다",
 		"icon": "res://assets/ui/raid_pact.png"},
+	# 펫 먹이(사장님 2026-08-18, PET_DESIGN v2). 이름 후보 중 "야수 우리" 채택 —
+	# 바꾸려면 이 한 줄이다. goal 은 swarm 재사용(사냥 테마와 맞고, 새 규칙을
+	# 만들지 않는다). 아이콘·배경은 자리표시(blood 복사) — 아트 배치에서 교체.
+	"hunt": {"name": "야수 우리", "currency": "먹이", "goal": "swarm",
+		"goal_text": "제한 시간 안에 %d마리",
+		"icon": "res://assets/ui/raid_hunt.png"},
 }
 
 # 목표별 판 규격. swarm 은 수가 많고, slay 는 한 마리가 두껍고, endure 는
@@ -93,6 +99,7 @@ static func goal_line(kind: String) -> String:
 # 위 OPEN_STAGE 주석에 적어 뒀다.
 static func open_stage(kind: String) -> int:
 	match kind:
+		"hunt": return 30       # 펫(10구간)이 자라기 시작할 때 먹이가 필요해진다
 		"essence": return 50    # 장비 강화가 필요해지는 자리
 		"pact": return 80       # 혈맹은 장기 축이라 제일 뒤
 	return OPEN_STAGE
@@ -110,6 +117,10 @@ static func reward(kind: String, n: int) -> float:
 		return StageDefs.gold_per_kill(eq_stage(n, kind)) * 400.0
 	if kind == "pact":
 		return 60.0 + 15.0 * float(n - 1)
+	# 먹이 — 선형. 펫 레벨 비용(40 x 1.18^lv)이 지수라, 하루치(3판)로 초반은
+	# 몇 레벨씩 오르고 뒤로 갈수록 던전 단계를 밀어야 따라간다.
+	if kind == "hunt":
+		return 80.0 + 20.0 * float(n - 1)
 	return StageDefs.boss_essence(eq_stage(n, kind)) * 3.0
 
 

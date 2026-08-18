@@ -350,7 +350,11 @@ var gear_seen := {}
 # ── 펫 (PetDefs) ───────────────────────────────────────────────────────────
 # 물어온 것은 **지갑이 아니라 그릇에 담긴다** — 눌러서 받는 게 보상이다
 # (방치 상자와 같은 문법). pet_at 은 마지막 정산 시각(유닉스 초)이다.
-var pets_got := {}           # id -> 레벨(1~MAX_LV). 뽑아서 얻는다
+var pets_got := {}           # id -> 승급 별(1~MAX_STAR). 뽑기 중복이 올린다
+var pet_lv := {}             # id -> 먹이 레벨(1~lv_cap(별))
+var pet_gear_got := {}       # 장비 id -> 별
+var pet_gear_worn := {}      # 펫 id -> 장비 id (펫당 1슬롯)
+var feed := 0.0              # 먹이 — 펫 전용 재화. 야수 우리가 준다
 var pet_bank := {}           # id -> 쌓인 양
 var pet_worn := ""           # 지금 데리고 다니는 하나
 var pet_at := 0.0
@@ -5902,6 +5906,7 @@ func _raid_sweep(kind: String) -> void:
 	match kind:
 		"blood": gold += amount
 		"pact": sigil += amount
+		"hunt": feed += amount
 		_: essence += amount
 	_quest_bump("raid")   # 손으로 깬 것과 같은 값이므로 임무도 같이 센다
 	_show_reward("%s 소탕" % str(RaidDefs.RAIDS[kind]["name"]),
@@ -6071,6 +6076,7 @@ func _grant_reward(kind: String, amount: float) -> void:
 		"sigil": sigil += amount
 		"essence": essence += amount
 		"gold": gold += amount
+		"feed": feed += amount
 		_:
 			# 소환권은 "ticket_<종류>" 로 온다 — 표에 종류가 늘어도 여기는 그대로다.
 			var tk := TicketDefs.kind_of(kind)
@@ -6084,6 +6090,7 @@ static func _reward_name(kind: String) -> String:
 		"sigil": return "인장"
 		"essence": return "정수"
 		"gold": return "혈액"
+		"feed": return "먹이"
 	var tk := TicketDefs.kind_of(kind)
 	return TicketDefs.short_of(tk) if tk != "" else "보석"
 
@@ -6111,7 +6118,7 @@ func _build_raid_list(root: Control) -> void:
 	_raid_repeat_btn = rep
 	# 던전 전용 세트(사장님: 탭마다 다르게) — 사슬 감긴 돌벽 카드 + 철창 입장 버튼.
 	# 입장 버튼이 그림이라 글자·잠금 표시는 라벨과 modulate 가 맡는다.
-	var kinds := ["blood", "essence", "pact"]
+	var kinds := ["blood", "essence", "pact", "hunt"]
 	for i in kinds.size():
 		var kind: String = kinds[i]
 		var y := 92.0 + float(i) * 154.0
@@ -9223,7 +9230,7 @@ func _c_midboss_prefix() -> String:
 
 # ── 재화 던전 (RaidDefs) — 입장·이탈·하루 표 ────────────────────────────────
 var raid_on := ""                              # "" | "blood" | "essence" | "pact"
-var raid_best := {"blood": 0, "essence": 0, "pact": 0}   # 최고 클리어 단계
+var raid_best := {"blood": 0, "essence": 0, "pact": 0, "hunt": 0}   # 최고 클리어 단계
 var raid_date := ""
 # kind -> 오늘 남은 판. **클리어할 때만 깎인다**(사장님) — 못 깨고 나온 판은
 # 세지 않으므로, 실패가 손해가 아니라서 "될까?" 싶을 때 눌러 볼 수 있다.
@@ -9738,6 +9745,7 @@ func _advance_stage() -> void:
 		match kind:
 			"blood": gold += amount
 			"pact": sigil += amount
+			"hunt": feed += amount
 			_: essence += amount
 		_offline_banner.text = "%s 격파 — %s +%s" \
 			% [RaidDefs.label(kind, n), str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)]
@@ -10510,6 +10518,10 @@ func _save_game() -> void:
 	cfg.set_value("gacha", "shards", gacha_shards)
 	cfg.set_value("gacha", "free_date", free_pull_date)
 	cfg.set_value("pet", "got", pets_got)
+	cfg.set_value("pet", "lv", pet_lv)
+	cfg.set_value("pet", "gear", pet_gear_got)
+	cfg.set_value("pet", "gearworn", pet_gear_worn)
+	cfg.set_value("pet", "feed", feed)
 	cfg.set_value("pet", "bank", pet_bank)
 	cfg.set_value("pet", "worn", pet_worn)
 	cfg.set_value("pet", "at", pet_at)
@@ -10653,6 +10665,20 @@ func _load_game() -> void:
 			gacha_shards.erase(old_owned_key)
 	free_pull_date = str(cfg.get_value("gacha", "free_date", ""))
 	pets_got = cfg.get_value("pet", "got", {})
+	pet_lv = cfg.get_value("pet", "lv", {})
+	pet_gear_got = cfg.get_value("pet", "gear", {})
+	pet_gear_worn = cfg.get_value("pet", "gearworn", {})
+	feed = maxf(0.0, float(cfg.get_value("pet", "feed", 0.0)))
+	# v1 이전 — 몹 재활용 6종의 저장본은 새 로스터와 id 가 안 맞는다. 출시 전이라
+	# 통째로 초기화한다(펫에 쓴 재화가 없던 시절이라 환급할 것도 없다).
+	for k in pets_got.keys():
+		if PetDefs.of(str(k)).is_empty():
+			pets_got = {}
+			pet_lv = {}
+			pet_bank = {}
+			pet_worn = ""
+			pet_gear_worn = {}
+			break
 	pet_bank = cfg.get_value("pet", "bank", {})
 	pet_worn = str(cfg.get_value("pet", "worn", ""))
 	pet_at = float(cfg.get_value("pet", "at", 0.0))
@@ -10850,6 +10876,9 @@ func _dev_god(want: int) -> void:
 	sigil = 1e9
 	for tk in TicketDefs.KINDS:
 		tickets[tk] = 99
+	for tk in TicketDefs.PET_KINDS:
+		tickets[tk] = 99
+	feed = 1e6
 	# 장비는 **가장 높은 등급으로 한 벌** — 굴리면 등급이 들쭉날쭉해서
 	# "최신 장비로 잰다"가 안 된다.
 	var top: Dictionary = GearDefs.RARITY[GearDefs.RARITY.size() - 1]
@@ -11093,12 +11122,13 @@ func _build_pet(root: Control) -> void:
 	var sub := _panel_label(root, Vector2(PAD, PAD + 16.0), Type.SIZE_SMALL,
 		Color(0.62, 0.60, 0.68), CONTENT_W - 150.0, 18.0)
 	sub.text = "%d시간이면 그릇이 찬다 · 데리고 다니는 하나만 힘을 준다" 		% int(PetDefs.CAP_HOURS)
-	# 뽑기 — 보석으로. 풀은 지금 구간이 연 펫들이다.
+	# 뽑기 — 펫 소환권으로(사장님: 소환권 신설). 전면 판(2단계)이 오기 전까지의
+	# 임시 자리다.
 	_pet_roll_btn = Ui.button("", Vector2(PAD + CONTENT_W - 140.0, PAD - 8.0),
 		Vector2(140.0, 44.0), Type.SIZE_SMALL)
 	_pet_roll_btn.pressed.connect(func() -> void: _pet_roll())
 	root.add_child(_pet_roll_btn)
-	Ui.cost_icon(_pet_roll_btn, "res://assets/ui/res_gem.png", 16)
+	Ui.cost_icon(_pet_roll_btn, TicketDefs.icon_of("pet"), 16)
 	# **스크롤에 넣는다.** 여섯 줄 x 96 = 576 인데 반판은 358 이라 셋만 보이고
 	# 나머지는 판 밖으로 넘어갔다(실측 캡처).
 	var y0 := PAD + 44.0
@@ -11172,18 +11202,23 @@ func _refresh_pet() -> void:
 		return
 	_pet_tick()
 	if _pet_roll_btn != null:
-		var pool := PetDefs.pool(best_stage)
-		_pet_roll_btn.disabled = pool.is_empty() or gem < PetDefs.ROLL_COST
-		_pet_roll_btn.text = "%d" % int(PetDefs.ROLL_COST) if not pool.is_empty() 			else "%d구간" % int(PetDefs.PETS[0]["open"])
+		var open := best_stage >= PetDefs.PET_OPEN
+		var have_tk := int(tickets.get("pet", 0))
+		_pet_roll_btn.disabled = not open or have_tk < 1
+		_pet_roll_btn.text = ("%d" % have_tk) if open 			else "%d구간" % PetDefs.PET_OPEN
 	for i in _pet_rows.size():
 		var d: Dictionary = PetDefs.PETS[i]
 		var id := str(d["id"])
 		var row: Dictionary = _pet_rows[i]
 		var got: bool = pets_got.has(id)
-		var have := float(pet_bank.get(id, 0.0))
-		var cap := PetDefs.cap(id, _pet_lv(id))
+		var star := _pet_star(id)
 		var lv := _pet_lv(id)
-		row["name"].text = "%s  %d단계" % [str(d["name"]), lv] if got 			else "%d구간부터 뽑기에 나온다" % int(d["open"])
+		var have := float(pet_bank.get(id, 0.0))
+		var cap := PetDefs.cap(id, lv, maxi(1, star))
+		var rar := GachaDefs.rarity(str(d["rarity"]))
+		row["name"].text = "%s  %d성 %d레벨" % [str(d["name"]), star, lv] if got 			else "%s  ·  ???" % str(rar["name"])
+		row["name"].add_theme_color_override("font_color",
+			rar["col"] if got else Color(0.52, 0.50, 0.56))
 		# 아직 못 만난 펫은 실루엣만 — 빈 자리가 보여야 데려오고 싶다.
 		if row["art"] != null:
 			row["art"].modulate = Color(1, 1, 1, 1) if got 				else Color(0.12, 0.11, 0.13, 0.9)
@@ -11198,7 +11233,8 @@ func _refresh_pet() -> void:
 		# 버프가 뭔지 줄에 적는다 — 고를 이유가 보여야 한다.
 		if got:
 			row["desc"].text = "%s  ·  %s +%d%%" % [str(d["desc"]),
-				str(StatDefs.of(str(d["stat"])).get("name", d["stat"])), int(round(float(d["value"]) * 100.0))]
+				str(StatDefs.of(str(d["stat"])).get("name", d["stat"])),
+				int(round(PetDefs.bonus(id, str(d["stat"]), lv, star) * 100.0))]
 
 
 # ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
@@ -11243,45 +11279,117 @@ func _pet_tick() -> void:
 	# 아니다 — 하나만 모으면 나머지를 데려올 이유가 없어진다.
 	for id in pets_got:
 		pet_bank[id] = PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)),
-			hours, _pet_lv(str(id)))
+			hours, _pet_lv(str(id)), _pet_star(str(id)),
+			_pet_gear_value(str(id), "gather"))
 
 
 # 펫 뽑기. 유물과 같은 문법이다 — **중복은 조각이 되고 조각이 차면 한 단계**.
 # 빈손으로 돌려보내지 않는 게 이 문법의 값이다.
 func _pet_roll() -> bool:
-	var pool := PetDefs.pool(best_stage)
-	if pool.is_empty() or gem < PetDefs.ROLL_COST:
+	if best_stage < PetDefs.PET_OPEN or int(tickets.get("pet", 0)) < 1:
 		return false
-	gem -= PetDefs.ROLL_COST
-	var id: String = str(pool[randi() % pool.size()])
-	var lv := _pet_lv(id)
-	var d := PetDefs.of(id)
+	tickets["pet"] = int(tickets.get("pet", 0)) - 1
+	# 등급을 굴리고 그 안에서 하나 — 유물과 같은 문법(_receive_gacha_relic).
+	var pool := PetDefs.of_rarity(PetDefs.roll_rarity())
+	var d: Dictionary = pool[randi() % pool.size()]
+	var id := str(d["id"])
+	var star := _pet_star(id)
 	var sub := ""
-	if lv <= 0:
+	if star <= 0:
 		pets_got[id] = 1
+		pet_lv[id] = 1
 		pet_bank[id] = 0.0
 		if pet_worn == "":
 			pet_worn = id          # 첫 펫은 자동으로 데리고 다닌다
 		sub = str(d["desc"])
-	elif lv < PetDefs.MAX_LV:
+	elif star < PetDefs.MAX_STAR:
+		# 중복은 조각, 조각이 차면 승급 — 빈손으로 돌려보내지 않는다.
 		var key := "pet:" + id
 		var sh := int(gacha_shards.get(key, 0)) + 1
-		if sh >= PetDefs.SHARDS_PER_LV:
-			pets_got[id] = lv + 1
-			sh -= PetDefs.SHARDS_PER_LV
-			sub = "%d단계가 되었다" % (lv + 1)
+		if sh >= PetDefs.SHARDS_PER_STAR:
+			pets_got[id] = star + 1
+			sh -= PetDefs.SHARDS_PER_STAR
+			sub = "%d성이 되었다" % (star + 1)
 		else:
-			sub = "조각 %d / %d" % [sh, PetDefs.SHARDS_PER_LV]
+			sub = "조각 %d / %d" % [sh, PetDefs.SHARDS_PER_STAR]
 		gacha_shards[key] = sh
 	else:
 		sub = "이미 끝까지 컸다"
 	_show_reward(str(d["name"]),
 		[{"icon": "res://assets/ui/tab_codex.png",
-		"label": "%d단계" % _pet_lv(id), "sub": sub}])
+		"label": "%d성" % _pet_star(id), "sub": sub}])
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_pet()
 	return true
+
+
+# 펫 장비 뽑기 — 펫과 같은 문법. UI 는 전면 판(2단계)에서 온다.
+func _petgear_roll() -> bool:
+	if best_stage < PetDefs.PET_OPEN or int(tickets.get("petgear", 0)) < 1:
+		return false
+	tickets["petgear"] = int(tickets.get("petgear", 0)) - 1
+	var pool := PetDefs.gear_of_rarity(PetDefs.roll_rarity())
+	var d: Dictionary = pool[randi() % pool.size()]
+	var id := str(d["id"])
+	var star := clampi(int(pet_gear_got.get(id, 0)), 0, PetDefs.MAX_STAR)
+	var sub := ""
+	if star <= 0:
+		pet_gear_got[id] = 1
+		sub = "수집 +%d%%" % int(float(d["value"]) * 100.0) 			if str(d["kind"]) == "gather" 			else "버프 증폭 +%d%%" % int(float(d["value"]) * 100.0)
+	elif star < PetDefs.MAX_STAR:
+		var key := "petgear:" + id
+		var sh := int(gacha_shards.get(key, 0)) + 1
+		if sh >= PetDefs.SHARDS_PER_STAR:
+			pet_gear_got[id] = star + 1
+			sh -= PetDefs.SHARDS_PER_STAR
+			sub = "%d성이 되었다" % (star + 1)
+		else:
+			sub = "조각 %d / %d" % [sh, PetDefs.SHARDS_PER_STAR]
+		gacha_shards[key] = sh
+	else:
+		sub = "이미 끝까지 컸다"
+	_show_reward(str(d["name"]),
+		[{"icon": "res://assets/ui/tab_codex.png",
+		"label": "%d성" % clampi(int(pet_gear_got.get(id, 0)), 0,
+			PetDefs.MAX_STAR), "sub": sub}])
+	_save_game()
+	_refresh_pet()
+	return true
+
+
+# 먹이 강화 — 레벨 하나. 상한은 승급(별)이 연다.
+func _pet_feed(id: String) -> bool:
+	var star := _pet_star(id)
+	if star <= 0:
+		return false
+	var lv := _pet_lv(id)
+	if lv >= PetDefs.lv_cap(star):
+		return false
+	var cost := PetDefs.feed_cost(lv)
+	if feed < cost:
+		return false
+	feed -= cost
+	pet_lv[id] = lv + 1
+	_save_game()
+	_refresh_pet()
+	return true
+
+
+# 장비를 펫에게. **한 장비는 한 펫만** 든다 — 같은 장비가 두 펫에 걸리면
+# 증폭이 복제된다.
+func _pet_equip_gear(pet_id: String, gear_id: String) -> void:
+	if _pet_star(pet_id) <= 0 or int(pet_gear_got.get(gear_id, 0)) <= 0:
+		return
+	for k in pet_gear_worn.keys():
+		if str(pet_gear_worn[k]) == gear_id:
+			pet_gear_worn.erase(k)
+	if str(pet_gear_worn.get(pet_id, "")) == gear_id:
+		pet_gear_worn.erase(pet_id)      # 같은 걸 다시 누르면 벗는다
+	else:
+		pet_gear_worn[pet_id] = gear_id
+	_save_game()
+	_refresh_pet()
 
 
 func _pet_collect(id: String) -> void:
@@ -11289,12 +11397,12 @@ func _pet_collect(id: String) -> void:
 	var amount := float(pet_bank.get(id, 0.0))
 	if amount < 1.0:
 		return
-	var p := PetDefs.of(id)
+	var d := PetDefs.of(id)
 	pet_bank[id] = 0.0
-	_grant_reward(str(p["gain"]), amount)
-	_show_reward(str(p["name"]),
-		[{"icon": "res://assets/ui/%s.png" % _reward_icon(str(p["gain"])),
-		"label": "%s +%s" % [_reward_name(str(p["gain"])), _n(amount)]}])
+	_grant_reward(str(d["gain"]), amount)
+	_show_reward(str(d["name"]),
+		[{"icon": "res://assets/ui/%s.png" % _reward_icon(str(d["gain"])),
+		"label": "%s +%s" % [_reward_name(str(d["gain"])), _n(amount)]}])
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_pet()
@@ -11302,8 +11410,23 @@ func _pet_collect(id: String) -> void:
 
 # 데리고 다니는 펫이 그 능력치에 주는 몫. 배율 훅마다 한 줄로 붙는다.
 func _pet_mult(stat: String) -> float:
-	return PetDefs.bonus(pet_worn, stat, _pet_lv(pet_worn))
+	return PetDefs.bonus(pet_worn, stat, _pet_lv(pet_worn),
+		_pet_star(pet_worn), _pet_gear_value(pet_worn, "amp"))
+
+
+func _pet_star(id: String) -> int:
+	return clampi(int(pets_got.get(id, 0)), 0, PetDefs.MAX_STAR)
 
 
 func _pet_lv(id: String) -> int:
-	return clampi(int(pets_got.get(id, 0)), 0, PetDefs.MAX_LV)
+	return clampi(int(pet_lv.get(id, 1)), 1, PetDefs.lv_cap(maxi(1, _pet_star(id))))
+
+
+# 그 펫이 든 장비의 갈래별 값. gather 는 수집에, amp 는 버프에 곱해진다.
+func _pet_gear_value(pet_id: String, kind: String) -> float:
+	var gid := str(pet_gear_worn.get(pet_id, ""))
+	var g := PetDefs.gear_of(gid)
+	if g.is_empty() or str(g["kind"]) != kind:
+		return 0.0
+	var star := clampi(int(pet_gear_got.get(gid, 0)), 1, PetDefs.MAX_STAR)
+	return float(g["value"]) * PetDefs.star_mult(star)

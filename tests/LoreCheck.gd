@@ -94,7 +94,8 @@ func _init() -> void:
 	# 그 판을 다시 만들면 여는 곳이 둘이 되어 하나는 늘 낡은 값을 보인다.
 	assert(not ("_title_view" in scene), "칭호 판이 되살아났다")
 	scene._codex_set_mode("title")
-	assert(scene._title_head != null, "칭호 소탭에 머리글이 없다")
+	# 머리글은 공용 두 줄(_codex_head_text)로 옮겨 갔다 — 이정표 줄만 남았다.
+	assert(scene._title_ms != null, "칭호 소탭에 이정표 줄이 없다")
 	assert(scene._title_names.size() == TitleDefs.TITLES.size(),
 		"칭호 줄 수가 표와 다르다: %d" % scene._title_names.size())
 

@@ -1,57 +1,169 @@
 class_name PetDefs
 
-# 펫 — **자원을 물어오고, 데리고 다니면 힘이 붙는다** (docs/PET_DESIGN.md).
+# 펫 v2 — **등급 5x5 = 25종 로스터** (docs/PET_DESIGN.md v2, 사장님 확정 2026-08-18).
 #
-# 왜 이 둘을 같이 하나:
+# v1(구간이 펫을 직접 주던 6종)에서 바뀐 것:
+#   - 획득은 **펫 소환권 뽑기**다. 풀은 처음부터 25종 전부고 등급이 희귀도다.
+#   - 성장이 두 축이다: **레벨(먹이)** x **승급(중복 조각)**. 방치형 표준 문법.
+#   - 펫 장비(무기 25종)가 생겼다 — 수집 증폭 / 버프 증폭 두 갈래.
 #
-# 1. **짧은 시계가 없었다.** 방치 8시간 · 일일 24시간 · 주간 7일뿐이라 하루 한
-#    번 들어와 다 처리하면 그날 할 게 없다. 펫은 상한이 차면 멈추므로 **한 번
-#    더 들를 이유**가 된다(업계 공통 문법: 주기가 다른 시계를 섞는다).
+# 변하지 않은 원칙:
+#   - 물어오는 재화는 방치 상자(혈액)와 **안 겹친다** — 혈정·정수·인장·먹이.
+#   - 버프는 **데리고 다니는 하나만** 준다. 수집은 가진 전부가 한다.
 #
-# 2. **성장이 눈에 안 보였다.** 장비를 아무리 껴도 캐릭터 그림이 그대로다.
-#    스킨으로 풀려다 접었는데(108장 문제), 펫은 **몸에 안 붙어서** 모션과
-#    무관하다 — 그래서 자산도 몹 스프라이트를 그대로 쓴다.
-#
-# 물어오는 재화는 **방치 상자와 겹치지 않게** 골랐다. 상자가 혈액이므로 펫은
-# 혈정·정수·인장 쪽이다 — 같은 걸 주면 방치 상자의 값이 깎인다.
+# anim 은 전부 **자리표시**다(기존 몹 walk 재활용). 아트 배치에서 25종을
+# 오리지널로 뽑아 교체한다(idle 4~6프레임, 후보는 사장님이 고른다).
 
-# 상한이 차면 멈춘다. 이 값이 "한 번 더 들를 이유"의 크기다 — 짧으면 숙제가
-# 되고, 길면 하루 한 번으로 충분해져 짧은 시계라는 목적이 사라진다.
-const CAP_HOURS := 6.0
+const CAP_HOURS := 6.0        # 그릇이 차는 시간 — "한 번 더 들를 이유"의 크기
+const PET_OPEN := 10          # 펫 소환이 열리는 구간
 
-# **뽑아서 얻는다**(사장님 2026-08-18). 구간은 이제 "뽑기 풀에 들어오는 때"다 —
-# 진행만으로 다 주면 뽑을 이유가 없고, 진행과 무관하면 1구간에 최종 펫이 나온다.
-#
-# 소환권을 다섯째로 만들지 않은 건 지갑 칸 때문이다(TicketDefs 가 고급권을 뺀
-# 그 이유) — **보석으로 뽑는다.** 보석은 원래 여러 곳에 쓰는 통화라 칸이 안 는다.
-const ROLL_COST := 150.0
-const MAX_LV := 5
-const SHARDS_PER_LV := 4       # 중복 4개 = 한 단계 (유물과 같은 문법)
+# 승급(별) — 중복 뽑기 조각. 유물과 같은 문법이라 따로 배울 게 없다.
+const MAX_STAR := 5
+const SHARDS_PER_STAR := 4
+
+# 레벨 — 먹이(전용 재화, 야수 우리가 준다). 상한은 승급이 연다:
+# 별 하나당 10레벨. 조각만으로도 먹이만으로도 끝까지 못 가는 게 의도다.
+const FEED_BASE := 40.0
+const FEED_EXP := 1.18
 
 
-# 레벨이 오르면 물어오는 양과 버프가 같이 는다. 1레벨이 표값이고 만렙이 두 배다.
-static func level_mult(level: int) -> float:
-	return 1.0 + 0.25 * float(clampi(level, 1, MAX_LV) - 1)
+static func lv_cap(star: int) -> int:
+	return 10 * clampi(star, 1, MAX_STAR)
+
+
+static func feed_cost(lv: int) -> float:
+	return FEED_BASE * pow(FEED_EXP, float(lv - 1))
+
+
+# 성장 배수 — 수집 시급과 버프에 같이 곱한다.
+# 레벨은 잘게(+6%/레벨), 승급은 굵게(+25%/별). 만렙 만별이면 약 x7.8.
+static func growth_mult(lv: int, star: int) -> float:
+	return (1.0 + 0.06 * float(clampi(lv, 1, lv_cap(star)) - 1)) \
+		* star_mult(star)
+
+
+static func star_mult(star: int) -> float:
+	return 1.0 + 0.25 * float(clampi(star, 1, MAX_STAR) - 1)
+
+
+# ── 로스터 25 ──────────────────────────────────────────────────────────────
+# 등급마다 다섯. gain 은 [혈정, 먹이, 정수, 혈정, 인장] 순환 — 등급마다 먹이
+# 펫이 하나씩 있다(설계: "펫 수집 소량"이 먹이의 곁수입이다).
+const RARITY_KEYS := ["common", "uncommon", "rare", "epic", "legend"]
 
 const PETS := [
-	{"id": "bat", "name": "핏빛 박쥐", "anim": "bat", "open": 10,
-		"gain": "crystal", "per_hour": 18.0, "stat": "damage", "value": 0.04,
-		"desc": "동굴에서 따라왔다. 피 냄새를 먼저 맡는다."},
-	{"id": "wisp", "name": "서리 불씨", "anim": "ice_wisp", "open": 40,
-		"gain": "crystal", "per_hour": 40.0, "stat": "speed", "value": 0.05,
+	# 커먼 — 시급 낮고 버프 3%.
+	{"id": "nightwing", "name": "밤날개", "rarity": "common", "anim": "bat",
+		"gain": "crystal", "per_hour": 14.0, "stat": "damage", "value": 0.03,
+		"desc": "동굴 천장에서 떨어져 나왔다."},
+	{"id": "gravemoss", "name": "무덤이끼", "rarity": "common", "anim": "slime",
+		"gain": "feed", "per_hour": 10.0, "stat": "tough", "value": 0.03,
+		"desc": "비석 밑에서 자랐다. 뭐든 천천히 삼킨다."},
+	{"id": "bonerattle", "name": "뼈울림", "rarity": "common", "anim": "skeleton",
+		"gain": "essence", "per_hour": 5.0, "stat": "speed", "value": 0.03,
+		"desc": "주인을 여섯 번 갈아치웠다."},
+	{"id": "embermote", "name": "불티", "rarity": "common", "anim": "fire_imp",
+		"gain": "crystal", "per_hour": 15.0, "stat": "gold", "value": 0.03,
+		"desc": "꺼진 화로에서 주웠다."},
+	{"id": "webling", "name": "거미새끼", "rarity": "common", "anim": "spider",
+		"gain": "sigil", "per_hour": 3.0, "stat": "damage", "value": 0.03,
+		"desc": "제 그물에 자주 걸린다."},
+	# 언커먼 — 5%.
+	{"id": "frostwisp", "name": "서리혼불", "rarity": "uncommon", "anim": "ice_wisp",
+		"gain": "crystal", "per_hour": 24.0, "stat": "speed", "value": 0.05,
 		"desc": "얼음 위에서만 켜진다. 손을 대면 차갑다."},
-	{"id": "imp", "name": "잿불 임프", "anim": "fire_imp", "open": 80,
-		"gain": "essence", "per_hour": 12.0, "stat": "damage", "value": 0.07,
-		"desc": "불을 훔쳐 먹고 산다. 자주 말썽을 부린다."},
-	{"id": "spider", "name": "서리 거미", "anim": "frost_spider", "open": 130,
-		"gain": "sigil", "per_hour": 8.0, "stat": "gold", "value": 0.08,
-		"desc": "그물에 걸린 것을 제 것으로 안다."},
-	{"id": "slime", "name": "굳은 점액", "anim": "slime", "open": 200,
-		"gain": "essence", "per_hour": 26.0, "stat": "tough", "value": 0.10,
-		"desc": "무엇이든 삼키고 아무것도 소화하지 않는다."},
-	{"id": "wraith", "name": "공허 망령", "anim": "void_wraith", "open": 300,
-		"gain": "sigil", "per_hour": 20.0, "stat": "damage", "value": 0.12,
-		"desc": "이름을 잊은 자리에 생긴다. 뒤를 자꾸 돌아본다."},
+	{"id": "sporeling", "name": "홀씨돌이", "rarity": "uncommon", "anim": "mushroom",
+		"gain": "feed", "per_hour": 16.0, "stat": "gold", "value": 0.05,
+		"desc": "밟으면 는다. 정말로 는다."},
+	{"id": "cinderhound", "name": "잿불 사냥개", "rarity": "uncommon", "anim": "hellhound",
+		"gain": "essence", "per_hour": 8.0, "stat": "damage", "value": 0.05,
+		"desc": "불을 물어오라면 불을 물어온다."},
+	{"id": "ashtoad", "name": "재두꺼비", "rarity": "uncommon", "anim": "lava_toad",
+		"gain": "crystal", "per_hour": 26.0, "stat": "tough", "value": 0.05,
+		"desc": "삼킨 것을 절대 말하지 않는다."},
+	{"id": "palegnaw", "name": "창백한 이빨", "rarity": "uncommon", "anim": "ghoul",
+		"gain": "sigil", "per_hour": 6.0, "stat": "speed", "value": 0.05,
+		"desc": "씹는 소리가 먼저 들린다."},
+	# 레어 — 7%.
+	{"id": "sneakfang", "name": "송곳니 도둑", "rarity": "rare", "anim": "goblin",
+		"gain": "crystal", "per_hour": 36.0, "stat": "damage", "value": 0.07,
+		"desc": "훔친 것을 자랑하러 돌아온다."},
+	{"id": "rotshuffle", "name": "끌신", "rarity": "rare", "anim": "zombie",
+		"gain": "feed", "per_hour": 24.0, "stat": "tough", "value": 0.07,
+		"desc": "서두르는 법을 잊었다. 도착은 한다."},
+	{"id": "tuskbrute", "name": "엄니 짐승", "rarity": "rare", "anim": "orc",
+		"gain": "essence", "per_hour": 12.0, "stat": "gold", "value": 0.07,
+		"desc": "제 엄니를 세다가 잠든다."},
+	{"id": "hornling", "name": "뿔돋이", "rarity": "rare", "anim": "demon",
+		"gain": "crystal", "per_hour": 38.0, "stat": "speed", "value": 0.07,
+		"desc": "뿔이 가려울 때가 제일 위험하다."},
+	{"id": "rimeweaver", "name": "서리 길쌈꾼", "rarity": "rare", "anim": "frost_spider",
+		"gain": "sigil", "per_hour": 9.0, "stat": "damage", "value": 0.07,
+		"desc": "짜 놓은 그물이 녹지 않는다."},
+	# 에픽 — 10%.
+	{"id": "frosthulk", "name": "서리 거인", "rarity": "epic", "anim": "frost_golem",
+		"gain": "crystal", "per_hour": 52.0, "stat": "tough", "value": 0.10,
+		"desc": "천 년을 서 있었다. 급할 게 없다."},
+	{"id": "veilchanter", "name": "장막 읊는 자", "rarity": "epic", "anim": "cultist",
+		"gain": "feed", "per_hour": 34.0, "stat": "gold", "value": 0.10,
+		"desc": "낮은 목소리로 값을 깎는다."},
+	{"id": "hagspawn", "name": "마녀의 씨", "rarity": "epic", "anim": "plague_hag",
+		"gain": "essence", "per_hour": 18.0, "stat": "damage", "value": 0.10,
+		"desc": "심은 적 없는 곳에서 돋는다."},
+	{"id": "alleye", "name": "온눈", "rarity": "epic", "anim": "eye_mass",
+		"gain": "crystal", "per_hour": 55.0, "stat": "speed", "value": 0.10,
+		"desc": "감는 법을 모른다. 전부 본다."},
+	{"id": "choirbone", "name": "뼈의 성가대", "rarity": "epic", "anim": "bone_choir",
+		"gain": "sigil", "per_hour": 14.0, "stat": "tough", "value": 0.10,
+		"desc": "한 몸에서 여러 목소리가 난다."},
+	# 전설 — 13%.
+	{"id": "duskknight", "name": "황혼 기사", "rarity": "legend", "anim": "dark_knight",
+		"gain": "crystal", "per_hour": 75.0, "stat": "damage", "value": 0.13,
+		"desc": "해가 지는 쪽으로만 걷는다."},
+	{"id": "wraithlord", "name": "망령 군주", "rarity": "legend", "anim": "wraith_knight",
+		"gain": "feed", "per_hour": 48.0, "stat": "speed", "value": 0.13,
+		"desc": "신하를 잃고도 왕관을 안 벗었다."},
+	{"id": "voidmaw", "name": "공허 아가리", "rarity": "legend", "anim": "void_wraith",
+		"gain": "essence", "per_hour": 26.0, "stat": "gold", "value": 0.13,
+		"desc": "삼킨 자리에 이름이 남지 않는다."},
+	{"id": "fleshreaper", "name": "살점 수확자", "rarity": "legend", "anim": "butcher",
+		"gain": "crystal", "per_hour": 78.0, "stat": "tough", "value": 0.13,
+		"desc": "수확철이 끝나지 않는다고 믿는다."},
+	{"id": "stonewing", "name": "돌날개", "rarity": "legend", "anim": "gargoyle",
+		"gain": "sigil", "per_hour": 20.0, "stat": "damage", "value": 0.13,
+		"desc": "낮에는 지붕이고 밤에는 이빨이다."},
+]
+
+
+# ── 펫 장비(무기) 25 ───────────────────────────────────────────────────────
+# 두 갈래만 있다: gather(수집 시급 +%) / amp(장착 펫 버프 +%). 영웅 장비와
+# 겹치지 않는 축이라 파워 예산 충돌이 없다. icon 은 아트 배치에서 채운다.
+const GEAR := [
+	{"id": "bone_dirk", "name": "뼈 단검", "rarity": "common", "kind": "gather", "value": 0.10},
+	{"id": "rust_hook", "name": "녹슨 갈고리", "rarity": "common", "kind": "amp", "value": 0.08},
+	{"id": "blood_bell", "name": "핏빛 방울", "rarity": "common", "kind": "gather", "value": 0.10},
+	{"id": "thorn_leash", "name": "가시 목줄", "rarity": "common", "kind": "amp", "value": 0.08},
+	{"id": "ash_cane", "name": "재의 지팡이", "rarity": "common", "kind": "gather", "value": 0.10},
+	{"id": "frost_pick", "name": "서리 송곳", "rarity": "uncommon", "kind": "amp", "value": 0.12},
+	{"id": "moon_whistle", "name": "달빛 호루라기", "rarity": "uncommon", "kind": "gather", "value": 0.15},
+	{"id": "heart_chain", "name": "심장 사슬", "rarity": "uncommon", "kind": "amp", "value": 0.12},
+	{"id": "shade_whip", "name": "그늘 채찍", "rarity": "uncommon", "kind": "gather", "value": 0.15},
+	{"id": "ember_brand", "name": "잿불 낙인", "rarity": "uncommon", "kind": "amp", "value": 0.12},
+	{"id": "silver_bit", "name": "은 재갈", "rarity": "rare", "kind": "gather", "value": 0.22},
+	{"id": "storm_quill", "name": "폭풍 깃털", "rarity": "rare", "kind": "amp", "value": 0.18},
+	{"id": "blood_horn", "name": "핏빛 나팔", "rarity": "rare", "kind": "gather", "value": 0.22},
+	{"id": "fang_spear", "name": "어금니 창", "rarity": "rare", "kind": "amp", "value": 0.18},
+	{"id": "rime_chime", "name": "서리 종", "rarity": "rare", "kind": "gather", "value": 0.22},
+	{"id": "abyss_claw", "name": "심연 갈퀴", "rarity": "epic", "kind": "amp", "value": 0.25},
+	{"id": "crown_shard", "name": "왕관 파편", "rarity": "epic", "kind": "gather", "value": 0.30},
+	{"id": "grail_sip", "name": "성혈 잔", "rarity": "epic", "kind": "amp", "value": 0.25},
+	{"id": "shadow_noose", "name": "그림자 올가미", "rarity": "epic", "kind": "gather", "value": 0.30},
+	{"id": "thunder_torc", "name": "뇌우 목걸이", "rarity": "epic", "kind": "amp", "value": 0.25},
+	{"id": "doom_fang", "name": "종말의 이빨", "rarity": "legend", "kind": "gather", "value": 0.40},
+	{"id": "redmoon_scythe", "name": "붉은 달 낫", "rarity": "legend", "kind": "amp", "value": 0.35},
+	{"id": "void_chain", "name": "공허 사슬", "rarity": "legend", "kind": "gather", "value": 0.40},
+	{"id": "eternal_horn", "name": "영원의 뿔피리", "rarity": "legend", "kind": "amp", "value": 0.35},
+	{"id": "kings_vein", "name": "왕의 핏줄", "rarity": "legend", "kind": "gather", "value": 0.40},
 ]
 
 
@@ -62,46 +174,72 @@ static func of(id: String) -> Dictionary:
 	return {}
 
 
-static func unlocked(id: String, best_stage: int) -> bool:
+static func gear_of(id: String) -> Dictionary:
+	for g in GEAR:
+		if str(g["id"]) == id:
+			return g
+	return {}
+
+
+static func of_rarity(rarity: String) -> Array:
+	var out: Array = []
+	for p in PETS:
+		if str(p["rarity"]) == rarity:
+			out.append(p)
+	return out
+
+
+static func gear_of_rarity(rarity: String) -> Array:
+	var out: Array = []
+	for g in GEAR:
+		if str(g["rarity"]) == rarity:
+			out.append(g)
+	return out
+
+
+# 등급 굴림 — GachaDefs 의 무게를 그대로 쓰되 우리 다섯 등급만 본다
+# (신화는 펫에 없다). 표를 복사하지 않는 건 확률을 두 곳에서 관리하지
+# 않으려는 것이다.
+static func roll_rarity() -> String:
+	var total := 0.0
+	for r in GachaDefs.RARITIES:
+		if str(r["key"]) in RARITY_KEYS:
+			total += float(r["weight"])
+	var pick := randf() * total
+	for r in GachaDefs.RARITIES:
+		if not (str(r["key"]) in RARITY_KEYS):
+			continue
+		pick -= float(r["weight"])
+		if pick <= 0.0:
+			return str(r["key"])
+	return "common"
+
+
+static func per_hour(id: String, lv: int, star: int) -> float:
 	var p := of(id)
-	return not p.is_empty() and best_stage >= int(p["open"])
+	return 0.0 if p.is_empty() \
+		else float(p["per_hour"]) * growth_mult(lv, star)
 
 
-# 상한. 펫마다 시급이 달라 상한도 따라 다르다 — 시간으로 재야 "여섯 시간마다
-# 들르면 된다"가 모든 펫에서 같은 말이 된다.
-static func per_hour(id: String, level: int) -> float:
-	var p := of(id)
-	return 0.0 if p.is_empty() 		else float(p["per_hour"]) * level_mult(level)
+static func cap(id: String, lv: int, star: int) -> float:
+	return per_hour(id, lv, star) * CAP_HOURS
 
 
-static func cap(id: String, level := 1) -> float:
-	return per_hour(id, level) * CAP_HOURS
-
-
-# hours 만큼 지났을 때 쌓이는 양. 이미 있던 것에 더하고 상한에서 자른다.
-static func accrue(id: String, have: float, hours: float,
-		level := 1) -> float:
+static func accrue(id: String, have: float, hours: float, lv: int,
+		star: int, gather := 0.0) -> float:
 	if of(id).is_empty() or hours <= 0.0:
 		return have
-	return minf(cap(id, level), have + per_hour(id, level) * hours)
+	var rate := per_hour(id, lv, star) * (1.0 + gather)
+	return minf(cap(id, lv, star) * (1.0 + gather), have + rate * hours)
 
 
-# 장착한 펫이 그 능력치에 주는 몫. 안 데리고 다니면 0 이다 —
-# **가진 것 전부가 아니라 장착한 하나만** 준다(그래야 고를 이유가 생긴다).
-static func bonus(worn: String, stat: String, level := 1) -> float:
+# 데리고 다니는 하나만 버프를 준다. amp 는 그 펫이 든 장비의 증폭이다.
+static func bonus(worn: String, stat: String, lv: int, star: int,
+		amp := 0.0) -> float:
 	var p := of(worn)
 	if p.is_empty() or str(p["stat"]) != stat:
 		return 0.0
-	return float(p["value"]) * level_mult(level)
-
-
-# 그 구간에서 뽑을 수 있는 펫들. 빈 배열이면 아직 뽑기가 안 열린 것이다.
-static func pool(best_stage: int) -> Array:
-	var out: Array = []
-	for p in PETS:
-		if best_stage >= int(p["open"]):
-			out.append(str(p["id"]))
-	return out
+	return float(p["value"]) * growth_mult(lv, star) * (1.0 + amp)
 
 
 static func icon_dir(id: String) -> String:

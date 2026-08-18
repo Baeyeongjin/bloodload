@@ -14,6 +14,10 @@ class_name TicketDefs
 # 고급권(에픽 확정)은 뺐다 (사장님) — 종류가 넷이 되면서 지갑에 다섯째 칸까지
 # 두면 화면에 다 못 적고, 확정 등급은 천장이 이미 하는 일이다.
 const KINDS := ["weapon", "armor", "trinket", "skill"]
+# 펫 v2 (사장님 2026-08-18): 펫권·펫 장비권. **KINDS 에 안 섞는 이유** —
+# 소환 탭 지갑이 KINDS 를 네 칸 폭으로 그린다. 펫권은 펫 탭이 보여 준다.
+# 지갑 칸 증가는 사장님이 감수하기로 한 결정이다.
+const PET_KINDS := ["pet", "petgear"]
 
 const INFO := {
 	"weapon": {"name": "무기 소환권", "short": "무기권",
@@ -24,6 +28,11 @@ const INFO := {
 		"icon": "res://assets/ui/ticket_trinket.png"},
 	"skill": {"name": "스킬 소환권", "short": "스킬권",
 		"icon": "res://assets/ui/ticket_skill.png"},
+	# 아이콘은 자리표시(아트 배치에서 전용으로 교체).
+	"pet": {"name": "펫 소환권", "short": "펫권",
+		"icon": "res://assets/ui/ticket_trinket.png"},
+	"petgear": {"name": "펫 장비 소환권", "short": "펫장비권",
+		"icon": "res://assets/ui/ticket_armor.png"},
 }
 
 # 보상 표에 적는 이름 — "ticket_weapon" 처럼 쓴다(Main._grant_reward 가 푼다).
@@ -32,7 +41,7 @@ const PREFIX := "ticket_"
 
 static func kind_of(reward: String) -> String:
 	var k := reward.trim_prefix(PREFIX)
-	return k if k in KINDS else ""
+	return k if (k in KINDS or k in PET_KINDS) else ""
 
 
 static func reward_of(kind: String) -> String:
