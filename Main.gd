@@ -340,6 +340,16 @@ var codex := {}             # 몹 key -> 누적 처치 수
 # 프레임 도는 자리라 그때마다 22칸을 세지 않고, 값이 바뀌는 순간에만 다시 센다.
 var codex_found := 0
 var codex_knowledge := 0
+# 장비 도감 — **본 적 있는 종류**(icon -> true). gear_inventory 로는 못 센다:
+# 분해하면 사라져서 도감이 거꾸로 줄어든다. 스킬은 skill_owned 가 안 사라지므로
+# 따로 안 둔다(LoreDefs).
+var gear_seen := {}
+var _codex_roots := {}
+var _codex_tab_art := {}
+var _codex_mode := "foe"
+var _lore_cells := {}         # "gear"/"skill" -> [{"ico","dim"}...]
+var _lore_note := {}          # 소탭별 "몇 종 · 다음 이정표" 한 줄
+var _act_rows: Array[Dictionary] = []
 # 트랙 kind -> 지금까지 깬 단계 수. 가이드는 여기서 "다음 목표"를 계산한다.
 # 지금까지 깬 가이드 수 = 지금 도전 중인 가이드의 번호(0부터). 가이드가 한 줄로
 # 이어지므로 상태가 이 숫자 하나뿐이다.
@@ -701,6 +711,10 @@ func _ready() -> void:
 		if arg.begins_with("--tab="):
 			_select_tab(arg.trim_prefix("--tab="))
 		# [개발 도구] --titles : 도감 탭의 칭호 목록을 연 채로 캡처한다.
+		# [개발 도구] --codex=gear|skill|act : 도감 소탭을 연 채로 캡처한다.
+		if arg.begins_with("--codex="):
+			_select_tab("codex")
+			_codex_set_mode(arg.trim_prefix("--codex="))
 		if arg == "--titles":
 			_select_tab("codex")
 			_title_view.visible = true
@@ -3844,6 +3858,7 @@ func _receive_gacha_gear(rarity_key: String) -> Dictionary:
 		return {}
 	item["kind"] = "gear"
 	item["copies"] = 1
+	gear_seen[str(item["icon"])] = true      # 도감 — 손에 쥔 적이 있는가
 	var old_max := max_hp()
 	var owned_key := "gear:" + str(item["icon"])
 	var inventory_key := str(item["icon"])
@@ -4648,6 +4663,10 @@ const CODEX_HEAD_H := 24.0        # 맨 위 종수 보상 한 줄
 const CODEX_LIST_W := 156.0       # 칸 글자폭 74px — "999.9t"(72) 가 들어가는 최소값
 const CODEX_ROW_H := 62.0
 const CODEX_BIG := 72.0           # 상세의 큰 그림
+const CODEX_TAB_Y := 54.0         # 머리글 아래 소탭 줄
+const LORE_COLS := 8              # 격자 열 수 — 528 폭에 칸 60 + 간격 6
+const LORE_CELL := 60.0
+const LORE_GAP := 6.0
 
 
 # 도감. 방치형에서 "언젠가 다 채운다"는 장기 목표는 공짜다 — 처치 수는 이미 세고 있다.
@@ -4681,6 +4700,45 @@ func _build_codex(root: Control) -> void:
 	# 도감 첫 화면이 세 갈래로 갈린다. 임무판처럼 **전투 화면 오른쪽 버튼**으로
 	# 옮겼다(_build_quests 옆) — 도감 탭은 몬스터 도감 하나만 본다.
 
+	# ── 소탭 넷 ── (사장님 2026-08-18: 도감에 장비·스킬·연대기를 더한다)
+	# 몬스터만 있던 판이라 오른쪽 상세가 늘 비어 보였다. 소탭은 임무판과
+	# 같은 문법이고, 세트만 가죽책(tome)으로 다르다.
+	var ctabs := [["foe", "몬스터"], ["gear", "장비"], ["skill", "스킬"],
+		["act", "연대기"]]
+	var ctw := (CONTENT_W - 18.0) / 4.0
+	for i in ctabs.size():
+		var cm := str(ctabs[i][0])
+		var cp := Vector2(PAD + float(i) * (ctw + 6.0), CODEX_TAB_Y)
+		var con := Ui.set_tab(TOME, true, cp, Vector2(ctw, 32.0))
+		root.add_child(Ui.set_tab(TOME, false, cp, Vector2(ctw, 32.0)))
+		root.add_child(con)
+		var cl := _panel_label(root, Vector2(cp.x, cp.y + 8.0),
+			Type.SIZE_SMALL, Color(0.92, 0.88, 0.84), ctw, 18.0)
+		cl.text = str(ctabs[i][1])
+		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var cb := Ui.button("", cp, Vector2(ctw, 32.0), Type.SIZE_SMALL)
+		cb.modulate = Color(1, 1, 1, 0)
+		cb.pressed.connect(func() -> void: _codex_set_mode(cm))
+		root.add_child(cb)
+		_codex_tab_art[cm] = {"on": con, "lbl": cl}
+	for key in ["foe", "gear", "skill", "act"]:
+		var r := Control.new()
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(r)
+		_codex_roots[key] = r
+	_codex_build_foe(_codex_roots["foe"])
+	_lore_build(_codex_roots["gear"], "gear")
+	_lore_build(_codex_roots["skill"], "skill")
+	_act_build(_codex_roots["act"])
+	_codex_set_mode("foe")
+	_build_status(root)
+	_build_titles(root)
+
+
+# 몬스터 도감 본문 — 왼쪽 목록과 오른쪽 상세. 소탭이 생기면서 통째로
+# 떼어냈다(내용은 그대로다).
+func _codex_build_foe(root: Control) -> void:
+	var keys := FoeTiers.all_keys()
 	var body_y := PAD + CODEX_HEAD_H + 8.0
 	var body_h := CONTENT_BOTTOM - body_y
 	var sc := Ui.scroll(Vector2(PAD, body_y), Vector2(CODEX_LIST_W, body_h))
@@ -4719,8 +4777,6 @@ func _build_codex(root: Control) -> void:
 	root.add_child(bar)
 	_codex_detail["bar"] = bar
 	_codex_selected = str(keys[0])
-	_build_status(root)
-	_build_titles(root)
 
 
 # 지식 합계가 실제로 무슨 능력치가 됐는지 한 장에 편다.
@@ -10394,6 +10450,7 @@ func _save_game() -> void:
 	cfg.set_value("gacha", "owned", gacha_owned)
 	cfg.set_value("gacha", "shards", gacha_shards)
 	cfg.set_value("gacha", "free_date", free_pull_date)
+	cfg.set_value("codex", "gear_seen", gear_seen)
 	cfg.set_value("attend", "got", attend_got)
 	cfg.set_value("attend", "date", attend_date)
 	cfg.set_value("quest", "date", quest_date)
@@ -10532,6 +10589,7 @@ func _load_game() -> void:
 				+ int(gacha_shards[old_owned_key])
 			gacha_shards.erase(old_owned_key)
 	free_pull_date = str(cfg.get_value("gacha", "free_date", ""))
+	gear_seen = cfg.get_value("codex", "gear_seen", {})
 	attend_got = maxi(0, int(cfg.get_value("attend", "got", 0)))
 	attend_date = str(cfg.get_value("attend", "date", ""))
 	quest_date = str(cfg.get_value("quest", "date", ""))
@@ -10756,3 +10814,133 @@ func _dev_god(want: int) -> void:
 	_refresh_currency_visibility()
 	_refresh_hud()
 	_save_game()
+
+# ── 도감 소탭: 장비 · 스킬 · 연대기 (LoreDefs) ─────────────────────────────
+#
+# 장비 72종 · 스킬 20종은 **격자**로 편다. 몬스터처럼 목록+상세로 하면 72줄을
+# 스크롤해야 해서 "얼마나 모았나"가 한눈에 안 들어온다 — 수집판의 값은
+# 빈 칸이 보이는 데 있다.
+func _lore_build(root: Control, kind: String) -> void:
+	var note := _panel_label(root, Vector2(PAD, CODEX_TAB_Y + 40.0),
+		Type.SIZE_SMALL, Color(0.82, 0.88, 0.72), CONTENT_W, 18.0)
+	_lore_note[kind] = note
+	# **스크롤에 넣는다.** 장비는 72칸이라 9줄이고, 반판 높이(358)로는 4줄만
+	# 들어간다 — 그냥 깔면 나머지가 판 밖으로 넘어간다(실측 캡처).
+	var y0 := CODEX_TAB_Y + 64.0
+	var span := LORE_CELL + LORE_GAP
+	var keys := _lore_keys(kind)
+	var rows := int(ceil(float(keys.size()) / float(LORE_COLS)))
+	var sc := Ui.scroll(Vector2(PAD, y0),
+		Vector2(CONTENT_W, CONTENT_BOTTOM - y0))
+	root.add_child(sc)
+	var pane := Control.new()
+	pane.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W,
+		float(rows) * span)
+	sc.add_child(pane)
+	var x0 := (CONTENT_W - Ui.SCROLL_W
+		- (span * float(LORE_COLS) - LORE_GAP)) * 0.5
+	var cells: Array = []
+	for i in keys.size():
+		var cx := x0 + float(i % LORE_COLS) * span
+		var cy := float(i / LORE_COLS) * span
+		pane.add_child(Ui.set_row(TOME, Vector2(cx, cy),
+			Vector2(LORE_CELL, LORE_CELL)))
+		var ico := Ui.icon(_lore_icon(kind, i),
+			Vector2(cx + (LORE_CELL - 34.0) * 0.5, cy + 13.0), 34.0)
+		pane.add_child(ico)
+		cells.append(ico)
+	_lore_cells[kind] = cells
+
+
+# 그 갈래의 열쇠 목록. 장비는 슬롯·등급 순으로 펴고(카탈로그 순서 그대로),
+# 스킬은 형태 x 등급 스무 칸이다.
+func _lore_keys(kind: String) -> Array:
+	var out: Array = []
+	if kind == "skill":
+		for k in SkillDefs.all_keys():
+			out.append(str(k))
+		return out
+	for slot in GearDefs.SLOTS:
+		for r in GearDefs.RARITY:
+			for spec in GearDefs.items_of(str(slot), str(r["key"])):
+				out.append(str(spec[0]))
+	return out
+
+
+func _lore_icon(kind: String, index: int) -> String:
+	var keys := _lore_keys(kind)
+	if index < 0 or index >= keys.size():
+		return ""
+	if kind == "skill":
+		return SkillDefs.icon_path(str(keys[index]))
+	return "res://assets/items/%s.png" % str(keys[index])
+
+
+func _lore_got(kind: String) -> int:
+	var n := 0
+	for k in _lore_keys(kind):
+		if (skill_owned.has(str(k)) if kind == "skill" else gear_seen.has(str(k))):
+			n += 1
+	return n
+
+
+func _refresh_lore(kind: String) -> void:
+	if not _lore_cells.has(kind):
+		return
+	var keys := _lore_keys(kind)
+	var cells: Array = _lore_cells[kind]
+	for i in cells.size():
+		var got: bool = skill_owned.has(str(keys[i])) if kind == "skill" \
+			else gear_seen.has(str(keys[i]))
+		# 못 얻은 칸은 **까맣게 눌러 실루엣만** 남긴다 — 빈 칸이 보여야 모으고 싶다.
+		cells[i].modulate = Color(1, 1, 1, 1) if got \
+			else Color(0.10, 0.09, 0.11, 0.85)
+	var got := _lore_got(kind)
+	var marks: Array = LoreDefs.SKILL_MARKS if kind == "skill" \
+		else LoreDefs.GEAR_MARKS
+	var left := LoreDefs.to_next(marks, got)
+	_lore_note[kind].text = "%d / %d 종%s" % [got, keys.size(),
+		"" if left <= 0 else "   ·   다음 이정표까지 %d종" % left]
+
+
+# 연대기 — 막마다 한 줄. **밟은 막만 읽힌다**(기록이지 수집이 아니다).
+func _act_build(root: Control) -> void:
+	var y0 := CODEX_TAB_Y + 44.0
+	for i in StageDefs.ACTS.size():
+		var ry := y0 + float(i) * 58.0
+		root.add_child(Ui.set_card(TOME, Vector2(PAD, ry),
+			Vector2(CONTENT_W, 52.0)))
+		var nm := _panel_label(root, Vector2(PAD + 14.0, ry + 6.0),
+			Type.SIZE_SMALL, Color(0.96, 0.86, 0.62), CONTENT_W - 28.0, 16.0)
+		var tx := _panel_label(root, Vector2(PAD + 14.0, ry + 26.0),
+			Type.SIZE_SMALL, Color(0.80, 0.78, 0.76), CONTENT_W - 28.0, 16.0)
+		_act_rows.append({"name": nm, "text": tx})
+
+
+func _refresh_act() -> void:
+	if _act_rows.is_empty():
+		return
+	var reached := StageDefs.act_of(best_stage)
+	for i in _act_rows.size():
+		var act: Dictionary = StageDefs.ACTS[i]
+		var open := i <= reached
+		_act_rows[i]["name"].text = "%d막  %s" % [i + 1,
+			str(act["name"]) if open else "???"]
+		_act_rows[i]["text"].text = LoreDefs.act_text(i) if open \
+			else "아직 발을 들이지 않았다"
+
+
+func _codex_set_mode(mode: String) -> void:
+	_codex_mode = mode
+	for key in _codex_roots:
+		_codex_roots[key].visible = key == mode
+	for key in _codex_tab_art:
+		var art: Dictionary = _codex_tab_art[key]
+		art["on"].visible = key == mode
+		art["lbl"].add_theme_color_override("font_color",
+			Color(0.98, 0.86, 0.56) if key == mode else Color(0.72, 0.70, 0.68))
+	# 머리글은 몬스터 도감의 결산이라 그 소탭에서만 뜻이 있다.
+	_codex_summary.visible = mode == "foe"
+	_refresh_lore("gear")
+	_refresh_lore("skill")
+	_refresh_act()
