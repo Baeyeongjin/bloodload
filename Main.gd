@@ -319,6 +319,7 @@ const SKILL_DUR := 0.70
 const STARTER_SKILLS := ["strike_common", "wave_common"]
 var _boss_time := -1.0
 var _fade_rect: ColorRect    # 전투 띠만 덮는 암전판
+var _fade_full_rect: ColorRect   # 던전 입장·퇴장 전용 — 화면 전체 암전
 var _fade_t := 0.0           # 0보다 크면 전환 중 — 타이머·전진·재시작이 다 멈춘다
 var _skill_cd := {}          # 스킬 키 -> 남은 쿨다운
 var skill_owned := {}        # 스킬 키 -> 레벨 (있으면 보유)
@@ -418,6 +419,8 @@ var _panels := {}           # 탭 이름 -> 창 (한 번에 하나만 보인다)
 var _panel_bg: Control      # 반판 배경 — 전투가 보이는 탭들
 var _panel_bg_full: Control # 전면 판 배경 — FULL_TABS 가 쓴다
 var _tab_btns := {}
+var _nav_root: Control          # 하단 탭 바 전체 — 던전 전투 중엔 걷는다
+var _gate_exit_btn: Button      # 던전 전투의 유일한 문(중단)
 var _tab_dots := {}         # 탭 이름 -> 붉은 알림 점 (도감은 없다)
 var _tab := "growth"
 var _codex_cells := {}
@@ -1321,6 +1324,15 @@ func _build_frame() -> void:
 	_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fade_rect.visible = false
 	_hud_root.add_child(_fade_rect)
+	# 던전 입장·퇴장 전용 — **화면 전체** 암전(사장님, 레퍼런스). 평소 구간 전환은
+	# 전투 띠만 가리는 위 판을 계속 쓴다(20킬마다 UI가 깜빡이면 성가시다).
+	_fade_full_rect = ColorRect.new()
+	_fade_full_rect.color = Color(0, 0, 0, 0)
+	_fade_full_rect.size = Vector2(Grid.BG)
+	_fade_full_rect.z_index = 90
+	_fade_full_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade_full_rect.visible = false
+	_hud_root.add_child(_fade_full_rect)
 
 
 # 큰 수는 줄여 쓴다. 방치형은 재화가 금방 억을 넘는데 그대로 찍으면 패널을 넘는다.
@@ -5430,6 +5442,8 @@ func _build_tabbar() -> void:
 	var w := 36.0 / float(TABS.size())
 	var cell := Grid.uv(w, 6)
 	var icon_x := (cell.x - 48.0) * 0.5
+	_nav_root = Control.new()
+	_hud_root.add_child(_nav_root)
 	for i in TABS.size():
 		var name: String = TABS[i][0]
 		var b := Button.new()
@@ -5437,12 +5451,12 @@ func _build_tabbar() -> void:
 		b.position = Grid.uv(i * w, 50.0)
 		b.size = cell
 		b.pressed.connect(func() -> void: _select_tab(name))
-		_hud_root.add_child(b)
+		_nav_root.add_child(b)
 		var marker := Control.new()
 		marker.position = Grid.uv(i * w, 50.0)
 		marker.size = cell
 		marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_hud_root.add_child(marker)
+		_nav_root.add_child(marker)
 		marker.add_child(Ui.image("res://assets/ui/tab_cell.png", Vector2.ZERO, cell))
 		var ic := Ui.icon("res://assets/ui/%s.png" % TABS[i][1],
 			Vector2(icon_x, 6.0), 48.0)
@@ -5460,8 +5474,14 @@ func _build_tabbar() -> void:
 			var dot := Ui.icon("res://assets/ui/dot_alert.png",
 				Grid.uv(i * w, 50.0) + Vector2(icon_x - 6.0, 2.0), TAB_DOT)
 			dot.visible = false
-			_hud_root.add_child(dot)
+			_nav_root.add_child(dot)
 			_tab_dots[name] = dot
+	# 중단 — 던전 전투(기본 화면만) 중의 유일한 문. 탭 바 자리에 선다.
+	_gate_exit_btn = Ui.button("중단", Vector2((Grid.BG.x - 250.0) * 0.5, 812.0),
+		Vector2(250.0, 56.0), Type.SIZE_MID)
+	_gate_exit_btn.visible = false
+	_gate_exit_btn.pressed.connect(_gate_exit_pressed)
+	_hud_root.add_child(_gate_exit_btn)
 
 
 # ── 미궁 탭 ─────────────────────────────────────────────────────────────────
@@ -5623,7 +5643,6 @@ var _boss_btn_tex: TextureRect
 var _boss_btn_lbl: Label
 var _raid_head: Label
 var _raid_repeat := false        # 연속 도전 — 격파하고 나오면 그 던전에 다시
-var _raid_repeat_btn: Button
 var _raid_again := ""            # 암전이 걷히면 들어갈 던전(연속 도전 대기)
 
 
@@ -5957,6 +5976,9 @@ var _rd_icon: TextureRect
 var _rd_sweep: Button          # 소탕 — 이미 깬 단계를 전투 없이
 var _rd_sweep_tex: TextureRect
 var _rd_sweep_lbl: Label
+var _rd_chain: Button          # 연속 도전 — 입장 팝업의 세 번째 버튼
+var _rd_chain_tex: TextureRect
+var _rd_chain_lbl: Label
 # 돌판(gate_detail 414x559)을 화면에 400x540 으로 놓고 **조각을 실측한** 값들.
 # 원본 자리 x 배율(0.966) + 돌판 상단(RD_TOP). 눈대중으로 옮기면 판을 다시
 # 뽑을 때마다 처음부터 맞추게 된다 — 여기 한 곳만 고치면 전부 따라온다.
@@ -5987,24 +6009,35 @@ func _rd_place_buttons(with_sweep: bool) -> void:
 	_rd_sweep_tex.visible = with_sweep
 	_rd_sweep_lbl.visible = with_sweep
 	_rd_sweep.visible = with_sweep
-	var w := RD_BTN_W if with_sweep else RD_BTN_SOLO
-	for n in [_rd_btn_tex, _rd_btn, _rd_sweep_tex, _rd_sweep]:
+	# 연속 도전은 재화 던전(소탕 있는 판)에만 선다 — 보스·미궁은 성격이 다르다.
+	_rd_chain_tex.visible = with_sweep
+	_rd_chain_lbl.visible = with_sweep
+	_rd_chain.visible = with_sweep
+	# 셋일 때 170 x 3 + 틈 20 = 530 — 판(576) 안에 든다.
+	var w := 170.0 if with_sweep else RD_BTN_SOLO
+	for n in [_rd_btn_tex, _rd_btn, _rd_sweep_tex, _rd_sweep,
+			_rd_chain_tex, _rd_chain]:
 		(n as Control).size = Vector2(w, RD_BTN_H)
 	_rd_btn_lbl.size.x = w
 	_rd_sweep_lbl.size.x = w
+	_rd_chain_lbl.size.x = w
 	if with_sweep:
-		var sx := (PANEL_W - w * 2.0 - 10.0) * 0.5
+		var sx := (PANEL_W - w * 3.0 - 10.0 * 2.0) * 0.5
 		_rd_sweep_tex.position = Vector2(sx, RD_BTN_Y)
-		_rd_sweep.position = _rd_sweep_tex.position
-		_rd_sweep_lbl.position = Vector2(sx, RD_BTN_Y + 17.0)
 		_rd_btn_tex.position = Vector2(sx + w + 10.0, RD_BTN_Y)
+		_rd_chain_tex.position = Vector2(sx + (w + 10.0) * 2.0, RD_BTN_Y)
 	else:
 		_rd_btn_tex.position = Vector2((PANEL_W - w) * 0.5, RD_BTN_Y)
+	_rd_sweep.position = _rd_sweep_tex.position
+	_rd_sweep_lbl.position = _rd_sweep_tex.position + Vector2(0.0, 17.0)
 	_rd_btn.position = _rd_btn_tex.position
 	_rd_btn_lbl.position = _rd_btn_tex.position + Vector2(0.0, 17.0)
+	_rd_chain.position = _rd_chain_tex.position
+	_rd_chain_lbl.position = _rd_chain_tex.position + Vector2(0.0, 17.0)
 	# 그림 버튼은 가운데를 기준으로 부풀므로 축도 다시 잡는다.
 	_rd_btn_tex.pivot_offset = _rd_btn_tex.size * 0.5
 	_rd_sweep_tex.pivot_offset = _rd_sweep_tex.size * 0.5
+	_rd_chain_tex.pivot_offset = _rd_chain_tex.size * 0.5
 
 
 # 시련 판 — 주간 보스 판과 같은 문법(초상 + 이름 + 큰 숫자 + 버튼). 이정표는
@@ -6064,8 +6097,7 @@ func _refresh_trial() -> void:
 	var n := trial_stage + 1
 	var done := n > TrialDefs.max_stage()
 	var show_n := mini(n, TrialDefs.max_stage())
-	_trial_ui["art"].texture = Assets.tex(
-		"res://assets/anim/ruin_warden_walk/0.png")
+	_trial_ui["art"].texture = Assets.tex("res://assets/ui/boss_warden.png")
 	# "시련"은 탭이 이미 말한다 — 붙이면 이름이 잘렸다(실측 폭 268).
 	_trial_ui["name"].text = "완주" if done \
 		else "%d단계  ·  유적의 파수꾼" % show_n
@@ -6172,7 +6204,26 @@ func _build_raid_detail(root: Control) -> void:
 		match k:
 			"boss": _boss_enter()
 			"maze": _dungeon_enter()
-			_: _raid_enter(k)
+			_:
+				_raid_repeat = false   # 한 판만 — 연속은 옆 버튼이 맡는다
+				_raid_enter(k)
+		_refresh_dungeon())
+	# 연속 도전 (사장님 2026-08-18: 목록 토글보다 입장 팝업 버튼이 깔끔하다) —
+	# 이 판부터 표가 남는 동안 연달아 돈다. 저장 안 하는 원칙은 그대로:
+	# 켠 채로 잊고 표를 태우면 도움이 아니라 사고다.
+	_rd_chain_tex = _shop_tex(_raid_detail, "res://assets/ui/sets/gate_button.png",
+		Vector2.ZERO, Vector2(RD_BTN_W, RD_BTN_H))
+	_rd_chain_lbl = _panel_label(_raid_detail, Vector2.ZERO,
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), RD_BTN_W, 24.0)
+	_rd_chain_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_rd_chain_lbl.text = "연속 도전"
+	_shop_outline(_rd_chain_lbl, 8)
+	_rd_chain = _shop_ghost(_raid_detail, Vector2(RD_BTN_W, RD_BTN_H), _rd_chain_tex)
+	_rd_chain.pressed.connect(func() -> void:
+		var k := _raid_detail_kind
+		_raid_detail.visible = false
+		_raid_repeat = true
+		_raid_enter(k)
 		_refresh_dungeon())
 	# 돌아가기 — 상세는 덮는 판이라 나갈 길이 반드시 있어야 한다.
 	var close := Ui.button("돌아가기", Vector2((PANEL_W - 150.0) * 0.5, RD_CLOSE_Y),
@@ -6280,6 +6331,8 @@ func _raid_detail_open(kind: String) -> void:
 	_rd_sweep_lbl.text = "소탕" if best > 0 else "미개척"
 	_rd_sweep.disabled = best <= 0 or _rd_btn.disabled
 	_gate_btn_dim(_rd_sweep_tex, _rd_sweep_lbl, _rd_sweep.disabled)
+	_rd_chain.disabled = _rd_btn.disabled
+	_gate_btn_dim(_rd_chain_tex, _rd_chain_lbl, _rd_chain.disabled)
 
 
 # 이정표 게이지는 임무보다 짧다 — 옆 수치가 "43.3K / 144.2K" 라 자리가 더 필요하다.
@@ -6399,16 +6452,7 @@ func _build_raid_list(root: Control) -> void:
 	var sub := _panel_label(root, Vector2(PAD, 64.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.76), CONTENT_W, 16.0)
 	_raid_head = sub                     # 혈세가 붙으면 판 수가 바뀐다
-	# **연속 도전** (사장님 2026-08-14) — 켜 두면 격파하고 나온 뒤 표가 남아
-	# 있는 동안 그 던전에 다시 들어간다. 하루 3판을 손으로 세 번 누르는 건
-	# 방치형에서 할 일이 아니다. 저장하지 않는다: 켠 채로 잊고 표를 태우면
-	# 그건 도움이 아니라 사고다.
-	var rep := Ui.button("연속 도전", Vector2(PAD + CONTENT_W - 150.0, 60.0),
-		Vector2(150.0, 30.0), Type.SIZE_SMALL)
-	rep.toggle_mode = true
-	rep.toggled.connect(func(on: bool) -> void: _raid_repeat = on)
-	root.add_child(rep)
-	_raid_repeat_btn = rep
+	# 연속 도전 토글은 **입장 팝업의 버튼**으로 옮겼다(사장님 2026-08-18).
 	# 던전 전용 세트(사장님: 탭마다 다르게) — 사슬 감긴 돌벽 카드 + 철창 입장 버튼.
 	# 입장 버튼이 그림이라 글자·잠금 표시는 라벨과 modulate 가 맡는다.
 	var kinds := ["blood", "essence", "pact", "hunt"]
@@ -9630,8 +9674,9 @@ func _boss_enter() -> void:
 	boss_tries -= 1
 	_boss_dps_snap = dps()
 	raid_on = "boss"
-	_restart_stage("주간 보스 도전")
+	_restart_stage("주간 보스 도전", true)
 	_enter_battle_view()
+	_battle_only(true)
 	_refresh_dungeon()
 	_save_game()
 
@@ -9646,9 +9691,10 @@ func _boss_exit(reason: String) -> void:
 	_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
 	_offline_banner.visible = true
 	_offline_t = 4.0
-	_restart_stage(reason)
+	_restart_stage(reason, true)
 	_refresh_currency_visibility()
 	_refresh_dungeon()
+	_return_gate("boss")
 	_save_game()
 
 
@@ -9660,8 +9706,9 @@ func _trial_enter() -> void:
 	if n > TrialDefs.max_stage() or dungeon_best < TrialDefs.floor_need(n):
 		return
 	raid_on = "trial"
-	_restart_stage("시련 %d단계" % n)
+	_restart_stage("시련 %d단계" % n, true)
 	_enter_battle_view()
+	_battle_only(true)
 	_refresh_dungeon()
 
 
@@ -9673,9 +9720,10 @@ func _trial_exit(reason: String) -> void:
 	_offline_banner.add_theme_color_override("font_color", Color(0.62, 0.95, 0.68))
 	_offline_banner.visible = true
 	_offline_t = 4.0
-	_restart_stage(reason)
+	_restart_stage(reason, true)
 	_refresh_currency_visibility()
 	_refresh_dungeon()
+	_return_gate("trial")
 	_save_game()
 
 
@@ -9738,8 +9786,9 @@ func _raid_enter(kind: String) -> void:
 	# **여기서 안 깎는다.** 표는 격파할 때 깎인다(_advance_stage) — 실패에 표를
 	# 물리면 도전 자체를 안 하게 된다(사장님 2026-08-12).
 	raid_on = kind
-	_restart_stage("%s 입장" % str(RaidDefs.RAIDS[kind]["name"]))
+	_restart_stage("%s 입장" % str(RaidDefs.RAIDS[kind]["name"]), true)
 	_enter_battle_view()
+	_battle_only(true)
 	_refresh_dungeon()
 	_save_game()
 
@@ -9753,14 +9802,52 @@ func _enter_battle_view() -> void:
 	_refresh_currency_visibility()   # 상단 소품이 레이드 규칙으로 바뀐다
 
 
+# 던전·시련 전투는 **기본 화면만** (사장님, 레퍼런스) — 하단 탭·판을 걷고
+# 중단 버튼 하나만 남긴다. 복구는 _return_gate 가 _select_tab 으로 한다.
+func _battle_only(on: bool) -> void:
+	if _nav_root:
+		_nav_root.visible = not on
+	if _gate_exit_btn:
+		_gate_exit_btn.visible = on
+	if on:
+		for key in _panels.keys():
+			_panels[key].visible = false
+		_panel_bg.visible = false
+		_panel_bg_full.visible = false
+		_goal_widget.visible = false
+		if _side_root:
+			_side_root.visible = false
+
+
+func _gate_exit_pressed() -> void:
+	_raid_repeat = false
+	_raid_again = ""
+	if dungeon_on:
+		_dungeon_exit("미궁 중단")
+	elif raid_on == "boss":
+		_boss_exit("도전 중단")
+	elif raid_on == "trial":
+		_trial_exit("도전 중단")
+	elif raid_on != "":
+		_raid_exit("던전 중단 — 빈손")
+
+
+# 나오면 **들어온 그 페이지**로 돌려보낸다 (사장님, 레퍼런스 문법).
+func _return_gate(mode: String) -> void:
+	_battle_only(false)
+	_select_tab("raid")
+	_raid_set_mode(mode)
+
+
 func _raid_exit(reason: String) -> void:
 	if raid_on == "" or _fade_t > 0.0:
 		return
 	raid_on = ""
 	# `stage` 는 건드린 적이 없으므로 재시작만 하면 본편 그 자리다(미궁과 동일).
-	_restart_stage(reason)
+	_restart_stage(reason, true)
 	_refresh_currency_visibility()
 	_refresh_dungeon()
+	_return_gate("raid")
 
 
 # ── 미궁 입장·이탈 ──────────────────────────────────────────────────────────
@@ -9774,8 +9861,9 @@ func _dungeon_enter() -> void:
 	# 늘 최고 기록 다음 층에 도전한다. 개방 상한에 닿았으면 상한 층을 다시 돈다 —
 	# 지금은 기록만 남지만 2단계에서 소탕 기준층이 되므로 도는 것 자체는 무의미하지 않다.
 	dungeon_floor = clampi(dungeon_best + 1, 1, open)
-	_restart_stage("미궁 입장")
+	_restart_stage("미궁 입장", true)
 	_enter_battle_view()
+	_battle_only(true)
 	_refresh_dungeon()
 
 
@@ -9787,9 +9875,10 @@ func _dungeon_exit(reason: String) -> void:
 		return
 	dungeon_on = false
 	# `stage` 는 건드린 적이 없으므로 재시작만 하면 본편 그 자리다.
-	_restart_stage(reason)
+	_restart_stage(reason, true)
 	_refresh_currency_visibility()
 	_refresh_dungeon()
+	_return_gate("maze")
 
 
 func _spawn_wave() -> void:
@@ -10160,6 +10249,8 @@ func _advance_stage() -> void:
 			if again:
 				_raid_again = kind)
 		_refresh_dungeon()
+		if not again:
+			_return_gate("raid")   # 연속이 아니면 들어온 페이지로 (사장님)
 		_save_game()
 		return
 	# ── 미궁: 층을 하나 오른다. 본편(stage)은 안 건드린다 ──────────────────
@@ -10190,6 +10281,7 @@ func _advance_stage() -> void:
 				# 개방 상한까지 다 올랐다 — 본편을 밀어야 다음 층이 열린다
 				# (EXPANSION 7장의 교차 잠금). 나가는 길은 재시작과 같다.
 				dungeon_on = false
+				_return_gate("maze")
 			else:
 				dungeon_floor += 1
 			_boss_time = _c_time_limit()
@@ -10264,7 +10356,7 @@ func _tick_boss_timer(delta: float) -> bool:
 
 # 구간을 처음부터. 죽었을 때와 시간을 넘겼을 때 **같은 길**을 지난다 —
 # 둘 다 "이 구간을 못 넘었다"라서 결과가 달라야 할 이유가 없다.
-func _restart_stage(reason: String) -> void:
+func _restart_stage(reason: String, full := false) -> void:
 	if _fade_t > 0.0:
 		return
 	_clear_foes()
@@ -10282,7 +10374,7 @@ func _restart_stage(reason: String) -> void:
 		_start_advance()
 		# 같은 구간 재시작이면 같은 그림이 다시 깔릴 뿐이지만, 미궁 입장·이탈은
 		# 이 길로 배경이 바뀐다 — 여기서 안 갈면 미궁에 본편 배경이 남는다.
-		_apply_stage_bg())
+		_apply_stage_bg(), _fade_full_rect if full else _fade_rect)
 	_offline_banner.text = "%s — %s 다시" % [reason, _c_label()]
 	_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
 	_offline_banner.visible = true
@@ -10303,16 +10395,18 @@ const FADE_HOLD := 0.14
 const FADE_IN := 0.4
 
 
-func _fade(action: Callable) -> void:
+func _fade(action: Callable, rect: ColorRect = null) -> void:
+	if rect == null:
+		rect = _fade_rect
 	_fade_t = FADE_OUT + FADE_HOLD + FADE_IN
-	_fade_rect.visible = true
-	_fade_rect.color.a = 0.0
+	rect.visible = true
+	rect.color.a = 0.0
 	var t := create_tween()
-	t.tween_property(_fade_rect, "color:a", 1.0, FADE_OUT).set_trans(Tween.TRANS_SINE)
+	t.tween_property(rect, "color:a", 1.0, FADE_OUT).set_trans(Tween.TRANS_SINE)
 	t.tween_callback(action)
 	t.tween_interval(FADE_HOLD)
-	t.tween_property(_fade_rect, "color:a", 0.0, FADE_IN).set_trans(Tween.TRANS_SINE)
-	t.tween_callback(func() -> void: _fade_rect.visible = false)
+	t.tween_property(rect, "color:a", 0.0, FADE_IN).set_trans(Tween.TRANS_SINE)
+	t.tween_callback(func() -> void: rect.visible = false)
 
 
 func _apply_stage_bg() -> void:
