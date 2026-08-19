@@ -4950,7 +4950,8 @@ func _build_codex_view() -> void:
 		QUEST_PANEL.size))
 	var cbx := Vector2(QUEST_PANEL.position.x + QUEST_PANEL.size.x - 110.0,
 		QUEST_PANEL.position.y + 12.0)
-	_codex_view.add_child(Ui.set_row(TOME, cbx, Vector2(88.0, 34.0)))
+	var cclose_art := Ui.set_row(TOME, cbx, Vector2(88.0, 34.0))
+	_codex_view.add_child(cclose_art)
 	var clb := _panel_label(_codex_view, Vector2(cbx.x, cbx.y + 9.0),
 		Type.SIZE_SMALL, Color(0.96, 0.92, 0.88), 88.0, 20.0)
 	clb.text = "닫기"
@@ -4959,6 +4960,7 @@ func _build_codex_view() -> void:
 	cclose.modulate = Color(1, 1, 1, 0)
 	cclose.pressed.connect(func() -> void: _codex_view.visible = false)
 	_codex_view.add_child(cclose)
+	_pet_hover(cclose, cclose_art)
 	var body := Control.new()
 	body.position = CODEX_SHIFT
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -5006,7 +5008,8 @@ func _build_codex(root: Control) -> void:
 		var cm := str(ctabs[i][0])
 		var cp := Vector2(PAD + float(i) * (ctw + 6.0), CODEX_TAB_Y)
 		var con := Ui.set_tab(TOME, true, cp, Vector2(ctw, 32.0))
-		root.add_child(Ui.set_tab(TOME, false, cp, Vector2(ctw, 32.0)))
+		var coff := Ui.set_tab(TOME, false, cp, Vector2(ctw, 32.0))
+		root.add_child(coff)
 		root.add_child(con)
 		var cl := _panel_label(root, Vector2(cp.x, cp.y + 8.0),
 			Type.SIZE_SMALL, Color(0.92, 0.88, 0.84), ctw, 18.0)
@@ -5016,6 +5019,7 @@ func _build_codex(root: Control) -> void:
 		cb.modulate = Color(1, 1, 1, 0)
 		cb.pressed.connect(func() -> void: _codex_set_mode(cm))
 		root.add_child(cb)
+		_pet_hover(cb, coff)
 		_codex_tab_art[cm] = {"on": con, "lbl": cl}
 	for key in ["foe", "gear", "skill", "title", "act"]:
 		var r := Control.new()
@@ -5445,7 +5449,7 @@ const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
 # 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
 # 던전은 "오늘 표가 남아 있다"에 켠다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
-const TAB_DOT_ON := ["growth", "gear", "summon", "raid"]
+const TAB_DOT_ON := ["growth", "gear", "pet", "summon", "raid", "shop"]
 const TAB_DOT := 18.0
 const TAB_DOT_AT := Vector2(42.0, 2.0)   # 아이콘(48,6)의 왼쪽 위 모서리에 걸친다
 
@@ -6856,8 +6860,9 @@ func _build_quests() -> void:
 		if _codex_view.visible:
 			_codex_set_mode(_codex_mode))
 	_side_root.add_child(t_btn)
+	# 임무 아이콘(48)과 같은 크기 — 짝짝이였다(사장님 2026-08-18).
 	_side_root.add_child(Ui.icon("res://assets/ui/tab_codex.png",
-		TITLE_BTN_AT + Vector2(8.0, 8.0), 40.0))
+		TITLE_BTN_AT + Vector2(4.0, 4.0), 48.0))
 	# 상점 진입점은 **일부러 안 만든다** (사장님 2026-08-12): 상점은 과금과 한
 	# 묶음으로 **별도 탭**이 되고 지금 이 판은 그 탭 안의 한 소탭으로 들어간다.
 	# 옆줄에 버튼을 세워 두면 곧 두 곳에서 같은 걸 파는 화면이 된다.
@@ -7976,6 +7981,32 @@ func _tab_todo(tab: String) -> bool:
 			for i in EventDefs.MILESTONES.size():
 				if not boss_got.has(i) \
 						and boss_dmg >= EventDefs.milestone_damage(i, _boss_dps_snap, boss_tier):
+					return true
+			# 시련 — 열린 단계가 남아 있으면 켠다. 격파하면 꺼진다(미궁이 다시
+			# 열 때까지) — "받을 보상이 존재하면 알림"(사장님 2026-08-18).
+			if trial_stage < TrialDefs.max_stage() \
+					and dungeon_best >= TrialDefs.floor_need(trial_stage + 1):
+				return true
+		"pet":
+			# 소환권·다 모인 먹이·물어온 재화 — 전부 "쓰기만 하면 되는" 것들이다.
+			if int(tickets.get("pet", 0)) > 0 \
+					or int(tickets.get("petgear", 0)) > 0:
+				return true
+			for id in pets_got:
+				var plv := _pet_lv(str(id))
+				if plv < PetDefs.lv_cap(_pet_star(str(id))) \
+						and feed >= PetDefs.feed_cost(plv):
+					return true
+				if float(pet_bank.get(id, 0.0)) >= 1.0:
+					return true
+		"shop":
+			# 성장 패스 — 받을 칸이 남아 있다.
+			var pstep := PassDefs.step_of(pass_points)
+			var pactive := _pass_active()
+			for i in range(1, pstep + 1):
+				if not pass_free_got.has(i):
+					return true
+				if pactive and not pass_paid_got.has(i):
 					return true
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
