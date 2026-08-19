@@ -10785,41 +10785,138 @@ func _oath_rcol(rarity: String) -> Color:
 
 
 # 결과 판 — 계약명·효과·각인·공명·레벨 + 다시 굴리기.
+# 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
+# 카드 뒤에 등급색 광선이 돌고, 아래는 전용 세트 판 + 등급 리본 + 세 줄.
 func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	var c: Dictionary = r["contract"]
 	var e: Dictionary = r["engrave"]
-	var y := 620.0
-	var name := _panel_label(_oath_reveal, Vector2(0.0, y), Type.SIZE_TITLE,
-		rcol, Grid.BG.x, 34.0)
-	# 이름만 — 긴 이름("여물지 않은 갑피")이 Lv 까지 달면 화면을 넘는다(사장님).
+	var mid := Vector2(Grid.BG) * 0.5 - Vector2(0.0, 60.0)
+	# 광선 — 카드 중심에서 8줄이 천천히 돈다. 도박기의 "당첨 후광"이다.
+	var rays := Control.new()
+	rays.position = mid
+	rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_oath_reveal.add_child(rays)
+	_oath_reveal.move_child(rays, 1)     # 카드·만월 뒤
+	# 어두운 등급색(레어 파랑)은 검은 띠로 보인다 — 흰 쪽으로 끌어 밝힌다.
+	var lit := Color(rcol.r, rcol.g, rcol.b).lerp(Color(1, 1, 1), 0.45)
+	for i in 8:
+		var ray := ColorRect.new()
+		ray.color = Color(lit.r, lit.g, lit.b, 0.12)
+		ray.size = Vector2(26.0, 300.0)
+		ray.position = Vector2(-13.0, -300.0)
+		ray.pivot_offset = Vector2(13.0, 300.0)
+		ray.rotation_degrees = float(i) * 45.0
+		ray.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rays.add_child(ray)
+	var spin := create_tween().set_loops()
+	spin.tween_property(rays, "rotation_degrees", 360.0, 24.0).from(0.0)
+	var breathe := create_tween().set_loops()
+	breathe.tween_property(rays, "scale", Vector2(1.08, 1.08), 1.2) \
+		.set_trans(Tween.TRANS_SINE)
+	breathe.tween_property(rays, "scale", Vector2.ONE, 1.2) \
+		.set_trans(Tween.TRANS_SINE)
+	# 결과 판 — 전용 세트. 아래에서 떠오른다.
+	var panel := Control.new()
+	panel.position = Vector2(0.0, 20.0)
+	_oath_reveal.add_child(panel)
+	var px := 36.0
+	var pw := Grid.BG.x - 72.0
+	var py := 596.0
+	panel.add_child(Ui.set_card(OATH, Vector2(px, py), Vector2(pw, 158.0)))
+	# 등급 리본 — 판 상단 중앙에 등급색 pill.
+	var rn := {"common": "커  먼", "uncommon": "언 커 먼", "rare": "레  어",
+		"epic": "에  픽", "legend": "만  월", "trueblood": "진  혈"}
+	var pill := Ui.set_pill(OATH, Vector2(px + pw * 0.5 - 70.0, py - 14.0),
+		Vector2(140.0, 28.0))
+	pill.modulate = Color(rcol.r * 1.2, rcol.g * 1.2, rcol.b * 1.2)
+	panel.add_child(pill)
+	var rlab := _panel_label(panel, Vector2(px + pw * 0.5 - 70.0, py - 9.0),
+		Type.SIZE_SMALL, Color(rcol.r, rcol.g, rcol.b).lerp(Color(1, 1, 1), 0.55),
+		140.0, 18.0)
+	rlab.text = str(rn.get(rarity, rarity))
+	rlab.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(rlab, 5)
+	# 이름 — 등급색 큰 글씨. 좌우 핏방울로 눈을 모은다.
+	var name := _panel_label(panel, Vector2(px, py + 26.0), Type.SIZE_TITLE,
+		rcol, pw, 34.0)
 	name.text = str(c["name"])
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var eff := _panel_label(_oath_reveal, Vector2(0.0, y + 40.0), Type.SIZE_SMALL,
-		Color(0.94, 0.90, 0.88), Grid.BG.x, 18.0)
+	_shop_outline(name, 8)
+	panel.add_child(Ui.icon("res://assets/ui/res_blood.png",
+		Vector2(px + 16.0, py + 30.0), 24.0))
+	panel.add_child(Ui.icon("res://assets/ui/res_blood.png",
+		Vector2(px + pw - 40.0, py + 30.0), 24.0))
+	# 구분선 — 등급색 가는 줄.
+	var sep := ColorRect.new()
+	sep.color = Color(rcol.r, rcol.g, rcol.b, 0.55)
+	sep.position = Vector2(px + 40.0, py + 68.0)
+	sep.size = Vector2(pw - 80.0, 2.0)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(sep)
+	var eff := _panel_label(panel, Vector2(px, py + 80.0), Type.SIZE_SMALL,
+		Color(0.96, 0.92, 0.90), pw, 18.0)
 	eff.text = "Lv%d  ·  %s" % [int(r["lv"]), _oath_eff_text(c)]
 	eff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var sub := _panel_label(_oath_reveal, Vector2(0.0, y + 64.0), Type.SIZE_SMALL,
-		Color(0.75, 0.62, 0.85), Grid.BG.x, 18.0)
+	_shop_outline(eff, 5)
+	var sub := _panel_label(panel, Vector2(px, py + 106.0), Type.SIZE_SMALL,
+		Color(0.80, 0.68, 0.92), pw, 18.0)
 	sub.text = "각인: %s%s" % [str(e["name"]),
 		"   ·   공명! x%.1f" % OathDefs.RESONANCE_MULT if bool(r["resonance"]) \
 		else ""]
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var again := Ui.button("다시 굴리기 · 보석 %d" % int(OathDefs.REROLL_GEM),
-		Vector2(48.0, y + 100.0), Vector2(230.0, 46.0), Type.SIZE_SMALL)
+	_shop_outline(sub, 5)
+	# 서약 정산 줄 — 걸었으면 결과가 보여야 도박이다.
+	if bool(r.get("vow", false)):
+		var vw := _panel_label(panel, Vector2(px, py + 128.0), Type.SIZE_SMALL,
+			OATH_RED, pw, 16.0)
+		vw.text = "피의 서약 — 판돈이 등급을 밀었다"
+		vw.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 버튼 둘 — 전용 세트 줄 + 투명 판정(판의 버튼 문법 그대로).
+	var by := py + 168.0
+	var bw := (pw - 12.0) * 0.5
+	var again_art := Ui.set_row(OATH, Vector2(px, by), Vector2(bw, 46.0))
+	panel.add_child(again_art)
+	var again_lbl := _panel_label(panel, Vector2(px, by + 14.0),
+		Type.SIZE_SMALL, OATH_INK, bw, 18.0)
+	again_lbl.text = "다시 굴리기 · 보석 %d" % int(OathDefs.REROLL_GEM)
+	again_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var again := Ui.button("", Vector2(px, by), Vector2(bw, 46.0),
+		Type.SIZE_SMALL)
+	again.modulate = Color(1, 1, 1, 0)
 	again.disabled = gem < OathDefs.REROLL_GEM
+	if again.disabled:
+		_art_set_base(again_art, Color(0.5, 0.46, 0.48))
 	again.pressed.connect(func() -> void:
 		if gem < OathDefs.REROLL_GEM:
 			return
 		gem -= OathDefs.REROLL_GEM
 		oath_cards += 1          # 카드를 돌려주고 즉시 다시 굴린다
 		_oath_play(false))
-	_oath_reveal.add_child(again)
-	var ok := Ui.button("계약 발동!", Vector2(298.0, y + 100.0),
-		Vector2(230.0, 46.0), Type.SIZE_SMALL)
+	panel.add_child(again)
+	_pet_hover(again, again_art)
+	var ok_art := Ui.set_row(OATH, Vector2(px + bw + 12.0, by),
+		Vector2(bw, 46.0))
+	ok_art.modulate = Color(1.25, 1.05, 0.85)     # 발동이 주인공이다
+	panel.add_child(ok_art)
+	var ok_lbl := _panel_label(panel, Vector2(px + bw + 12.0, by + 14.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), bw, 18.0)
+	ok_lbl.text = "계약 발동!"
+	ok_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var ok := Ui.button("", Vector2(px + bw + 12.0, by), Vector2(bw, 46.0),
+		Type.SIZE_SMALL)
+	ok.modulate = Color(1, 1, 1, 0)
 	ok.pressed.connect(func() -> void:
 		_oath_reveal.visible = false
 		_oath_view.visible = false)
-	_oath_reveal.add_child(ok)
+	panel.add_child(ok)
+	_pet_hover(ok, ok_art)
+	# 판이 아래에서 떠오르며 자리를 잡는다.
+	var pt := create_tween()
+	pt.tween_property(panel, "position:y", 0.0, 0.35) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	panel.modulate.a = 0.0
+	var pf := create_tween()
+	pf.tween_property(panel, "modulate:a", 1.0, 0.25)
 
 
 func _oath_eff_text(c: Dictionary) -> String:
@@ -10978,7 +11075,7 @@ func _oath_roll(golden := false) -> Dictionary:
 	_save_game()
 	_refresh_oath()
 	return {"contract": c, "engrave": e, "rarity": rarity,
-		"resonance": resonance, "lv": clv}
+		"resonance": resonance, "lv": clv, "vow": oath_vow}
 
 
 # 버프 적용 — 레벨·공명·짙은 피가 주효과를 키우고, 즉발(시간·흡수)은 그 자리서.
