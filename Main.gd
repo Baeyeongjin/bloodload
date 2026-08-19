@@ -6886,9 +6886,10 @@ const OATH_RED := Color(0.98, 0.46, 0.44)
 const DUTY_INK := Color(0.99, 0.97, 0.95)      # 본문 — 흰색
 const DUTY_DIM := Color(0.84, 0.80, 0.76)      # 보조 — 조금 죽인 흰색
 const DUTY_RED := Color(0.98, 0.42, 0.40)      # 강조 — 밝은 핏빛
-const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
-const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세로 줄
-const OATH_BTN_AT := Vector2(508.0, 264.0)    # 핏빛 계약 — 상시 아이콘(사장님)
+# 아래 게시판·알약과 겹쳐서 열 전체를 위로 올렸다(사장님 2026-08-18).
+const QUEST_BTN_AT := Vector2(508.0, 96.0)    # 오른쪽 가장자리, 상단바 아래
+const TITLE_BTN_AT := Vector2(508.0, 154.0)   # 그 바로 아래 — 같은 세로 줄
+const OATH_BTN_AT := Vector2(508.0, 212.0)    # 핏빛 계약 — 상시 아이콘(사장님)
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
 # 잘렸다(실측). 잘린 진행도는 거짓말이다.
 const QUEST_BAR_W := 220.0
