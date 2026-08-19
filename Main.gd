@@ -5117,8 +5117,8 @@ func _tick_income() -> void:
 		# 레이드에서는 상단이 비어야 한다 — 여기서도 같은 규칙을 본다
 		# (이 함수가 매 초 다시 켜므로 _refresh_currency_visibility 만으로는 못 막는다).
 		_income_per_min = per_min
-		_lbl_income.visible = per_min > 0.0 and not _in_raid()
-		_lbl_income.text = "사냥 중  혈액 %s/분" % _n(per_min)
+		# 상단 수입 줄은 은퇴 — 게시판 알약이 같은 값을 말한다(사장님 2026-08-18).
+		_lbl_income.visible = false
 
 
 # ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
@@ -6884,7 +6884,8 @@ func _build_quests() -> void:
 	var x := QUEST_PANEL.position.x + 22.0
 	var w := QUEST_PANEL.size.x - 44.0
 	var cbx := Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0)
-	_quest_view.add_child(Ui.set_button(DUTY, cbx, Vector2(88.0, 34.0)))
+	var close_art := Ui.set_button(DUTY, cbx, Vector2(88.0, 34.0))
+	_quest_view.add_child(close_art)
 	var clbl := _panel_label(_quest_view, Vector2(cbx.x, cbx.y + 9.0),
 		Type.SIZE_SMALL, DUTY_INK, 88.0, 20.0)
 	clbl.text = "닫기"
@@ -6893,6 +6894,7 @@ func _build_quests() -> void:
 	close.modulate = Color(1, 1, 1, 0)      # 그림이 이미 버튼이다 — 판정만 얹는다
 	close.pressed.connect(func() -> void: _quest_view.visible = false)
 	_quest_view.add_child(close)
+	_pet_hover(close, close_art)
 	# [일일] [주간] [출석] [은총] — 하루에 들를 곳을 한 판에 모은다(사장님
 	# 2026-08-18). 넷이 별개 판이면 "오늘 뭐 남았지"를 네 번 열어 봐야 한다.
 	# **닫기와 같은 줄에 넷을 못 넣는다** — 폭 484 에서 닫기 88 을 빼면 버튼당
@@ -6918,6 +6920,7 @@ func _build_quests() -> void:
 		mb.toggle_mode = true
 		mb.pressed.connect(func() -> void: _quest_set_mode(mode))
 		_quest_view.add_child(mb)
+		_pet_hover(mb, off)
 		_quest_mode_btns[mode] = mb
 		_quest_tab_art[mode] = {"on": on, "off": off, "lbl": lbl}
 	_quest_day_root = Control.new()
@@ -6956,6 +6959,7 @@ func _build_quests() -> void:
 	cap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_quest_claim_all = Ui.button("", cap, Vector2(200.0, 42.0), Type.SIZE_MID)
 	_quest_claim_all.modulate = Color(1, 1, 1, 0)
+	_pet_hover(_quest_claim_all, cap_art)
 	# **그림과 글자도 같이 숨긴다** — 버튼만 숨기면 양피지 줄과 "일괄 받기"가
 	# 남아 출석의 "오늘 받기" 위에 겹친다(실측 캡처).
 	_quest_claim_art = [cap_art, cap_lbl]
@@ -7667,7 +7671,8 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 			DUTY_DIM, 90.0, 20.0)
 		var qid := str(q["id"])
 		var bp := Vector2(x + w - 108.0, y + 9.0)
-		root.add_child(Ui.set_row(DUTY, bp, Vector2(100.0, 32.0)))
+		var pill_art := Ui.set_row(DUTY, bp, Vector2(100.0, 32.0))
+		root.add_child(pill_art)
 		root.add_child(Ui.icon("res://assets/ui/%s.png"
 			% _reward_icon(str(q["reward"])), Vector2(bp.x + 12.0, bp.y + 8.0), 16.0))
 		var rw := _panel_label(root, Vector2(bp.x + 34.0, bp.y + 8.0),
@@ -7675,6 +7680,7 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		rw.text = "+%d" % int(q["amount"])
 		var b := Ui.button("", bp, Vector2(100.0, 32.0), Type.SIZE_SMALL)
 		b.modulate = Color(1, 1, 1, 0)      # 양피지 줄이 이미 버튼이다
+		_pet_hover(b, pill_art)
 		if weekly:
 			b.pressed.connect(func() -> void: _claim_wquest(qid))
 		else:
@@ -7737,11 +7743,13 @@ func _attend_build(root: Control) -> void:
 			"mark": mark})
 	var ap := Vector2(x + w * 0.5 - 100.0,
 		QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0)
-	root.add_child(Ui.set_row(DUTY, ap, Vector2(200.0, 42.0)))
+	var ap_art := Ui.set_row(DUTY, ap, Vector2(200.0, 42.0))
+	root.add_child(ap_art)
 	_attend_lbl = _panel_label(root, Vector2(ap.x, ap.y + 12.0),
 		Type.SIZE_MID, DUTY_INK, 200.0, 20.0)
 	_attend_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_attend_btn = Ui.button("", ap, Vector2(200.0, 42.0), Type.SIZE_MID)
+	_pet_hover(_attend_btn, ap_art)
 	_attend_btn.modulate = Color(1, 1, 1, 0)
 	_attend_btn.pressed.connect(_claim_attend)
 	root.add_child(_attend_btn)
