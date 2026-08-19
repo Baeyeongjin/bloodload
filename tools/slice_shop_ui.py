@@ -82,6 +82,10 @@ SHEET5 = {
     # pill] 이고 행3 작은 알약, 행4 원형 배지는 지금 안 쓴다(여분).
     "nest": ["body", "band", "card", "tab_on", "tab_off", "pill",
              "pill2", "badge"],
+    # 핏빛 계약(2026-08-18) — 5행 2/1/5/2/2. 검은 철판에 핏자국 테두리.
+    # 여분(body2·cell·cell2·pill2·pill3·badge)은 지금 안 쓴다.
+    "oath": ["body", "body2", "band", "card", "tab_on", "tab_off",
+             "cell", "cell2", "pill", "pill2", "pill3", "badge"],
 }
 
 
