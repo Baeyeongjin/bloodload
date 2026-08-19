@@ -3384,7 +3384,10 @@ func _refresh_gear_tabs() -> void:
 		for item in gear_inventory.values():
 			if str(item.get("slot", "")) == key:
 				n += 1
-		b.text = "%s %d" % [str(GearDefs.SLOT_NAME[key]), n]
+		var total := 0
+		for rarity in GachaDefs.RARITIES:
+			total += GearDefs.items_of(key, str(rarity["key"])).size()
+		b.text = "%s %d/%d" % [str(GearDefs.SLOT_NAME[key]), n, total]
 
 
 func _refresh_gear_inventory() -> void:
@@ -3410,16 +3413,16 @@ func _refresh_gear_inventory() -> void:
 	_refresh_gear_tabs()
 	for child in _gear_inventory_grid.get_children():
 		child.queue_free()
-	var keys := gear_inventory.keys()
-	keys.sort_custom(func(a: Variant, b: Variant) -> bool:
-		return GachaDefs.rarity_index(str(gear_inventory[a].get("rarity", "common"))) \
-			< GachaDefs.rarity_index(str(gear_inventory[b].get("rarity", "common"))))
-	for key in keys:
-		var item: Dictionary = gear_inventory[key]
-		if str(item.get("slot", "")) != _gear_filter:
-			continue
-		_gear_inventory_grid.add_child(_gear_card(str(key),
-			func() -> void: _open_gear_detail(str(key))))
+	# 표 전체를 등급 순으로 늘어놓고, 가진 것은 제 칸으로 못 가진 것은 "?" 로
+	# 채운다(사장님: 펫·유물처럼 획득 여부가 한눈에). 슬롯당 24종이라 다 보인다.
+	for rarity in GachaDefs.RARITIES:
+		for spec in GearDefs.items_of(_gear_filter, str(rarity["key"])):
+			var key := str(spec[0])
+			if gear_inventory.has(key):
+				_gear_inventory_grid.add_child(_gear_card(key,
+					func() -> void: _open_gear_detail(key)))
+			else:
+				_gear_inventory_grid.add_child(_gear_unknown_card(rarity))
 
 
 # 보관함 칸 하나. 보관함 목록과 분해·조합 창이 **같은 칸을 쓴다** — 따로 그리면
@@ -3479,6 +3482,28 @@ func _gear_card(key: String, on_press: Callable) -> Control:
 		mark.text = "장착 중"
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return cell
+
+
+# 아직 못 얻은 종. 등급 테두리만 어둡게 남기고 그림 자리에 "?" 를 놓는다 —
+# 무엇이 남았는지가 보여야 모으는 재미가 산다(사장님).
+func _gear_unknown_card(rarity: Dictionary) -> Control:
+	var cell := Control.new()
+	cell.custom_minimum_size = Vector2(116.0, 136.0)
+	cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var dim := Color(rarity["col"]) * 0.42
+	var frame := Ui.image("res://assets/ui/gear_card.png", Vector2(2.0, 0.0),
+		Vector2(112.0, 128.0))
+	frame.modulate = Color(dim.r, dim.g, dim.b, 0.85)
+	cell.add_child(frame)
+	var q := _panel_label(cell, Vector2(6.0, 44.0), Type.SIZE_TITLE,
+		Color(dim.r * 1.6, dim.g * 1.6, dim.b * 1.6), 104.0, 40.0)
+	q.text = "?"
+	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var nm := _panel_label(cell, Vector2(6.0, 102.0), Type.SIZE_SMALL,
+		Color(dim.r * 1.4, dim.g * 1.4, dim.b * 1.4), 104.0, 20.0)
+	nm.text = "%s · 미획득" % str(rarity["name"])
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return cell
 
 
