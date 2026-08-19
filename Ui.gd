@@ -51,10 +51,14 @@ static func icon(path: String, pos: Vector2, box := 0.0) -> TextureRect:
 # 직사각형 UI 원화를 정확한 크기로 표시한다. 카드 프레임처럼 정사각형이 아닌 자산용.
 static func image(path: String, pos: Vector2, size: Vector2) -> TextureRect:
 	var t := TextureRect.new()
+	# expand_mode 를 size 보다 **먼저** — icon() 과 같은 이유다. set_size 는 그 자리에서
+	# 최소 크기로 클램프하므로, KEEP_SIZE 상태로 원본보다 작은 size 를 주면 원본
+	# 크기로 커진다(수집 격자 미니 카드가 96×128 로 터져 나온 실측, 2026-08-18).
+	# 지금까지 안 보였던 건 모든 호출이 원본보다 크게 그려 왔기 때문이다.
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.texture = Assets.tex(path)
 	t.position = Grid.pxv(pos)
 	t.size = Grid.pxv(size)
-	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.stretch_mode = TextureRect.STRETCH_SCALE
 	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE

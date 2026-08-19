@@ -6869,6 +6869,9 @@ const DUTY := "duty"
 const TOME := "tome"
 const NEST := "nest"      # 펫 탭 전용(나무판·밧줄·뼈)
 const OATH := "oath"      # 핏빛 계약 전용(검은 철판·핏자국 테두리)
+# 계약 판은 담을 게 많다(카드·알약·등급띠·천장 둘·서약·버튼 넷·광고·수집).
+# 임무판 크기(560)로는 줄이 서로 올라탔다(사장님 실측) — 전용 사각형을 둔다.
+const OATH_PANEL := Rect2(20.0, 108.0, 536.0, 664.0)
 const OATH_INK := Color(0.98, 0.94, 0.92)
 const OATH_DIM := Color(0.80, 0.72, 0.72)
 const OATH_RED := Color(0.98, 0.46, 0.44)
@@ -10150,31 +10153,31 @@ func _build_oath_view() -> void:
 	_oath_view.add_child(dim)
 	# **전용 세트**(oath — 검은 철판에 핏자국). 판마다 결이 달라야 한다는
 	# 규칙 그대로(둥지·양피지·가죽책과 한 벌).
-	_oath_view.add_child(Ui.set_body(OATH, QUEST_PANEL.position, QUEST_PANEL.size))
-	var x := QUEST_PANEL.position.x + 20.0
-	var w := QUEST_PANEL.size.x - 40.0
-	var top := QUEST_PANEL.position.y
+	_oath_view.add_child(Ui.set_body(OATH, OATH_PANEL.position, OATH_PANEL.size))
+	var x := OATH_PANEL.position.x + 20.0
+	var w := OATH_PANEL.size.x - 40.0
+	var top := OATH_PANEL.position.y
 	# 제목 띠 — 긴 띠 조각 위에 글자. 좌우에 핏방울 아이콘을 세워 균형을 잡는다.
-	_oath_view.add_child(Ui.set_card(OATH, Vector2(x, top + 10.0),
-		Vector2(w, 42.0)))
+	_oath_view.add_child(Ui.set_card(OATH, Vector2(x, top + 12.0),
+		Vector2(w, 46.0)))
 	_oath_view.add_child(Ui.icon("res://assets/ui/res_blood.png",
-		Vector2(x + 14.0, top + 18.0), 24.0))
+		Vector2(x + 14.0, top + 22.0), 26.0))
 	_oath_view.add_child(Ui.icon("res://assets/ui/res_blood.png",
-		Vector2(x + w - 38.0, top + 18.0), 24.0))
-	var title := _panel_label(_oath_view, Vector2(x, top + 18.0),
+		Vector2(x + w - 40.0, top + 22.0), 26.0))
+	var title := _panel_label(_oath_view, Vector2(x, top + 22.0),
 		Type.SIZE_MID, OATH_RED, w, 26.0)
 	title.text = "핏 빛  계 약"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(title, 8)
-	var close_art := Ui.set_row(OATH, Vector2(x + w - 84.0, top + 58.0),
-		Vector2(84.0, 30.0))
+	var close_art := Ui.set_row(OATH, Vector2(x + w - 88.0, top + 64.0),
+		Vector2(88.0, 32.0))
 	_oath_view.add_child(close_art)
-	var clbl := _panel_label(_oath_view, Vector2(x + w - 84.0, top + 65.0),
-		Type.SIZE_SMALL, OATH_INK, 84.0, 18.0)
+	var clbl := _panel_label(_oath_view, Vector2(x + w - 88.0, top + 72.0),
+		Type.SIZE_SMALL, OATH_INK, 88.0, 18.0)
 	clbl.text = "닫기"
 	clbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var close := Ui.button("", Vector2(x + w - 84.0, top + 58.0),
-		Vector2(84.0, 30.0), Type.SIZE_SMALL)
+	var close := Ui.button("", Vector2(x + w - 88.0, top + 64.0),
+		Vector2(88.0, 32.0), Type.SIZE_SMALL)
 	close.modulate = Color(1, 1, 1, 0)
 	close.pressed.connect(func() -> void: _oath_view.visible = false)
 	_oath_view.add_child(close)
@@ -10182,20 +10185,20 @@ func _build_oath_view() -> void:
 	# 제단 — 카드가 놓이는 자리. 뒤에 붉은 후광을 깔아 카드가 떠 보이게 한다.
 	var halo := ColorRect.new()
 	halo.color = Color(0.62, 0.10, 0.14, 0.16)
-	halo.size = Vector2(150.0, 150.0)
-	halo.position = Vector2(x + (w - 150.0) * 0.5, top + 78.0)
+	halo.size = Vector2(168.0, 168.0)
+	halo.position = Vector2(x + (w - 168.0) * 0.5, top + 92.0)
 	halo.pivot_offset = halo.size * 0.5
 	halo.rotation_degrees = 45.0
 	halo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_oath_view.add_child(halo)
 	_oath_ui["halo"] = halo
 	_oath_ui["card"] = Ui.image("res://assets/ui/oath_card.png",
-		Vector2(x + (w - 117.0) * 0.5, top + 74.0), Vector2(117.0, 156.0))
+		Vector2(x + (w - 126.0) * 0.5, top + 88.0), Vector2(126.0, 168.0))
 	_oath_view.add_child(_oath_ui["card"])
 	# 보유 줄 — 알약 셋(카드·황금·충전). 숫자가 흩어져 있으면 안 읽힌다.
 	var pw := (w - 16.0) / 3.0
 	for i in 3:
-		var pp := Vector2(x + float(i) * (pw + 8.0), top + 238.0)
+		var pp := Vector2(x + float(i) * (pw + 8.0), top + 272.0)
 		_oath_view.add_child(Ui.set_pill(OATH, pp, Vector2(pw, 32.0)))
 		var pl := _panel_label(_oath_view, pp + Vector2(0.0, 8.0),
 			Type.SIZE_SMALL, OATH_INK, pw, 18.0)
@@ -10208,7 +10211,7 @@ func _build_oath_view() -> void:
 		["만월", Color(0.95, 0.78, 0.35)]]
 	var rw := (w - 16.0) / 5.0
 	for i in rar.size():
-		var rp := Vector2(x + float(i) * (rw + 4.0), top + 278.0)
+		var rp := Vector2(x + float(i) * (rw + 4.0), top + 316.0)
 		var bar := ColorRect.new()
 		bar.color = Color(rar[i][1])
 		bar.color.a = 0.75
@@ -10223,7 +10226,7 @@ func _build_oath_view() -> void:
 		_shop_outline(rl, 4)
 	# 천장 게이지 둘 — 띠 조각 안에 넣어 판의 일부로 읽히게.
 	for row in [["pity", "만월까지", 0.0], ["gpity", "황금 천장", 36.0]]:
-		var y := top + 306.0 + float(row[2])
+		var y := top + 348.0 + float(row[2])
 		_oath_view.add_child(Ui.set_row(OATH, Vector2(x, y), Vector2(w, 32.0)))
 		var lb := _panel_label(_oath_view, Vector2(x + 14.0, y + 8.0),
 			Type.SIZE_SMALL, OATH_DIM, 120.0, 16.0)
@@ -10248,13 +10251,13 @@ func _build_oath_view() -> void:
 		_oath_ui[str(row[0]) + "_w"] = track.size.x
 		_oath_ui[str(row[0]) + "_num"] = num
 	# 피의 서약 — 판 위의 도박 스위치. 켜지면 줄이 붉게 달아오른다.
-	var vow_art := Ui.set_row(OATH, Vector2(x, top + 378.0), Vector2(w, 34.0))
+	var vow_art := Ui.set_row(OATH, Vector2(x, top + 424.0), Vector2(w, 36.0))
 	_oath_view.add_child(vow_art)
-	var vlbl := _panel_label(_oath_view, Vector2(x, top + 386.0),
+	var vlbl := _panel_label(_oath_view, Vector2(x, top + 433.0),
 		Type.SIZE_SMALL, OATH_INK, w, 18.0)
 	vlbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(vlbl, 5)
-	var vow := Ui.button("", Vector2(x, top + 378.0), Vector2(w, 34.0),
+	var vow := Ui.button("", Vector2(x, top + 424.0), Vector2(w, 36.0),
 		Type.SIZE_SMALL)
 	vow.modulate = Color(1, 1, 1, 0)
 	vow.pressed.connect(func() -> void:
@@ -10269,7 +10272,7 @@ func _build_oath_view() -> void:
 	for spec in [["roll", 0.0, 0.0, 44.0], ["groll", 1.0, 0.0, 44.0],
 			["buy", 0.0, 50.0, 36.0], ["gbuy", 1.0, 50.0, 36.0]]:
 		var bp := Vector2(x + float(spec[1]) * (bw + 12.0),
-			top + 420.0 + float(spec[2]))
+			top + 472.0 + float(spec[2]))
 		var bsz := Vector2(bw, float(spec[3]))
 		var art := Ui.set_row(OATH, bp, bsz)
 		_oath_view.add_child(art)
@@ -10300,15 +10303,15 @@ func _build_oath_view() -> void:
 			_refresh_oath())
 	# 광고 자리 — SDK 가 오면 개통한다(RaidDefs.AD_BONUS_TRIES 와 같은 원칙:
 	# 붙일 SDK 가 없으면 **자리만** 만들고 눌리지 않게 둔다).
-	var ad_art := Ui.set_row(OATH, Vector2(x, top + 462.0), Vector2(w, 32.0))
+	var ad_art := Ui.set_row(OATH, Vector2(x, top + 566.0), Vector2(w, 34.0))
 	ad_art.modulate = Color(0.55, 0.52, 0.54)
 	_oath_view.add_child(ad_art)
-	var ad := _panel_label(_oath_view, Vector2(x, top + 470.0), Type.SIZE_SMALL,
+	var ad := _panel_label(_oath_view, Vector2(x, top + 574.0), Type.SIZE_SMALL,
 		Color(0.66, 0.62, 0.66), w, 18.0)
 	ad.text = "[광고] 카드 1장  ·  하루 3회 — 준비 중"
 	ad.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 계약 수집 — 12칸 미니 격자. 딴 계약은 등급색, 못 딴 것은 어둡게.
-	var gy := top + 508.0
+	var gy := top + 610.0
 	var glbl := _panel_label(_oath_view, Vector2(x, gy), Type.SIZE_SMALL,
 		OATH_DIM, w, 16.0)
 	glbl.text = "계약 수집 — 중복이 레벨이 된다"
@@ -10323,11 +10326,15 @@ func _build_oath_view() -> void:
 		cell.size = Vector2(cw, minf(cw, 26.0))
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_oath_view.add_child(cell)
+		var mini := Ui.image(OathDefs.card_face(str(c["id"])),
+			cp, Vector2(cw, minf(cw, 26.0)))
+		mini.modulate = Color(0.35, 0.32, 0.36)
+		_oath_view.add_child(mini)
 		var lvl := _panel_label(_oath_view, cp + Vector2(0.0, 5.0),
 			Type.SIZE_SMALL, Color(0.9, 0.9, 0.9), cw, 14.0)
 		lvl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		(_oath_ui["collect"] as Array).append({"id": str(c["id"]),
-			"rarity": str(c["rarity"]), "cell": cell, "lvl": lvl})
+			"rarity": str(c["rarity"]), "cell": cell, "lvl": lvl, "mini": mini})
 	# 공개 연출 층.
 	_oath_reveal = Control.new()
 	_oath_reveal.size = Vector2(Grid.BG)
@@ -10394,6 +10401,9 @@ func _refresh_oath() -> void:
 		var col := _oath_rcol(str(e["rarity"]))
 		(e["cell"] as ColorRect).color = Color(col.r * 0.55, col.g * 0.55,
 			col.b * 0.55) if lv > 0 else Color(0.16, 0.13, 0.18)
+		if e.has("mini"):
+			(e["mini"] as CanvasItem).modulate = Color(1, 1, 1) if lv > 0 \
+				else Color(0.35, 0.32, 0.36)
 		(e["lvl"] as Label).text = str(lv) if lv > 0 else ""
 
 
@@ -10538,6 +10548,57 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 		shake.tween_property(_oath_reveal, "position",
 			Vector2(randf_range(-amp, amp), randf_range(-amp, amp)), 0.04)
 	shake.tween_property(_oath_reveal, "position", Vector2.ZERO, 0.08)
+	# 등급 파동 — 소환진을 등급색으로 물들여 한 번 크게 퍼뜨린다.
+	# 커먼도 "뭔가 터졌다"가 보이게 하는 최소 장치다.
+	var wave := Ui.image("res://assets/ui/oath_circle.png",
+		mid - Vector2(110.0, 110.0), Vector2(220.0, 220.0))
+	wave.pivot_offset = Vector2(110.0, 110.0)
+	wave.modulate = Color(rcol.r, rcol.g, rcol.b, 0.9)
+	_oath_reveal.add_child(wave)
+	_oath_reveal.move_child(wave, 1)
+	var wt := create_tween().set_parallel()
+	wt.tween_property(wave, "scale", Vector2(2.6, 2.6), 0.55) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	wt.tween_property(wave, "modulate:a", 0.0, 0.55)
+	wt.tween_property(wave, "rotation_degrees", 60.0, 0.55)
+	# 레어 이상 — 화면 가장자리가 등급색으로 물든다(비네트 네 줄).
+	if big:
+		for i in 4:
+			var edge := ColorRect.new()
+			edge.color = Color(rcol.r, rcol.g, rcol.b, 0.0)
+			edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var thick := 90.0
+			if i == 0:
+				edge.position = Vector2.ZERO
+				edge.size = Vector2(Grid.BG.x, thick)
+			elif i == 1:
+				edge.position = Vector2(0.0, Grid.BG.y - thick)
+				edge.size = Vector2(Grid.BG.x, thick)
+			elif i == 2:
+				edge.position = Vector2.ZERO
+				edge.size = Vector2(thick, Grid.BG.y)
+			else:
+				edge.position = Vector2(Grid.BG.x - thick, 0.0)
+				edge.size = Vector2(thick, Grid.BG.y)
+			_oath_reveal.add_child(edge)
+			var et := create_tween()
+			et.tween_property(edge, "color:a", 0.30, 0.18)
+			et.tween_property(edge, "color:a", 0.0, 0.75)
+	# 에픽 — 보랏빛 낙뢰가 카드로 내리꽂힌다(설계 3막).
+	if rarity == "epic" or rarity == "trueblood":
+		for i in 5:
+			var bolt := ColorRect.new()
+			bolt.color = Color(0.85, 0.55, 1.0, 0.0) if rarity == "epic" \
+				else Color(1.0, 0.92, 0.6, 0.0)
+			bolt.size = Vector2(randf_range(3.0, 6.0), randf_range(200.0, 340.0))
+			bolt.position = Vector2(mid.x + randf_range(-150.0, 150.0), -20.0)
+			bolt.rotation_degrees = randf_range(-14.0, 14.0)
+			bolt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_oath_reveal.add_child(bolt)
+			var bt := create_tween()
+			bt.tween_interval(0.03 * float(i))
+			bt.tween_property(bolt, "color:a", 0.9, 0.05)
+			bt.tween_property(bolt, "color:a", 0.0, 0.28)
 	# 4·5막 — 만월. 레전은 핏빛, 진혈은 황금으로 물든다.
 	if rarity == "legend" or rarity == "trueblood":
 		var gold_moon := rarity == "trueblood"
@@ -10570,7 +10631,16 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 		var ct := create_tween()
 		ct.tween_property(card, "scale", Vector2(1.35, 1.35), 0.45) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	(rim as ColorRect).color = Color(rcol.r, rcol.g, rcol.b, 0.9)
+	# 카드 뒤집기 — 뒷면이 좁아졌다가 **앞면**으로 펼쳐진다. 계약마다 그림이
+	# 다르므로 여기서 비로소 "무엇을 뽑았는지"가 그림으로 읽힌다.
+	var face := OathDefs.card_face(str(r["contract"]["id"]))
+	var flip := create_tween()
+	flip.tween_property(card, "scale", Vector2(0.05, 1.06), 0.16) \
+		.set_trans(Tween.TRANS_SINE)
+	flip.tween_callback(func() -> void:
+		(card as TextureRect).texture = Assets.tex(face))
+	flip.tween_property(card, "scale", Vector2(1.0, 1.0), 0.22) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	card.modulate = Color(1.5, 1.4, 1.3)
 	create_tween().tween_property(card, "modulate", Color.WHITE, 0.6)
 	_oath_result(rcol, rarity, r)

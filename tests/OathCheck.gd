@@ -97,5 +97,12 @@ func _init() -> void:
 		scene._oath_roll(false)
 	assert(int(scene.oath_lv["thirst"]) <= OathDefs.LV_MAX, "계약 레벨 상한 초과")
 
+	# 카드 앞면 — 파일명 규약(assets/cards/oc_{id}.png)이라 디스크가 진실이다.
+	for c in OathDefs.CONTRACTS:
+		var fp := OathDefs.card_face(str(c["id"]))
+		assert(ResourceLoader.exists(fp), "카드 앞면이 없다: " + fp)
+	assert(ResourceLoader.exists(OathDefs.card_face("trueblood")),
+		"진혈 카드 앞면이 없다")
+
 	print("OathCheck OK")
 	quit(0)

@@ -104,6 +104,12 @@ static func card_cap(member: bool) -> int:
 const MEMBER_WEEKLY_GOLD := 3
 
 
+# 카드 앞면 — 계약마다 한 장(2026-08-18 사장님: "카드 디자인도 다 하나씩").
+# 파일명 규약이라 표가 아니라 디스크가 진실이다(OathCheck 이 실존을 본다).
+static func card_face(id: String) -> String:
+	return "res://assets/cards/oc_%s.png" % id
+
+
 static func of(id: String) -> Dictionary:
 	if id == "trueblood":
 		return TRUEBLOOD_CONTRACT
