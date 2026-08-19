@@ -9891,10 +9891,10 @@ func _refresh_gate_hud() -> void:
 # 초상 원본마다 여백이 달라서(여왕은 여백 크고 파수꾼은 꽉 참) 창 크기로 정직하게
 # 그리면 작은 놈은 허공에 뜬다(사장님 실측) — 과감히 키우고 창으로 자른다.
 func _framed_portrait(parent: Control, at: Vector2, fsize := 52.0) -> TextureRect:
-	# 64 는 판에서 너무 컸다(사장님) — 기본 52. 창은 실측 테두리(10/96)로 잰다:
-	# 액자 그림의 그려진 테두리는 5px 뿐이라, 창을 좁게 잡으면 초상 둘레에
-	# 두꺼운 검은 띠가 남는다(사장님 두 번 지적).
-	var pad2 := fsize * 10.0 / 96.0
+	# 액자 그림은 96 원본의 테두리를 떼어 64 로 재조립한 것(9-슬라이스) —
+	# 원본은 테두리 5px 에 속이 통째로 비어 "존나 큰 액자"였다(사장님 세 번 지적).
+	# 재조립본의 테두리는 10px/64.
+	var pad2 := fsize * 10.0 / 64.0
 	var win := Control.new()
 	win.position = at + Vector2(pad2, pad2)
 	win.size = Vector2(fsize - pad2 * 2.0, fsize - pad2 * 2.0)
