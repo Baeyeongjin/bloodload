@@ -8166,6 +8166,8 @@ func _refresh_quests() -> void:
 func _select_tab(name: String) -> void:
 	var switched := _tab != name
 	_tab = name
+	if switched and name != "home":
+		_boss_cut_clear()
 	for key in _panels.keys():
 		_panels[key].visible = key == name
 	# 홈(사냥)은 판이 없는 탭이다 — 창을 다 걷고 사냥터만 남긴다(사장님,
@@ -10374,11 +10376,20 @@ func _build_oath_view() -> void:
 			Type.SIZE_SMALL, Color(0.94, 0.92, 0.96), 104.0, 16.0)
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(nm, 5)     # 검은 테 — 띠 밖으로 삐져도 읽힌다(사장님)
-		var lvl := _panel_label(_oath_col, cp + Vector2(4.0, 2.0),
-			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 60.0, 14.0)
+		var chip := ColorRect.new()
+		chip.color = Color(0.0, 0.0, 0.0, 0.62)
+		chip.position = cp + Vector2(2.0, 2.0)
+		chip.size = Vector2(30.0, 13.0)
+		chip.visible = false
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_col.add_child(chip)
+		var lvl := _panel_label(_oath_col, cp + Vector2(2.0, 3.0),
+			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 30.0, 12.0)
+		lvl.add_theme_font_size_override("font_size", 10)
+		lvl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		(_oath_ui["collect"] as Array).append({"id": str(c["id"]),
 			"rarity": str(c["rarity"]), "cell": cell, "lvl": lvl,
-			"mini": mini, "name": nm})
+			"mini": mini, "name": nm, "chip": chip})
 	# 수집 보상 — 다음 이정표 하나만 보여주고, 차면 받는다.
 	var rw_art := Ui.set_row(OATH, Vector2(x, top + 616.0), Vector2(w, 40.0))
 	_oath_col.add_child(rw_art)
@@ -10470,6 +10481,8 @@ func _refresh_oath() -> void:
 			(e["mini"] as CanvasItem).modulate = Color(1, 1, 1) if lv > 0 \
 				else Color(0.35, 0.32, 0.36)
 		(e["lvl"] as Label).text = "Lv%d" % lv if lv > 0 else ""
+		if e.has("chip"):
+			(e["chip"] as CanvasItem).visible = lv > 0
 		(e["name"] as Label).text = str(OathDefs.of(str(e["id"]))["name"]) \
 			if lv > 0 else "???"
 	# 수집 보상 줄 + 소탭 알림점.
@@ -10811,40 +10824,67 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	var c: Dictionary = r["contract"]
 	var e: Dictionary = r["engrave"]
 	var mid := Vector2(Grid.BG) * 0.5 - Vector2(0.0, 60.0)
-	# 광선 — 카드 중심에서 8줄이 천천히 돈다. 도박기의 "당첨 후광"이다.
-	var rays := Control.new()
-	rays.position = mid
-	rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_oath_reveal.add_child(rays)
-	_oath_reveal.move_child(rays, 1)     # 카드·만월 뒤
-	# 어두운 등급색(레어 파랑)은 검은 띠로 보인다 — 흰 쪽으로 끌어 밝힌다.
+	# 후광 — 부드러운 방사 빔 두 겹이 서로 반대로 천천히 돈다(사장님
+	# "부드럽고 고급지게"). 빔은 방사형 그라데이션이라 가로·세로 모두
+	# 사그라든다 — 각진 모서리가 없다. 속도 차가 은은한 간섭무늬를 만든다.
 	var lit := Color(rcol.r, rcol.g, rcol.b).lerp(Color(1, 1, 1), 0.45)
 	var grad := Gradient.new()
-	grad.colors = PackedColorArray([Color(lit.r, lit.g, lit.b, 0.30),
-		Color(lit.r, lit.g, lit.b, 0.0)])
-	grad.offsets = PackedFloat32Array([0.0, 1.0])
+	grad.colors = PackedColorArray([Color(lit.r, lit.g, lit.b, 0.28),
+		Color(lit.r, lit.g, lit.b, 0.10), Color(lit.r, lit.g, lit.b, 0.0)])
+	grad.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
 	var gtex := GradientTexture2D.new()
 	gtex.gradient = grad
-	gtex.fill_from = Vector2(0.5, 1.0)   # 중심 쪽이 진하고 끝으로 사라진다
+	gtex.fill = GradientTexture2D.FILL_RADIAL
+	gtex.fill_from = Vector2(0.5, 1.0)   # 밑동(카드 중심)에서 사방으로 사라진다
 	gtex.fill_to = Vector2(0.5, 0.0)
-	for i in 12:
-		var ray := TextureRect.new()
-		ray.texture = gtex
-		var rw2 := randf_range(9.0, 24.0)
-		var rl := randf_range(230.0, 330.0)
-		ray.size = Vector2(rw2, rl)
-		ray.position = Vector2(-rw2 * 0.5, -rl)
-		ray.pivot_offset = Vector2(rw2 * 0.5, rl)
-		ray.rotation_degrees = float(i) * 30.0 + randf_range(-9.0, 9.0)
-		ray.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		rays.add_child(ray)
-	var spin := create_tween().set_loops()
-	spin.tween_property(rays, "rotation_degrees", 360.0, 24.0).from(0.0)
-	var breathe := create_tween().set_loops()
-	breathe.tween_property(rays, "scale", Vector2(1.08, 1.08), 1.2) \
-		.set_trans(Tween.TRANS_SINE)
-	breathe.tween_property(rays, "scale", Vector2.ONE, 1.2) \
-		.set_trans(Tween.TRANS_SINE)
+	var layers: Array[Control] = []
+	for li in 2:
+		var rays := Control.new()
+		rays.position = mid
+		rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_reveal.add_child(rays)
+		_oath_reveal.move_child(rays, 1)     # 카드·만월 뒤
+		var count := 7 if li == 0 else 5
+		for i in count:
+			var ray := TextureRect.new()
+			ray.texture = gtex
+			ray.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ray.stretch_mode = TextureRect.STRETCH_SCALE
+			var rw2 := randf_range(34.0, 60.0) if li == 0 				else randf_range(60.0, 96.0)
+			var rl := randf_range(250.0, 340.0)
+			ray.size = Vector2(rw2, rl)
+			ray.position = Vector2(-rw2 * 0.5, -rl)
+			ray.pivot_offset = Vector2(rw2 * 0.5, rl)
+			ray.rotation_degrees = float(i) * (360.0 / float(count)) 				+ randf_range(-14.0, 14.0)
+			ray.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			rays.add_child(ray)
+		# 겹마다 반대 방향·다른 속도 — 같이 돌면 기계, 어긋나야 살아 있다.
+		var spin := create_tween().set_loops()
+		spin.tween_property(rays, "rotation_degrees",
+			360.0 if li == 0 else -360.0, 30.0 if li == 0 else 44.0).from(0.0)
+		var breathe := create_tween().set_loops()
+		breathe.tween_property(rays, "scale", Vector2(1.06, 1.06), 1.6) 			.set_trans(Tween.TRANS_SINE)
+		breathe.tween_property(rays, "scale", Vector2.ONE, 1.6) 			.set_trans(Tween.TRANS_SINE)
+		layers.append(rays)
+	# 잔불 — 등급색 불티가 카드 곁에서 떠올라 사그라든다.
+	for i in 10:
+		var spark := ColorRect.new()
+		var ss := randf_range(2.0, 4.0)
+		spark.size = Vector2(ss, ss)
+		spark.color = Color(lit.r, lit.g, lit.b, 0.0)
+		spark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_reveal.add_child(spark)
+		var sx := mid.x + randf_range(-130.0, 130.0)
+		var sy := mid.y + randf_range(-40.0, 140.0)
+		spark.position = Vector2(sx, sy)
+		var st2 := create_tween().set_loops()
+		st2.tween_interval(randf() * 1.8)
+		st2.tween_callback(func() -> void:
+			spark.position = Vector2(mid.x + randf_range(-130.0, 130.0),
+				mid.y + randf_range(-40.0, 140.0)))
+		st2.tween_property(spark, "color:a", 0.75, 0.5)
+		st2.parallel().tween_property(spark, "position:y", sy - 26.0, 1.6)
+		st2.tween_property(spark, "color:a", 0.0, 1.1)
 	# 결과 판 — 전용 세트. 아래에서 떠오른다.
 	var panel := Control.new()
 	panel.position = Vector2(0.0, 20.0)
@@ -11613,8 +11653,15 @@ func _modal_open() -> bool:
 	return false
 
 
+# 컷신은 **전투 화면이 실제로 보일 때만** 튼다(사장님 2차 지적: 모달 몇 개만
+# 막았더니 펫·상점 같은 전면 탭 위로 여전히 떴다). 조건을 거꾸로 세운다 —
+# "가리는 게 있나"가 아니라 "사냥터가 화면에 있나".
+func _battle_visible() -> bool:
+	return (_tab == "home" or raid_on != "" or dungeon_on) and not _modal_open()
+
+
 func _boss_cut(name: String) -> void:
-	if _boss_title == null or _modal_open():
+	if _boss_title == null or not _battle_visible():
 		return
 	_boss_cut_clear()      # 앞 연출이 남아 있으면 겹쳐서 띠가 두 겹이 된다
 	_boss_bar_top.visible = true
