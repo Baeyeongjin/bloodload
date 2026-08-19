@@ -3813,7 +3813,7 @@ func _build_gacha(root: Control) -> void:
 		gb.position = bpos
 		gb.pressed.connect(func() -> void: _pull_gacha(count))
 		_gacha_buttons[key] = gb
-	_mile_strip(root, Vector2(240.0, 442.0), 300.0)
+	_mile_strip(root, Vector2(214.0, 442.0), 300.0)
 	_build_rates_table(root)
 	_gacha_reveal = Control.new()
 	_gacha_reveal.size = Vector2(PANEL_W, PANEL_FULL_H)
@@ -11862,10 +11862,6 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	rates.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	rates.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rates.size = Vector2(CONTENT_W - 40.0, 40.0)
-	var note := _panel_label(root, Vector2(PAD, PET_GRID_Y + 214.0),
-		Type.SIZE_SMALL, Color(0.72, 0.70, 0.74), CONTENT_W, 16.0)
-	note.text = "중복은 조각 %d개로 승급한다" % PetDefs.SHARDS_PER_STAR
-	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 소환권 잔량 알약.
 	var pp := Vector2(PAD + (CONTENT_W - 180.0) * 0.5, PET_GRID_Y + 320.0)
 	root.add_child(Ui.set_pill(NEST, pp, Vector2(180.0, 34.0)))
@@ -11894,8 +11890,9 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	root.add_child(g2)
 	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten,
 		"one_gem": g1, "ten_gem": g2}
+	# 승급 문구가 있던 자리 — 문구는 뺐다(사장님 2026-08-18).
 	_mile_strip(root, Vector2(PAD + (CONTENT_W - 300.0) * 0.5,
-		PET_GRID_Y + 244.0), 300.0)
+		PET_GRID_Y + 210.0), 300.0)
 
 
 func _refresh_pet() -> void:
