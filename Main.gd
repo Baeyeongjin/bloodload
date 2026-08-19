@@ -238,6 +238,7 @@ func _tick_titles(delta: float) -> void:
 		return
 	_title_check_t = 1.0
 	play_sec += 1.0   # 켜 둔 시간 전부 — 방치형에서는 방치도 플레이다
+	_oath_tick()
 	_refresh_board()
 	# 임무도 이 1초 틱을 탄다 — 자정 넘김과 알림점(처치가 50에 닿는 순간 등)을
 	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
@@ -557,8 +558,9 @@ func _collection_bonus(stat: String) -> float:
 
 
 func attack_interval() -> float:
-	# 유물 공격속도는 **간격을 줄인다** — 배수를 그냥 곱하면 느려진다.
-	return Balance.attack_interval(_stat_eff("speed")) / _relic_mult("speed")
+	# 유물 공격속도는 **간격을 줄인다** — 배수를 그냥 곱하면 느려진다. 계약도 같다.
+	return Balance.attack_interval(_stat_eff("speed")) / _relic_mult("speed") \
+		/ (1.0 + _oath_val("speed"))
 
 
 func gold_mult() -> float:
@@ -566,7 +568,7 @@ func gold_mult() -> float:
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
 		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold")) \
-		* (1.0 + _pet_mult("gold"))
+		* (1.0 + _pet_mult("gold")) * (1.0 + _oath_val("leech"))
 
 
 func dps() -> float:
@@ -652,7 +654,9 @@ func _base_hit_damage() -> float:
 	return damage() * _trait_mult("attack") * _prestige_mult() \
 		* TrialDefs.mult(trial_stage) \
 		* (1.0 + _pet_mult("damage")) \
-		* Balance.crit_mult(_stat_eff("crit"), _stat_eff("critdmg"),
+		* (1.0 + _oath_val("attack")) \
+		* Balance.crit_mult(_stat_eff("crit") + int(_oath_val("crit")),
+			_stat_eff("critdmg"),
 			_trait_add("critdmg") + RelicDefs.add("critdmg", relics))
 
 
@@ -709,7 +713,9 @@ func max_hp() -> float:
 
 
 func regen_per_sec() -> float:
-	return Balance.hero_regen_per_sec(max_hp(), _stat_eff("regen")) * _trait_mult("regen")
+	return Balance.hero_regen_per_sec(max_hp(), _stat_eff("regen")) \
+		* _trait_mult("regen") * (1.0 + _oath_val("regen")) \
+		+ max_hp() * _oath_val("regen_max")
 
 
 # 최대 체력이 늘 때 늘어난 몫만큼 현재 체력도 채운다. 강해졌는데 즉시 체력 비율이
@@ -846,6 +852,12 @@ func _ready() -> void:
 			sigil = 5000.0
 			_select_tab("growth")
 			_set_growth_mode("pact")
+		# [개발 도구] --oath[=N] : 핏빛 계약 판(카드 N장)을 연 채로 캡처한다.
+		if arg.begins_with("--oath"):
+			oath_cards = int(arg.trim_prefix("--oath=")) if "=" in arg else 3
+			gem = maxf(gem, 500.0)
+			_oath_view.visible = true
+			_refresh_oath()
 		# [개발 도구] --home : 홈(사냥) 탭을 연 채로 캡처한다.
 		if arg == "--home":
 			_select_tab("home")
@@ -1192,6 +1204,7 @@ func _build_scene() -> void:
 	# 탭을 못 덮었다(실측 캡처).
 	_build_quests()
 	_build_codex_view()
+	_build_oath_view()
 	_build_dialogs()
 	# 창이 뜰 때의 반응을 **한 곳에서** 건다(사장님: "모든 창들 띄울 때 애니메이션").
 	# `visible` 을 켜는 자리가 34곳이라 호출부마다 넣으면 하나씩 빠진다 — Ui.pop_in
@@ -5571,6 +5584,25 @@ var _raid_mode_btns := {}
 var trial_stage := 0
 var _trial_panel: Control
 var _trial_ui := {}
+# ── 핏빛 계약 (OathDefs, docs/OATH_DESIGN.md) — 운빨 돌파 ──
+var oath_cards := 1          # 보유 — 첫 장은 채워 시작(첫 경험이 에픽 확정이다)
+var oath_gold := 0           # 황금 계약서
+var oath_charge := 0.0       # 충전 진행(분)
+var oath_pity := 0           # 일반 천장(100 — 만월)
+var oath_gold_pity := 0      # 황금 천장(30)
+var oath_lv := {}            # 계약 id -> 중복 수(레벨)
+var oath_first := false      # 계정 첫 카드(에픽 확정)를 썼는가
+var oath_daily := ""         # 일일 행운(첫 카드 시프트) 날짜
+var oath_last_rarity := ""   # 공명 감지 — 직전 등급
+var oath_vow := false        # 피의 서약 토글
+var oath_fx := {}            # 활성 버프 효과(레벨·공명·각인 반영 후)
+var oath_fx_t := 0.0
+var oath_fx_name := ""
+var _oath_view: Control
+var _oath_ui := {}
+var _oath_reveal: Control
+var _oath_icon: TextureRect
+var _oath_buff_lbl: Label
 var _maze_panel: Control
 var _maze_scroll: Control
 var _boss_panel: Control
@@ -6818,6 +6850,7 @@ const DUTY_DIM := Color(0.84, 0.80, 0.76)      # 보조 — 조금 죽인 흰색
 const DUTY_RED := Color(0.98, 0.42, 0.40)      # 강조 — 밝은 핏빛
 const QUEST_BTN_AT := Vector2(508.0, 148.0)   # 오른쪽 가장자리, 상단바 아래
 const TITLE_BTN_AT := Vector2(508.0, 206.0)   # 그 바로 아래 — 같은 세로 줄
+const OATH_BTN_AT := Vector2(508.0, 264.0)    # 핏빛 계약 — 상시 아이콘(사장님)
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
 # 잘렸다(실측). 잘린 진행도는 거짓말이다.
 const QUEST_BAR_W := 220.0
@@ -6871,6 +6904,22 @@ func _build_quests() -> void:
 		TITLE_BTN_AT + Vector2(4.0, 4.0), 48.0)
 	_side_root.add_child(c_icon)
 	_nav_hover(t_btn, c_icon)
+	# 셋째 버튼 — **핏빛 계약**(사장님: 언제든 돌리는 상시 아이콘). 카드가 차
+	# 있으면 붉게 고동친다(_refresh_oath) — "지금 굴릴 수 있다"가 눈에 밟히게.
+	var o_btn := Button.new()
+	o_btn.flat = true
+	o_btn.position = OATH_BTN_AT
+	o_btn.size = Vector2(56.0, 56.0)
+	o_btn.focus_mode = Control.FOCUS_NONE
+	o_btn.pressed.connect(func() -> void:
+		_oath_view.visible = not _oath_view.visible
+		if _oath_view.visible:
+			_refresh_oath())
+	_side_root.add_child(o_btn)
+	_oath_icon = Ui.icon("res://assets/ui/side_oath.png",
+		OATH_BTN_AT + Vector2(4.0, 4.0), 48.0)
+	_side_root.add_child(_oath_icon)
+	_nav_hover(o_btn, _oath_icon)
 	# 상점 진입점은 **일부러 안 만든다** (사장님 2026-08-12): 상점은 과금과 한
 	# 묶음으로 **별도 탭**이 되고 지금 이 판은 그 탭 안의 한 소탭으로 들어간다.
 	# 옆줄에 버튼을 세워 두면 곧 두 곳에서 같은 걸 파는 화면이 된다.
@@ -8227,7 +8276,9 @@ func _mastery_cleave(hit_already: Foe) -> void:
 
 
 func _cleave_swing(hit_already: Foe) -> void:
-	if _summon_t <= 0.0 or _summon_cleave.is_empty():
+	# 박쥐 폭풍(계약) — 가호 없이도 평타가 광역이 된다.
+	if (_summon_t <= 0.0 or _summon_cleave.is_empty()) \
+			and _oath_val("cleave") <= 0.0:
 		return
 	var rest: Array[Foe] = []
 	for f in _aoe_targets():
@@ -8240,7 +8291,9 @@ func _cleave_swing(hit_already: Foe) -> void:
 		f.take_damage(_combat_damage(f))
 		mid += f.position.x
 	mid /= float(rest.size())
-	_anim_fx(_summon_cleave, Vector2(mid, ground_y - float(Grid.SPRITE)),
+	_anim_fx(_summon_cleave if _summon_t > 0.0 and not _summon_cleave.is_empty() \
+		else "fx_cleave_wave",
+		Vector2(mid, ground_y - float(Grid.SPRITE)),
 		16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
 
 
@@ -8827,6 +8880,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	var exec_at := float(rule.get("execute", 0.0))   # 처형 문턱 (최대 체력 비율)
 	if exec_at > 0.0:
 		exec_at += _exec_bonus()   # 군림 II — 왕의 선고
+		exec_at += _oath_val("exec")   # 왕좌의 명령 — 계약 버프
 	# 갈라진 대지 — **바닥이 흔들린다**(사장님). 깔릴 때 크게, 틱마다 잔진동.
 	# SHAKE_MIN_GAP 이 겹침을 걸러 주므로 틱마다 불러도 화면이 안 얼어붙는다.
 	var quake := float(rule.get("quake", 0.0))
@@ -9460,7 +9514,8 @@ func on_foe_attack(_foe: Foe) -> void:
 	# 특수 패턴은 훨씬 아프다. 대신 예고 원 밖으로 나가면(대시) 위 사거리 검사에서
 	# 통째로 빗나가므로, 예고를 보고 빠지는 것이 곧 회피다.
 	var incoming := Balance.foe_damage(_c_enemy_power()) * _foe.attack_mult() \
-		* _trait_mult("guard")
+		* _trait_mult("guard") \
+		* (1.0 - clampf(_oath_val("armor"), 0.0, 0.9))
 	hero_hp = maxf(0.0, hero_hp - incoming)
 	_pop_hero_damage(incoming)
 	_hero_flash_t = 0.10
@@ -9804,6 +9859,489 @@ func _boss_exit(reason: String) -> void:
 	_refresh_dungeon()
 	_return_gate("boss")
 	_save_game()
+
+
+# 계약 판 — 임무판과 같은 자리의 모달. 카드 뒷면·서약 토글·천장 게이지 둘·
+# 발동/구매 버튼. 공개 연출(_oath_play)은 판 위 전용 층에서 5막으로 돈다.
+func _build_oath_view() -> void:
+	_oath_view = Control.new()
+	_oath_view.size = Vector2(Grid.BG)
+	_oath_view.visible = false
+	_oath_view.z_index = 55
+	_hud_root.add_child(_oath_view)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.01, 0.02, 0.80)
+	dim.size = Vector2(Grid.BG)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_oath_view.add_child(dim)
+	_oath_view.add_child(Ui.panel(QUEST_PANEL.position, QUEST_PANEL.size))
+	var x := QUEST_PANEL.position.x + 22.0
+	var w := QUEST_PANEL.size.x - 44.0
+	var title := _panel_label(_oath_view, Vector2(x, QUEST_PANEL.position.y + 14.0),
+		Type.SIZE_TITLE, Color(0.98, 0.72, 0.66), w, 34.0)
+	title.text = "핏빛 계약"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var close := Ui.button("닫기", Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0),
+		Vector2(88.0, 34.0), Type.SIZE_SMALL)
+	close.pressed.connect(func() -> void: _oath_view.visible = false)
+	_oath_view.add_child(close)
+	# 카드 뒷면 — 진열의 얼굴. 96x128 원본을 1.5배로.
+	_oath_ui["card"] = Ui.image("res://assets/ui/oath_card.png",
+		Vector2(x + (w - 144.0) * 0.5, QUEST_PANEL.position.y + 62.0),
+		Vector2(144.0, 192.0))
+	_oath_view.add_child(_oath_ui["card"])
+	_oath_ui["have"] = _panel_label(_oath_view,
+		Vector2(x, QUEST_PANEL.position.y + 262.0), Type.SIZE_MID,
+		Color(0.96, 0.92, 0.88), w, 22.0)
+	_oath_ui["have"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 천장 게이지 둘 — 만월(100)과 황금(30).
+	for row in [["pity", "만월까지", 0.0], ["gpity", "황금 천장", 26.0]]:
+		var y := QUEST_PANEL.position.y + 296.0 + float(row[2])
+		var lb := _panel_label(_oath_view, Vector2(x, y), Type.SIZE_SMALL,
+			Color(0.78, 0.74, 0.72), 150.0, 16.0)
+		lb.text = str(row[1])
+		var track := ColorRect.new()
+		track.color = Color(0.10, 0.09, 0.12)
+		track.position = Vector2(x + 130.0, y + 4.0)
+		track.size = Vector2(w - 260.0, 8.0)
+		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_view.add_child(track)
+		var fill := ColorRect.new()
+		fill.color = Color(0.88, 0.40, 0.36) if row[0] == "pity" 			else Color(0.88, 0.70, 0.30)
+		fill.position = track.position
+		fill.size = Vector2(0.0, 8.0)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_view.add_child(fill)
+		var num := _panel_label(_oath_view, Vector2(x + w - 120.0, y),
+			Type.SIZE_SMALL, Color(0.92, 0.88, 0.86), 120.0, 16.0)
+		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_oath_ui[str(row[0]) + "_fill"] = fill
+		_oath_ui[str(row[0]) + "_w"] = track.size.x
+		_oath_ui[str(row[0]) + "_num"] = num
+	# 피의 서약 토글 — 혈액 10%를 걸고 등급을 민다.
+	var vow := Ui.button("", Vector2(x, QUEST_PANEL.position.y + 352.0),
+		Vector2(w, 36.0), Type.SIZE_SMALL)
+	vow.pressed.connect(func() -> void:
+		oath_vow = not oath_vow
+		_refresh_oath())
+	_oath_view.add_child(vow)
+	_oath_ui["vow"] = vow
+	# 발동·구매 버튼 줄.
+	var bw := (w - 12.0) * 0.5
+	var by := QUEST_PANEL.position.y + 400.0
+	var b_roll := Ui.button("계약 발동", Vector2(x, by), Vector2(bw, 46.0),
+		Type.SIZE_MID)
+	b_roll.pressed.connect(func() -> void: _oath_play(false))
+	_oath_view.add_child(b_roll)
+	_oath_ui["roll"] = b_roll
+	var b_gold := Ui.button("", Vector2(x + bw + 12.0, by), Vector2(bw, 46.0),
+		Type.SIZE_MID)
+	b_gold.pressed.connect(func() -> void: _oath_play(true))
+	_oath_view.add_child(b_gold)
+	_oath_ui["groll"] = b_gold
+	var b_buy := Ui.button("", Vector2(x, by + 56.0), Vector2(bw, 40.0),
+		Type.SIZE_SMALL)
+	b_buy.pressed.connect(func() -> void:
+		if gem >= OathDefs.RECHARGE_GEM and oath_cards < OathDefs.CARD_CAP:
+			gem -= OathDefs.RECHARGE_GEM
+			oath_cards += 1
+			_save_game()
+			_refresh_oath())
+	_oath_view.add_child(b_buy)
+	_oath_ui["buy"] = b_buy
+	var b_gbuy := Ui.button("", Vector2(x + bw + 12.0, by + 56.0),
+		Vector2(bw, 40.0), Type.SIZE_SMALL)
+	b_gbuy.pressed.connect(func() -> void:
+		if gem >= OathDefs.GOLD_GEM:
+			gem -= OathDefs.GOLD_GEM
+			oath_gold += 1
+			_save_game()
+			_refresh_oath())
+	_oath_view.add_child(b_gbuy)
+	_oath_ui["gbuy"] = b_gbuy
+	# 공개 연출 층.
+	_oath_reveal = Control.new()
+	_oath_reveal.size = Vector2(Grid.BG)
+	_oath_reveal.visible = false
+	_oath_view.add_child(_oath_reveal)
+	# 전투 화면의 활성 버프 한 줄.
+	_oath_buff_lbl = _mk_label(Vector2(0.0, 66.0), Type.SIZE_SMALL,
+		Color(0.98, 0.72, 0.66))
+	_oath_buff_lbl.size = Vector2(Grid.BG.x, 18.0)
+	_oath_buff_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_oath_buff_lbl.visible = false
+	_refresh_oath()
+
+
+func _refresh_oath() -> void:
+	if _oath_buff_lbl:
+		_oath_buff_lbl.visible = oath_fx_t > 0.0
+		if oath_fx_t > 0.0:
+			_oath_buff_lbl.text = "%s  %d초" % [oath_fx_name, int(oath_fx_t)]
+	# 아이콘 고동 — 카드가 차 있을 때만. 틱마다 한 번의 맥박이면 겹치지 않는다.
+	if _oath_icon and oath_cards > 0 and not _oath_view.visible \
+			and is_inside_tree():
+		_oath_icon.pivot_offset = _oath_icon.size * 0.5
+		var hb := create_tween()
+		hb.tween_property(_oath_icon, "scale", Vector2(1.12, 1.12), 0.12)
+		hb.tween_property(_oath_icon, "scale", Vector2.ONE, 0.30)
+	if _oath_ui.is_empty() or not _oath_view.visible:
+		return
+	var mins := OathDefs.CHARGE_MIN - oath_charge
+	_oath_ui["have"].text = "카드 %d / %d  ·  황금 %d  ·  충전 %d분" \
+		% [oath_cards, OathDefs.CARD_CAP, oath_gold, int(ceil(mins))]
+	(_oath_ui["pity_fill"] as ColorRect).size.x = float(_oath_ui["pity_w"]) \
+		* clampf(float(oath_pity) / float(OathDefs.PITY_LEGEND), 0.0, 1.0)
+	_oath_ui["pity_num"].text = "%d / %d" % [oath_pity, OathDefs.PITY_LEGEND]
+	(_oath_ui["gpity_fill"] as ColorRect).size.x = float(_oath_ui["gpity_w"]) \
+		* clampf(float(oath_gold_pity) / float(OathDefs.PITY_GOLD), 0.0, 1.0)
+	_oath_ui["gpity_num"].text = "%d / %d" % [oath_gold_pity, OathDefs.PITY_GOLD]
+	_oath_ui["vow"].text = "피의 서약  [%s]  —  혈액 10%%를 걸고 등급을 민다" \
+		% ("켬" if oath_vow else "끔")
+	_oath_ui["roll"].disabled = oath_cards <= 0
+	_oath_ui["roll"].text = "계약 발동  (%d장)" % oath_cards
+	_oath_ui["groll"].disabled = oath_gold <= 0
+	_oath_ui["groll"].text = "황금 발동  (%d장)" % oath_gold
+	_oath_ui["buy"].disabled = gem < OathDefs.RECHARGE_GEM \
+		or oath_cards >= OathDefs.CARD_CAP
+	_oath_ui["buy"].text = "즉시 충전 · 보석 %d" % int(OathDefs.RECHARGE_GEM)
+	_oath_ui["gbuy"].disabled = gem < OathDefs.GOLD_GEM
+	_oath_ui["gbuy"].text = "황금 구매 · 보석 %d" % int(OathDefs.GOLD_GEM)
+
+
+# 공개 연출 5막 — 소환진(어둠·핏빛 원) → 릴(등급색 순환·니어미스 감속) →
+# 개봉(플래시·진동) → 만월(레전) → 진혈(황금 만월). 전부 코드 연출이다.
+func _oath_play(golden: bool) -> void:
+	var r := _oath_roll(golden)
+	if r.is_empty():
+		return
+	for ch in _oath_reveal.get_children():
+		ch.queue_free()
+	_oath_reveal.visible = true
+	var shade := ColorRect.new()
+	shade.color = Color(0.01, 0.0, 0.01, 0.0)
+	shade.size = Vector2(Grid.BG)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_oath_reveal.add_child(shade)
+	var rarity := str(r["rarity"])
+	var rcol := _oath_rcol(rarity)
+	# 1막 — 어두워지며 핏빛 원이 차오른다.
+	var circle := ColorRect.new()
+	circle.color = Color(0.55, 0.08, 0.10, 0.0)
+	circle.size = Vector2(340.0, 340.0)
+	circle.position = (Vector2(Grid.BG) - circle.size) * 0.5
+	circle.pivot_offset = circle.size * 0.5
+	circle.rotation_degrees = 45.0
+	circle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_oath_reveal.add_child(circle)
+	# 카드 — 릴 테두리가 등급색을 순환한다.
+	var card := Ui.image("res://assets/ui/%s.png" \
+		% ("oath_card_gold" if golden else "oath_card"),
+		(Vector2(Grid.BG) - Vector2(144.0, 192.0)) * 0.5, Vector2(144.0, 192.0))
+	card.pivot_offset = Vector2(72.0, 96.0)
+	_oath_reveal.add_child(card)
+	var rim := ReferenceRect.new()
+	rim.border_color = Color(0.5, 0.5, 0.5)
+	rim.border_width = 5.0
+	rim.editor_only = false
+	rim.position = card.position - Vector2(6.0, 6.0)
+	rim.size = Vector2(156.0, 204.0)
+	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_oath_reveal.add_child(rim)
+	var tw := create_tween()
+	tw.tween_property(shade, "color:a", 0.9, 0.35)
+	tw.parallel().tween_property(circle, "color:a", 0.55, 0.35)
+	tw.parallel().tween_property(circle, "rotation_degrees", 405.0, 0.9)
+	tw.parallel().tween_property(circle, "scale", Vector2(1.25, 1.25), 0.9) \
+		.from(Vector2(0.2, 0.2))
+	# 2막 — 릴. 니어미스: 마지막 세 칸이 느려지고 레전 색을 스친다.
+	var cols := [Color(0.63, 0.63, 0.66), Color(0.45, 0.75, 0.45),
+		Color(0.45, 0.55, 0.9), Color(0.75, 0.45, 0.9), Color(0.95, 0.78, 0.35)]
+	var steps := 11
+	for i in steps:
+		var dt := 0.07 + (0.11 * float(maxi(0, i - steps + 4)))
+		var c: Color = cols[(i + 1) % cols.size()] if i < steps - 1 else rcol
+		if i == steps - 2:
+			c = cols[4]   # 레전 색을 스치고 …
+		tw.tween_interval(dt)
+		tw.tween_callback(func() -> void: rim.border_color = c)
+	# 3막 — 개봉: 플래시 + 진동, 등급이 높을수록 크게.
+	tw.tween_callback(func() -> void:
+		_oath_burst(card, rim, rcol, rarity, r))
+	_refresh_oath()
+
+
+func _oath_rcol(rarity: String) -> Color:
+	match rarity:
+		"uncommon": return Color(0.45, 0.75, 0.45)
+		"rare": return Color(0.45, 0.55, 0.9)
+		"epic": return Color(0.75, 0.45, 0.9)
+		"legend": return Color(0.95, 0.78, 0.35)
+		"trueblood": return Color(1.0, 0.92, 0.6)
+	return Color(0.63, 0.63, 0.66)
+
+
+func _oath_burst(card: Control, rim: Control, rcol: Color, rarity: String,
+		r: Dictionary) -> void:
+	if not is_inside_tree():
+		return
+	var flash := ColorRect.new()
+	flash.color = Color(rcol.r, rcol.g, rcol.b, 0.0)
+	flash.size = Vector2(Grid.BG)
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_oath_reveal.add_child(flash)
+	var big := rarity in ["rare", "epic", "legend", "trueblood"]
+	var tw := create_tween()
+	tw.tween_property(flash, "color:a", 0.75 if big else 0.4, 0.10)
+	tw.tween_property(flash, "color:a", 0.0, 0.35)
+	# 진동 — 등급이 높을수록 거칠게.
+	var amps := {"common": 3.0, "uncommon": 5.0, "rare": 9.0, "epic": 13.0,
+		"legend": 18.0, "trueblood": 24.0}
+	var amp := float(amps.get(rarity, 3.0))
+	var shake := create_tween()
+	for i in 7:
+		shake.tween_property(_oath_reveal, "position",
+			Vector2(randf_range(-amp, amp), randf_range(-amp, amp)), 0.04)
+	shake.tween_property(_oath_reveal, "position", Vector2.ZERO, 0.06)
+	# 4·5막 — 만월. 레전은 핏빛, 진혈은 황금으로 물든다.
+	if rarity == "legend" or rarity == "trueblood":
+		var moon := ColorRect.new()
+		var gold_moon := rarity == "trueblood"
+		moon.color = Color(0.95, 0.75, 0.25, 0.0) if gold_moon \
+			else Color(0.75, 0.10, 0.12, 0.0)
+		moon.size = Vector2(420.0, 420.0)
+		moon.position = (Vector2(Grid.BG) - moon.size) * 0.5 - Vector2(0.0, 60.0)
+		moon.pivot_offset = moon.size * 0.5
+		moon.rotation_degrees = 45.0
+		moon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_reveal.add_child(moon)
+		_oath_reveal.move_child(moon, 1)
+		var mt := create_tween()
+		mt.tween_property(moon, "color:a", 0.55, 0.8).from(0.0)
+		mt.parallel().tween_property(moon, "scale", Vector2(1.0, 1.0), 0.8) \
+			.from(Vector2(0.3, 0.3)).set_trans(Tween.TRANS_BACK) \
+			.set_ease(Tween.EASE_OUT)
+	rim.set("border_color", rcol)
+	card.modulate = Color(1.4, 1.3, 1.2)
+	create_tween().tween_property(card, "modulate", Color.WHITE, 0.5)
+	_oath_result(rcol, rarity, r)
+
+
+# 결과 판 — 계약명·효과·각인·공명·레벨 + 다시 굴리기.
+func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
+	var c: Dictionary = r["contract"]
+	var e: Dictionary = r["engrave"]
+	var y := 620.0
+	var name := _panel_label(_oath_reveal, Vector2(0.0, y), Type.SIZE_TITLE,
+		rcol, Grid.BG.x, 34.0)
+	name.text = "%s  ·  Lv%d" % [str(c["name"]), int(r["lv"])]
+	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var eff := _panel_label(_oath_reveal, Vector2(0.0, y + 40.0), Type.SIZE_SMALL,
+		Color(0.94, 0.90, 0.88), Grid.BG.x, 18.0)
+	eff.text = _oath_eff_text(c)
+	eff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sub := _panel_label(_oath_reveal, Vector2(0.0, y + 64.0), Type.SIZE_SMALL,
+		Color(0.75, 0.62, 0.85), Grid.BG.x, 18.0)
+	sub.text = "각인: %s%s" % [str(e["name"]),
+		"   ·   공명! x%.1f" % OathDefs.RESONANCE_MULT if bool(r["resonance"]) \
+		else ""]
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var again := Ui.button("다시 굴리기 · 보석 %d" % int(OathDefs.REROLL_GEM),
+		Vector2(48.0, y + 100.0), Vector2(230.0, 46.0), Type.SIZE_SMALL)
+	again.disabled = gem < OathDefs.REROLL_GEM
+	again.pressed.connect(func() -> void:
+		if gem < OathDefs.REROLL_GEM:
+			return
+		gem -= OathDefs.REROLL_GEM
+		oath_cards += 1          # 카드를 돌려주고 즉시 다시 굴린다
+		_oath_play(false))
+	_oath_reveal.add_child(again)
+	var ok := Ui.button("계약 발동!", Vector2(298.0, y + 100.0),
+		Vector2(230.0, 46.0), Type.SIZE_SMALL)
+	ok.pressed.connect(func() -> void:
+		_oath_reveal.visible = false
+		_oath_view.visible = false)
+	_oath_reveal.add_child(ok)
+
+
+func _oath_eff_text(c: Dictionary) -> String:
+	var parts := PackedStringArray()
+	var fx: Dictionary = c["effects"]
+	for k in fx:
+		var v := float(fx[k])
+		match str(k):
+			"attack": parts.append("공격 +%d%%" % int(v * 100.0))
+			"speed": parts.append("공속 +%d%%" % int(v * 100.0))
+			"armor": parts.append("받는 피해 -%d%%" % int(v * 100.0))
+			"regen": parts.append("회복 +%d%%" % int(v * 100.0))
+			"regen_max": parts.append("초당 최대체력 %d%% 회복" % int(v * 100.0))
+			"leech": parts.append("흡혈량 +%d%%" % int(v * 100.0))
+			"crit": parts.append("치명 확률 +%d%%p" % int(v))
+			"cleave": parts.append("평타가 광역이 된다")
+			"time": parts.append("제한 시간 +%d초" % int(v))
+			"exec": parts.append("처형 문턱 +%d%%p" % int(v * 100.0))
+			"devour": parts.append("보스 체력 %d%% 즉시 흡수" % int(v * 100.0))
+	if float(c.get("dur", 0.0)) > 0.0:
+		parts.append("%d초" % int(c["dur"]))
+	return "  ·  ".join(parts)
+
+
+# ── 핏빛 계약 본체 (docs/OATH_DESIGN.md) ──────────────────────────────────
+# 1초 틱 — 40분에 1장 충전(보관 3장), 버프 시계.
+func _oath_tick() -> void:
+	if oath_cards < OathDefs.CARD_CAP:
+		oath_charge += 1.0 / 60.0
+		if oath_charge >= OathDefs.CHARGE_MIN:
+			oath_charge = 0.0
+			oath_cards += 1
+	if oath_fx_t > 0.0:
+		oath_fx_t = maxf(0.0, oath_fx_t - 1.0)
+		if oath_fx_t <= 0.0:
+			oath_fx = {}
+			oath_fx_name = ""
+	_refresh_oath()
+
+
+# 활성 버프 값 — 전투 훅들이 이 한 함수만 본다.
+func _oath_val(k: String) -> float:
+	return float(oath_fx.get(k, 0.0)) if oath_fx_t > 0.0 else 0.0
+
+
+# 등급 룰렛 — GachaDefs 무게 그대로, 서약·일일 행운이 shift 만큼 위로 민다.
+func _oath_rarity_roll(shift: int) -> String:
+	var keys := ["common", "uncommon", "rare", "epic", "legend"]
+	var total := 0.0
+	for r in GachaDefs.RARITIES:
+		if str(r["key"]) in keys:
+			total += float(r["weight"])
+	var pick := randf() * total
+	var idx := 0
+	for i in keys.size():
+		for r in GachaDefs.RARITIES:
+			if str(r["key"]) == keys[i]:
+				pick -= float(r["weight"])
+		if pick <= 0.0:
+			idx = i
+			break
+	return keys[clampi(idx + shift, 0, keys.size() - 1)]
+
+
+# 탭 한 번 = 룰렛 세 번. 반환은 공개 연출이 읽을 결과 묶음(빈 딕셔너리 = 실패).
+func _oath_roll(golden := false) -> Dictionary:
+	if golden:
+		if oath_gold <= 0:
+			return {}
+		oath_gold -= 1
+	else:
+		if oath_cards <= 0:
+			return {}
+		oath_cards -= 1
+	# 서약 — 혈액 10%를 걸고 등급을 한 단계 민다. 커먼이면 잃는다(정산은 아래).
+	var vow := oath_vow and gold > 0.0
+	var vow_cost := gold * OathDefs.VOW_RATE if vow else 0.0
+	var shift := 0
+	if vow:
+		shift += 1
+	# 일일 행운 — 매일 첫 카드는 공짜 서약.
+	var today := Time.get_date_string_from_system()
+	if oath_daily != today:
+		oath_daily = today
+		shift += 1
+	if golden:
+		shift += 1   # 황금 계약서 — 언커먼부터 시작
+	# 천장 — 만월(100)은 드물어야 극적이다(사장님).
+	var pity_hit := false
+	if golden:
+		oath_gold_pity += 1
+		pity_hit = oath_gold_pity >= OathDefs.PITY_GOLD
+	else:
+		oath_pity += 1
+		pity_hit = oath_pity >= OathDefs.PITY_LEGEND
+	# 등급 확정 순서: 진혈(0.1%, 누구에게나) > 첫 카드 에픽 > 천장 > 룰렛.
+	var rarity := ""
+	if randf() < OathDefs.TRUEBLOOD:
+		rarity = "trueblood"
+	elif not oath_first:
+		oath_first = true
+		rarity = "epic"
+	elif pity_hit:
+		rarity = "legend"
+	else:
+		rarity = _oath_rarity_roll(shift)
+	if rarity == "legend" or rarity == "trueblood":
+		if golden:
+			oath_gold_pity = 0
+		else:
+			oath_pity = 0
+	# 계약 룰렛.
+	var c: Dictionary
+	if rarity == "trueblood":
+		c = OathDefs.TRUEBLOOD_CONTRACT
+		oath_cards += int(c.get("refund", 0))   # 잭팟 환급 — 상한 무시가 맛이다
+	else:
+		var pool := OathDefs.of_rarity(rarity)
+		c = pool[randi() % pool.size()]
+	# 중복 = 계약 레벨.
+	var clv := clampi(int(oath_lv.get(str(c["id"]), 0)) + 1, 1, OathDefs.LV_MAX)
+	oath_lv[str(c["id"])] = clv
+	# 각인 룰렛.
+	var e: Dictionary = OathDefs.ENGRAVES[randi() % OathDefs.ENGRAVES.size()]
+	if str(e["kind"]) == "pity2":
+		if golden:
+			oath_gold_pity += 1
+		else:
+			oath_pity += 1
+	# 공명 — 같은 등급 연속.
+	var resonance := rarity == oath_last_rarity and rarity != "trueblood"
+	oath_last_rarity = rarity
+	# 서약 정산 — 커먼이면 건 혈액을 잃는다(가호 각인은 절반 보험).
+	if vow and rarity == "common":
+		gold -= vow_cost * (1.0 - (float(e["v"]) if str(e["kind"]) == "vow_back" 			else 0.0))
+	# 적용 + 환급 각인.
+	_oath_apply(c, e, resonance, clv)
+	if str(e["kind"]) == "refund" and randf() < float(e["v"]):
+		oath_cards += 1
+	_save_game()
+	_refresh_oath()
+	return {"contract": c, "engrave": e, "rarity": rarity,
+		"resonance": resonance, "lv": clv}
+
+
+# 버프 적용 — 레벨·공명·짙은 피가 주효과를 키우고, 즉발(시간·흡수)은 그 자리서.
+func _oath_apply(c: Dictionary, e: Dictionary, resonance: bool, clv: int) -> void:
+	var amp := OathDefs.lv_mult(clv)
+	if resonance:
+		amp *= OathDefs.RESONANCE_MULT + (float(e["v"]) if str(e["kind"]) == "resonance" 			else 0.0)
+	if str(e["kind"]) == "amp":
+		amp *= 1.0 + float(e["v"])
+	var dur := float(c.get("dur", 0.0))
+	if str(e["kind"]) == "dur":
+		dur *= 1.0 + float(e["v"])
+	oath_fx = {}
+	for k in (c["effects"] as Dictionary):
+		var v := float(c["effects"][k]) * amp
+		match str(k):
+			"time":
+				_boss_time += float(c["effects"][k])   # 시간은 증폭 안 받는다
+			"devour":
+				_oath_devour(minf(v, 1.0))
+			_:
+				oath_fx[str(k)] = v
+	oath_fx_name = str(c["name"])
+	oath_fx_t = dur if not oath_fx.is_empty() else 0.0
+
+
+# 군주의 갈증·진혈 — 판의 우두머리 체력을 물어뜯고 내 체력을 채운다.
+# 주간 보스는 비율이 아니라 **고정 피해**(dps x 30초) — 누적 이정표 인플레 방지.
+func _oath_devour(frac: float) -> void:
+	var best: Foe = null
+	for f in get_tree().get_nodes_in_group("foes"):
+		if is_instance_valid(f) and (best == null or f.max_hp > best.max_hp):
+			best = f
+	if best != null:
+		var dmg := dps() * 30.0 if raid_on == "boss" else best.max_hp * frac
+		best.take_damage(dmg)
+	hero_hp = max_hp()
 
 
 # 시련 입장. 무제한이지만 미궁 층이 잠근다 — 못 여는 이유는 판이 말해 준다.
@@ -11200,6 +11738,14 @@ func _save_game() -> void:
 	cfg.set_value("trial", "stage", trial_stage)
 	cfg.set_value("wallet", "mile_fill", mile_fill)
 	cfg.set_value("wallet", "mile_lv", mile_lv)
+	cfg.set_value("oath", "cards", oath_cards)
+	cfg.set_value("oath", "gold", oath_gold)
+	cfg.set_value("oath", "charge", oath_charge)
+	cfg.set_value("oath", "pity", oath_pity)
+	cfg.set_value("oath", "gold_pity", oath_gold_pity)
+	cfg.set_value("oath", "lv", oath_lv)
+	cfg.set_value("oath", "first", oath_first)
+	cfg.set_value("oath", "daily", oath_daily)
 	cfg.set_value("record", "play_sec", int(play_sec))
 	cfg.set_value("iap", "subs", iap_subs)
 	cfg.set_value("iap", "bought", iap_bought)
@@ -11287,6 +11833,14 @@ func _load_game() -> void:
 	trial_stage = maxi(0, int(cfg.get_value("trial", "stage", 0)))
 	mile_fill = maxi(0, int(cfg.get_value("wallet", "mile_fill", 0)))
 	mile_lv = maxi(0, int(cfg.get_value("wallet", "mile_lv", 0)))
+	oath_cards = maxi(0, int(cfg.get_value("oath", "cards", 1)))
+	oath_gold = maxi(0, int(cfg.get_value("oath", "gold", 0)))
+	oath_charge = maxf(0.0, float(cfg.get_value("oath", "charge", 0.0)))
+	oath_pity = maxi(0, int(cfg.get_value("oath", "pity", 0)))
+	oath_gold_pity = maxi(0, int(cfg.get_value("oath", "gold_pity", 0)))
+	oath_lv = cfg.get_value("oath", "lv", {})
+	oath_first = bool(cfg.get_value("oath", "first", false))
+	oath_daily = str(cfg.get_value("oath", "daily", ""))
 	play_sec = float(maxi(0, int(cfg.get_value("record", "play_sec", 0))))
 	iap_subs = cfg.get_value("iap", "subs", {})
 	iap_bought = cfg.get_value("iap", "bought", {})
