@@ -11173,7 +11173,14 @@ func _wipe_save() -> void:
 		tree.reload_current_scene()
 
 
+# 시뮬레이션(PaceProbe)이 켠다 — 펫 뽑기·강화가 판마다 저장을 부르는데,
+# 90일 x 12후보 모의에서 그 파일 쓰기가 전체 시간을 먹는다(실측 10분 초과).
+var save_muted := false
+
+
 func _save_game() -> void:
+	if save_muted:
+		return
 	if _wiped:
 		return
 	var cfg := ConfigFile.new()

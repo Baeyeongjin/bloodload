@@ -13,8 +13,14 @@ extends SceneTree
 #   일일 배급 — 임무 보석·혈정, 재화 던전 3종 x3판
 # 번 재화는 그 자리에서 전투력이 가장 많이 오르는 곳에 쓴다(CurveSweep 과 같은
 # 정책). 미궁·혈맥까지 넣는다 — 그게 빠지면 훈련 상한 60 에 묶여 7일차부터 한
-# 칸도 못 간다(실측). **소환·장비는 안 넣는다**: 난수가 섞이면 곡선을 못 잰다.
-# 그래서 이 수치는 **하한**이다 — 실제 플레이는 장비·스킬만큼 더 빠르다.
+# 칸도 못 간다(실측).
+#
+# 2026-08-18 재측정 — 그동안 안 재던 축을 다 넣었다(사장님 지시):
+#   시련(격파 = 영구 공·체 %, 미궁이 잠금) · 펫(펫권 뽑기·먹이 강화·수집·동행
+#   버프) · 출석(30일 표) · 은총(6주 로테이션 중 표/시간을 주는 것) · 천장
+#   상자(뽑을수록 소환권 환류). 은총의 gold·sweep 은 **엔진의 실시간 주차**가
+#   gold_mult()/소탕에 이미 붙어 있어서(같은 실행 안에서는 상수) 모델에 다시
+#   더하지 않는다 — ticket·hours·raid 만 모의 주차 로테이션으로 넣는다.
 #
 #     godot --headless --script tests/PaceProbe.gd
 #     godot --headless --script tests/PaceProbe.gd -- --days=30
@@ -48,12 +54,11 @@ const MEMBER_RAID_BONUS := 1
 # 커지고 p>1(후반)에서는 작아진다 — 초반 요구를 올리고 후반 요구를 내린다.
 # 정확히 "처음 빠르고 점점 감속"의 반대편을 눌러 곡선을 목표에 맞춘다.
 const SWEEP := [
-	[1.45, 1.43, 0.0, 0.90],   # 지금 값 — 견줄 기준
-	[1.45, 1.43, 0.0, 0.94],
-	[1.45, 1.43, 0.0, 0.97],
-	[1.42, 1.40, 0.0, 0.97],
-	[1.42, 1.40, 0.0, 1.00],
-	[1.40, 1.38, 0.0, 1.00],
+	[1.42, 1.40, 0.0, 1.00],   # 90일 정확 · 30일 +50
+	[1.42, 1.40, 0.0, 1.02],
+	[1.42, 1.42, 0.0, 1.02],   # 돈을 올려 후반 보강
+	[1.42, 1.42, 0.0, 1.04],
+	[1.42, 1.44, 0.0, 1.05],
 ]
 
 
@@ -82,21 +87,24 @@ func _init() -> void:
 	print("-".repeat(64))
 	var free := _run(days, false)
 	var paid := _run(days, true)
+	# **통산 최고(peak)로 찍는다** — 회귀가 그날 구간을 1로 되돌리므로 log 로는
+	# "며칠에 어디까지 갔나"를 못 읽는다(30일차가 60일차보다 큰 표가 나왔다).
 	for i in _marks(days):
-		var f: int = free["log"][i - 1]
-		var p: int = paid["log"][i - 1]
+		var f: int = free["peak"][i - 1]
+		var p: int = paid["peak"][i - 1]
 		print("%-10s %-12d %-12d %-14s %s"
 			% ["%d일차" % i, f, p, "+%d" % (p - f),
-			"<- 사장님 기준 105" if i == 14 else ""])
+			"<- 목표 150" if i == 30 else ("<- 목표 250" if i == 60 			else ("<- 목표 300" if i == 90 else ""))])
 	print("")
 	print("무과금 진단 — 무엇이 병목인가")
-	print("%-8s %-8s %-8s %-10s %-10s %-8s %-10s %s"
-		% ["일차", "구간", "미궁층", "훈련상한", "공격렙", "혈흔", "남은혈액", "전투력"])
+	print("%-8s %-8s %-8s %-10s %-10s %-6s %-8s %-10s %s"
+		% ["일차", "구간", "미궁층", "훈련상한", "공격렙", "시련", "혈흔", "남은혈액", "전투력"])
 	for i in _marks(days):
 		var d: Dictionary = free["diag"][i - 1]
-		print("%-8d %-8d %-8d %-10d %-10d %-8d %-10s %s"
+		print("%-8d %-8d %-8d %-10d %-10d %-6d %-8d %-10s %s"
 			% [i, int(d["stage"]), int(d["floor"]), int(d["cap"]), int(d["lv"]),
-			int(d["marks"]), _n(float(d["gold"])), _n(float(d["power"]))])
+			int(d.get("trial", 0)), int(d["marks"]), _n(float(d["gold"])),
+			_n(float(d["power"]))])
 	print("")
 	print("전투력 — %d일차 무과금 %s · 멤버십 %s"
 		% [days, _n(float(free["power"])), _n(float(paid["power"]))])
@@ -105,7 +113,8 @@ func _init() -> void:
 	print("")
 	print("축별 기여 (%d일차 무과금, 공격력 기준 배수)" % days)
 	var a: Dictionary = free["axes"]
-	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "유물", "칭호", "회귀"]:
+	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "유물", "칭호", "회귀",
+			"시련", "펫"]:
 		print("  %-8s x%.2f" % [k, float(a.get(k, 1.0))])
 	print("PaceProbe OK")
 	quit()
@@ -205,7 +214,7 @@ func _sweep(days: int) -> void:
 			if d > days:
 				cells.append("-")
 				continue
-			cells.append("%d/%d" % [int(f["log"][d - 1]), int(m["log"][d - 1])])
+			cells.append("%d/%d" % [int(f["peak"][d - 1]), int(m["peak"][d - 1])])
 		print("%-18s %-10s %-10s %-10s %s"
 			% ["x%.2f 돈%.2f 곡%.2f" % [float(c[0]), float(c[1]), float(c[3])],
 			cells[0], cells[1], cells[2], cells[3]])
@@ -219,6 +228,11 @@ func _sweep(days: int) -> void:
 	quit()
 
 
+# 모의 은총 — 시뮬레이션 일차로 주차를 센다(엔진 주차는 실시간이라 못 쓴다).
+static func _boon_of(day: int) -> Dictionary:
+	return BoonDefs.BOONS[(day / 7) % BoonDefs.BOONS.size()]
+
+
 # prestige_after — 며칠 정체하면 회귀하나. 0 이면 안 누른다(견줄 기준).
 func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 	# **씨앗을 심는다.** 소환이 난수라 안 심으면 실행마다 답이 달라진다 —
@@ -226,13 +240,16 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 	# 자리에서 그 흔들림은 곧 잘못된 결론이다(주석만 있고 구현이 없었다).
 	seed(20260814)
 	var game = load("res://Main.gd").new()
+	game.save_muted = true   # 모의에서 판마다 디스크를 두드리지 않는다
 	var gold := 0.0
 	var log: Array[int] = []
 	var peak: Array[int] = []
 	var diag: Array[Dictionary] = []
 	for day in days:
+		var boon := _boon_of(day)
 		# 1) 방치 — 상한만큼 잔다. 실제로는 오프라인 절반 효율이 붙는다.
-		var idle := IDLE_HOURS + (MEMBER_IDLE_BONUS if member else 0.0)
+		var idle := IDLE_HOURS + (MEMBER_IDLE_BONUS if member else 0.0) \
+			+ (float(boon["value"]) if str(boon["kind"]) == "hours" else 0.0)
 		gold += _farm(game, idle * 3600.0, 0.5)
 		# 2) 접속 — 그동안 계속 민다. 미는 도중에도 버는 게 실제 흐름이라
 		#    구간을 넘길 때마다 그 구간의 몫이 들어온다.
@@ -240,29 +257,38 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 		# 3) 일일 배급 — 재화 던전(혈액)만 센다. 보석은 소환으로 가고
 		#    소환은 이 모델에 없다(위 주석).
 		var raids := RaidDefs.TRIES_PER_DAY + (MEMBER_RAID_BONUS if member else 0)
+		var raid_mult := 2.0 if str(boon["kind"]) == "raid" else 1.0
 		if game.best_stage >= RaidDefs.OPEN_STAGE:
 			for i in raids:
-				gold += RaidDefs.reward("blood", maxi(1, game.raid_best.get("blood", 0)))
+				gold += RaidDefs.reward("blood",
+					maxi(1, game.raid_best.get("blood", 0))) * raid_mult
 			game.raid_best["blood"] = int(game.raid_best.get("blood", 0)) + 1
 		# 4) 미궁 — 갈 수 있는 층까지 민다. **이게 빠지면 훈련 상한 60 에 묶여
 		#    7일차부터 한 칸도 못 간다**(실측). 미궁은 승급(상한)과 혈정의 문이다.
 		_climb(game)
+		# 4.5) 시련 — 미궁이 연 단계를 그 자리에서 민다. 격파 = 영구 공·체 %.
+		_trial_up(game)
 		# 5) 혈정으로 혈맥 — 곱연산이라 후반의 주력이다.
 		_buy_traits(game)
 		# 6) 정수의 성소·계약의 제단 — 장비 강화와 혈맹의 배급.
 		if game.best_stage >= RaidDefs.open_stage("essence"):
 			for i in raids:
 				game.essence += RaidDefs.reward("essence",
-					maxi(1, game.raid_best.get("essence", 0)))
+					maxi(1, game.raid_best.get("essence", 0))) * raid_mult
 			game.raid_best["essence"] = int(game.raid_best.get("essence", 0)) + 1
 		if game.best_stage >= RaidDefs.open_stage("pact"):
 			for i in raids:
 				game.sigil += RaidDefs.reward("pact",
-					maxi(1, game.raid_best.get("pact", 0)))
+					maxi(1, game.raid_best.get("pact", 0))) * raid_mult
 			game.raid_best["pact"] = int(game.raid_best.get("pact", 0)) + 1
+		# 6.5) 출석 — 30일 표. 소환권은 지갑에 꽂혀 아래 소환이 그날 쓴다.
+		_attend_day(game)
 		# 7) 소환 — 하루치를 굴려 장비·스킬을 얻는다. 난수는 고정 씨앗이라
 		#    같은 곡선이면 같은 결과가 나온다(_run 첫머리에서 심는다).
-		_summon_day(game, member)
+		_summon_day(game, member,
+			int(float(boon["value"])) if str(boon["kind"]) == "ticket" else 0)
+		# 7.5) 펫 — 펫권 뽑기·먹이 강화·수집·동행 버프 (2026-08-18 재측정).
+		_pet_day(game, day, raid_mult)
 		# 8) 인장으로 혈맹 — 선형 비용이라 꾸준히 팔린다.
 		while game.sigil >= PactDefs.cost(game.pact_lv) 				and game.pact_lv < PactDefs.level_cap():
 			game.sigil -= PactDefs.cost(game.pact_lv)
@@ -295,6 +321,7 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 		# **어디서 막혔는가**를 같이 남긴다 — 구간만 보면 "느리다"까지만 알고
 		# 무엇이 병목인지는 모른다(멤버십 차이가 0 인 이유가 여기 있다).
 		diag.append({"stage": game.stage, "floor": game.dungeon_best,
+			"trial": game.trial_stage,
 			"cap": StatDefs.train_cap(game.dungeon_best, game.best_stage),
 			"lv": int(game.stat_lv("damage")), "marks": game.prestige_marks,
 			"gold": gold, "crystal": game.crystal,
@@ -334,6 +361,8 @@ func _axes(game) -> Dictionary:
 		"유물": RelicDefs.mult("damage", game.relics),
 		"칭호": with_title / maxf(0.001, stat_only),
 		"회귀": game._prestige_mult(),
+		"시련": TrialDefs.mult(game.trial_stage),
+		"펫": 1.0 + game._pet_mult("damage"),
 	}
 
 
@@ -363,10 +392,18 @@ func _farm(game, seconds: float, eff: float) -> float:
 # 하루치 소환. 보석은 임무 배급(설계서 4-1: 하루 약 25 + 주간 몫)으로,
 # 소환권은 하루 4장 + 주간 몫을 하루로 편 값이다. 멤버십은 매일 보석 100 +
 # 소환권 3(설계서 5-3). 나온 장비는 슬롯별 최고만 장착한다.
-func _summon_day(game, member: bool) -> void:
-	var pulls := 4 + 2                     # 소환권 4 + 보석 25~35 -> 1~2회
+func _summon_day(game, member: bool, extra := 0) -> void:
+	var pulls := 4 + 2 + extra             # 소환권 4 + 보석 25~35 -> 1~2회
 	if member:
 		pulls += 3 + 3                     # 소환권 3 + 보석 100 -> 3회
+	# 출석·천장이 지갑에 꽂아 둔 소환권과 보석을 그날 소진한다.
+	for tk in TicketDefs.KINDS:
+		pulls += int(game.tickets.get(tk, 0))
+		game.tickets[tk] = 0
+	var gem_pulls := int(game.gem / GachaDefs.COST)
+	if gem_pulls > 0:
+		game.gem -= float(gem_pulls) * GachaDefs.COST
+		pulls += gem_pulls
 	# 유물은 100구간부터 열린다 — 열리면 뽑기 한 자리를 유물이 가져간다
 	# (실제 유저도 후반엔 유물을 민다).
 	var kinds: Array = ["weapon", "armor", "trinket", "skill"]
@@ -380,6 +417,7 @@ func _summon_day(game, member: bool) -> void:
 			kind == "skill")
 		game.gacha_pity[kind] = int(r["pity"])
 		game.gacha_pulls[kind] = int(game.gacha_pulls.get(kind, 0)) + 1
+		game._mile_add(kind, 1)   # 천장 상자 — 차면 소환권이 지갑으로 돌아온다
 		if kind == "skill":
 			game._receive_gacha_skill(str(r["rarities"][0]))
 		elif kind == "relic":
@@ -422,6 +460,85 @@ func _upgrade_gear(game) -> void:
 			if game.gear_inventory.has(key):
 				game.gear_inventory[key]["lv"] = item["lv"]
 			moved = true
+
+
+# 시련 — 열린 단계를 이길 수 있는 동안 민다. 파수꾼은 hp_mult 3.6 보스 하나.
+# 체력·피해·간격 전부 엔진 공식(FoeTiers/Balance) 그대로 — 모델식을 따로 두면
+# 갈린다.
+static func _trial_up(game) -> void:
+	while game.trial_stage < TrialDefs.max_stage() \
+			and game.dungeon_best >= TrialDefs.floor_need(game.trial_stage + 1):
+		var eq := TrialDefs.eq_stage(game.trial_stage + 1)
+		var power := StageDefs.enemy_power(eq)
+		if not Balance.can_clear_stage(game.max_hp(), game.regen_per_sec(),
+				game.dps(), 1,
+				FoeTiers.foe_hp(3.6, power, true, false), 1,
+				Balance.foe_damage(power) * Foe.avg_attack_mult(true, false),
+				Balance.foe_attack_interval(3.6),
+				TrialDefs.TIME_LIMIT, game.attack_interval()):
+			break
+		game.trial_stage += 1
+
+
+# 출석 — 30일 표를 매일 받는다. 소환권은 지갑으로(그날 소환이 쓴다),
+# 혈정·보석은 해당 재화로.
+static func _attend_day(game) -> void:
+	var a := AttendDefs.of(AttendDefs.next_day(game.attend_got))
+	game.attend_got += 1
+	var reward := str(a["reward"])
+	var amount := float(a["amount"])
+	if reward.begins_with("ticket_"):
+		var tk := reward.trim_prefix("ticket_")
+		game.tickets[tk] = int(game.tickets.get(tk, 0)) + int(amount)
+	elif reward == "crystal":
+		game.crystal += amount
+	elif reward == "gem":
+		game.gem += amount
+
+
+# 펫 — 임무 펫권(일 1)·장비권(주 3)을 굴리고, 먹이 던전을 돌고, 다 모이면
+# 강화하고, 물어온 재화를 받고, 공격 펫 최강을 동행시킨다.
+# 수집은 하루 7시간으로 친다: 상한 6시간(하루 한 번 받기) + 접속 1시간.
+static func _pet_day(game, day: int, raid_mult: float) -> void:
+	if game.best_stage < PetDefs.PET_OPEN:
+		return
+	game.tickets["pet"] = int(game.tickets.get("pet", 0)) + 1
+	if day % 7 == 6:
+		game.tickets["petgear"] = int(game.tickets.get("petgear", 0)) + 3
+	if game.best_stage >= RaidDefs.open_stage("hunt"):
+		for i in RaidDefs.TRIES_PER_DAY:
+			game.feed += RaidDefs.reward("hunt",
+				maxi(1, game.raid_best.get("hunt", 0))) * raid_mult
+		game.raid_best["hunt"] = int(game.raid_best.get("hunt", 0)) + 1
+	while int(game.tickets.get("pet", 0)) > 0:
+		game._pet_roll(false)
+	while int(game.tickets.get("petgear", 0)) > 0:
+		game._petgear_roll()
+	# 동행 — 공격(damage) 펫 중 버프가 가장 큰 놈.
+	var best_pet := ""
+	var best_v := 0.0
+	for id in game.pets_got:
+		if str(PetDefs.of(str(id)).get("stat", "")) != "damage":
+			continue
+		var v := PetDefs.bonus(str(id), "damage", game._pet_lv(str(id)),
+			game._pet_star(str(id)))
+		if v > best_v:
+			best_v = v
+			best_pet = str(id)
+	if best_pet != "":
+		game.pet_worn = best_pet
+		# 강화는 동행에게 몰아준다 — 실제 유저의 최적 행동이다.
+		while game._pet_feed(best_pet):
+			pass
+	# 수집 — 물어온 재화를 받는다.
+	for id in game.pets_got:
+		var amt := PetDefs.accrue(str(id), 0.0, 7.0, game._pet_lv(str(id)),
+			game._pet_star(str(id)))
+		match str(PetDefs.of(str(id))["gain"]):
+			"crystal": game.crystal += amt
+			"essence": game.essence += amt
+			"sigil": game.sigil += amt
+			"feed": game.feed += amt
 
 
 # 조건을 채운 칭호를 딴다 — 공짜 스탯 레벨이라 곡선에 실제로 들어간다.
