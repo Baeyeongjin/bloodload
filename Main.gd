@@ -10590,7 +10590,7 @@ func _oath_play(golden: bool) -> void:
 	ring2.pivot_offset = Vector2(96.0, 96.0)
 	ring2.modulate = Color(1, 1, 1, 0)
 	_oath_reveal.add_child(ring2)
-	var t := create_tween().set_parallel()
+	var t := shade.create_tween().set_parallel()
 	t.tween_property(shade, "color:a", 0.93, 0.30)
 	t.tween_property(ring, "modulate:a", 0.85, 0.30)
 	t.tween_property(ring, "rotation_degrees", 220.0, 2.4).from(0.0)
@@ -10633,7 +10633,7 @@ func _oath_play(golden: bool) -> void:
 	_oath_reveal.move_child(rim, card.get_index())   # 카드 **뒤**
 	var cols := [Color(0.63, 0.63, 0.66), Color(0.45, 0.75, 0.45),
 		Color(0.45, 0.55, 0.9), Color(0.75, 0.45, 0.9), Color(0.95, 0.78, 0.35)]
-	var seq := create_tween()
+	var seq := card.create_tween()
 	seq.tween_interval(0.55)
 	var steps := 14
 	for i in steps:
@@ -10657,12 +10657,12 @@ func _oath_play(golden: bool) -> void:
 # 3~5막 — 개봉. 등급이 높을수록 화면이 크게 반응하고, 레전·진혈은 만월이 뜬다.
 func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 		rcol: Color, rarity: String, r: Dictionary) -> void:
-	if not is_inside_tree():
+	if not is_inside_tree() or not is_instance_valid(card) 			or not is_instance_valid(rim):
 		return
 	var big := rarity in ["rare", "epic", "legend", "trueblood"]
 	var mid := Vector2(Grid.BG) * 0.5 - Vector2(0.0, 60.0)
 	# 소환진은 개봉과 함께 확 퍼지며 사라진다.
-	var rt := create_tween().set_parallel()
+	var rt := ring.create_tween().set_parallel()
 	for n in [ring, ring2]:
 		rt.tween_property(n, "scale", (n as Control).scale * 1.6, 0.5)
 		rt.tween_property(n, "modulate:a", 0.0, 0.5)
@@ -10672,7 +10672,7 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 	flash.size = Vector2(Grid.BG)
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_oath_reveal.add_child(flash)
-	var ft := create_tween()
+	var ft := flash.create_tween()
 	ft.tween_property(flash, "color:a", 0.60 if big else 0.35, 0.08)
 	ft.tween_property(flash, "color:a", 0.0, 0.40)
 	# 파편 — 등급색 조각이 사방으로 튄다. 등급이 높을수록 많고 멀리 간다.
@@ -10688,7 +10688,7 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 		_oath_reveal.add_child(sh)
 		var ang := randf() * TAU
 		var dist := randf_range(90.0, 300.0)
-		var st := create_tween().set_parallel()
+		var st := sh.create_tween().set_parallel()
 		st.tween_property(sh, "position",
 			mid + Vector2(cos(ang), sin(ang)) * dist, 0.7) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -10711,7 +10711,7 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 	wave.modulate = Color(rcol.r, rcol.g, rcol.b, 0.9)
 	_oath_reveal.add_child(wave)
 	_oath_reveal.move_child(wave, 1)
-	var wt := create_tween().set_parallel()
+	var wt := wave.create_tween().set_parallel()
 	wt.tween_property(wave, "scale", Vector2(2.6, 2.6), 0.55) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	wt.tween_property(wave, "modulate:a", 0.0, 0.55)
@@ -10736,7 +10736,7 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 				edge.position = Vector2(Grid.BG.x - thick, 0.0)
 				edge.size = Vector2(thick, Grid.BG.y)
 			_oath_reveal.add_child(edge)
-			var et := create_tween()
+			var et := edge.create_tween()
 			et.tween_property(edge, "color:a", 0.30, 0.18)
 			et.tween_property(edge, "color:a", 0.0, 0.75)
 	# 에픽 — 보랏빛 낙뢰가 카드로 내리꽂힌다(설계 3막).
@@ -10750,7 +10750,7 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 			bolt.rotation_degrees = randf_range(-14.0, 14.0)
 			bolt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_oath_reveal.add_child(bolt)
-			var bt := create_tween()
+			var bt := bolt.create_tween()
 			bt.tween_interval(0.03 * float(i))
 			bt.tween_property(bolt, "color:a", 0.9, 0.05)
 			bt.tween_property(bolt, "color:a", 0.0, 0.28)
@@ -10764,7 +10764,7 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 			else Color(1, 1, 1, 0)
 		_oath_reveal.add_child(moon)
 		_oath_reveal.move_child(moon, 1)     # 카드 뒤
-		var mt := create_tween().set_parallel()
+		var mt := moon.create_tween().set_parallel()
 		mt.tween_property(moon, "modulate:a", 0.9, 0.9)
 		mt.tween_property(moon, "scale", Vector2.ONE, 1.1) \
 			.from(Vector2(0.25, 0.25)).set_trans(Tween.TRANS_BACK) \
@@ -10778,18 +10778,18 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 			drop.position = Vector2(randf() * Grid.BG.x, -40.0)
 			drop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_oath_reveal.add_child(drop)
-			var dt2 := create_tween()
+			var dt2 := drop.create_tween()
 			dt2.tween_interval(randf() * 0.5)
 			dt2.tween_property(drop, "position:y", Grid.BG.y, randf_range(0.7, 1.3))
 			dt2.parallel().tween_property(drop, "modulate:a", 0.0, 1.2)
 		# 카드가 커지며 앞으로 나온다.
-		var ct := create_tween()
+		var ct := card.create_tween()
 		ct.tween_property(card, "scale", Vector2(1.35, 1.35), 0.45) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	# 카드 뒤집기 — 뒷면이 좁아졌다가 **앞면**으로 펼쳐진다. 계약마다 그림이
 	# 다르므로 여기서 비로소 "무엇을 뽑았는지"가 그림으로 읽힌다.
 	var face := OathDefs.card_face(str(r["contract"]["id"]))
-	var flip := create_tween()
+	var flip := card.create_tween()
 	flip.tween_property(card, "scale", Vector2(0.05, 1.06), 0.16) \
 		.set_trans(Tween.TRANS_SINE)
 	flip.tween_callback(func() -> void:
@@ -10860,10 +10860,10 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 			ray.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			rays.add_child(ray)
 		# 겹마다 반대 방향·다른 속도 — 같이 돌면 기계, 어긋나야 살아 있다.
-		var spin := create_tween().set_loops()
+		var spin := rays.create_tween().set_loops()
 		spin.tween_property(rays, "rotation_degrees",
 			360.0 if li == 0 else -360.0, 30.0 if li == 0 else 44.0).from(0.0)
-		var breathe := create_tween().set_loops()
+		var breathe := rays.create_tween().set_loops()
 		breathe.tween_property(rays, "scale", Vector2(1.06, 1.06), 1.6) 			.set_trans(Tween.TRANS_SINE)
 		breathe.tween_property(rays, "scale", Vector2.ONE, 1.6) 			.set_trans(Tween.TRANS_SINE)
 		layers.append(rays)
@@ -10878,7 +10878,7 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 		var sx := mid.x + randf_range(-130.0, 130.0)
 		var sy := mid.y + randf_range(-40.0, 140.0)
 		spark.position = Vector2(sx, sy)
-		var st2 := create_tween().set_loops()
+		var st2 := spark.create_tween().set_loops()
 		st2.tween_interval(randf() * 1.8)
 		st2.tween_callback(func() -> void:
 			spark.position = Vector2(mid.x + randf_range(-130.0, 130.0),
@@ -10982,11 +10982,11 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	panel.add_child(ok)
 	_pet_hover(ok, ok_art)
 	# 판이 아래에서 떠오르며 자리를 잡는다.
-	var pt := create_tween()
+	var pt := panel.create_tween()
 	pt.tween_property(panel, "position:y", 0.0, 0.35) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	panel.modulate.a = 0.0
-	var pf := create_tween()
+	var pf := panel.create_tween()
 	pf.tween_property(panel, "modulate:a", 1.0, 0.25)
 
 
@@ -11586,59 +11586,28 @@ func _announce_elite(name: String) -> void:
 # 레퍼런스는 3D 카메라를 실제로 옮기지만 우리는 옆보기 고정 화면이다. 같은
 # 인상을 **레터박스 + 큰 이름**으로 낸다: 위아래가 좁혀지면 "지금은 컷신"이
 # 읽히고, 카메라 팬(_boss_pan)이 이미 보스를 화면 가운데로 데려온다.
-const BOSS_CUT_BAR := 46.0     # 위아래 띠 높이
-var _boss_title: Label
-var _boss_bar_top: ColorRect
-var _boss_bar_bottom: ColorRect
+var _boss_shade: ColorRect     # 전투 뷰만 덮는 암전 — 걷히는 게 등장이다
 
 
 func _build_boss_cut() -> void:
-	var w := float(Grid.BG.x)
-	_boss_bar_top = ColorRect.new()
-	_boss_bar_top.color = Color(0.02, 0.01, 0.03, 0.86)
-	_boss_bar_top.size = Vector2(w, 0.0)
-	_boss_bar_top.position = Vector2.ZERO
-	_boss_bar_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_boss_bar_top.z_index = 60
-	_boss_bar_top.visible = false
-	_hud_root.add_child(_boss_bar_top)
-	_boss_bar_bottom = ColorRect.new()
-	_boss_bar_bottom.color = _boss_bar_top.color
-	# **높이는 처음부터 준다.** 아래 띠를 size:y 음수로 자라게 했더니 아무것도
-	# 안 그려졌다(ColorRect 는 음수 크기를 안 그린다) — 자리를 내려 두고
-	# 위로 밀어 올리는 쪽으로 간다. 전투 화면 아래끝(판 위)까지만이다.
-	_boss_bar_bottom.size = Vector2(w, BOSS_CUT_BAR)
-	_boss_bar_bottom.position = Vector2(0.0, VIEW_BOTTOM)
-	_boss_bar_bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_boss_bar_bottom.z_index = 60
-	_boss_bar_bottom.visible = false
-	_hud_root.add_child(_boss_bar_bottom)
-	# 이름은 띠 사이 가운데. 큰 글자 + 두꺼운 외곽선이라야 배경 위에서 산다.
-	_boss_title = _mk_label(Vector2(0.0, VIEW_BOTTOM * 0.42), Type.SIZE_TITLE,
-		Color(1.0, 0.92, 0.86))
-	_boss_title.size = Vector2(w, 44.0)
-	_boss_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_boss_title.add_theme_constant_override("outline_size", 12)
-	_boss_title.add_theme_color_override("font_outline_color", Color(0.28, 0.0, 0.04))
-	_boss_title.z_index = 61
-	_boss_title.modulate.a = 0.0
+	_boss_shade = ColorRect.new()
+	_boss_shade.color = Color(0.02, 0.01, 0.03, 0.0)
+	_boss_shade.size = Vector2(Grid.BG.x, VIEW_BOTTOM)
+	_boss_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_shade.z_index = 60
+	_boss_shade.visible = false
+	_hud_root.add_child(_boss_shade)
 
 
-# 컷신을 **즉시 걷는다**. 연출 도중에 판이 끝나거나(격파·이탈) 탭을 열면 트윈이
-# 중간에 멈춰 검은 띠가 화면에 남는다(사장님 캡처: 던전 목록 위에 검은 줄).
+# 컷신을 **즉시 걷는다**. 연출 도중 판이 끝나거나 탭을 옮기면 트윈이 멈춰
+# 암전이 화면에 남는다 — 끄는 것까지가 연출이다.
 func _boss_cut_clear() -> void:
-	if _boss_title == null:
+	if _boss_shade == null:
 		return
 	if _boss_cut_tw and _boss_cut_tw.is_valid():
 		_boss_cut_tw.kill()
-	_boss_title.modulate.a = 0.0
-	_boss_bar_top.size.y = 0.0
-	_boss_bar_bottom.position.y = VIEW_BOTTOM
-	# **띠는 안 쓸 때 끈다.** 아래 띠를 화면 밖(VIEW_BOTTOM)으로 내려 두기만
-	# 했더니 z_index 60 이라 판 위에 그려져, 던전 목록 한가운데에 검은 줄이
-	# 남았다(사장님 캡처). 자리를 옮기는 것과 안 보이는 것은 다르다.
-	_boss_bar_top.visible = false
-	_boss_bar_bottom.visible = false
+	_boss_shade.visible = false
+	_boss_shade.color.a = 0.0
 
 
 var _boss_cut_tw: Tween
@@ -11663,34 +11632,18 @@ func _battle_visible() -> bool:
 	return (_tab not in FULL_TABS or raid_on != "" or dungeon_on) 		and not _modal_open()
 
 
-func _boss_cut(name: String) -> void:
-	if _boss_title == null or not _battle_visible():
+# 등장 = 전투 뷰가 훅 어두워졌다가 걷힌다. 띠도 큰 이름도 없다(사장님:
+# 글자가 UI 를 넘쳤다 — 이름은 상단 보스 게이지가 이미 적는다).
+func _boss_cut(_name: String) -> void:
+	if _boss_shade == null or not _battle_visible():
 		return
-	_boss_cut_clear()      # 앞 연출이 남아 있으면 겹쳐서 띠가 두 겹이 된다
-	_boss_bar_top.visible = true
-	_boss_bar_bottom.visible = true
-	_boss_title.text = name
-	# 팬과 같은 박자로 돈다: 0.45 들어가고 → BOSS_PAN_HOLD 머물고 → 0.5 나온다.
-	var t := create_tween().set_parallel()
+	_boss_cut_clear()
+	_boss_shade.visible = true
+	var t := create_tween()
 	_boss_cut_tw = t
-	t.tween_property(_boss_bar_top, "size:y", BOSS_CUT_BAR, 0.30) \
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	t.tween_property(_boss_bar_bottom, "position:y", VIEW_BOTTOM - BOSS_CUT_BAR,
-		0.30).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	t.tween_property(_boss_title, "modulate:a", 1.0, 0.25).set_delay(0.20)
-	# 이름은 살짝 커지며 뜬다 — 그냥 나타나면 자막이고, 커지면 등장이 된다.
-	_boss_title.pivot_offset = _boss_title.size * 0.5
-	_boss_title.scale = Vector2(0.86, 0.86)
-	t.tween_property(_boss_title, "scale", Vector2.ONE, 0.35).set_delay(0.20) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	var out := 0.45 + BOSS_PAN_HOLD
-	t.tween_property(_boss_title, "modulate:a", 0.0, 0.30).set_delay(out)
-	t.tween_property(_boss_bar_top, "size:y", 0.0, 0.40).set_delay(out) \
-		.set_trans(Tween.TRANS_QUAD)
-	t.tween_property(_boss_bar_bottom, "position:y", VIEW_BOTTOM, 0.40) \
-		.set_delay(out).set_trans(Tween.TRANS_QUAD)
-	# **끝나면 끈다.** 자리만 되돌리고 켜 둔 채 두면, 아래 띠가 판 맨 위(416~462)를
-	# 계속 덮어 하단 UI 가 가려진다(사장님 실측). 트윈이 제 손으로 치우게 한다.
+	t.tween_property(_boss_shade, "color:a", 0.80, 0.18)
+	t.tween_interval(0.25)
+	t.tween_property(_boss_shade, "color:a", 0.0, 0.8 + BOSS_PAN_HOLD) 		.set_trans(Tween.TRANS_QUAD)
 	t.finished.connect(_boss_cut_clear)
 
 
