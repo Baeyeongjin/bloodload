@@ -236,6 +236,7 @@ func _tick_titles(delta: float) -> void:
 		return
 	_title_check_t = 1.0
 	play_sec += 1.0   # 켜 둔 시간 전부 — 방치형에서는 방치도 플레이다
+	_refresh_board()
 	# 임무도 이 1초 틱을 탄다 — 자정 넘김과 알림점(처치가 50에 닿는 순간 등)을
 	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
 	_refresh_quests()
@@ -421,9 +422,13 @@ var _panel_bg_full: Control # 전면 판 배경 — FULL_TABS 가 쓴다
 var _tab_btns := {}
 var _nav_root: Control          # 하단 탭 바 전체 — 던전 전투 중엔 걷는다
 var _gate_exit_btn: Button      # 던전 전투의 유일한 문(중단)
-var _gate_hud: Control          # 던전 전투 하단 — 어둠 + 판 정보 카드
-var _home_dark: ColorRect       # 홈(사냥) 탭 하단 어둠 — 판이 없는 탭의 바닥
-var _gate_hud_ui := {}
+# 전장 게시판(사장님 승인: 안 C + 스킬 줄) — 홈·던전 하단이 같은 판을 쓴다.
+var _board: Control
+var _board_cells: Array = []     # 스킬 칸 7: {frame, icon, shade, num}
+var _board_pills: Array = []     # 알약 라벨 3
+var _board_btn_lbl: Label
+var _board_prev_cd := {}         # 시전 감지(쿨다운이 0에서 만땅으로 튀는 순간)
+var _income_per_min := 0.0
 var _tab_dots := {}         # 탭 이름 -> 붉은 알림 점 (도감은 없다)
 var _tab := "growth"
 var _codex_cells := {}
@@ -5105,12 +5110,13 @@ func _tick_income() -> void:
 	_income_ring[_income_idx] = _income_acc
 	_income_acc = 0.0
 	_income_idx = (_income_idx + 1) % 60
-	var per_min := 0.0
+	var per_min := 0.0   # 게시판도 같이 읽는다(_income_per_min)
 	for v in _income_ring:
 		per_min += v
 	if _lbl_income:
 		# 레이드에서는 상단이 비어야 한다 — 여기서도 같은 규칙을 본다
 		# (이 함수가 매 초 다시 켜므로 _refresh_currency_visibility 만으로는 못 막는다).
+		_income_per_min = per_min
 		_lbl_income.visible = per_min > 0.0 and not _in_raid()
 		_lbl_income.text = "사냥 중  혈액 %s/분" % _n(per_min)
 
@@ -5486,41 +5492,79 @@ func _build_tabbar() -> void:
 			_tab_dots[name] = dot
 	# 던전 전투 하단(사장님: 수동 조작이 없으니 빈 바닥이 그대로 드러났다) —
 	# 어둠을 깔고 **판 정보 카드**(어디서 뭘 하는 중인가)를 세운다.
-	_home_dark = ColorRect.new()
-	_home_dark.color = Color(0.045, 0.035, 0.055)
-	_home_dark.position = Vector2(0.0, VIEW_BOTTOM)
-	# 탭 바(y 800~) **위**까지만 — 끝까지 내리면 탭 바를 덮는다(실측).
-	_home_dark.size = Vector2(Grid.BG.x, 800.0 - VIEW_BOTTOM)
-	_home_dark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_home_dark.visible = false
-	_hud_root.add_child(_home_dark)
-	_gate_hud = Control.new()
-	_gate_hud.visible = false
-	_hud_root.add_child(_gate_hud)
-	var gdark := ColorRect.new()
-	gdark.color = Color(0.045, 0.035, 0.055)
-	gdark.position = Vector2(0.0, VIEW_BOTTOM)
-	gdark.size = Vector2(Grid.BG.x, Grid.BG.y - VIEW_BOTTOM)
-	gdark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_gate_hud.add_child(gdark)
-	_shop_tex(_gate_hud, "res://assets/ui/sets/gate_panel.png",
-		Vector2(PAD - 8.0, 472.0), Vector2(CONTENT_W + 16.0, 150.0))
-	_gate_hud_ui["art"] = _framed_portrait(_gate_hud, Vector2(PAD + 12.0, 504.0))
-	_gate_hud_ui["name"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 494.0),
-		Type.SIZE_MID, Color(0.97, 0.92, 0.86), CONTENT_W - 110.0, 24.0)
-	_shop_outline(_gate_hud_ui["name"], 6)
-	_gate_hud_ui["goal"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 526.0),
-		Type.SIZE_SMALL, Color(0.86, 0.90, 0.98), CONTENT_W - 110.0, 16.0)
-	_shop_outline(_gate_hud_ui["goal"], 5)
-	_gate_hud_ui["sub"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 552.0),
-		Type.SIZE_SMALL, Color(0.78, 0.74, 0.72), CONTENT_W - 110.0, 16.0)
-	_shop_outline(_gate_hud_ui["sub"], 5)
-	# 중단 — 던전 전투(기본 화면만) 중의 유일한 문. 탭 바 자리에 선다.
-	_gate_exit_btn = Ui.button("중단", Vector2((Grid.BG.x - 250.0) * 0.5, 812.0),
-		Vector2(250.0, 56.0), Type.SIZE_MID)
-	_gate_exit_btn.visible = false
-	_gate_exit_btn.pressed.connect(_gate_exit_pressed)
-	_hud_root.add_child(_gate_exit_btn)
+	# ── 전장 게시판 (사장님 승인 2026-08-18: 안 C + 스킬 줄) ──────────────
+	# 홈·던전이 같은 뼈대다: 돌벽 어둠 + 장착 스킬 줄(쿨다운) + 지표 알약 3 +
+	# 큰 버튼 1. 판 이름·타이머는 상단 HUD 몫이라 여기 안 적는다.
+	_board = Control.new()
+	_board.visible = false
+	_hud_root.add_child(_board)
+	# 탭 바 **뒤**에 깐다 — 던전 밖에서는 탭 바가 게시판 위에 떠야 한다(사장님).
+	# 던전에서는 탭 바가 숨으니 벽이 끝까지 드러난다.
+	_hud_root.move_child(_board, _nav_root.get_index())
+	var bwall := TextureRect.new()
+	bwall.texture = Assets.tex("res://assets/ui/board_wall.png")
+	bwall.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bwall.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	bwall.position = Vector2(0.0, VIEW_BOTTOM)
+	bwall.size = Vector2(Grid.BG.x, Grid.BG.y - VIEW_BOTTOM)
+	bwall.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_board.add_child(bwall)
+	var bdark := ColorRect.new()
+	bdark.color = Color(0.03, 0.025, 0.04, 0.55)   # 질감을 죽여 글이 이긴다
+	bdark.position = bwall.position
+	bdark.size = bwall.size
+	bdark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_board.add_child(bdark)
+	# 스킬 줄 — 7칸(기본 6 + 군림이 여는 7번째). 자동 시전이라 누르는 게 아니라
+	# **도는 게 보이는** 줄이다: 쿨다운은 위에서 내려오는 어둠, 시전은 금빛 번쩍.
+	var bcell := 64.0
+	var bgap := (CONTENT_W - bcell * 7.0) / 6.0
+	for i in 7:
+		var cx := PAD + float(i) * (bcell + bgap)
+		var frame := Ui.image("res://assets/ui/board_slot.png",
+			Vector2(cx, 452.0), Vector2(bcell, bcell))
+		_board.add_child(frame)
+		var ic := Ui.icon("", Vector2(cx + 5.0, 457.0), bcell - 10.0)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_board.add_child(ic)
+		var shade := ColorRect.new()
+		shade.color = Color(0.02, 0.015, 0.03, 0.78)
+		shade.position = Vector2(cx + 5.0, 457.0)
+		shade.size = Vector2(bcell - 10.0, 0.0)
+		shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_board.add_child(shade)
+		var num := _panel_label(_board, Vector2(cx, 470.0), Type.SIZE_MID,
+			Color(0.98, 0.95, 0.90), bcell, 24.0)
+		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(num, 8)
+		_board_cells.append({"frame": frame, "icon": ic, "shade": shade,
+			"num": num})
+	# 지표 알약 3 — 값은 전부 이미 재는 것들이다.
+	var pw := (CONTENT_W - 24.0) / 3.0
+	for i in 3:
+		var px2 := PAD + float(i) * (pw + 12.0)
+		_shop_tex(_board, "res://assets/ui/board_pill.png",
+			Vector2(px2, 548.0), Vector2(pw, 34.0))
+		var pl := _panel_label(_board, Vector2(px2, 556.0), Type.SIZE_SMALL,
+			Color(0.94, 0.90, 0.88), pw, 18.0)
+		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(pl, 5)
+		_board_pills.append(pl)
+	# 큰 버튼 — 던전에서는 중단, 홈에서는 방치 상자.
+	var bbx := Vector2((Grid.BG.x - 240.0) * 0.5, 716.0)
+	var btex := _shop_tex(_board, "res://assets/ui/board_button.png",
+		bbx, Vector2(240.0, 56.0))
+	_board_btn_lbl = _panel_label(_board, Vector2(bbx.x, bbx.y + 17.0),
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 240.0, 24.0)
+	_board_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_board_btn_lbl, 8)
+	var bghost := _shop_ghost(_board, Vector2(240.0, 56.0), btex)
+	bghost.position = bbx
+	bghost.pressed.connect(func() -> void:
+		if _in_raid() or dungeon_on:
+			_gate_exit_pressed()
+		else:
+			_claim_chest())
 
 
 # ── 미궁 탭 ─────────────────────────────────────────────────────────────────
@@ -7865,8 +7909,10 @@ func _select_tab(name: String) -> void:
 	# 레퍼런스의 가운데 홈 버튼).
 	_panel_bg.visible = name not in FULL_TABS and name != "home"
 	_panel_bg_full.visible = name in FULL_TABS
-	if _home_dark:
-		_home_dark.visible = name == "home"
+	if _board:
+		_board.visible = name == "home" or raid_on != "" or dungeon_on
+		if _board.visible:
+			_refresh_board()
 	_boss_cut_clear()      # 판을 열면 컷신 띠는 즉시 걷는다
 	# 전투 화면에 떠 있는 소품(가이드·방치 상자·오른쪽 바로가기 줄)은 전면 판과
 	# 겹친다 — 같이 숨긴다(사장님: 임무·업적 아이콘도 안 보이게, 완전 전체 화면).
@@ -9841,12 +9887,10 @@ func _enter_battle_view() -> void:
 func _battle_only(on: bool) -> void:
 	if _nav_root:
 		_nav_root.visible = not on
-	if _gate_exit_btn:
-		_gate_exit_btn.visible = on
-	if _gate_hud:
-		_gate_hud.visible = on
-		if on:
-			_refresh_gate_hud()
+	if _board:
+		_board.visible = on or _tab == "home"
+		if _board.visible:
+			_refresh_board()
 	if on:
 		for key in _panels.keys():
 			_panels[key].visible = false
@@ -9857,34 +9901,53 @@ func _battle_only(on: bool) -> void:
 			_side_root.visible = false
 
 
-# 던전 전투 하단 카드 — 지금 어디서 뭘 하는 중인가. 연속 도전 상태도 여기서 읽힌다.
-func _refresh_gate_hud() -> void:
-	if _gate_hud_ui.is_empty():
+# 전장 게시판 갱신 — 1초 틱(_tick_titles)이 부른다. 스킬 쿨다운·지표·버튼.
+func _refresh_board() -> void:
+	if _board == null or not _board.visible or _board_cells.is_empty():
 		return
-	var art: TextureRect = _gate_hud_ui["art"]
+	for i in 7:
+		var c: Dictionary = _board_cells[i]
+		var key := str(skill_equipped[i]) if i < skill_equipped.size() else ""
+		var live := key != ""
+		for n in ["frame", "icon", "shade", "num"]:
+			(c[n] as CanvasItem).visible = live
+		if not live:
+			continue
+		(c["icon"] as TextureRect).texture = Assets.tex(SkillDefs.icon_path(key))
+		var cd := float(_skill_cd.get(key, 0.0))
+		var total := maxf(1.0, float(SkillDefs.shape_of(key).get("cooldown", 1.0)))
+		(c["shade"] as ColorRect).size.y = 54.0 * clampf(cd / total, 0.0, 1.0)
+		(c["num"] as Label).text = str(int(ceil(cd))) if cd > 0.4 else ""
+		# 시전 감지 — 쿨다운이 만땅으로 튀는 순간 금빛 번쩍. 하단과 전투가 이어진다.
+		if cd > float(_board_prev_cd.get(key, 0.0)) + 0.5 and is_inside_tree():
+			var fr := c["frame"] as CanvasItem
+			fr.modulate = Color(1.6, 1.35, 0.7)
+			create_tween().tween_property(fr, "modulate", Color.WHITE, 0.45)
+		_board_prev_cd[key] = cd
+	var gate := _in_raid() or dungeon_on
+	_board_pills[0].text = "피해  %s /초" % _n(dps())
 	if dungeon_on:
-		art.texture = Assets.tex("res://assets/ui/res_crystal.png")
-		_gate_hud_ui["name"].text = DungeonDefs.label(dungeon_floor)
-		_gate_hud_ui["goal"].text = "층을 오른다 — 오를수록 좋은 것이 잠들어 있다"
-		_gate_hud_ui["sub"].text = "최고 %d층" % dungeon_best
+		_board_pills[1].text = "혈정 +%s" % _n(DungeonDefs.first_clear_reward(
+			dungeon_floor)) if dungeon_floor > dungeon_best else "기록 갱신 없음"
+		_board_pills[2].text = "최고 %d층" % dungeon_best
 	elif raid_on == "boss":
-		art.texture = Assets.tex(EventDefs.art_path(EventDefs.boss_of(_boss_week_index())))
-		_gate_hud_ui["name"].text = "%s  %d단계" % [
-			str(EventDefs.boss_of(_boss_week_index())["name"]), boss_tier]
-		_gate_hud_ui["goal"].text = "40초 동안 최대한 때린다"
-		_gate_hud_ui["sub"].text = "이번 주 누적 피해 %s" % _n(boss_dmg)
+		_board_pills[1].text = "누적 %s" % _n(boss_dmg)
+		_board_pills[2].text = "오늘 %d / %d판" % [boss_tries, EventDefs.TRIES_PER_DAY]
 	elif raid_on == "trial":
-		art.texture = Assets.tex("res://assets/ui/boss_warden.png")
-		_gate_hud_ui["name"].text = "시련 %d단계  ·  유적의 파수꾼" % (trial_stage + 1)
-		_gate_hud_ui["goal"].text = "%d초 안에 파수꾼을 눕힌다" % int(TrialDefs.TIME_LIMIT)
-		_gate_hud_ui["sub"].text = "격파 시 공격·체력 +%d%%" % int(round(
+		_board_pills[1].text = "격파 시 +%d%%" % int(round(
 			TrialDefs.BONUS_PER * 100.0 * float(trial_stage + 1)))
+		_board_pills[2].text = "도전 무제한"
 	elif raid_on != "":
-		art.texture = Assets.tex(str(RaidDefs.RAIDS[raid_on]["icon"]))
-		_gate_hud_ui["name"].text = RaidDefs.label(raid_on, _raid_stage())
-		_gate_hud_ui["goal"].text = RaidDefs.goal_line(raid_on)
-		_gate_hud_ui["sub"].text = "오늘 %d판 남음  ·  %s" % [_raid_left(raid_on),
-			"연속 도전 중" if _raid_repeat else "한 판만"]
+		_board_pills[1].text = "%s +%s" % [str(RaidDefs.RAIDS[raid_on]["currency"]),
+			_n(_raid_gain(raid_on, _raid_stage()))]
+		_board_pills[2].text = "오늘 %d판 · %s" % [_raid_left(raid_on),
+			"연속" if _raid_repeat else "한 판"]
+	else:
+		_board_pills[1].text = "혈액  %s /분" % _n(_income_per_min)
+		_board_pills[2].text = "전투력  %s" % _n(Balance.combat_power(dps(),
+			max_hp(), regen_per_sec()))
+	_board_btn_lbl.text = "중단" if gate \
+		else ("방치 상자  %s" % _n(chest_gold) if chest_gold > 0.0 else "방치 상자")
 
 
 # 액자 초상 한 벌 — 어두운 속바탕 + 넘치게 그린 초상(창이 잘라냄) + 액자.
