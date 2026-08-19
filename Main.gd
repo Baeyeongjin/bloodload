@@ -6132,9 +6132,9 @@ const RD_ICON_Y := 460.0
 const RD_VALUE_Y := 566.0      # 알코브 안 아래 — 그림이 뜻하는 값
 const RD_SUB_Y := 602.0
 const RD_BTN_Y := 656.0
-const RD_BTN_H := 40.0   # 56 은 너무 컸다(사장님)
+const RD_BTN_H := 32.0   # 56→40→32, 두 번 줄였다(사장님)
 const RD_BTN_W := 178.0        # 둘일 때. 하나면 RD_BTN_SOLO
-const RD_BTN_SOLO := 200.0
+const RD_BTN_SOLO := 170.0
 const RD_CLOSE_Y := 722.0
 
 
@@ -6148,8 +6148,8 @@ func _rd_place_buttons(with_sweep: bool) -> void:
 	_rd_chain_tex.visible = with_sweep
 	_rd_chain_lbl.visible = with_sweep
 	_rd_chain.visible = with_sweep
-	# 셋일 때 140 x 3 + 틈 20 = 440 — 판(576) 안에 넉넉히 든다.
-	var w := 140.0 if with_sweep else RD_BTN_SOLO
+	# 셋일 때 120 x 3 + 틈 20 = 380 — 판(576) 안에 넉넉히 든다.
+	var w := 120.0 if with_sweep else RD_BTN_SOLO
 	for n in [_rd_btn_tex, _rd_btn, _rd_sweep_tex, _rd_sweep,
 			_rd_chain_tex, _rd_chain]:
 		(n as Control).size = Vector2(w, RD_BTN_H)
@@ -6164,11 +6164,11 @@ func _rd_place_buttons(with_sweep: bool) -> void:
 	else:
 		_rd_btn_tex.position = Vector2((PANEL_W - w) * 0.5, RD_BTN_Y)
 	_rd_sweep.position = _rd_sweep_tex.position
-	_rd_sweep_lbl.position = _rd_sweep_tex.position + Vector2(0.0, 11.0)
+	_rd_sweep_lbl.position = _rd_sweep_tex.position + Vector2(0.0, 7.0)
 	_rd_btn.position = _rd_btn_tex.position
-	_rd_btn_lbl.position = _rd_btn_tex.position + Vector2(0.0, 11.0)
+	_rd_btn_lbl.position = _rd_btn_tex.position + Vector2(0.0, 7.0)
 	_rd_chain.position = _rd_chain_tex.position
-	_rd_chain_lbl.position = _rd_chain_tex.position + Vector2(0.0, 11.0)
+	_rd_chain_lbl.position = _rd_chain_tex.position + Vector2(0.0, 7.0)
 	# 그림 버튼은 가운데를 기준으로 부풀므로 축도 다시 잡는다.
 	_rd_btn_tex.pivot_offset = _rd_btn_tex.size * 0.5
 	_rd_sweep_tex.pivot_offset = _rd_sweep_tex.size * 0.5
