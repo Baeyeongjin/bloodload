@@ -9909,9 +9909,10 @@ func _framed_portrait(parent: Control, at: Vector2, fsize := 52.0) -> TextureRec
 	var art := TextureRect.new()
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	# 꽉 채운다(사장님) — 얼굴이 위쪽에 있는 흉상이라 위로 살짝 치우쳐 잘라낸다.
-	art.size = win.size * 1.55
-	art.position = Vector2(-win.size.x * 0.275, -win.size.y * 0.24)
+	# 꽉 채운다(사장님) — 초상 원본을 피사체 기준으로 재단해 뒀으므로(빌드 스크립트)
+	# 여기서는 살짝만 키워 가장자리 어중간한 여백을 무는 정도면 된다.
+	art.size = win.size * 1.08
+	art.position = -win.size * 0.04
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	win.add_child(art)
 	parent.add_child(Ui.image("res://assets/ui/frame_portrait.png",
