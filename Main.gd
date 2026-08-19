@@ -421,6 +421,9 @@ var _panel_bg_full: Control # 전면 판 배경 — FULL_TABS 가 쓴다
 var _tab_btns := {}
 var _nav_root: Control          # 하단 탭 바 전체 — 던전 전투 중엔 걷는다
 var _gate_exit_btn: Button      # 던전 전투의 유일한 문(중단)
+var _gate_hud: Control          # 던전 전투 하단 — 어둠 + 판 정보 카드
+var _home_dark: ColorRect       # 홈(사냥) 탭 하단 어둠 — 판이 없는 탭의 바닥
+var _gate_hud_ui := {}
 var _tab_dots := {}         # 탭 이름 -> 붉은 알림 점 (도감은 없다)
 var _tab := "growth"
 var _codex_cells := {}
@@ -836,6 +839,9 @@ func _ready() -> void:
 			sigil = 5000.0
 			_select_tab("growth")
 			_set_growth_mode("pact")
+		# [개발 도구] --home : 홈(사냥) 탭을 연 채로 캡처한다.
+		if arg == "--home":
+			_select_tab("home")
 		# [개발 도구] --info : 군주의 기록 판을 연 채로 캡처한다.
 		if arg == "--info":
 			_show_info()
@@ -852,6 +858,7 @@ func _ready() -> void:
 		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
 			var rk := arg.trim_prefix("--raid=")
+			best_stage = maxi(best_stage, RaidDefs.open_stage(rk))   # 잠금 해제(검수)
 			_raid_roll_day()
 			raid_left[rk] = RaidDefs.TRIES_PER_DAY
 			_raid_enter(rk)
@@ -5425,7 +5432,8 @@ func _refresh_codex_detail() -> void:
 # 순서는 사장님 지정(2026-08-13): 성장 / 장비 / 도감 / 소환 / 던전 / 상점 —
 # 왼쪽 셋은 내 것(성장·장비·기록), 오른쪽 셋은 나가는 곳(소환·던전·상점).
 const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"],
-	["pet", "tab_pet", "펫"], ["summon", "tab_battle", "소환"],
+	["pet", "tab_pet", "펫"], ["home", "tab_home", "사냥"],
+	["summon", "tab_battle", "소환"],
 	["raid", "tab_raid", "던전"], ["shop", "shop", "상점"]]
 
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
@@ -5476,6 +5484,40 @@ func _build_tabbar() -> void:
 			dot.visible = false
 			_nav_root.add_child(dot)
 			_tab_dots[name] = dot
+	# 던전 전투 하단(사장님: 수동 조작이 없으니 빈 바닥이 그대로 드러났다) —
+	# 어둠을 깔고 **판 정보 카드**(어디서 뭘 하는 중인가)를 세운다.
+	_home_dark = ColorRect.new()
+	_home_dark.color = Color(0.045, 0.035, 0.055)
+	_home_dark.position = Vector2(0.0, VIEW_BOTTOM)
+	# 탭 바(y 800~) **위**까지만 — 끝까지 내리면 탭 바를 덮는다(실측).
+	_home_dark.size = Vector2(Grid.BG.x, 800.0 - VIEW_BOTTOM)
+	_home_dark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_home_dark.visible = false
+	_hud_root.add_child(_home_dark)
+	_gate_hud = Control.new()
+	_gate_hud.visible = false
+	_hud_root.add_child(_gate_hud)
+	var gdark := ColorRect.new()
+	gdark.color = Color(0.045, 0.035, 0.055)
+	gdark.position = Vector2(0.0, VIEW_BOTTOM)
+	gdark.size = Vector2(Grid.BG.x, Grid.BG.y - VIEW_BOTTOM)
+	gdark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_gate_hud.add_child(gdark)
+	_shop_tex(_gate_hud, "res://assets/ui/sets/gate_panel.png",
+		Vector2(PAD - 8.0, 472.0), Vector2(CONTENT_W + 16.0, 150.0))
+	_gate_hud_ui["art"] = Ui.icon("", Vector2(PAD + 12.0, 500.0), 64.0)
+	_gate_hud.add_child(_gate_hud_ui["art"])
+	_gate_hud.add_child(Ui.image("res://assets/ui/frame_portrait.png",
+		Vector2(PAD + 6.0, 494.0), Vector2(76.0, 76.0)))
+	_gate_hud_ui["name"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 494.0),
+		Type.SIZE_MID, Color(0.97, 0.92, 0.86), CONTENT_W - 110.0, 24.0)
+	_shop_outline(_gate_hud_ui["name"], 6)
+	_gate_hud_ui["goal"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 526.0),
+		Type.SIZE_SMALL, Color(0.86, 0.90, 0.98), CONTENT_W - 110.0, 16.0)
+	_shop_outline(_gate_hud_ui["goal"], 5)
+	_gate_hud_ui["sub"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 552.0),
+		Type.SIZE_SMALL, Color(0.78, 0.74, 0.72), CONTENT_W - 110.0, 16.0)
+	_shop_outline(_gate_hud_ui["sub"], 5)
 	# 중단 — 던전 전투(기본 화면만) 중의 유일한 문. 탭 바 자리에 선다.
 	_gate_exit_btn = Ui.button("중단", Vector2((Grid.BG.x - 250.0) * 0.5, 812.0),
 		Vector2(250.0, 56.0), Type.SIZE_MID)
@@ -5873,13 +5915,12 @@ func _build_boss_panel(root: Control) -> void:
 	# **사슬 없는 전용 판** — 사슬 카드로는 초상화·이름·버튼이 다 사슬에 물렸다.
 	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 56.0),
 		Vector2(CONTENT_W + 16.0, 140.0))
-	# 초상화 액자는 아이템 칸 틀을 빌린다 — 판에 액자 홈이 없다.
-	var bframe := Ui.image("res://assets/ui/slot_common.png",
-		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0))
-	bframe.modulate = Color(0.98, 0.62, 0.45)
-	root.add_child(bframe)
+	# 초상화 액자 — 전용 그림 한 장을 모든 초상이 같이 쓴다(사장님 2026-08-18).
+	# 그림을 먼저, 액자를 위에 — 테두리가 초상 가장자리를 덮어야 액자다.
 	_boss_art = Ui.icon("", Vector2(PAD + 10.0, 90.0), 64.0)
 	root.add_child(_boss_art)
+	root.add_child(Ui.image("res://assets/ui/frame_portrait.png",
+		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0)))
 	var text_x := PAD + 92.0
 	var text_w := CONTENT_W - 92.0 - 168.0
 	_boss_name = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
@@ -6045,12 +6086,10 @@ func _rd_place_buttons(with_sweep: bool) -> void:
 func _build_trial_panel(root: Control) -> void:
 	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 56.0),
 		Vector2(CONTENT_W + 16.0, 140.0))
-	var frame := Ui.image("res://assets/ui/slot_common.png",
-		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0))
-	frame.modulate = Color(0.62, 0.88, 0.66)
-	root.add_child(frame)
 	_trial_ui["art"] = Ui.icon("", Vector2(PAD + 10.0, 90.0), 64.0)
 	root.add_child(_trial_ui["art"])
+	root.add_child(Ui.image("res://assets/ui/frame_portrait.png",
+		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0)))
 	var text_x := PAD + 92.0
 	var text_w := CONTENT_W - 92.0 - 168.0
 	_trial_ui["name"] = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
@@ -7831,8 +7870,12 @@ func _select_tab(name: String) -> void:
 	_tab = name
 	for key in _panels.keys():
 		_panels[key].visible = key == name
-	_panel_bg.visible = name not in FULL_TABS
+	# 홈(사냥)은 판이 없는 탭이다 — 창을 다 걷고 사냥터만 남긴다(사장님,
+	# 레퍼런스의 가운데 홈 버튼).
+	_panel_bg.visible = name not in FULL_TABS and name != "home"
 	_panel_bg_full.visible = name in FULL_TABS
+	if _home_dark:
+		_home_dark.visible = name == "home"
 	_boss_cut_clear()      # 판을 열면 컷신 띠는 즉시 걷는다
 	# 전투 화면에 떠 있는 소품(가이드·방치 상자·오른쪽 바로가기 줄)은 전면 판과
 	# 겹친다 — 같이 숨긴다(사장님: 임무·업적 아이콘도 안 보이게, 완전 전체 화면).
@@ -7842,7 +7885,7 @@ func _select_tab(name: String) -> void:
 	_refresh_chest()
 	# 창 전환은 **짧게 떠오르며** 나타난다(0.12초). 그냥 바뀌면 밋밋하다(사장님).
 	# 원위치는 meta 에 한 번 적어 둔다 — 연타로 트윈이 겹쳐도 늘 제자리로 수렴한다.
-	if switched:
+	if switched and _panels.has(name):
 		var p: Control = _panels[name]
 		if not p.has_meta("base_y"):
 			p.set_meta("base_y", p.position.y)
@@ -9809,6 +9852,10 @@ func _battle_only(on: bool) -> void:
 		_nav_root.visible = not on
 	if _gate_exit_btn:
 		_gate_exit_btn.visible = on
+	if _gate_hud:
+		_gate_hud.visible = on
+		if on:
+			_refresh_gate_hud()
 	if on:
 		for key in _panels.keys():
 			_panels[key].visible = false
@@ -9817,6 +9864,36 @@ func _battle_only(on: bool) -> void:
 		_goal_widget.visible = false
 		if _side_root:
 			_side_root.visible = false
+
+
+# 던전 전투 하단 카드 — 지금 어디서 뭘 하는 중인가. 연속 도전 상태도 여기서 읽힌다.
+func _refresh_gate_hud() -> void:
+	if _gate_hud_ui.is_empty():
+		return
+	var art: TextureRect = _gate_hud_ui["art"]
+	if dungeon_on:
+		art.texture = Assets.tex("res://assets/ui/res_crystal.png")
+		_gate_hud_ui["name"].text = DungeonDefs.label(dungeon_floor)
+		_gate_hud_ui["goal"].text = "층을 오른다 — 오를수록 좋은 것이 잠들어 있다"
+		_gate_hud_ui["sub"].text = "최고 %d층" % dungeon_best
+	elif raid_on == "boss":
+		art.texture = Assets.tex(EventDefs.art_path(EventDefs.boss_of(_boss_week_index())))
+		_gate_hud_ui["name"].text = "%s  %d단계" % [
+			str(EventDefs.boss_of(_boss_week_index())["name"]), boss_tier]
+		_gate_hud_ui["goal"].text = "40초 동안 최대한 때린다"
+		_gate_hud_ui["sub"].text = "이번 주 누적 피해 %s" % _n(boss_dmg)
+	elif raid_on == "trial":
+		art.texture = Assets.tex("res://assets/ui/boss_warden.png")
+		_gate_hud_ui["name"].text = "시련 %d단계  ·  유적의 파수꾼" % (trial_stage + 1)
+		_gate_hud_ui["goal"].text = "%d초 안에 파수꾼을 눕힌다" % int(TrialDefs.TIME_LIMIT)
+		_gate_hud_ui["sub"].text = "격파 시 공격·체력 +%d%%" % int(round(
+			TrialDefs.BONUS_PER * 100.0 * float(trial_stage + 1)))
+	elif raid_on != "":
+		art.texture = Assets.tex(str(RaidDefs.RAIDS[raid_on]["icon"]))
+		_gate_hud_ui["name"].text = RaidDefs.label(raid_on, _raid_stage())
+		_gate_hud_ui["goal"].text = RaidDefs.goal_line(raid_on)
+		_gate_hud_ui["sub"].text = "오늘 %d판 남음  ·  %s" % [_raid_left(raid_on),
+			"연속 도전 중" if _raid_repeat else "한 판만"]
 
 
 func _gate_exit_pressed() -> void:
