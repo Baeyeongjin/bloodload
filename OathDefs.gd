@@ -65,6 +65,45 @@ const ENGRAVES := [
 ]
 
 
+# ── 계약의 서 (미니 패스, 과금 6접점) ─────────────────────────────────────
+# **카드를 쓴 횟수**로 찬다 — 굴릴수록 차오르니 굴릴 이유가 하나 더 는다.
+# 무료 줄은 카드·보석, 유료 줄은 황금·카드 뭉치. 성장 패스와 같은 30칸.
+const BOOK_STEPS := 30
+const BOOK_PER_STEP := 3     # 3번 굴리면 한 칸
+
+
+static func book_step(used: int) -> int:
+	return clampi(used / BOOK_PER_STEP, 0, BOOK_STEPS)
+
+
+static func book_free(step: int) -> Dictionary:
+	if step % 10 == 0:
+		return {"kind": "oath_gold", "amount": 1.0}
+	if step % 3 == 0:
+		return {"kind": "oath_card", "amount": 1.0}
+	return {"kind": "gem", "amount": 20.0}
+
+
+static func book_paid(step: int) -> Dictionary:
+	if step % 10 == 0:
+		return {"kind": "oath_gold", "amount": 4.0}
+	if step % 3 == 0:
+		return {"kind": "oath_card", "amount": 3.0}
+	return {"kind": "gem", "amount": 70.0}
+
+
+# ── 멤버십(혈세) 연동 — 값을 아는 곳은 여기 하나다 ────────────────────────
+static func charge_min(member: bool) -> float:
+	return 30.0 if member else CHARGE_MIN
+
+
+static func card_cap(member: bool) -> int:
+	return CARD_CAP + (2 if member else 0)
+
+
+const MEMBER_WEEKLY_GOLD := 3
+
+
 static func of(id: String) -> Dictionary:
 	if id == "trueblood":
 		return TRUEBLOOD_CONTRACT

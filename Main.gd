@@ -852,6 +852,11 @@ func _ready() -> void:
 			sigil = 5000.0
 			_select_tab("growth")
 			_set_growth_mode("pact")
+		# [개발 도구] --book : 계약의 서(미니 패스) 판을 연 채로 캡처한다.
+		if arg.begins_with("--book"):
+			oath_used = int(arg.trim_prefix("--book=")) if "=" in arg else 24
+			_select_tab("shop")
+			_shop_set_mode("book")
 		# [개발 도구] --oath[=N] : 핏빛 계약 판(카드 N장)을 연 채로 캡처한다.
 		if arg.begins_with("--oath"):
 			oath_cards = int(arg.trim_prefix("--oath=")) if "=" in arg else 3
@@ -5017,8 +5022,8 @@ func _build_codex(root: Control) -> void:
 	# 몬스터만 있던 판이라 오른쪽 상세가 늘 비어 보였다. 소탭은 임무판과
 	# 같은 문법이고, 세트만 가죽책(tome)으로 다르다.
 	var ctabs := [["foe", "몬스터"], ["gear", "장비"], ["skill", "스킬"],
-		["title", "칭호"], ["act", "연대기"]]
-	var ctw := (CODEX_W - 24.0) / 5.0
+		["title", "칭호"], ["oath", "계약"], ["act", "연대기"]]
+	var ctw := (CODEX_W - 30.0) / 6.0
 	for i in ctabs.size():
 		var cm := str(ctabs[i][0])
 		var cp := Vector2(PAD + float(i) * (ctw + 6.0), CODEX_TAB_Y)
@@ -5036,7 +5041,7 @@ func _build_codex(root: Control) -> void:
 		root.add_child(cb)
 		_pet_hover(cb, coff)
 		_codex_tab_art[cm] = {"on": con, "lbl": cl}
-	for key in ["foe", "gear", "skill", "title", "act"]:
+	for key in ["foe", "gear", "skill", "title", "oath", "act"]:
 		var r := Control.new()
 		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(r)
@@ -5045,6 +5050,7 @@ func _build_codex(root: Control) -> void:
 	_lore_build(_codex_roots["gear"], "gear")
 	_lore_build(_codex_roots["skill"], "skill")
 	_title_build(_codex_roots["title"])
+	_oath_codex_build(_codex_roots["oath"])
 	_act_build(_codex_roots["act"])
 	_codex_set_mode("foe")
 	_build_status(root)
@@ -5595,6 +5601,10 @@ var oath_first := false      # 계정 첫 카드(에픽 확정)를 썼는가
 var oath_daily := ""         # 일일 행운(첫 카드 시프트) 날짜
 var oath_last_rarity := ""   # 공명 감지 — 직전 등급
 var oath_vow := false        # 피의 서약 토글
+var oath_used := 0           # 굴린 횟수 — 계약의 서(미니 패스)가 이걸로 찬다
+var oath_book_free := {}     # 계약의 서 무료 줄 수령
+var oath_book_paid := {}     # 유료 줄 수령
+var oath_week := ""          # 멤버십 주간 황금 지급 주
 var oath_fx := {}            # 활성 버프 효과(레벨·공명·각인 반영 후)
 var oath_fx_t := 0.0
 var oath_fx_name := ""
@@ -6518,6 +6528,8 @@ func _grant_reward(kind: String, amount: float) -> void:
 		"essence": essence += amount
 		"gold": gold += amount
 		"feed": feed += amount
+		"oath_card": oath_cards += int(amount)     # 보관 상한을 넘겨 받는다
+		"oath_gold": oath_gold += int(amount)
 		_:
 			# 소환권은 "ticket_<종류>" 로 온다 — 표에 종류가 늘어도 여기는 그대로다.
 			var tk := TicketDefs.kind_of(kind)
@@ -6532,6 +6544,8 @@ static func _reward_name(kind: String) -> String:
 		"essence": return "정수"
 		"gold": return "혈액"
 		"feed": return "먹이"
+		"oath_card": return "계약 카드"
+		"oath_gold": return "황금 계약서"
 	var tk := TicketDefs.kind_of(kind)
 	return TicketDefs.short_of(tk) if tk != "" else "보석"
 
@@ -6540,6 +6554,7 @@ static func _reward_icon(kind: String) -> String:
 	match kind:
 		"crystal": return "res_crystal"
 		"sigil": return "res_sigil"
+		"oath_card", "oath_gold": return "side_oath"
 	return "res_gem"
 
 
@@ -7096,8 +7111,8 @@ func _build_shop(root: Control) -> void:
 	# 넷째로 **패스**가 붙었다 — 정기 소탭에서 사는 물건이지만 진행 트랙은
 	# 따로 볼 자리가 있어야 한다(30단계를 카드 한 장에 못 적는다).
 	var modes := [["pack", "특가"], ["sub", "정기"], ["pass", "패스"],
-		["trade", "교환"]]
-	var sw := (CONTENT_W - 8.0 * 3.0) / 4.0
+		["book", "계약서"], ["trade", "교환"]]
+	var sw := (CONTENT_W - 8.0 * 4.0) / 5.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
 		var tb := TextureButton.new()
@@ -7127,6 +7142,8 @@ func _build_shop(root: Control) -> void:
 	_build_shop_subs(_sub_view)
 	_pass_view = _shop_scroll_view(root)
 	_build_shop_pass(_pass_view)
+	_book_view = _shop_scroll_view(root)
+	_build_shop_book(_book_view)
 	_shop_view = _shop_scroll_view(root)
 	_build_shop_trade(_shop_view)
 	_shop_set_mode("pack")
@@ -7229,6 +7246,7 @@ func _shop_kind_icon(kind: String) -> String:
 		"essence": return "res://assets/items/gem.png"
 		"sigil": return "res://assets/ui/res_sigil.png"
 		"gold": return "res://assets/ui/res_blood.png"
+		"oath_card", "oath_gold": return "res://assets/ui/side_oath.png"
 	return "res://assets/ui/res_gem.png"
 
 
@@ -7369,11 +7387,175 @@ func _build_shop_subs(view: Control) -> void:
 # 패스: 30단계 트랙. 한 줄이 한 단계고 **무료·유료 두 칸**이 나란히 선다 —
 # 안 산 사람도 같은 트랙을 오르되 받는 것이 적다(PassDefs 의 설계 원칙).
 const PASS_ROW_H := 56.0
+var _book_view: Control
+var _book_rows: Array[Dictionary] = []
+var _book_head: Label
+var _book_fill: ColorRect
+var _book_all_btn: Button
 var _pass_view: Control
 var _pass_rows: Array[Dictionary] = []
 var _pass_head: Label
 var _pass_fill: ColorRect
 var _pass_all_btn: Button
+
+
+# 계약의 서 — 카드를 **쓴 횟수**로 차는 30칸. 성장 패스와 같은 트랙 문법이라
+# 판을 통째로 복제한다(사장님 승인 설계 7-6). 유료 줄은 성장 패스 구독이 연다.
+func _build_shop_book(view: Control) -> void:
+	_shop_ribbon(view, 0.0, "계약의 서 — 굴린 만큼 차오른다")
+	_book_head = _panel_label(view, Vector2(0.0, 62.0), Type.SIZE_MID,
+		Color(0.98, 0.72, 0.66), SHOP_LIST_W, 24.0)
+	_book_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_book_head, 6)
+	var track := ColorRect.new()
+	track.color = Color(0.10, 0.09, 0.12)
+	track.position = Vector2(60.0, 94.0)
+	track.size = Vector2(SHOP_LIST_W - 120.0, 10.0)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.add_child(track)
+	_book_fill = ColorRect.new()
+	_book_fill.color = Color(0.90, 0.36, 0.34)
+	_book_fill.position = track.position
+	_book_fill.size = Vector2(0.0, 10.0)
+	_book_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.add_child(_book_fill)
+	_book_all_btn = Ui.button("일괄 수령", Vector2((SHOP_LIST_W - 160.0) * 0.5, 116.0),
+		Vector2(160.0, 34.0), Type.SIZE_SMALL)
+	_book_all_btn.pressed.connect(_claim_book_all)
+	view.add_child(_book_all_btn)
+	for i in range(1, OathDefs.BOOK_STEPS + 1):
+		var y := 162.0 + float(i - 1) * PASS_ROW_H
+		var sep := ColorRect.new()
+		sep.color = Color(0.30, 0.27, 0.32)
+		sep.position = Vector2(0.0, y + 52.0)
+		sep.size = Vector2(SHOP_LIST_W, 1.0)
+		sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.add_child(sep)
+		var lv := _panel_label(view, Vector2(0.0, y + 15.0), Type.SIZE_MID,
+			Color(0.95, 0.90, 0.90), 52.0, 22.0)
+		lv.text = "%d" % i
+		lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(lv, 5)
+		var row := {"step": i}
+		var cw := (SHOP_LIST_W - 68.0) * 0.5 - 6.0
+		for j in 2:
+			var paid := j == 1
+			var cx := 62.0 + float(j) * (cw + 12.0)
+			var st := ColorRect.new()
+			st.position = Vector2(cx - 6.0, y)
+			st.size = Vector2(cw + 12.0, 50.0)
+			st.visible = false
+			st.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.add_child(st)
+			var ic := Ui.icon("", Vector2(cx + 16.0, y + 13.0), 24.0)
+			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.add_child(ic)
+			var tx := _panel_label(view, Vector2(cx + 46.0, y + 16.0),
+				Type.SIZE_SMALL, Color(0.92, 0.88, 0.86), cw - 56.0, 20.0)
+			_shop_outline(tx, 5)
+			var b := _shop_ghost(view, Vector2(cw, 50.0))
+			b.position = Vector2(cx, y)
+			var step := i
+			b.pressed.connect(func() -> void: _claim_book(step, paid))
+			row["band_paid" if paid else "band_free"] = st
+			row["icon_paid" if paid else "icon_free"] = ic
+			row["lbl_paid" if paid else "lbl_free"] = tx
+			row["btn_paid" if paid else "btn_free"] = b
+		_book_rows.append(row)
+	view.custom_minimum_size.y = 162.0 + float(OathDefs.BOOK_STEPS) * PASS_ROW_H
+	_refresh_book()
+
+
+func _refresh_book() -> void:
+	if _book_rows.is_empty():
+		return
+	var step := OathDefs.book_step(oath_used)
+	var active := IapDefs.sub_active(iap_subs, "season_pass")
+	_book_head.text = "%d / %d칸  ·  %s  ·  굴린 %d회" % [step,
+		OathDefs.BOOK_STEPS, "구매함" if active else "무료 줄만", oath_used]
+	var into := oath_used % OathDefs.BOOK_PER_STEP
+	_book_fill.size.x = (SHOP_LIST_W - 120.0) \
+		* (float(into) / float(OathDefs.BOOK_PER_STEP))
+	var can_any := false
+	for row in _book_rows:
+		var i: int = row["step"]
+		var open := i <= step
+		for paid in [false, true]:
+			var r := OathDefs.book_paid(i) if paid else OathDefs.book_free(i)
+			var key := "paid" if paid else "free"
+			var got: Dictionary = oath_book_paid if paid else oath_book_free
+			var ic: TextureRect = row["icon_" + key]
+			var lbl: Label = row["lbl_" + key]
+			var b: Button = row["btn_" + key]
+			ic.texture = Assets.tex(_shop_kind_icon(str(r["kind"])))
+			var claimed := got.has(i)
+			lbl.text = "받음" if claimed else _n(float(r["amount"]))
+			var live: bool = open and not claimed and (active or not paid)
+			b.disabled = not live
+			var st: ColorRect = row["band_" + key]
+			st.visible = claimed or live
+			if claimed:
+				st.color = Color(0.30, 0.52, 0.34, 0.26)
+				ic.modulate = Color(0.55, 0.62, 0.56)
+				lbl.modulate = Color(0.62, 0.95, 0.68)
+			elif live:
+				st.color = Color(0.92, 0.70, 0.30, 0.16)
+				ic.modulate = Color(1, 1, 1)
+				lbl.modulate = Color(1.0, 0.94, 0.72)
+			else:
+				ic.modulate = Color(0.45, 0.43, 0.48)
+				lbl.modulate = ic.modulate
+			can_any = can_any or live
+	_book_all_btn.disabled = not can_any
+
+
+func _claim_book(step: int, paid: bool) -> void:
+	if step <= 0 or step > OathDefs.book_step(oath_used):
+		return
+	if paid and not IapDefs.sub_active(iap_subs, "season_pass"):
+		return
+	var got: Dictionary = oath_book_paid if paid else oath_book_free
+	if got.has(step):
+		return
+	got[step] = true
+	var r := OathDefs.book_paid(step) if paid else OathDefs.book_free(step)
+	_grant_reward(str(r["kind"]), float(r["amount"]))
+	_show_reward("계약의 서 %d칸" % step,
+		[{"icon": "res://assets/ui/%s.png" % _reward_icon(str(r["kind"])),
+		"label": "%s +%s" % [_reward_name(str(r["kind"])), _n(float(r["amount"]))]}])
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_book()
+	_refresh_oath()
+
+
+func _claim_book_all() -> void:
+	var step := OathDefs.book_step(oath_used)
+	var active := IapDefs.sub_active(iap_subs, "season_pass")
+	var got := {}
+	for i in range(1, step + 1):
+		for paid in [false, true]:
+			if paid and not active:
+				continue
+			var bag: Dictionary = oath_book_paid if paid else oath_book_free
+			if bag.has(i):
+				continue
+			bag[i] = true
+			var r := OathDefs.book_paid(i) if paid else OathDefs.book_free(i)
+			var k := str(r["kind"])
+			got[k] = float(got.get(k, 0.0)) + float(r["amount"])
+	if got.is_empty():
+		return
+	var rows: Array = []
+	for k in got:
+		_grant_reward(str(k), float(got[k]))
+		rows.append({"icon": "res://assets/ui/%s.png" % _reward_icon(str(k)),
+			"label": "%s +%s" % [_reward_name(str(k)), _n(float(got[k]))]})
+	_show_reward("계약의 서 — 일괄 수령", rows)
+	_refresh_currency_visibility()
+	_save_game()
+	_refresh_book()
+	_refresh_oath()
 
 
 func _build_shop_pass(view: Control) -> void:
@@ -7524,12 +7706,16 @@ func _shop_set_mode(mode: String) -> void:
 	_pack_view.get_parent().visible = mode == "pack"
 	_sub_view.get_parent().visible = mode == "sub"
 	_pass_view.get_parent().visible = mode == "pass"
+	_book_view.get_parent().visible = mode == "book"
 	for key in _shop_mode_btns:
 		_shop_mode_btns[key].set_pressed_no_signal(key == mode)
+	if mode == "book":
+		_refresh_book()
 	match mode:
 		"pack": _shop_line.text = "귀한 손님이군요… 좋은 것만 꺼내 왔어요."
 		"sub": _shop_line.text = "매일 들러 주시는 분께는 값을 맞춰 드려요."
 		"pass": _shop_line.text = "부지런한 분께는 매일 몫이 쌓이지요."
+		"book": _shop_line.text = "운을 굴리는 분께는… 이 서(書)가 어울리죠."
 		"trade": _shop_line.text = "보석이라면 무엇이든 바꿔 드리죠."
 	if mode == "trade":
 		_refresh_shop()
@@ -8061,6 +8247,14 @@ func _tab_todo(tab: String) -> bool:
 				if float(pet_bank.get(id, 0.0)) >= 1.0:
 					return true
 		"shop":
+			# 계약의 서 — 받을 칸이 남아 있다.
+			var bstep := OathDefs.book_step(oath_used)
+			var bactive := IapDefs.sub_active(iap_subs, "season_pass")
+			for i in range(1, bstep + 1):
+				if not oath_book_free.has(i):
+					return true
+				if bactive and not oath_book_paid.has(i):
+					return true
 			# 성장 패스 — 받을 칸이 남아 있다.
 			var pstep := PassDefs.step_of(pass_points)
 			var pactive := _pass_active()
@@ -9865,6 +10059,68 @@ func _boss_exit(reason: String) -> void:
 	_save_game()
 
 
+# 계약 도감 — 12종을 줄로 세운다. 딴 것은 등급색·레벨·효과가 보이고, 못 딴
+# 것은 이름을 감춘다("???"). 각인 6종은 아래 한 줄로 요약한다.
+var _oath_codex_rows: Array = []
+var _oath_codex_head: Label
+
+
+func _oath_codex_build(root: Control) -> void:
+	_oath_codex_head = _panel_label(root, Vector2(PAD, CODEX_TAB_Y + 42.0),
+		Type.SIZE_SMALL, Color(0.98, 0.82, 0.46), CODEX_W, 18.0)
+	var sc := Ui.scroll(Vector2(PAD, CODEX_TAB_Y + 68.0),
+		Vector2(CODEX_W, 340.0))
+	root.add_child(sc)
+	var inner := Control.new()
+	inner.custom_minimum_size = Vector2(CODEX_W - Ui.SCROLL_W,
+		float(OathDefs.CONTRACTS.size()) * 44.0 + 60.0)
+	sc.add_child(inner)
+	for i in OathDefs.CONTRACTS.size():
+		var c: Dictionary = OathDefs.CONTRACTS[i]
+		var y := float(i) * 44.0
+		var chip := ColorRect.new()
+		chip.color = _oath_rcol(str(c["rarity"]))
+		chip.position = Vector2(0.0, y + 6.0)
+		chip.size = Vector2(6.0, 32.0)
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		inner.add_child(chip)
+		var nm := _panel_label(inner, Vector2(16.0, y + 4.0), Type.SIZE_SMALL,
+			Color(0.96, 0.92, 0.88), 200.0, 18.0)
+		var ef := _panel_label(inner, Vector2(16.0, y + 24.0), Type.SIZE_SMALL,
+			Color(0.74, 0.72, 0.78), CODEX_W - 60.0, 16.0)
+		var lv := _panel_label(inner, Vector2(CODEX_W - 110.0, y + 12.0),
+			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 80.0, 18.0)
+		lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_oath_codex_rows.append({"id": str(c["id"]), "chip": chip, "name": nm,
+			"eff": ef, "lv": lv})
+	var eng := _panel_label(inner,
+		Vector2(0.0, float(OathDefs.CONTRACTS.size()) * 44.0 + 8.0),
+		Type.SIZE_SMALL, Color(0.72, 0.70, 0.76), CODEX_W - Ui.SCROLL_W, 44.0)
+	eng.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var parts := PackedStringArray()
+	for e in OathDefs.ENGRAVES:
+		parts.append(str(e["name"]))
+	eng.text = "각인 6종 — " + " · ".join(parts)
+
+
+func _refresh_oath_codex() -> void:
+	if _oath_codex_rows.is_empty():
+		return
+	var got := 0
+	for r in _oath_codex_rows:
+		var lv := int(oath_lv.get(str(r["id"]), 0))
+		var c := OathDefs.of(str(r["id"]))
+		if lv > 0:
+			got += 1
+		(r["name"] as Label).text = str(c["name"]) if lv > 0 else "???"
+		(r["eff"] as Label).text = _oath_eff_text(c) if lv > 0 else "아직 맺지 않은 계약"
+		(r["lv"] as Label).text = "Lv%d" % lv if lv > 0 else ""
+		(r["chip"] as CanvasItem).modulate = Color(1, 1, 1) if lv > 0 \
+			else Color(0.32, 0.30, 0.34)
+	_oath_codex_head.text = "계약 %d / %d 종  ·  중복이 레벨이 된다(최대 %d)" \
+		% [got, OathDefs.CONTRACTS.size(), OathDefs.LV_MAX]
+
+
 # 계약 판 — 임무판과 같은 자리의 모달. 카드 뒷면·서약 토글·천장 게이지 둘·
 # 발동/구매 버튼. 공개 연출(_oath_play)은 판 위 전용 층에서 5막으로 돈다.
 func _build_oath_view() -> void:
@@ -10028,6 +10284,15 @@ func _build_oath_view() -> void:
 			oath_gold += 1
 			_save_game()
 			_refresh_oath())
+	# 광고 자리 — SDK 가 오면 개통한다(RaidDefs.AD_BONUS_TRIES 와 같은 원칙:
+	# 붙일 SDK 가 없으면 **자리만** 만들고 눌리지 않게 둔다).
+	var ad_art := Ui.set_row(OATH, Vector2(x, top + 462.0), Vector2(w, 32.0))
+	ad_art.modulate = Color(0.55, 0.52, 0.54)
+	_oath_view.add_child(ad_art)
+	var ad := _panel_label(_oath_view, Vector2(x, top + 470.0), Type.SIZE_SMALL,
+		Color(0.66, 0.62, 0.66), w, 18.0)
+	ad.text = "[광고] 카드 1장  ·  하루 3회 — 준비 중"
+	ad.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 계약 수집 — 12칸 미니 격자. 딴 계약은 등급색, 못 딴 것은 어둡게.
 	var gy := top + 508.0
 	var glbl := _panel_label(_oath_view, Vector2(x, gy), Type.SIZE_SMALL,
@@ -10108,6 +10373,7 @@ func _refresh_oath() -> void:
 			["buy", gem >= OathDefs.RECHARGE_GEM and oath_cards < OathDefs.CARD_CAP],
 			["gbuy", gem >= OathDefs.GOLD_GEM]]:
 		_oath_dim(str(pair[0]), bool(pair[1]))
+	_refresh_oath_codex()
 	for e in (_oath_ui["collect"] as Array):
 		var lv := int(oath_lv.get(str(e["id"]), 0))
 		var col := _oath_rcol(str(e["rarity"]))
@@ -10304,12 +10570,23 @@ func _oath_eff_text(c: Dictionary) -> String:
 
 # ── 핏빛 계약 본체 (docs/OATH_DESIGN.md) ──────────────────────────────────
 # 1초 틱 — 40분에 1장 충전(보관 3장), 버프 시계.
+func _oath_member() -> bool:
+	return IapDefs.sub_active(iap_subs, "blood_tax")
+
+
 func _oath_tick() -> void:
-	if oath_cards < OathDefs.CARD_CAP:
+	var member := _oath_member()
+	if oath_cards < OathDefs.card_cap(member):
 		oath_charge += 1.0 / 60.0
-		if oath_charge >= OathDefs.CHARGE_MIN:
+		if oath_charge >= OathDefs.charge_min(member):
 			oath_charge = 0.0
 			oath_cards += 1
+	# 주간 황금 — 멤버십의 몫. 주 열쇠는 임무·보스와 같은 월요일을 쓴다.
+	if member:
+		_quest_roll_day()
+		if oath_week != quest_week:
+			oath_week = quest_week
+			oath_gold += OathDefs.MEMBER_WEEKLY_GOLD
 	if oath_fx_t > 0.0:
 		oath_fx_t = maxf(0.0, oath_fx_t - 1.0)
 		if oath_fx_t <= 0.0:
@@ -10413,6 +10690,8 @@ func _oath_roll(golden := false) -> Dictionary:
 	# 서약 정산 — 커먼이면 건 혈액을 잃는다(가호 각인은 절반 보험).
 	if vow and rarity == "common":
 		gold -= vow_cost * (1.0 - (float(e["v"]) if str(e["kind"]) == "vow_back" 			else 0.0))
+	oath_used += 1   # 계약의 서가 이 값으로 찬다
+	_refresh_book()
 	# 적용 + 환급 각인.
 	_oath_apply(c, e, resonance, clv)
 	if str(e["kind"]) == "refund" and randf() < float(e["v"]):
@@ -11862,6 +12141,10 @@ func _save_game() -> void:
 	cfg.set_value("oath", "lv", oath_lv)
 	cfg.set_value("oath", "first", oath_first)
 	cfg.set_value("oath", "daily", oath_daily)
+	cfg.set_value("oath", "used", oath_used)
+	cfg.set_value("oath", "book_free", oath_book_free)
+	cfg.set_value("oath", "book_paid", oath_book_paid)
+	cfg.set_value("oath", "week", oath_week)
 	cfg.set_value("record", "play_sec", int(play_sec))
 	cfg.set_value("iap", "subs", iap_subs)
 	cfg.set_value("iap", "bought", iap_bought)
@@ -11957,6 +12240,10 @@ func _load_game() -> void:
 	oath_lv = cfg.get_value("oath", "lv", {})
 	oath_first = bool(cfg.get_value("oath", "first", false))
 	oath_daily = str(cfg.get_value("oath", "daily", ""))
+	oath_used = maxi(0, int(cfg.get_value("oath", "used", 0)))
+	oath_book_free = cfg.get_value("oath", "book_free", {})
+	oath_book_paid = cfg.get_value("oath", "book_paid", {})
+	oath_week = str(cfg.get_value("oath", "week", ""))
 	play_sec = float(maxi(0, int(cfg.get_value("record", "play_sec", 0))))
 	iap_subs = cfg.get_value("iap", "subs", {})
 	iap_bought = cfg.get_value("iap", "bought", {})
@@ -12484,6 +12771,8 @@ func _codex_set_mode(mode: String) -> void:
 		_refresh_codex()
 	elif mode == "title":
 		_refresh_titles()
+	elif mode == "oath":
+		_refresh_oath_codex()
 	_refresh_lore("gear")
 	_refresh_lore("skill")
 	_refresh_act()

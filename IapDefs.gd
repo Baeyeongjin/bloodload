@@ -46,6 +46,13 @@ const PACKS := [
 		"reward": {"essence": 800.0, "ticket_weapon": 20.0}},
 	{"id": "altar", "name": "제단 개방", "open": 80, "price": 33000, "value": 220,
 		"reward": {"sigil": 1200.0, "ticket_armor": 20.0, "ticket_trinket": 20.0}},
+	# 핏빛 계약 팩 3종 (2026-08-18) — 파는 것은 **운을 굴릴 기회**다.
+	{"id": "oath_s", "name": "계약 입문", "open": 10, "price": 3300, "value": 180,
+		"reward": {"oath_card": 5.0}},
+	{"id": "oath_m", "name": "계약 도약", "open": 30, "price": 11000, "value": 200,
+		"reward": {"oath_card": 10.0, "oath_gold": 3.0}},
+	{"id": "oath_l", "name": "군주의 계약", "open": 60, "price": 33000, "value": 220,
+		"reward": {"oath_gold": 10.0, "oath_card": 20.0}},
 ]
 
 # ── 보석 충전 ───────────────────────────────────────────────────────────────

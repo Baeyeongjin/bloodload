@@ -287,6 +287,9 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 		#    같은 곡선이면 같은 결과가 나온다(_run 첫머리에서 심는다).
 		_summon_day(game, member,
 			int(float(boon["value"])) if str(boon["kind"]) == "ticket" else 0)
+		# 7.4) 핏빛 계약 — 접속 1시간이면 자연 충전 1~2장(오프라인엔 안 찬다).
+		#      계약의 서·팩은 모의에 없다(과금 상품). 카드는 아래 전진에서 쓴다.
+		var cards := 2 if day > 0 else 3
 		# 7.5) 펫 — 펫권 뽑기·먹이 강화·수집·동행 버프 (2026-08-18 재측정).
 		_pet_day(game, day, raid_mult)
 		# 8) 인장으로 혈맹 — 선형 비용이라 꾸준히 팔린다.
@@ -299,6 +302,23 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 		while game.stage < StageDefs.total_stages() and _can(game, game.stage):
 			game.stage += 1
 			game.best_stage = maxi(game.best_stage, game.stage)
+		# 10.5) 막히면 **계약 카드를 쓴다** — 그게 이 시스템의 목적이다(운빨 돌파).
+		#       평균값으로 공격 +50% 를 잡는다(커먼 30 ~ 레어 60 의 가운데).
+		#       카드가 있는 동안만, 그리고 카드로도 못 넘으면 거기서 멈춘다.
+		while cards > 0 and game.stage < StageDefs.total_stages():
+			game.oath_fx = {"attack": 0.5}
+			game.oath_fx_t = 60.0
+			var pushed := _can(game, game.stage)
+			game.oath_fx = {}
+			game.oath_fx_t = 0.0
+			if not pushed:
+				break
+			cards -= 1
+			game.stage += 1
+			game.best_stage = maxi(game.best_stage, game.stage)
+			while game.stage < StageDefs.total_stages() and _can(game, game.stage):
+				game.stage += 1
+				game.best_stage = maxi(game.best_stage, game.stage)
 		_earn_titles(game)
 		log.append(game.stage)
 		peak.append(maxi(game.stage, peak[-1] if not peak.is_empty() else 0))
