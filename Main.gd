@@ -9891,13 +9891,16 @@ func _refresh_gate_hud() -> void:
 # 초상 원본마다 여백이 달라서(여왕은 여백 크고 파수꾼은 꽉 참) 창 크기로 정직하게
 # 그리면 작은 놈은 허공에 뜬다(사장님 실측) — 과감히 키우고 창으로 자른다.
 func _framed_portrait(parent: Control, at: Vector2, fsize := 52.0) -> TextureRect:
-	# 액자 그림은 96 원본의 테두리를 떼어 64 로 재조립한 것(9-슬라이스) —
-	# 원본은 테두리 5px 에 속이 통째로 비어 "존나 큰 액자"였다(사장님 세 번 지적).
-	# 재조립본의 테두리는 10px/64.
-	var pad2 := fsize * 10.0 / 64.0
+	# 창 = 액자와 **같은 사각형** — 초상이 테두리 밑까지 깔린다. 재조립 테두리
+	# 안쪽에 잔여물이 몇 픽셀 남든, 틈이 어디 뚫려 있든 그 밑은 초상이라
+	# **공백이 구조적으로 불가능하다**(사장님: 아직도 빈 곳 — 창 좌표 계산으로는
+	# 액자 그림의 비대칭을 못 쫓아간다는 결론).
+	# 단, 액자 그림 바깥의 투명 여백(원본 0~2px) 밑으로는 초상이 비치면 안 되니
+	# 그 두께만큼만 창을 안으로 문다.
+	var m := fsize * 3.0 / 64.0
 	var win := Control.new()
-	win.position = at + Vector2(pad2, pad2)
-	win.size = Vector2(fsize - pad2 * 2.0, fsize - pad2 * 2.0)
+	win.position = at + Vector2(m, m)
+	win.size = Vector2(fsize - m * 2.0, fsize - m * 2.0)
 	win.clip_contents = true
 	win.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(win)
@@ -9911,8 +9914,8 @@ func _framed_portrait(parent: Control, at: Vector2, fsize := 52.0) -> TextureRec
 	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	# 꽉 채운다(사장님) — 초상 원본을 피사체 기준으로 재단해 뒀으므로(빌드 스크립트)
 	# 여기서는 살짝만 키워 가장자리 어중간한 여백을 무는 정도면 된다.
-	art.size = win.size * 1.08
-	art.position = -win.size * 0.04
+	art.size = win.size * 1.05
+	art.position = -win.size * 0.025
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	win.add_child(art)
 	parent.add_child(Ui.image("res://assets/ui/frame_portrait.png",
