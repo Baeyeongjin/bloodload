@@ -3321,8 +3321,11 @@ func _do_bulk() -> void:
 		else:
 			var new_key := _synthesize(key)
 			if not new_key.is_empty() and gear_inventory.has(new_key):
-				got.append({"icon": GearDefs.icon_path(gear_inventory[new_key]),
-					"label": str(gear_inventory[new_key]["name"])})
+				var it: Dictionary = gear_inventory[new_key]
+				# 등급 틀+등급명 — 스킬 합성 팝업과 같은 문법(사장님).
+				got.append({"icon": GearDefs.icon_path(it),
+					"label": str(it["name"]), "col": it["col"],
+					"sub": str(GachaDefs.rarity(str(it["rarity"]))["name"])})
 	_apply_hp_growth(old_max)
 	_bulk_selected.clear()
 	if _bulk_mode == "salvage":
@@ -3675,15 +3678,18 @@ func _synthesize(old_key: String) -> String:
 	var old_max := max_hp()
 	var slot := str(item["slot"])
 	var was_equipped := str(equipped.get(slot, {}).get("inventory_key", "")) == old_key
+	var keep := item.duplicate(true)   # 승급 전 모습 — 한 벌은 남는다
 	if not GearDefs.promote(item):
 		return ""
 	var result_key := old_key
 	var remaining_shards := int(gacha_shards[owned_key]) - 5
 	var new_key := str(item["icon"])
 	if new_key != old_key:
-		gear_inventory.erase(old_key)
-		gacha_owned.erase(owned_key)
-		gacha_shards.erase(owned_key)
+		# **하위 종을 지우지 않는다**(사장님: 처음 뽑은 건 하나는 무조건).
+		# 보유(수집) 효과는 보관함 순회라, 종이 사라지면 그 몫도 사라졌다.
+		keep["copies"] = 1
+		gear_inventory[old_key] = keep
+		gacha_shards[owned_key] = 0    # 조각은 승급에 들어갔다
 		var new_owned_key := "gear:" + new_key
 		if gear_inventory.has(new_key):
 			var existing: Dictionary = gear_inventory[new_key]
@@ -4172,11 +4178,11 @@ func _receive_gacha_gear(rarity_key: String) -> Dictionary:
 func _receive_gacha_relic(rarity_key: String) -> Dictionary:
 	# 유물이 없는 등급(커먼·언커먼·신화)이 나오면 한 칸씩 내려 준다 — 빈손으로
 	# 돌려보내면 뽑기 한 번이 통째로 사라진다.
-	var pool: Array = RelicDefs.of_rarity(rarity_key)
-	for fallback in ["legend", "epic", "rare"]:
-		if not pool.is_empty():
-			break
-		pool = RelicDefs.of_rarity(fallback)
+	# 유물은 레어~레전만 있다 — 굴린 등급을 그 범위로 접는다(커먼·언커먼은
+	# 레어로 올리고 신화는 레전으로 내린다). 예전 대체 순서는 legend 부터라
+	# 커먼(50%)·언커먼(30%)이 전부 전설이 됐다(사장님: 10뽑에 레전 9개).
+	var idx := clampi(GachaDefs.rarity_index(rarity_key), 2, 4)
+	var pool: Array = RelicDefs.of_rarity(str(GachaDefs.RARITIES[idx]["key"]))
 	if pool.is_empty():
 		return {}
 	var r: Dictionary = pool[randi() % pool.size()]
@@ -4666,8 +4672,7 @@ func _synthesize_skill(key: String) -> String:
 	if int(gacha_shards.get(owned_key, 0)) < SkillDefs.SYNTH_SHARDS:
 		return ""
 	gacha_shards[owned_key] = int(gacha_shards[owned_key]) - SkillDefs.SYNTH_SHARDS
-	skill_owned.erase(key)
-	skill_equipped.erase(key)   # 사라진 걸 낀 채로 두면 전투에서 빈 스킬이 돈다
+	# 원본은 남는다(사장님: 보유 보상이 있으니 한 벌은 무조건) — 장착도 그대로.
 	if skill_owned.has(next):
 		# 이미 있으면 조각으로 들어간다(장비 합성과 같은 규칙).
 		gacha_shards["skill:" + next] = int(gacha_shards.get("skill:" + next, 0)) + 1
@@ -4691,7 +4696,7 @@ func _ask_skill_synth() -> void:
 	var keys := _skill_synthesizable()
 	if keys.is_empty():
 		return
-	_ask("스킬 %d종을 다음 등급으로 올립니다.\n각각 조각 %d개를 쓰고 **원래 스킬은 사라집니다.**"
+	_ask("스킬 %d종을 다음 등급으로 올립니다.\n각각 조각 %d개를 쓰고 원래 스킬은 한 벌 남습니다."
 		% [keys.size(), SkillDefs.SYNTH_SHARDS], func() -> void:
 		var got: Array = []
 		for key in keys:
@@ -14186,8 +14191,18 @@ func _show_pet_results(rows: Array) -> void:
 		sb.text = str(row["sub"])
 		sb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cards.append(card)
-	var ok := Ui.button("확인", Vector2(PAD + CONTENT_W * 0.5 - 125.0,
-		FULL_BOTTOM - 60.0), Vector2(250.0, 50.0), Type.SIZE_SMALL)
+	# [보관함으로]가 확인 옆에 선다(사장님) — 뽑은 걸 바로 보러 가는 지름길.
+	# 펫 뽑기면 보유 탭, 장비 뽑기면 장비 탭이다.
+	var dest := "own" if bool(rows[0].get("pet", true)) else "gear"
+	var store := Ui.button("보관함으로", Vector2(PAD + CONTENT_W * 0.5 - 206.0,
+		FULL_BOTTOM - 60.0), Vector2(200.0, 50.0), Type.SIZE_SMALL)
+	store.pressed.connect(func() -> void:
+		_pet_reveal.visible = false
+		_mile_pop()
+		_pet_set_mode(dest))
+	_pet_reveal.add_child(store)
+	var ok := Ui.button("확인", Vector2(PAD + CONTENT_W * 0.5 + 6.0,
+		FULL_BOTTOM - 60.0), Vector2(200.0, 50.0), Type.SIZE_SMALL)
 	ok.pressed.connect(func() -> void:
 		_pet_reveal.visible = false
 		_mile_pop())

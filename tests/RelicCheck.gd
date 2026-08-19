@@ -106,5 +106,13 @@ func _init() -> void:
 	assert(int(scene.relics.get(id0, 0)) == 3, "유물 레벨이 복원 안 됐다")
 	assert(int(scene.gacha_shards.get("relic:" + id0, 0)) == 2, "조각이 복원 안 됐다")
 
+	# 등급 접기 — 커먼·언커먼이 전설로 승격되던 버그(사장님: 10뽑에 레전 9개).
+	# 유물이 없는 등급은 가까운 쪽(레어/레전)으로 접혀야 한다.
+	for pair in [["common", "rare"], ["uncommon", "rare"], ["mythic", "legend"],
+			["rare", "rare"], ["legend", "legend"]]:
+		var rgot: Dictionary = scene._receive_gacha_relic(str(pair[0]))
+		assert(str(rgot["rarity"]) == str(pair[1]),
+			"%s 가 %s 로 접혀야 하는데 %s" % [pair[0], pair[1], str(rgot["rarity"])])
+
 	print("RelicCheck OK")
 	quit()
