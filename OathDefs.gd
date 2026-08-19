@@ -110,6 +110,16 @@ static func card_face(id: String) -> String:
 	return "res://assets/cards/oc_%s.png" % id
 
 
+# 수집 보상 — 모은 종 수의 이정표. 순서대로 하나씩 받는다(사장님 2026-08-18
+# "수집 보상도 보여줄 수 있는 거 하나").
+const COLLECT_REWARDS := [
+	[3, {"kind": "gem", "amount": 100.0}],
+	[6, {"kind": "oath_gold", "amount": 2.0}],
+	[9, {"kind": "oath_card", "amount": 5.0}],
+	[12, {"kind": "oath_gold", "amount": 5.0}],
+]
+
+
 static func of(id: String) -> Dictionary:
 	if id == "trueblood":
 		return TRUEBLOOD_CONTRACT

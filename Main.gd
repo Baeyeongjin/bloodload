@@ -868,10 +868,14 @@ func _ready() -> void:
 			_dev_oath_force = want
 			_oath_play(false)
 		# [개발 도구] --oath[=N] : 핏빛 계약 판(카드 N장)을 연 채로 캡처한다.
-		if arg.begins_with("--oath"):
+		if arg.begins_with("--oath") and not arg.begins_with("--oathroll"):
 			oath_cards = int(arg.trim_prefix("--oath=")) if "=" in arg else 3
 			gem = maxf(gem, 500.0)
 			_oath_view.visible = true
+			if arg == "--oath=col":     # 수집 탭을 연 채로(표본 몇 장 심어서)
+				oath_lv = {"thirst": 2, "hide": 1, "frenzy": 3, "clot": 1,
+					"redthirst": 1, "lord": 1}
+				_oath_set_tab("col")
 			_refresh_oath()
 		# [개발 도구] --home : 홈(사냥) 탭을 연 채로 캡처한다.
 		if arg == "--home":
@@ -5615,6 +5619,7 @@ var oath_used := 0           # 굴린 횟수 — 계약의 서(미니 패스)가
 var oath_book_free := {}     # 계약의 서 무료 줄 수령
 var oath_book_paid := {}     # 유료 줄 수령
 var oath_week := ""          # 멤버십 주간 황금 지급 주
+var oath_col_got := 0        # 수집 보상 — 몇 번째 이정표까지 받았나
 var _dev_oath_force := ""    # [개발 도구] 연출 캡처용 등급 강제(--oathroll=)
 var oath_fx := {}            # 활성 버프 효과(레벨·공명·각인 반영 후)
 var oath_fx_t := 0.0
@@ -10182,6 +10187,40 @@ func _build_oath_view() -> void:
 	close.pressed.connect(func() -> void: _oath_view.visible = false)
 	_oath_view.add_child(close)
 	_pet_hover(close, close_art)
+	# 소탭 [계약][수집] — 수집 격자를 밑에 욱여넣던 걸 제 탭으로(사장님).
+	_oath_main = Control.new()
+	_oath_view.add_child(_oath_main)
+	_oath_col = Control.new()
+	_oath_col.visible = false
+	_oath_view.add_child(_oath_col)
+	var tabs := [["main", "계약"], ["col", "수집"]]
+	for ti in tabs.size():
+		var tmode: String = tabs[ti][0]
+		var tp := Vector2(x + float(ti) * 94.0, top + 64.0)
+		var t_on := Ui.set_tab(OATH, true, tp, Vector2(88.0, 32.0))
+		var t_off := Ui.set_tab(OATH, false, tp, Vector2(88.0, 32.0))
+		_oath_view.add_child(t_off)
+		_oath_view.add_child(t_on)
+		var tl := _panel_label(_oath_view, tp + Vector2(0.0, 8.0),
+			Type.SIZE_SMALL, OATH_INK, 88.0, 18.0)
+		tl.text = str(tabs[ti][1])
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var tb := Ui.button("", tp, Vector2(88.0, 32.0), Type.SIZE_SMALL)
+		tb.modulate = Color(1, 1, 1, 0)
+		tb.pressed.connect(func() -> void: _oath_set_tab(tmode))
+		_oath_view.add_child(tb)
+		_pet_hover(tb, t_off)
+		_oath_ui["tab_on_" + tmode] = t_on
+		_oath_ui["tab_lbl_" + tmode] = tl
+	# 수집 탭 알림점 — 받을 이정표가 있으면 켠다.
+	var cdot := ColorRect.new()
+	cdot.color = Color(0.92, 0.22, 0.20)
+	cdot.position = Vector2(x + 94.0 + 76.0, top + 62.0)
+	cdot.size = Vector2(8.0, 8.0)
+	cdot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_oath_view.add_child(cdot)
+	_oath_ui["col_dot"] = cdot
+	_oath_set_tab("main")
 	# 제단 — 카드가 놓이는 자리. 뒤에 붉은 후광을 깔아 카드가 떠 보이게 한다.
 	var halo := ColorRect.new()
 	halo.color = Color(0.62, 0.10, 0.14, 0.16)
@@ -10190,17 +10229,17 @@ func _build_oath_view() -> void:
 	halo.pivot_offset = halo.size * 0.5
 	halo.rotation_degrees = 45.0
 	halo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_oath_view.add_child(halo)
+	_oath_main.add_child(halo)
 	_oath_ui["halo"] = halo
 	_oath_ui["card"] = Ui.image("res://assets/ui/oath_card.png",
 		Vector2(x + (w - 126.0) * 0.5, top + 88.0), Vector2(126.0, 168.0))
-	_oath_view.add_child(_oath_ui["card"])
+	_oath_main.add_child(_oath_ui["card"])
 	# 보유 줄 — 알약 셋(카드·황금·충전). 숫자가 흩어져 있으면 안 읽힌다.
 	var pw := (w - 16.0) / 3.0
 	for i in 3:
 		var pp := Vector2(x + float(i) * (pw + 8.0), top + 272.0)
-		_oath_view.add_child(Ui.set_pill(OATH, pp, Vector2(pw, 32.0)))
-		var pl := _panel_label(_oath_view, pp + Vector2(0.0, 8.0),
+		_oath_main.add_child(Ui.set_pill(OATH, pp, Vector2(pw, 32.0)))
+		var pl := _panel_label(_oath_main, pp + Vector2(0.0, 8.0),
 			Type.SIZE_SMALL, OATH_INK, pw, 18.0)
 		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(pl, 5)
@@ -10218,8 +10257,8 @@ func _build_oath_view() -> void:
 		bar.position = rp
 		bar.size = Vector2(rw, 5.0)
 		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_view.add_child(bar)
-		var rl := _panel_label(_oath_view, rp + Vector2(0.0, 7.0),
+		_oath_main.add_child(bar)
+		var rl := _panel_label(_oath_main, rp + Vector2(0.0, 7.0),
 			Type.SIZE_SMALL, Color(rar[i][1]), rw, 16.0)
 		rl.text = str(rar[i][0])
 		rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -10227,8 +10266,8 @@ func _build_oath_view() -> void:
 	# 천장 게이지 둘 — 띠 조각 안에 넣어 판의 일부로 읽히게.
 	for row in [["pity", "만월까지", 0.0], ["gpity", "황금 천장", 36.0]]:
 		var y := top + 348.0 + float(row[2])
-		_oath_view.add_child(Ui.set_row(OATH, Vector2(x, y), Vector2(w, 32.0)))
-		var lb := _panel_label(_oath_view, Vector2(x + 14.0, y + 8.0),
+		_oath_main.add_child(Ui.set_row(OATH, Vector2(x, y), Vector2(w, 32.0)))
+		var lb := _panel_label(_oath_main, Vector2(x + 14.0, y + 8.0),
 			Type.SIZE_SMALL, OATH_DIM, 120.0, 16.0)
 		lb.text = str(row[1])
 		var track := ColorRect.new()
@@ -10236,15 +10275,15 @@ func _build_oath_view() -> void:
 		track.position = Vector2(x + 118.0, y + 12.0)
 		track.size = Vector2(w - 236.0, 9.0)
 		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_view.add_child(track)
+		_oath_main.add_child(track)
 		var fill := ColorRect.new()
 		fill.color = Color(0.90, 0.32, 0.30) if row[0] == "pity" \
 			else Color(0.92, 0.74, 0.32)
 		fill.position = track.position
 		fill.size = Vector2(0.0, 9.0)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_view.add_child(fill)
-		var num := _panel_label(_oath_view, Vector2(x + w - 108.0, y + 8.0),
+		_oath_main.add_child(fill)
+		var num := _panel_label(_oath_main, Vector2(x + w - 108.0, y + 8.0),
 			Type.SIZE_SMALL, OATH_INK, 96.0, 16.0)
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		_oath_ui[str(row[0]) + "_fill"] = fill
@@ -10252,8 +10291,8 @@ func _build_oath_view() -> void:
 		_oath_ui[str(row[0]) + "_num"] = num
 	# 피의 서약 — 판 위의 도박 스위치. 켜지면 줄이 붉게 달아오른다.
 	var vow_art := Ui.set_row(OATH, Vector2(x, top + 424.0), Vector2(w, 36.0))
-	_oath_view.add_child(vow_art)
-	var vlbl := _panel_label(_oath_view, Vector2(x, top + 433.0),
+	_oath_main.add_child(vow_art)
+	var vlbl := _panel_label(_oath_main, Vector2(x, top + 433.0),
 		Type.SIZE_SMALL, OATH_INK, w, 18.0)
 	vlbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(vlbl, 5)
@@ -10263,7 +10302,7 @@ func _build_oath_view() -> void:
 	vow.pressed.connect(func() -> void:
 		oath_vow = not oath_vow
 		_refresh_oath())
-	_oath_view.add_child(vow)
+	_oath_main.add_child(vow)
 	_pet_hover(vow, vow_art)
 	_oath_ui["vow"] = vlbl
 	_oath_ui["vow_art"] = vow_art
@@ -10275,14 +10314,14 @@ func _build_oath_view() -> void:
 			top + 472.0 + float(spec[2]))
 		var bsz := Vector2(bw, float(spec[3]))
 		var art := Ui.set_row(OATH, bp, bsz)
-		_oath_view.add_child(art)
-		var bl := _panel_label(_oath_view, bp + Vector2(0.0, bsz.y * 0.5 - 10.0),
+		_oath_main.add_child(art)
+		var bl := _panel_label(_oath_main, bp + Vector2(0.0, bsz.y * 0.5 - 10.0),
 			Type.SIZE_SMALL, OATH_INK, bw, 20.0)
 		bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(bl, 6)
 		var btn := Ui.button("", bp, bsz, Type.SIZE_SMALL)
 		btn.modulate = Color(1, 1, 1, 0)
-		_oath_view.add_child(btn)
+		_oath_main.add_child(btn)
 		_pet_hover(btn, art)
 		_oath_ui[str(spec[0])] = btn
 		_oath_ui[str(spec[0]) + "_lbl"] = bl
@@ -10305,36 +10344,58 @@ func _build_oath_view() -> void:
 	# 붙일 SDK 가 없으면 **자리만** 만들고 눌리지 않게 둔다).
 	var ad_art := Ui.set_row(OATH, Vector2(x, top + 566.0), Vector2(w, 34.0))
 	ad_art.modulate = Color(0.55, 0.52, 0.54)
-	_oath_view.add_child(ad_art)
-	var ad := _panel_label(_oath_view, Vector2(x, top + 574.0), Type.SIZE_SMALL,
+	_oath_main.add_child(ad_art)
+	var ad := _panel_label(_oath_main, Vector2(x, top + 574.0), Type.SIZE_SMALL,
 		Color(0.66, 0.62, 0.66), w, 18.0)
 	ad.text = "[광고] 카드 1장  ·  하루 3회 — 준비 중"
 	ad.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 계약 수집 — 12칸 미니 격자. 딴 계약은 등급색, 못 딴 것은 어둡게.
-	var gy := top + 610.0
-	var glbl := _panel_label(_oath_view, Vector2(x, gy), Type.SIZE_SMALL,
-		OATH_DIM, w, 16.0)
-	glbl.text = "계약 수집 — 중복이 레벨이 된다"
+	# ── 수집 탭 — 카드 4×3 진열 + 수집 보상 이정표 한 줄 ──────────────────
+	var ghead := _panel_label(_oath_col, Vector2(x, top + 108.0),
+		Type.SIZE_SMALL, Color(0.98, 0.82, 0.46), w, 18.0)
+	ghead.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_oath_ui["col_head"] = ghead
 	_oath_ui["collect"] = []
-	var cw := (w - 44.0) / 12.0
+	var gx := x + (w - 4.0 * 96.0 - 3.0 * 12.0) * 0.5
 	for i in OathDefs.CONTRACTS.size():
 		var c: Dictionary = OathDefs.CONTRACTS[i]
-		var cp := Vector2(x + float(i) * (cw + 4.0), gy + 22.0)
-		var cell := ColorRect.new()
-		cell.color = Color(0.16, 0.13, 0.18)
-		cell.position = cp
-		cell.size = Vector2(cw, minf(cw, 26.0))
-		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_view.add_child(cell)
+		var cp := Vector2(gx + float(i % 4) * 108.0,
+			top + 136.0 + float(i / 4) * 158.0)
 		var mini := Ui.image(OathDefs.card_face(str(c["id"])),
-			cp, Vector2(cw, minf(cw, 26.0)))
-		mini.modulate = Color(0.35, 0.32, 0.36)
-		_oath_view.add_child(mini)
-		var lvl := _panel_label(_oath_view, cp + Vector2(0.0, 5.0),
-			Type.SIZE_SMALL, Color(0.9, 0.9, 0.9), cw, 14.0)
-		lvl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			cp, Vector2(96.0, 128.0))
+		mini.modulate = Color(0.28, 0.25, 0.30)
+		_oath_col.add_child(mini)
+		var cell := ColorRect.new()      # 바닥 띠 — 등급색
+		cell.color = Color(0.16, 0.13, 0.18)
+		cell.position = cp + Vector2(0.0, 130.0)
+		cell.size = Vector2(96.0, 20.0)
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_col.add_child(cell)
+		var nm := _panel_label(_oath_col, cp + Vector2(-6.0, 132.0),
+			Type.SIZE_SMALL, Color(0.92, 0.90, 0.94), 108.0, 16.0)
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var lvl := _panel_label(_oath_col, cp + Vector2(4.0, 2.0),
+			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 60.0, 14.0)
 		(_oath_ui["collect"] as Array).append({"id": str(c["id"]),
-			"rarity": str(c["rarity"]), "cell": cell, "lvl": lvl, "mini": mini})
+			"rarity": str(c["rarity"]), "cell": cell, "lvl": lvl,
+			"mini": mini, "name": nm})
+	# 수집 보상 — 다음 이정표 하나만 보여주고, 차면 받는다.
+	var rw_art := Ui.set_row(OATH, Vector2(x, top + 616.0), Vector2(w, 40.0))
+	_oath_col.add_child(rw_art)
+	_oath_ui["col_rw_art"] = rw_art
+	var rw_lbl := _panel_label(_oath_col, Vector2(x + 12.0, top + 627.0),
+		Type.SIZE_SMALL, OATH_INK, w - 130.0, 18.0)
+	_oath_ui["col_rw_lbl"] = rw_lbl
+	var rw_btn := Ui.button("", Vector2(x + w - 110.0, top + 620.0),
+		Vector2(100.0, 32.0), Type.SIZE_SMALL)
+	rw_btn.modulate = Color(1, 1, 1, 0)
+	rw_btn.pressed.connect(_oath_col_claim)
+	_oath_col.add_child(rw_btn)
+	var rw_bl := _panel_label(_oath_col, Vector2(x + w - 110.0, top + 627.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 100.0, 18.0)
+	rw_bl.text = "받기"
+	rw_bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_oath_ui["col_rw_btn"] = rw_btn
+	_oath_ui["col_rw_bl"] = rw_bl
 	# 공개 연출 층.
 	_oath_reveal = Control.new()
 	_oath_reveal.size = Vector2(Grid.BG)
@@ -10356,7 +10417,9 @@ func _refresh_oath() -> void:
 		if oath_fx_t > 0.0:
 			_oath_buff_lbl.text = "%s  %d초" % [oath_fx_name, int(oath_fx_t)]
 	# 아이콘 고동 — 카드가 차 있을 때만(판을 열고 있으면 조용히).
-	if _oath_icon and oath_cards > 0 and _oath_view and not _oath_view.visible \
+	if _oath_icon and _oath_view and not _oath_view.visible \
+			and (oath_cards > 0 or not _oath_col_next().is_empty()
+			and _oath_col_count() >= int(_oath_col_next().get("need", 99))) \
 			and is_inside_tree():
 		_oath_icon.pivot_offset = _oath_icon.size * 0.5
 		var hb := create_tween()
@@ -10372,7 +10435,8 @@ func _refresh_oath() -> void:
 		ht.tween_property(_oath_ui["halo"], "scale", Vector2(1.08, 1.08), 0.6)
 		ht.tween_property(_oath_ui["halo"], "scale", Vector2.ONE, 0.6)
 	var mins := OathDefs.CHARGE_MIN - oath_charge
-	_oath_ui["p0"].text = "카드 %d / %d" % [oath_cards, OathDefs.CARD_CAP]
+	_oath_ui["p0"].text = "카드 %d / %d" \
+		% [oath_cards, OathDefs.card_cap(_oath_member())]
 	_oath_ui["p1"].text = "황금 %d" % oath_gold
 	_oath_ui["p2"].text = "충전 %d분" % int(ceil(mins))
 	(_oath_ui["pity_fill"] as ColorRect).size.x = float(_oath_ui["pity_w"]) \
@@ -10404,7 +10468,71 @@ func _refresh_oath() -> void:
 		if e.has("mini"):
 			(e["mini"] as CanvasItem).modulate = Color(1, 1, 1) if lv > 0 \
 				else Color(0.35, 0.32, 0.36)
-		(e["lvl"] as Label).text = str(lv) if lv > 0 else ""
+		(e["lvl"] as Label).text = "Lv%d" % lv if lv > 0 else ""
+		(e["name"] as Label).text = str(OathDefs.of(str(e["id"]))["name"]) \
+			if lv > 0 else "???"
+	# 수집 보상 줄 + 소탭 알림점.
+	var have := _oath_col_count()
+	_oath_ui["col_head"].text = "계약 %d / %d 종  ·  중복이 레벨이 된다" \
+		% [have, OathDefs.CONTRACTS.size()]
+	var nx := _oath_col_next()
+	var ready := not nx.is_empty() and have >= int(nx["need"])
+	if nx.is_empty():
+		_oath_ui["col_rw_lbl"].text = "수집 보상 — 전부 받았다"
+	else:
+		var rr: Dictionary = nx["reward"]
+		_oath_ui["col_rw_lbl"].text = "수집 보상 — %d종: %s %s" % [int(nx["need"]),
+			_reward_name(str(rr["kind"])), _n(float(rr["amount"]))]
+	(_oath_ui["col_rw_btn"] as Button).disabled = not ready
+	_art_set_base(_oath_ui["col_rw_art"] as Control,
+		Color(1, 1, 1) if ready else Color(0.55, 0.52, 0.54))
+	(_oath_ui["col_rw_bl"] as Label).modulate = Color(1, 1, 1) if ready \
+		else Color(0.55, 0.52, 0.54)
+	(_oath_ui["col_dot"] as CanvasItem).visible = ready
+
+
+var _oath_main: Control
+var _oath_col: Control
+
+
+func _oath_set_tab(mode: String) -> void:
+	_oath_main.visible = mode == "main"
+	_oath_col.visible = mode == "col"
+	for m in ["main", "col"]:
+		(_oath_ui["tab_on_" + m] as CanvasItem).visible = m == mode
+		(_oath_ui["tab_lbl_" + m] as Label).add_theme_color_override(
+			"font_color", Color(0.98, 0.86, 0.56) if m == mode else OATH_INK)
+	_refresh_oath()
+
+
+func _oath_col_count() -> int:
+	var n := 0
+	for c in OathDefs.CONTRACTS:
+		if int(oath_lv.get(str(c["id"]), 0)) > 0:
+			n += 1
+	return n
+
+
+# 다음 이정표. 다 받았으면 빈 사전.
+func _oath_col_next() -> Dictionary:
+	if oath_col_got >= OathDefs.COLLECT_REWARDS.size():
+		return {}
+	var row: Array = OathDefs.COLLECT_REWARDS[oath_col_got]
+	return {"need": int(row[0]), "reward": row[1]}
+
+
+func _oath_col_claim() -> void:
+	var nx := _oath_col_next()
+	if nx.is_empty() or _oath_col_count() < int(nx["need"]):
+		return
+	oath_col_got += 1
+	var r: Dictionary = nx["reward"]
+	_grant_reward(str(r["kind"]), float(r["amount"]))
+	_show_reward("수집 보상 — %d종 달성" % int(nx["need"]),
+		[{"icon": "res://assets/ui/%s.png" % _reward_icon(str(r["kind"])),
+		"label": "%s +%s" % [_reward_name(str(r["kind"])), _n(float(r["amount"]))]}])
+	_save_game()
+	_refresh_oath()
 
 
 # 못 누르는 버튼은 그림과 글자를 같이 죽인다(펫 판과 같은 규칙).
@@ -10663,11 +10791,12 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	var y := 620.0
 	var name := _panel_label(_oath_reveal, Vector2(0.0, y), Type.SIZE_TITLE,
 		rcol, Grid.BG.x, 34.0)
-	name.text = "%s  ·  Lv%d" % [str(c["name"]), int(r["lv"])]
+	# 이름만 — 긴 이름("여물지 않은 갑피")이 Lv 까지 달면 화면을 넘는다(사장님).
+	name.text = str(c["name"])
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var eff := _panel_label(_oath_reveal, Vector2(0.0, y + 40.0), Type.SIZE_SMALL,
 		Color(0.94, 0.90, 0.88), Grid.BG.x, 18.0)
-	eff.text = _oath_eff_text(c)
+	eff.text = "Lv%d  ·  %s" % [int(r["lv"]), _oath_eff_text(c)]
 	eff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var sub := _panel_label(_oath_reveal, Vector2(0.0, y + 64.0), Type.SIZE_SMALL,
 		Color(0.75, 0.62, 0.85), Grid.BG.x, 18.0)
@@ -12305,6 +12434,7 @@ func _save_game() -> void:
 	cfg.set_value("oath", "book_free", oath_book_free)
 	cfg.set_value("oath", "book_paid", oath_book_paid)
 	cfg.set_value("oath", "week", oath_week)
+	cfg.set_value("oath", "col_got", oath_col_got)
 	cfg.set_value("record", "play_sec", int(play_sec))
 	cfg.set_value("iap", "subs", iap_subs)
 	cfg.set_value("iap", "bought", iap_bought)
@@ -12404,6 +12534,7 @@ func _load_game() -> void:
 	oath_book_free = cfg.get_value("oath", "book_free", {})
 	oath_book_paid = cfg.get_value("oath", "book_paid", {})
 	oath_week = str(cfg.get_value("oath", "week", ""))
+	oath_col_got = maxi(0, int(cfg.get_value("oath", "col_got", 0)))
 	play_sec = float(maxi(0, int(cfg.get_value("record", "play_sec", 0))))
 	iap_subs = cfg.get_value("iap", "subs", {})
 	iap_bought = cfg.get_value("iap", "bought", {})
