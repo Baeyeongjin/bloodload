@@ -10596,14 +10596,19 @@ func _oath_play(golden: bool) -> void:
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	# 2막 — 릴. 카드 테두리가 등급색을 훑는다. 마지막 세 칸이 느려지고
 	# 레전 색을 한 번 스친다(니어미스) — "아깝다"가 다음 장을 부른다.
-	var rim := ColorRect.new()
-	rim.color = Color(0.5, 0.5, 0.5, 0.0)
-	rim.position = card.position - Vector2(7.0, 7.0)
-	rim.size = Vector2(146.0, 190.0)
-	rim.pivot_offset = rim.size * 0.5
+	var rim := Control.new()
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for spec in [[8.0, 0.85], [20.0, 0.30], [34.0, 0.11]]:
+		var pad: float = spec[0]
+		var layer := ColorRect.new()
+		layer.color = Color(0.5, 0.5, 0.5, 0.0)
+		layer.position = card.position - Vector2(pad, pad)
+		layer.size = Vector2(132.0 + pad * 2.0, 176.0 + pad * 2.0)
+		layer.set_meta("glow_a", spec[1])
+		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rim.add_child(layer)
 	_oath_reveal.add_child(rim)
-	_oath_reveal.move_child(rim, rim.get_index() - 1)   # 카드 **뒤**
+	_oath_reveal.move_child(rim, card.get_index())   # 카드 **뒤**
 	var cols := [Color(0.63, 0.63, 0.66), Color(0.45, 0.75, 0.45),
 		Color(0.45, 0.55, 0.9), Color(0.75, 0.45, 0.9), Color(0.95, 0.78, 0.35)]
 	var seq := create_tween()
@@ -10617,7 +10622,7 @@ func _oath_play(golden: bool) -> void:
 		elif i == steps - 1:
 			c = rcol                        # …실제 등급에서 멎는다
 		seq.tween_callback(func() -> void:
-			rim.color = Color(c.r, c.g, c.b, 0.85)
+			_oath_glow(rim, c)
 			card.scale = Vector2(1.04, 1.04))
 		seq.tween_interval(dt * 0.5)
 		seq.tween_callback(func() -> void: card.scale = Vector2.ONE)
@@ -10646,7 +10651,7 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_oath_reveal.add_child(flash)
 	var ft := create_tween()
-	ft.tween_property(flash, "color:a", 0.85 if big else 0.45, 0.08)
+	ft.tween_property(flash, "color:a", 0.60 if big else 0.35, 0.08)
 	ft.tween_property(flash, "color:a", 0.0, 0.40)
 	# 파편 — 등급색 조각이 사방으로 튄다. 등급이 높을수록 많고 멀리 간다.
 	var shard_n := {"common": 8, "uncommon": 12, "rare": 20, "epic": 28,
@@ -10785,6 +10790,13 @@ func _oath_rcol(rarity: String) -> Color:
 
 
 # 결과 판 — 계약명·효과·각인·공명·레벨 + 다시 굴리기.
+# 글로우 3겹에 등급색을 입힌다 — 겹마다 제 알파(meta)로 옅어진다.
+func _oath_glow(rim: Control, c: Color) -> void:
+	for ch in rim.get_children():
+		(ch as ColorRect).color = Color(c.r, c.g, c.b,
+			float(ch.get_meta("glow_a", 0.5)))
+
+
 # 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
 # 카드 뒤에 등급색 광선이 돌고, 아래는 전용 세트 판 + 등급 리본 + 세 줄.
 func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
@@ -10799,13 +10811,23 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	_oath_reveal.move_child(rays, 1)     # 카드·만월 뒤
 	# 어두운 등급색(레어 파랑)은 검은 띠로 보인다 — 흰 쪽으로 끌어 밝힌다.
 	var lit := Color(rcol.r, rcol.g, rcol.b).lerp(Color(1, 1, 1), 0.45)
-	for i in 8:
-		var ray := ColorRect.new()
-		ray.color = Color(lit.r, lit.g, lit.b, 0.12)
-		ray.size = Vector2(26.0, 300.0)
-		ray.position = Vector2(-13.0, -300.0)
-		ray.pivot_offset = Vector2(13.0, 300.0)
-		ray.rotation_degrees = float(i) * 45.0
+	var grad := Gradient.new()
+	grad.colors = PackedColorArray([Color(lit.r, lit.g, lit.b, 0.30),
+		Color(lit.r, lit.g, lit.b, 0.0)])
+	grad.offsets = PackedFloat32Array([0.0, 1.0])
+	var gtex := GradientTexture2D.new()
+	gtex.gradient = grad
+	gtex.fill_from = Vector2(0.5, 1.0)   # 중심 쪽이 진하고 끝으로 사라진다
+	gtex.fill_to = Vector2(0.5, 0.0)
+	for i in 12:
+		var ray := TextureRect.new()
+		ray.texture = gtex
+		var rw2 := randf_range(9.0, 24.0)
+		var rl := randf_range(230.0, 330.0)
+		ray.size = Vector2(rw2, rl)
+		ray.position = Vector2(-rw2 * 0.5, -rl)
+		ray.pivot_offset = Vector2(rw2 * 0.5, rl)
+		ray.rotation_degrees = float(i) * 30.0 + randf_range(-9.0, 9.0)
 		ray.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		rays.add_child(ray)
 	var spin := create_tween().set_loops()
