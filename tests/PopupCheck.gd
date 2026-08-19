@@ -17,14 +17,17 @@ func _init() -> void:
 	await process_frame
 
 	# 1) 팝업마다 "닫기" 버튼이 있다. 뒤로 갈 길 없는 창은 막다른 길이다.
-	for name in ["_title_view", "_status_view", "_quest_view", "_rates_view",
-			"_bulk_view"]:
+	# 칭호 전용 창(_title_view)은 사라졌다 — 칭호가 **도감 소탭**으로 들어가면서
+	# 판이 통째로 없어졌는데 이 검사만 옛 이름을 들고 있었다(2026-08-18 발견).
+	# 계약 판도 같은 규칙을 지키는지 여기서 같이 본다.
+	for name in ["_codex_view", "_oath_view", "_status_view", "_quest_view",
+			"_rates_view", "_bulk_view"]:
 		var v: Control = scene.get(name)
 		assert(v != null, "%s 가 없다" % name)
 		assert(_has_close(v), "%s 에 닫기 버튼이 없다 — 들어가면 못 나온다" % name)
 
 	# 2) 켜면 애니가 걸리고 끝에는 제자리로 수렴한다.
-	var view: Control = scene._title_view
+	var view: Control = scene._codex_view
 	view.visible = true
 	await process_frame
 	assert(view.scale.x < 1.0 or view.modulate.a < 1.0,
@@ -46,9 +49,14 @@ func _init() -> void:
 
 
 # 자손 중에 "닫기" 라고 적힌 버튼이 있는가.
+# 판마다 닫기 문법이 둘이다: 글자 있는 Ui.button, 그리고 **그림 버튼 + 라벨**
+# (투명 판정 버튼이라 text 가 비어 있다 — 세트를 쓰는 판은 전부 이쪽이다).
+# 둘 다 "나갈 길"이므로 둘 다 인정한다.
 func _has_close(node: Node) -> bool:
 	for c in node.get_children():
 		if c is Button and str((c as Button).text) == "닫기":
+			return true
+		if c is Label and str((c as Label).text) == "닫기":
 			return true
 		if _has_close(c):
 			return true

@@ -857,6 +857,16 @@ func _ready() -> void:
 			oath_used = int(arg.trim_prefix("--book=")) if "=" in arg else 24
 			_select_tab("shop")
 			_shop_set_mode("book")
+		# [개발 도구] --oathroll[=등급] : 그 등급이 뜨도록 굴려 연출을 캡처한다.
+		# 확률을 못 기다리므로 결과를 **심어** 두고 연출만 재생한다.
+		if arg.begins_with("--oathroll"):
+			var want := arg.trim_prefix("--oathroll=") if "=" in arg else "legend"
+			oath_cards = 9
+			gem = maxf(gem, 500.0)
+			_oath_view.visible = true
+			_refresh_oath()
+			_dev_oath_force = want
+			_oath_play(false)
 		# [개발 도구] --oath[=N] : 핏빛 계약 판(카드 N장)을 연 채로 캡처한다.
 		if arg.begins_with("--oath"):
 			oath_cards = int(arg.trim_prefix("--oath=")) if "=" in arg else 3
@@ -5605,6 +5615,7 @@ var oath_used := 0           # 굴린 횟수 — 계약의 서(미니 패스)가
 var oath_book_free := {}     # 계약의 서 무료 줄 수령
 var oath_book_paid := {}     # 유료 줄 수령
 var oath_week := ""          # 멤버십 주간 황금 지급 주
+var _dev_oath_force := ""    # [개발 도구] 연출 캡처용 등급 강제(--oathroll=)
 var oath_fx := {}            # 활성 버프 효과(레벨·공명·각인 반영 후)
 var oath_fx_t := 0.0
 var oath_fx_name := ""
@@ -6895,6 +6906,7 @@ func _build_quests() -> void:
 	open_btn.pressed.connect(func() -> void:
 		_quest_view.visible = not _quest_view.visible
 		if _quest_view.visible:
+			_boss_cut_clear()
 			_refresh_quests())
 	_side_root.add_child(open_btn)
 	var q_icon := Ui.icon("res://assets/ui/tab_quest.png",
@@ -6916,6 +6928,7 @@ func _build_quests() -> void:
 	t_btn.pressed.connect(func() -> void:
 		_codex_view.visible = not _codex_view.visible
 		if _codex_view.visible:
+			_boss_cut_clear()
 			_codex_set_mode(_codex_mode))
 	_side_root.add_child(t_btn)
 	# 임무 아이콘(48)과 같은 크기 — 짝짝이였다(사장님 2026-08-18).
@@ -6933,6 +6946,7 @@ func _build_quests() -> void:
 	o_btn.pressed.connect(func() -> void:
 		_oath_view.visible = not _oath_view.visible
 		if _oath_view.visible:
+			_boss_cut_clear()
 			_refresh_oath())
 	_side_root.add_child(o_btn)
 	_oath_icon = Ui.icon("res://assets/ui/side_oath.png",
@@ -10317,6 +10331,7 @@ func _build_oath_view() -> void:
 	# 공개 연출 층.
 	_oath_reveal = Control.new()
 	_oath_reveal.size = Vector2(Grid.BG)
+	_oath_reveal.z_index = 80          # 컷신·배너보다 위
 	_oath_reveal.visible = false
 	_oath_view.add_child(_oath_reveal)
 	# 전투 화면의 활성 버프 한 줄.
@@ -10363,8 +10378,8 @@ func _refresh_oath() -> void:
 		% ("● 켬" if oath_vow else "○ 끔")
 	_oath_ui["vow"].add_theme_color_override("font_color",
 		OATH_RED if oath_vow else OATH_DIM)
-	(_oath_ui["vow_art"] as CanvasItem).modulate = Color(1.25, 0.85, 0.85) \
-		if oath_vow else Color(1, 1, 1)
+	_art_set_base(_oath_ui["vow_art"] as Control,
+		Color(1.25, 0.85, 0.85) if oath_vow else Color(1, 1, 1))
 	_oath_ui["roll_lbl"].text = "계약 발동  %d장" % oath_cards
 	_oath_ui["groll_lbl"].text = "황금 발동  %d장" % oath_gold
 	_oath_ui["buy_lbl"].text = "즉시 충전 · 보석 %d" % int(OathDefs.RECHARGE_GEM)
@@ -10385,72 +10400,180 @@ func _refresh_oath() -> void:
 # 못 누르는 버튼은 그림과 글자를 같이 죽인다(펫 판과 같은 규칙).
 func _oath_dim(key: String, on: bool) -> void:
 	(_oath_ui[key] as Button).disabled = not on
-	(_oath_ui[key + "_art"] as CanvasItem).modulate = Color(1, 1, 1) if on \
-		else Color(0.5, 0.46, 0.48)
+	_art_set_base(_oath_ui[key + "_art"] as Control,
+		Color(1, 1, 1) if on else Color(0.5, 0.46, 0.48))
 	(_oath_ui[key + "_lbl"] as CanvasItem).modulate = Color(1, 1, 1, 1.0 if on \
 		else 0.45)
 
 
-# 공개 연출 5막 — 소환진(어둠·핏빛 원) → 릴(등급색 순환·니어미스 감속) →
-# 개봉(플래시·진동) → 만월(레전) → 진혈(황금 만월). 전부 코드 연출이다.
+# 공개 연출 5막 (설계 7.5) — 소환진 → 릴(니어미스) → 개봉 → 만월 → 진혈.
+# 전부 코드 연출이고 아트는 마법진·만월 두 장뿐이다.
 func _oath_play(golden: bool) -> void:
 	var r := _oath_roll(golden)
 	if r.is_empty():
 		return
+	_boss_cut_clear()
 	for ch in _oath_reveal.get_children():
 		ch.queue_free()
 	_oath_reveal.visible = true
+	_oath_reveal.position = Vector2.ZERO
+	var rarity := str(r["rarity"])
+	var rcol := _oath_rcol(rarity)
+	var mid := Vector2(Grid.BG) * 0.5 - Vector2(0.0, 60.0)
+	# 0막 — 화면을 덮는다. 판이 비치면 도박판이 아니라 창이 된다.
 	var shade := ColorRect.new()
 	shade.color = Color(0.01, 0.0, 0.01, 0.0)
 	shade.size = Vector2(Grid.BG)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_oath_reveal.add_child(shade)
-	var rarity := str(r["rarity"])
-	var rcol := _oath_rcol(rarity)
-	# 1막 — 어두워지며 핏빛 원이 차오른다.
-	var circle := ColorRect.new()
-	circle.color = Color(0.55, 0.08, 0.10, 0.0)
-	circle.size = Vector2(340.0, 340.0)
-	circle.position = (Vector2(Grid.BG) - circle.size) * 0.5
-	circle.pivot_offset = circle.size * 0.5
-	circle.rotation_degrees = 45.0
-	circle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_oath_reveal.add_child(circle)
-	# 카드 — 릴 테두리가 등급색을 순환한다.
-	var card := Ui.image("res://assets/ui/%s.png" \
+	# 1막 — 소환진이 돌며 차오른다. 두 겹이 반대로 돌아 "장치"처럼 보인다.
+	var ring := Ui.image("res://assets/ui/oath_circle.png",
+		mid - Vector2(150.0, 150.0), Vector2(300.0, 300.0))
+	ring.pivot_offset = Vector2(150.0, 150.0)
+	ring.modulate = Color(1, 1, 1, 0)
+	_oath_reveal.add_child(ring)
+	var ring2 := Ui.image("res://assets/ui/oath_circle.png",
+		mid - Vector2(96.0, 96.0), Vector2(192.0, 192.0))
+	ring2.pivot_offset = Vector2(96.0, 96.0)
+	ring2.modulate = Color(1, 1, 1, 0)
+	_oath_reveal.add_child(ring2)
+	var t := create_tween().set_parallel()
+	t.tween_property(shade, "color:a", 0.93, 0.30)
+	t.tween_property(ring, "modulate:a", 0.85, 0.30)
+	t.tween_property(ring, "rotation_degrees", 220.0, 2.4).from(0.0)
+	t.tween_property(ring, "scale", Vector2.ONE, 0.45).from(Vector2(0.35, 0.35)) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(ring2, "modulate:a", 0.65, 0.30).set_delay(0.10)
+	t.tween_property(ring2, "rotation_degrees", -260.0, 2.4).from(0.0)
+	# 카드 — 뒷면이 솟아오른다.
+	var card := Ui.image("res://assets/ui/%s.png"
 		% ("oath_card_gold" if golden else "oath_card"),
-		(Vector2(Grid.BG) - Vector2(144.0, 192.0)) * 0.5, Vector2(144.0, 192.0))
-	card.pivot_offset = Vector2(72.0, 96.0)
+		mid - Vector2(66.0, 88.0), Vector2(132.0, 176.0))
+	card.pivot_offset = Vector2(66.0, 88.0)
+	card.modulate = Color(1, 1, 1, 0)
 	_oath_reveal.add_child(card)
-	var rim := ReferenceRect.new()
-	rim.border_color = Color(0.5, 0.5, 0.5)
-	rim.border_width = 5.0
-	rim.editor_only = false
-	rim.position = card.position - Vector2(6.0, 6.0)
-	rim.size = Vector2(156.0, 204.0)
+	t.tween_property(card, "modulate:a", 1.0, 0.25).set_delay(0.25)
+	t.tween_property(card, "position:y", card.position.y, 0.45) \
+		.from(card.position.y + 40.0).set_delay(0.25) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# 2막 — 릴. 카드 테두리가 등급색을 훑는다. 마지막 세 칸이 느려지고
+	# 레전 색을 한 번 스친다(니어미스) — "아깝다"가 다음 장을 부른다.
+	var rim := ColorRect.new()
+	rim.color = Color(0.5, 0.5, 0.5, 0.0)
+	rim.position = card.position - Vector2(7.0, 7.0)
+	rim.size = Vector2(146.0, 190.0)
+	rim.pivot_offset = rim.size * 0.5
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_oath_reveal.add_child(rim)
-	var tw := create_tween()
-	tw.tween_property(shade, "color:a", 0.9, 0.35)
-	tw.parallel().tween_property(circle, "color:a", 0.55, 0.35)
-	tw.parallel().tween_property(circle, "rotation_degrees", 405.0, 0.9)
-	tw.parallel().tween_property(circle, "scale", Vector2(1.25, 1.25), 0.9) \
-		.from(Vector2(0.2, 0.2))
-	# 2막 — 릴. 니어미스: 마지막 세 칸이 느려지고 레전 색을 스친다.
+	_oath_reveal.move_child(rim, rim.get_index() - 1)   # 카드 **뒤**
 	var cols := [Color(0.63, 0.63, 0.66), Color(0.45, 0.75, 0.45),
 		Color(0.45, 0.55, 0.9), Color(0.75, 0.45, 0.9), Color(0.95, 0.78, 0.35)]
-	var steps := 11
+	var seq := create_tween()
+	seq.tween_interval(0.55)
+	var steps := 14
 	for i in steps:
-		var dt := 0.07 + (0.11 * float(maxi(0, i - steps + 4)))
-		var c: Color = cols[(i + 1) % cols.size()] if i < steps - 1 else rcol
+		var dt := 0.055 + 0.13 * float(maxi(0, i - steps + 4))
+		var c: Color = cols[(i + 1) % cols.size()]
 		if i == steps - 2:
-			c = cols[4]   # 레전 색을 스치고 …
-		tw.tween_interval(dt)
-		tw.tween_callback(func() -> void: rim.border_color = c)
-	# 3막 — 개봉: 플래시 + 진동, 등급이 높을수록 크게.
-	tw.tween_callback(func() -> void:
-		_oath_burst(card, rim, rcol, rarity, r))
+			c = cols[4]                     # 레전 색을 스치고…
+		elif i == steps - 1:
+			c = rcol                        # …실제 등급에서 멎는다
+		seq.tween_callback(func() -> void:
+			rim.color = Color(c.r, c.g, c.b, 0.85)
+			card.scale = Vector2(1.04, 1.04))
+		seq.tween_interval(dt * 0.5)
+		seq.tween_callback(func() -> void: card.scale = Vector2.ONE)
+		seq.tween_interval(dt * 0.5)
+	seq.tween_callback(func() -> void:
+		_oath_burst(card, rim, ring, ring2, rcol, rarity, r))
 	_refresh_oath()
+
+
+# 3~5막 — 개봉. 등급이 높을수록 화면이 크게 반응하고, 레전·진혈은 만월이 뜬다.
+func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
+		rcol: Color, rarity: String, r: Dictionary) -> void:
+	if not is_inside_tree():
+		return
+	var big := rarity in ["rare", "epic", "legend", "trueblood"]
+	var mid := Vector2(Grid.BG) * 0.5 - Vector2(0.0, 60.0)
+	# 소환진은 개봉과 함께 확 퍼지며 사라진다.
+	var rt := create_tween().set_parallel()
+	for n in [ring, ring2]:
+		rt.tween_property(n, "scale", (n as Control).scale * 1.6, 0.5)
+		rt.tween_property(n, "modulate:a", 0.0, 0.5)
+	# 섬광.
+	var flash := ColorRect.new()
+	flash.color = Color(rcol.r, rcol.g, rcol.b, 0.0)
+	flash.size = Vector2(Grid.BG)
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_oath_reveal.add_child(flash)
+	var ft := create_tween()
+	ft.tween_property(flash, "color:a", 0.85 if big else 0.45, 0.08)
+	ft.tween_property(flash, "color:a", 0.0, 0.40)
+	# 파편 — 등급색 조각이 사방으로 튄다. 등급이 높을수록 많고 멀리 간다.
+	var shard_n := {"common": 8, "uncommon": 12, "rare": 20, "epic": 28,
+		"legend": 40, "trueblood": 56}
+	var n_shards := int(shard_n.get(rarity, 8))
+	for i in n_shards:
+		var sh := ColorRect.new()
+		sh.color = rcol
+		sh.size = Vector2(randf_range(3.0, 7.0), randf_range(3.0, 9.0))
+		sh.position = mid
+		sh.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_reveal.add_child(sh)
+		var ang := randf() * TAU
+		var dist := randf_range(90.0, 300.0)
+		var st := create_tween().set_parallel()
+		st.tween_property(sh, "position",
+			mid + Vector2(cos(ang), sin(ang)) * dist, 0.7) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		st.tween_property(sh, "modulate:a", 0.0, 0.7)
+		st.tween_property(sh, "rotation_degrees", randf_range(-540.0, 540.0), 0.7)
+	# 진동 — 등급이 높을수록 거칠게.
+	var amps := {"common": 3.0, "uncommon": 5.0, "rare": 9.0, "epic": 14.0,
+		"legend": 20.0, "trueblood": 28.0}
+	var amp := float(amps.get(rarity, 3.0))
+	var shake := create_tween()
+	for i in 8:
+		shake.tween_property(_oath_reveal, "position",
+			Vector2(randf_range(-amp, amp), randf_range(-amp, amp)), 0.04)
+	shake.tween_property(_oath_reveal, "position", Vector2.ZERO, 0.08)
+	# 4·5막 — 만월. 레전은 핏빛, 진혈은 황금으로 물든다.
+	if rarity == "legend" or rarity == "trueblood":
+		var gold_moon := rarity == "trueblood"
+		var moon := Ui.image("res://assets/ui/oath_moon.png",
+			mid - Vector2(210.0, 210.0), Vector2(420.0, 420.0))
+		moon.pivot_offset = Vector2(210.0, 210.0)
+		moon.modulate = Color(1.6, 1.35, 0.55, 0.0) if gold_moon \
+			else Color(1, 1, 1, 0)
+		_oath_reveal.add_child(moon)
+		_oath_reveal.move_child(moon, 1)     # 카드 뒤
+		var mt := create_tween().set_parallel()
+		mt.tween_property(moon, "modulate:a", 0.9, 0.9)
+		mt.tween_property(moon, "scale", Vector2.ONE, 1.1) \
+			.from(Vector2(0.25, 0.25)).set_trans(Tween.TRANS_BACK) \
+			.set_ease(Tween.EASE_OUT)
+		# 핏빛 비 — 위에서 아래로 긋는 선들(진혈은 금빛).
+		for i in (26 if gold_moon else 18):
+			var drop := ColorRect.new()
+			drop.color = Color(1.0, 0.86, 0.45) if gold_moon \
+				else Color(0.85, 0.16, 0.20)
+			drop.size = Vector2(2.0, randf_range(14.0, 30.0))
+			drop.position = Vector2(randf() * Grid.BG.x, -40.0)
+			drop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_oath_reveal.add_child(drop)
+			var dt2 := create_tween()
+			dt2.tween_interval(randf() * 0.5)
+			dt2.tween_property(drop, "position:y", Grid.BG.y, randf_range(0.7, 1.3))
+			dt2.parallel().tween_property(drop, "modulate:a", 0.0, 1.2)
+		# 카드가 커지며 앞으로 나온다.
+		var ct := create_tween()
+		ct.tween_property(card, "scale", Vector2(1.35, 1.35), 0.45) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	(rim as ColorRect).color = Color(rcol.r, rcol.g, rcol.b, 0.9)
+	card.modulate = Color(1.5, 1.4, 1.3)
+	create_tween().tween_property(card, "modulate", Color.WHITE, 0.6)
+	_oath_result(rcol, rarity, r)
 
 
 func _oath_rcol(rarity: String) -> Color:
@@ -10461,52 +10584,6 @@ func _oath_rcol(rarity: String) -> Color:
 		"legend": return Color(0.95, 0.78, 0.35)
 		"trueblood": return Color(1.0, 0.92, 0.6)
 	return Color(0.63, 0.63, 0.66)
-
-
-func _oath_burst(card: Control, rim: Control, rcol: Color, rarity: String,
-		r: Dictionary) -> void:
-	if not is_inside_tree():
-		return
-	var flash := ColorRect.new()
-	flash.color = Color(rcol.r, rcol.g, rcol.b, 0.0)
-	flash.size = Vector2(Grid.BG)
-	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_oath_reveal.add_child(flash)
-	var big := rarity in ["rare", "epic", "legend", "trueblood"]
-	var tw := create_tween()
-	tw.tween_property(flash, "color:a", 0.75 if big else 0.4, 0.10)
-	tw.tween_property(flash, "color:a", 0.0, 0.35)
-	# 진동 — 등급이 높을수록 거칠게.
-	var amps := {"common": 3.0, "uncommon": 5.0, "rare": 9.0, "epic": 13.0,
-		"legend": 18.0, "trueblood": 24.0}
-	var amp := float(amps.get(rarity, 3.0))
-	var shake := create_tween()
-	for i in 7:
-		shake.tween_property(_oath_reveal, "position",
-			Vector2(randf_range(-amp, amp), randf_range(-amp, amp)), 0.04)
-	shake.tween_property(_oath_reveal, "position", Vector2.ZERO, 0.06)
-	# 4·5막 — 만월. 레전은 핏빛, 진혈은 황금으로 물든다.
-	if rarity == "legend" or rarity == "trueblood":
-		var moon := ColorRect.new()
-		var gold_moon := rarity == "trueblood"
-		moon.color = Color(0.95, 0.75, 0.25, 0.0) if gold_moon \
-			else Color(0.75, 0.10, 0.12, 0.0)
-		moon.size = Vector2(420.0, 420.0)
-		moon.position = (Vector2(Grid.BG) - moon.size) * 0.5 - Vector2(0.0, 60.0)
-		moon.pivot_offset = moon.size * 0.5
-		moon.rotation_degrees = 45.0
-		moon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_reveal.add_child(moon)
-		_oath_reveal.move_child(moon, 1)
-		var mt := create_tween()
-		mt.tween_property(moon, "color:a", 0.55, 0.8).from(0.0)
-		mt.parallel().tween_property(moon, "scale", Vector2(1.0, 1.0), 0.8) \
-			.from(Vector2(0.3, 0.3)).set_trans(Tween.TRANS_BACK) \
-			.set_ease(Tween.EASE_OUT)
-	rim.set("border_color", rcol)
-	card.modulate = Color(1.4, 1.3, 1.2)
-	create_tween().tween_property(card, "modulate", Color.WHITE, 0.5)
-	_oath_result(rcol, rarity, r)
 
 
 # 결과 판 — 계약명·효과·각인·공명·레벨 + 다시 굴리기.
@@ -10652,7 +10729,10 @@ func _oath_roll(golden := false) -> Dictionary:
 		pity_hit = oath_pity >= OathDefs.PITY_LEGEND
 	# 등급 확정 순서: 진혈(0.1%, 누구에게나) > 첫 카드 에픽 > 천장 > 룰렛.
 	var rarity := ""
-	if randf() < OathDefs.TRUEBLOOD:
+	if _dev_oath_force != "":
+		rarity = _dev_oath_force        # [개발 도구] 연출 캡처
+		_dev_oath_force = ""
+	elif randf() < OathDefs.TRUEBLOOD:
 		rarity = "trueblood"
 	elif not oath_first:
 		oath_first = true
@@ -11197,8 +11277,18 @@ func _boss_cut_clear() -> void:
 var _boss_cut_tw: Tween
 
 
+# 판(모달)이 하나라도 떠 있으면 컷신을 안 튼다 — 전투 화면 연출이라 판 위에
+# 뜨면 남의 화면을 덮는다(사장님 실측: 계약 판 위에 보스 이름이 떴다).
+func _modal_open() -> bool:
+	for v in [_quest_view, _codex_view, _oath_view, _reward_view, _info_view,
+			_confirm_view]:
+		if v != null and v.visible:
+			return true
+	return false
+
+
 func _boss_cut(name: String) -> void:
-	if _boss_title == null:
+	if _boss_title == null or _modal_open():
 		return
 	_boss_cut_clear()      # 앞 연출이 남아 있으면 겹쳐서 띠가 두 겹이 된다
 	_boss_bar_top.visible = true
@@ -12825,7 +12915,7 @@ func _pet_btn(parent: Control, pos: Vector2, size: Vector2,
 # 그림과 글자를 같이 죽여야 상태가 보인다.
 func _pet_btn_enable(b: Dictionary, on: bool) -> void:
 	b["btn"].disabled = not on
-	b["art"].modulate = Color(1, 1, 1) if on else Color(0.5, 0.46, 0.48)
+	_art_set_base(b["art"], Color(1, 1, 1) if on else Color(0.5, 0.46, 0.48))
 	b["lbl"].modulate = Color(1, 1, 1, 1.0 if on else 0.45)
 
 
@@ -12836,16 +12926,28 @@ func _pet_hover(btn: Button, art: Control) -> void:
 	btn.mouse_entered.connect(func() -> void:
 		if btn.disabled:
 			return
-		art.modulate = Color(1.18, 1.14, 1.08)
+		art.modulate = _art_base(art) * Color(1.18, 1.14, 1.08)
 		art.scale = Vector2(1.03, 1.03))
 	btn.mouse_exited.connect(func() -> void:
-		art.modulate = Color(1, 1, 1)
+		art.modulate = _art_base(art)
 		art.scale = Vector2.ONE)
 	btn.button_down.connect(func() -> void:
 		if not btn.disabled:
 			art.scale = Vector2(0.96, 0.96))
 	btn.button_up.connect(func() -> void:
-		art.scale = Vector2.ONE if not btn.is_hovered() else Vector2(1.03, 1.03))
+		art.scale = Vector2.ONE if btn.disabled or not btn.is_hovered() \
+			else Vector2(1.03, 1.03))
+
+
+# 그림의 **바탕색**. 비활성 회색을 여기 적어 두면 호버가 지우지 못한다
+# (사장님 실측: 못 누르는 버튼을 훑고 나가면 멀쩡해 보였다).
+func _art_base(art: Control) -> Color:
+	return art.get_meta("base_mod", Color(1, 1, 1))
+
+
+func _art_set_base(art: Control, col: Color) -> void:
+	art.set_meta("base_mod", col)
+	art.modulate = col
 
 
 func _build_pet(root: Control) -> void:
