@@ -8166,7 +8166,7 @@ func _refresh_quests() -> void:
 func _select_tab(name: String) -> void:
 	var switched := _tab != name
 	_tab = name
-	if switched and name != "home":
+	if switched and name in FULL_TABS:
 		_boss_cut_clear()
 	for key in _panels.keys():
 		_panels[key].visible = key == name
@@ -11655,9 +11655,11 @@ func _modal_open() -> bool:
 
 # 컷신은 **전투 화면이 실제로 보일 때만** 튼다(사장님 2차 지적: 모달 몇 개만
 # 막았더니 펫·상점 같은 전면 탭 위로 여전히 떴다). 조건을 거꾸로 세운다 —
-# "가리는 게 있나"가 아니라 "사냥터가 화면에 있나".
+# "가리는 게 있나"가 아니라 "사냥터가 화면에 있나". 성장·장비·사냥은 판이
+# 화면 일부만 덮어 사냥터가 늘 보이므로 셋 다 허용(사장님 3차 확정) —
+# 즉 전면 판(FULL_TABS)이 아니면 보인다.
 func _battle_visible() -> bool:
-	return (_tab == "home" or raid_on != "" or dungeon_on) and not _modal_open()
+	return (_tab not in FULL_TABS or raid_on != "" or dungeon_on) 		and not _modal_open()
 
 
 func _boss_cut(name: String) -> void:
