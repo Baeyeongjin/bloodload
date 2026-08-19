@@ -61,7 +61,9 @@ func _init() -> void:
 	var r2: Dictionary = scene._oath_roll(false)
 	assert(str(r2["rarity"]) in ["legend", "trueblood"],
 		"천장인데 레전이 아니다: %s" % str(r2["rarity"]))
-	assert(scene.oath_pity == 0, "천장이 안 비워졌다")
+	# "천장을 두드리는 피" 각인(1/6)이 뜨면 리셋 직후 +1 이 얹힌다 — 설계다.
+	# == 0 을 고집하면 각인 복불복에 검사가 죽는다(2026-08-18 실측 flaky).
+	assert(scene.oath_pity <= 1, "천장이 안 비워졌다: %d" % scene.oath_pity)
 
 	# 황금 천장 — 전용 게이지로 따로 센다.
 	scene.oath_gold = 1
