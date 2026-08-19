@@ -426,7 +426,7 @@ var _gate_exit_btn: Button      # 던전 전투의 유일한 문(중단)
 var _board: Control
 var _board_cells: Array = []     # 스킬 칸 7: {frame, icon, shade, num}
 var _board_pills: Array = []     # 알약 라벨 3
-var _board_btn_lbl: Label
+var _board_btn: Button
 var _board_prev_cd := {}         # 시전 감지(쿨다운이 0에서 만땅으로 튀는 순간)
 var _income_per_min := 0.0
 var _tab_dots := {}         # 탭 이름 -> 붉은 알림 점 (도감은 없다)
@@ -5501,27 +5501,16 @@ func _build_tabbar() -> void:
 	# 탭 바 **뒤**에 깐다 — 던전 밖에서는 탭 바가 게시판 위에 떠야 한다(사장님).
 	# 던전에서는 탭 바가 숨으니 벽이 끝까지 드러난다.
 	_hud_root.move_child(_board, _nav_root.get_index())
-	var bwall := TextureRect.new()
-	bwall.texture = Assets.tex("res://assets/ui/board_wall.png")
-	bwall.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bwall.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	bwall.position = Vector2(0.0, VIEW_BOTTOM)
-	bwall.size = Vector2(Grid.BG.x, Grid.BG.y - VIEW_BOTTOM)
-	bwall.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_board.add_child(bwall)
-	var bdark := ColorRect.new()
-	bdark.color = Color(0.03, 0.025, 0.04, 0.55)   # 질감을 죽여 글이 이긴다
-	bdark.position = bwall.position
-	bdark.size = bwall.size
-	bdark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_board.add_child(bdark)
+	# 배경·테두리는 장비 탭과 동일하게(사장님 2026-08-18) — 표준 판 텍스처.
+	_board.add_child(Ui.panel(Vector2(0.0, VIEW_BOTTOM),
+		Vector2(Grid.BG.x, Grid.BG.y - VIEW_BOTTOM)))
 	# 스킬 줄 — 7칸(기본 6 + 군림이 여는 7번째). 자동 시전이라 누르는 게 아니라
 	# **도는 게 보이는** 줄이다: 쿨다운은 위에서 내려오는 어둠, 시전은 금빛 번쩍.
 	var bcell := 64.0
 	var bgap := (CONTENT_W - bcell * 7.0) / 6.0
 	for i in 7:
 		var cx := PAD + float(i) * (bcell + bgap)
-		var frame := Ui.image("res://assets/ui/board_slot.png",
+		var frame := Ui.image("res://assets/ui/slot_common.png",
 			Vector2(cx, 452.0), Vector2(bcell, bcell))
 		_board.add_child(frame)
 		var ic := Ui.icon("", Vector2(cx + 5.0, 457.0), bcell - 10.0)
@@ -5542,29 +5531,21 @@ func _build_tabbar() -> void:
 	# 지표 알약 3 — 값은 전부 이미 재는 것들이다.
 	var pw := (CONTENT_W - 24.0) / 3.0
 	for i in 3:
-		var px2 := PAD + float(i) * (pw + 12.0)
-		_shop_tex(_board, "res://assets/ui/board_pill.png",
-			Vector2(px2, 548.0), Vector2(pw, 34.0))
-		var pl := _panel_label(_board, Vector2(px2, 556.0), Type.SIZE_SMALL,
-			Color(0.94, 0.90, 0.88), pw, 18.0)
-		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_shop_outline(pl, 5)
+		var pl := Ui.button("", Vector2(PAD + float(i) * (pw + 12.0), 548.0),
+			Vector2(pw, 38.0), Type.SIZE_SMALL)
+		pl.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 지표지 버튼이 아니다
+		pl.focus_mode = Control.FOCUS_NONE
+		_board.add_child(pl)
 		_board_pills.append(pl)
-	# 큰 버튼 — 던전에서는 중단, 홈에서는 방치 상자.
-	var bbx := Vector2((Grid.BG.x - 240.0) * 0.5, 716.0)
-	var btex := _shop_tex(_board, "res://assets/ui/board_button.png",
-		bbx, Vector2(240.0, 56.0))
-	_board_btn_lbl = _panel_label(_board, Vector2(bbx.x, bbx.y + 17.0),
-		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 240.0, 24.0)
-	_board_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_shop_outline(_board_btn_lbl, 8)
-	var bghost := _shop_ghost(_board, Vector2(240.0, 56.0), btex)
-	bghost.position = bbx
-	bghost.pressed.connect(func() -> void:
+	# 큰 버튼 — 던전에서는 중단, 홈에서는 방치 상자. 장비 탭과 같은 Ui.button.
+	_board_btn = Ui.button("", Vector2((Grid.BG.x - 240.0) * 0.5, 716.0),
+		Vector2(240.0, 56.0), Type.SIZE_MID)
+	_board_btn.pressed.connect(func() -> void:
 		if _in_raid() or dungeon_on:
 			_gate_exit_pressed()
 		else:
 			_claim_chest())
+	_board.add_child(_board_btn)
 
 
 # ── 미궁 탭 ─────────────────────────────────────────────────────────────────
@@ -9946,7 +9927,7 @@ func _refresh_board() -> void:
 		_board_pills[1].text = "혈액  %s /분" % _n(_income_per_min)
 		_board_pills[2].text = "전투력  %s" % _n(Balance.combat_power(dps(),
 			max_hp(), regen_per_sec()))
-	_board_btn_lbl.text = "중단" if gate \
+	_board_btn.text = "중단" if gate \
 		else ("방치 상자  %s" % _n(chest_gold) if chest_gold > 0.0 else "방치 상자")
 
 
