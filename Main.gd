@@ -5505,10 +5505,10 @@ func _build_tabbar() -> void:
 	_gate_hud.add_child(gdark)
 	_shop_tex(_gate_hud, "res://assets/ui/sets/gate_panel.png",
 		Vector2(PAD - 8.0, 472.0), Vector2(CONTENT_W + 16.0, 150.0))
-	_gate_hud_ui["art"] = Ui.icon("", Vector2(PAD + 12.0, 500.0), 64.0)
+	_gate_hud_ui["art"] = Ui.icon("", Vector2(PAD + 20.0, 506.0), 48.0)
 	_gate_hud.add_child(_gate_hud_ui["art"])
 	_gate_hud.add_child(Ui.image("res://assets/ui/frame_portrait.png",
-		Vector2(PAD + 6.0, 494.0), Vector2(76.0, 76.0)))
+		Vector2(PAD + 12.0, 498.0), Vector2(64.0, 64.0)))
 	_gate_hud_ui["name"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 494.0),
 		Type.SIZE_MID, Color(0.97, 0.92, 0.86), CONTENT_W - 110.0, 24.0)
 	_shop_outline(_gate_hud_ui["name"], 6)
@@ -5917,10 +5917,11 @@ func _build_boss_panel(root: Control) -> void:
 		Vector2(CONTENT_W + 16.0, 140.0))
 	# 초상화 액자 — 전용 그림 한 장을 모든 초상이 같이 쓴다(사장님 2026-08-18).
 	# 그림을 먼저, 액자를 위에 — 테두리가 초상 가장자리를 덮어야 액자다.
-	_boss_art = Ui.icon("", Vector2(PAD + 10.0, 90.0), 64.0)
+	# 안창(원본 12~84/96)에 초상 48px 정배율 — 바탕이 액자 밖으로 안 샌다(사장님).
+	_boss_art = Ui.icon("", Vector2(PAD + 18.0, 98.0), 48.0)
 	root.add_child(_boss_art)
 	root.add_child(Ui.image("res://assets/ui/frame_portrait.png",
-		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0)))
+		Vector2(PAD + 10.0, 90.0), Vector2(64.0, 64.0)))
 	var text_x := PAD + 92.0
 	var text_w := CONTENT_W - 92.0 - 168.0
 	_boss_name = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
@@ -6086,10 +6087,10 @@ func _rd_place_buttons(with_sweep: bool) -> void:
 func _build_trial_panel(root: Control) -> void:
 	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 56.0),
 		Vector2(CONTENT_W + 16.0, 140.0))
-	_trial_ui["art"] = Ui.icon("", Vector2(PAD + 10.0, 90.0), 64.0)
+	_trial_ui["art"] = Ui.icon("", Vector2(PAD + 18.0, 98.0), 48.0)
 	root.add_child(_trial_ui["art"])
 	root.add_child(Ui.image("res://assets/ui/frame_portrait.png",
-		Vector2(PAD + 4.0, 84.0), Vector2(76.0, 76.0)))
+		Vector2(PAD + 10.0, 90.0), Vector2(64.0, 64.0)))
 	var text_x := PAD + 92.0
 	var text_w := CONTENT_W - 92.0 - 168.0
 	_trial_ui["name"] = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
