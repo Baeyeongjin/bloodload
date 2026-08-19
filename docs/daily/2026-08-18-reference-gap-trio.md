@@ -296,3 +296,6 @@ BalanceTest·CurveCheck·CombatRulesTest·NoAttackProbe 통과.
 - 덤: 시련 보스 도감 정지 그림(assets/enemies/ruin_warden.png)이 빠져 있던 것
   발견(GearTest)·보충. 부분 패치 미적용 사고 재발(anchor 죽음=전체 미적용) —
   "재개는 전체 재실행" 원칙 재확인.
+
+**결정(사장님)**: 스킬은 신화 등급을 넣지 않는다 — 레전 상한 유지. 장비만
+신화까지 조합된다. (SKILL_TOP_INDEX 그대로.)
