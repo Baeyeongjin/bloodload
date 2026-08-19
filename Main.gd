@@ -5505,7 +5505,7 @@ func _build_tabbar() -> void:
 	_gate_hud.add_child(gdark)
 	_shop_tex(_gate_hud, "res://assets/ui/sets/gate_panel.png",
 		Vector2(PAD - 8.0, 472.0), Vector2(CONTENT_W + 16.0, 150.0))
-	_gate_hud_ui["art"] = _framed_portrait(_gate_hud, Vector2(PAD + 12.0, 498.0))
+	_gate_hud_ui["art"] = _framed_portrait(_gate_hud, Vector2(PAD + 12.0, 504.0))
 	_gate_hud_ui["name"] = _panel_label(_gate_hud, Vector2(PAD + 96.0, 494.0),
 		Type.SIZE_MID, Color(0.97, 0.92, 0.86), CONTENT_W - 110.0, 24.0)
 	_shop_outline(_gate_hud_ui["name"], 6)
@@ -5914,7 +5914,7 @@ func _build_boss_panel(root: Control) -> void:
 		Vector2(CONTENT_W + 16.0, 140.0))
 	# 초상화 액자 — 전용 그림 한 장을 모든 초상이 같이 쓴다(사장님 2026-08-18).
 	# 그림을 먼저, 액자를 위에 — 테두리가 초상 가장자리를 덮어야 액자다.
-	_boss_art = _framed_portrait(root, Vector2(PAD + 10.0, 90.0))
+	_boss_art = _framed_portrait(root, Vector2(PAD + 10.0, 96.0))
 	var text_x := PAD + 92.0
 	var text_w := CONTENT_W - 92.0 - 168.0
 	_boss_name = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
@@ -6080,7 +6080,7 @@ func _rd_place_buttons(with_sweep: bool) -> void:
 func _build_trial_panel(root: Control) -> void:
 	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 56.0),
 		Vector2(CONTENT_W + 16.0, 140.0))
-	_trial_ui["art"] = _framed_portrait(root, Vector2(PAD + 10.0, 90.0))
+	_trial_ui["art"] = _framed_portrait(root, Vector2(PAD + 10.0, 96.0))
 	var text_x := PAD + 92.0
 	var text_w := CONTENT_W - 92.0 - 168.0
 	_trial_ui["name"] = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
@@ -9890,10 +9890,12 @@ func _refresh_gate_hud() -> void:
 # 액자 초상 한 벌 — 어두운 속바탕 + 넘치게 그린 초상(창이 잘라냄) + 액자.
 # 초상 원본마다 여백이 달라서(여왕은 여백 크고 파수꾼은 꽉 참) 창 크기로 정직하게
 # 그리면 작은 놈은 허공에 뜬다(사장님 실측) — 과감히 키우고 창으로 자른다.
-func _framed_portrait(parent: Control, at: Vector2) -> TextureRect:
+func _framed_portrait(parent: Control, at: Vector2, fsize := 52.0) -> TextureRect:
+	# 64 는 판에서 너무 컸다(사장님) — 기본 52. 창은 원본 비율(12~84/96)로 잰다.
+	var pad2 := fsize * 0.125
 	var win := Control.new()
-	win.position = at + Vector2(8.0, 8.0)
-	win.size = Vector2(48.0, 48.0)
+	win.position = at + Vector2(pad2, pad2)
+	win.size = Vector2(fsize - pad2 * 2.0, fsize - pad2 * 2.0)
 	win.clip_contents = true
 	win.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(win)
@@ -9905,12 +9907,12 @@ func _framed_portrait(parent: Control, at: Vector2) -> TextureRect:
 	var art := TextureRect.new()
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	art.size = Vector2(68.0, 68.0)
-	art.position = Vector2(-10.0, -10.0)
+	art.size = win.size * 1.42
+	art.position = -win.size * 0.21
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	win.add_child(art)
 	parent.add_child(Ui.image("res://assets/ui/frame_portrait.png",
-		at, Vector2(64.0, 64.0)))
+		at, Vector2(fsize, fsize)))
 	return art
 
 
