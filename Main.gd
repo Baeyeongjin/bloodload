@@ -877,6 +877,10 @@ func _ready() -> void:
 					"redthirst": 1, "lord": 1}
 				_oath_set_tab("col")
 			_refresh_oath()
+		# [개발 도구] --bosscut : 보스 등장 암전 연출을 튼 채로 캡처한다.
+		if arg == "--bosscut":
+			_select_tab("home")
+			_boss_cut("가고일 군주")
 		# [개발 도구] --home : 홈(사냥) 탭을 연 채로 캡처한다.
 		if arg == "--home":
 			_select_tab("home")
@@ -11587,6 +11591,7 @@ func _announce_elite(name: String) -> void:
 # 인상을 **레터박스 + 큰 이름**으로 낸다: 위아래가 좁혀지면 "지금은 컷신"이
 # 읽히고, 카메라 팬(_boss_pan)이 이미 보스를 화면 가운데로 데려온다.
 var _boss_shade: ColorRect     # 전투 뷰만 덮는 암전 — 걷히는 게 등장이다
+var _boss_cut_name: Label          # 암전 위 작은 이름(사장님: 다시, 대신 작게)
 
 
 func _build_boss_cut() -> void:
@@ -11597,6 +11602,16 @@ func _build_boss_cut() -> void:
 	_boss_shade.z_index = 60
 	_boss_shade.visible = false
 	_hud_root.add_child(_boss_shade)
+	_boss_cut_name = _mk_label(Vector2(0.0, VIEW_BOTTOM * 0.40), Type.SIZE_MID,
+		Color(1.0, 0.92, 0.86))
+	_boss_cut_name.size = Vector2(Grid.BG.x, 30.0)
+	_boss_cut_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_cut_name.add_theme_constant_override("outline_size", 8)
+	_boss_cut_name.add_theme_color_override("font_outline_color",
+		Color(0.28, 0.0, 0.04))
+	_boss_cut_name.z_index = 61
+	_boss_cut_name.modulate.a = 0.0
+	_hud_root.add_child(_boss_cut_name)
 
 
 # 컷신을 **즉시 걷는다**. 연출 도중 판이 끝나거나 탭을 옮기면 트윈이 멈춰
@@ -11608,6 +11623,7 @@ func _boss_cut_clear() -> void:
 		_boss_cut_tw.kill()
 	_boss_shade.visible = false
 	_boss_shade.color.a = 0.0
+	_boss_cut_name.modulate.a = 0.0
 
 
 var _boss_cut_tw: Tween
@@ -11634,16 +11650,19 @@ func _battle_visible() -> bool:
 
 # 등장 = 전투 뷰가 훅 어두워졌다가 걷힌다. 띠도 큰 이름도 없다(사장님:
 # 글자가 UI 를 넘쳤다 — 이름은 상단 보스 게이지가 이미 적는다).
-func _boss_cut(_name: String) -> void:
+func _boss_cut(name: String) -> void:
 	if _boss_shade == null or not _battle_visible():
 		return
 	_boss_cut_clear()
 	_boss_shade.visible = true
-	var t := create_tween()
+	_boss_cut_name.text = name
+	var t := create_tween().set_parallel()
 	_boss_cut_tw = t
 	t.tween_property(_boss_shade, "color:a", 0.80, 0.18)
-	t.tween_interval(0.25)
-	t.tween_property(_boss_shade, "color:a", 0.0, 0.8 + BOSS_PAN_HOLD) 		.set_trans(Tween.TRANS_QUAD)
+	t.tween_property(_boss_cut_name, "modulate:a", 1.0, 0.22).set_delay(0.10)
+	var out := 0.43
+	t.tween_property(_boss_shade, "color:a", 0.0, 0.8 + BOSS_PAN_HOLD) 		.set_delay(out).set_trans(Tween.TRANS_QUAD)
+	t.tween_property(_boss_cut_name, "modulate:a", 0.0, 0.45).set_delay(out + 0.25)
 	t.finished.connect(_boss_cut_clear)
 
 
