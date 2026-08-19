@@ -10364,15 +10364,16 @@ func _build_oath_view() -> void:
 			cp, Vector2(96.0, 128.0))
 		mini.modulate = Color(0.28, 0.25, 0.30)
 		_oath_col.add_child(mini)
-		var cell := ColorRect.new()      # 바닥 띠 — 등급색
+		var cell := ColorRect.new()      # 바닥 띠 — 등급색, 이름과 같은 폭
 		cell.color = Color(0.16, 0.13, 0.18)
-		cell.position = cp + Vector2(0.0, 130.0)
-		cell.size = Vector2(96.0, 20.0)
+		cell.position = cp + Vector2(-4.0, 130.0)
+		cell.size = Vector2(104.0, 20.0)
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_oath_col.add_child(cell)
-		var nm := _panel_label(_oath_col, cp + Vector2(-6.0, 132.0),
-			Type.SIZE_SMALL, Color(0.92, 0.90, 0.94), 108.0, 16.0)
+		var nm := _panel_label(_oath_col, cp + Vector2(-4.0, 132.0),
+			Type.SIZE_SMALL, Color(0.94, 0.92, 0.96), 104.0, 16.0)
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(nm, 5)     # 검은 테 — 띠 밖으로 삐져도 읽힌다(사장님)
 		var lvl := _panel_label(_oath_col, cp + Vector2(4.0, 2.0),
 			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 60.0, 14.0)
 		(_oath_ui["collect"] as Array).append({"id": str(c["id"]),
@@ -10598,13 +10599,20 @@ func _oath_play(golden: bool) -> void:
 	# 레전 색을 한 번 스친다(니어미스) — "아깝다"가 다음 장을 부른다.
 	var rim := Control.new()
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for spec in [[8.0, 0.85], [20.0, 0.30], [34.0, 0.11]]:
+	# [패드, 선 폭, 알파] — 안쪽은 얇고 선명, 바깥으로 두껍고 옅게 = 네온.
+	for spec in [[2.0, 4.0, 0.90], [8.0, 6.0, 0.35], [16.0, 10.0, 0.12]]:
 		var pad: float = spec[0]
-		var layer := ColorRect.new()
-		layer.color = Color(0.5, 0.5, 0.5, 0.0)
+		var layer := Panel.new()
+		var sb := StyleBoxFlat.new()
+		sb.draw_center = false
+		sb.set_border_width_all(int(spec[1]))
+		sb.set_corner_radius_all(6)
+		sb.border_color = Color(0.5, 0.5, 0.5, 0.0)
+		layer.add_theme_stylebox_override("panel", sb)
 		layer.position = card.position - Vector2(pad, pad)
 		layer.size = Vector2(132.0 + pad * 2.0, 176.0 + pad * 2.0)
-		layer.set_meta("glow_a", spec[1])
+		layer.set_meta("glow_sb", sb)
+		layer.set_meta("glow_a", spec[2])
 		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		rim.add_child(layer)
 	_oath_reveal.add_child(rim)
@@ -10793,8 +10801,8 @@ func _oath_rcol(rarity: String) -> Color:
 # 글로우 3겹에 등급색을 입힌다 — 겹마다 제 알파(meta)로 옅어진다.
 func _oath_glow(rim: Control, c: Color) -> void:
 	for ch in rim.get_children():
-		(ch as ColorRect).color = Color(c.r, c.g, c.b,
-			float(ch.get_meta("glow_a", 0.5)))
+		(ch.get_meta("glow_sb") as StyleBoxFlat).border_color = Color(c.r, c.g,
+			c.b, float(ch.get_meta("glow_a", 0.5)))
 
 
 # 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
