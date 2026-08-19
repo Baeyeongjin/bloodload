@@ -218,7 +218,9 @@ func _title_state() -> Dictionary:
 		kill_sum += int(codex[k])
 	return {"stage": best_stage, "floor": dungeon_best, "hero": hero_lv,
 		"kills": kill_sum, "species": codex_found, "knowledge": codex_knowledge,
-		"skills": skill_owned.size(), "traits": traits.size()}
+		"skills": skill_owned.size(), "traits": traits.size(),
+		"trial": trial_stage, "pets": pets_got.size(), "chest": mile_lv,
+		"nights": int(play_sec / 3600.0), "prestige": prestige_count}
 
 
 # 스탯의 **효과 레벨** = 산 레벨 + 칭호 공짜 레벨. 효과 계산(피해·체력·회복·수입·
@@ -5470,6 +5472,7 @@ func _build_tabbar() -> void:
 		b.size = cell
 		b.pressed.connect(func() -> void: _select_tab(name))
 		_nav_root.add_child(b)
+		# 눌렀을 때 스타일(사장님) — marker 는 선택 흐림이 색을 쓰니 크기로만.
 		var marker := Control.new()
 		marker.position = Grid.uv(i * w, 50.0)
 		marker.size = cell
@@ -5485,6 +5488,7 @@ func _build_tabbar() -> void:
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_tab_btns[name] = marker
+		_nav_hover(b, marker)
 		# 점은 marker **밖**(_hud_root)에 단다. _select_tab 이 안 고른 탭의 marker 를
 		# 통째로 어둡게 하는데, 점이 그 안에 있으면 같이 죽는다 — 지금 보고 있지 않은
 		# 탭이야말로 점을 봐야 하는 탭이라 그러면 기능이 통째로 뒤집힌다.
@@ -6841,8 +6845,10 @@ func _build_quests() -> void:
 		if _quest_view.visible:
 			_refresh_quests())
 	_side_root.add_child(open_btn)
-	_side_root.add_child(Ui.icon("res://assets/ui/tab_quest.png",
-		QUEST_BTN_AT + Vector2(4.0, 4.0), 48.0))
+	var q_icon := Ui.icon("res://assets/ui/tab_quest.png",
+		QUEST_BTN_AT + Vector2(4.0, 4.0), 48.0)
+	_side_root.add_child(q_icon)
+	_nav_hover(open_btn, q_icon)
 	_quest_dot = Ui.icon("res://assets/ui/dot_alert.png",
 		QUEST_BTN_AT + Vector2(-4.0, -2.0), TAB_DOT)
 	_quest_dot.visible = false
@@ -6861,8 +6867,10 @@ func _build_quests() -> void:
 			_codex_set_mode(_codex_mode))
 	_side_root.add_child(t_btn)
 	# 임무 아이콘(48)과 같은 크기 — 짝짝이였다(사장님 2026-08-18).
-	_side_root.add_child(Ui.icon("res://assets/ui/tab_codex.png",
-		TITLE_BTN_AT + Vector2(4.0, 4.0), 48.0))
+	var c_icon := Ui.icon("res://assets/ui/tab_codex.png",
+		TITLE_BTN_AT + Vector2(4.0, 4.0), 48.0)
+	_side_root.add_child(c_icon)
+	_nav_hover(t_btn, c_icon)
 	# 상점 진입점은 **일부러 안 만든다** (사장님 2026-08-12): 상점은 과금과 한
 	# 묶음으로 **별도 탭**이 되고 지금 이 판은 그 탭 안의 한 소탭으로 들어간다.
 	# 옆줄에 버튼을 세워 두면 곧 두 곳에서 같은 걸 파는 화면이 된다.
@@ -9904,6 +9912,26 @@ func _enter_battle_view() -> void:
 
 # 던전·시련 전투는 **기본 화면만** (사장님, 레퍼런스) — 하단 탭·판을 걷고
 # 중단 버튼 하나만 남긴다. 복구는 _return_gate 가 _select_tab 으로 한다.
+func _nav_hover(btn: BaseButton, art: Control) -> void:
+	if art.pivot_offset == Vector2.ZERO:
+		art.pivot_offset = art.size * 0.5
+	btn.mouse_entered.connect(func() -> void:
+		if not btn.disabled and is_inside_tree():
+			create_tween().tween_property(art, "scale",
+				Vector2(1.06, 1.06), 0.08))
+	btn.mouse_exited.connect(func() -> void:
+		if is_inside_tree():
+			create_tween().tween_property(art, "scale", Vector2.ONE, 0.08))
+	btn.button_down.connect(func() -> void:
+		if is_inside_tree():
+			create_tween().tween_property(art, "scale",
+				Vector2(0.94, 0.94), 0.05))
+	btn.button_up.connect(func() -> void:
+		if is_inside_tree():
+			create_tween().tween_property(art, "scale",
+				Vector2(1.06, 1.06), 0.08))
+
+
 func _battle_only(on: bool) -> void:
 	if _nav_root:
 		_nav_root.visible = not on

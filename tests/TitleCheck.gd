@@ -14,13 +14,14 @@ func _init() -> void:
 	# ── 1) 표 ──────────────────────────────────────────────────────────────
 	var seen := {}
 	var known_kind := ["stage", "floor", "hero", "kills", "species", "knowledge",
-		"skills", "traits"]
+		"skills", "traits", "trial", "pets", "chest", "nights", "prestige"]
 	var known_stat := ["damage", "speed", "tough", "gold"]
 	for t in TitleDefs.TITLES:
 		var id := str(t["id"])
 		assert(not seen.has(id), "id 중복: %s" % id)
 		seen[id] = true
-		assert((t["conds"] as Array).size() == 2, "%s 조건이 둘이 아니다" % id)
+		# 조건은 1~2개 — 표가 단일 조건 칭호로 재편된 지 오래다(둘 고정은 낡은 규칙).
+		assert((t["conds"] as Array).size() in [1, 2], "%s 조건 수 이상" % id)
 		for c in t["conds"]:
 			assert(str(c["kind"]) in known_kind, "%s 모르는 조건: %s" % [id, str(c["kind"])])
 			assert(TitleDefs.cond_text(c) != "", "%s 조건 문장이 없다" % id)
@@ -28,14 +29,14 @@ func _init() -> void:
 		assert(int(t["levels"]) > 0)
 
 	# ── 2) 판정 ────────────────────────────────────────────────────────────
-	# 깨어난 군주 = 본편 10 돌파 + 처치 100. 하나만 차면 안 딴다.
-	assert(not TitleDefs.earned("awaken", {"stage": 11, "kills": 99}),
-		"조건 하나만 찼는데 땄다")
-	assert(not TitleDefs.earned("awaken", {"stage": 10, "kills": 100}),
+	# (칭호 100종 재편으로 옛 표본 awaken·scholar 가 사라졌다 — 현행 표본으로)
+	assert(not TitleDefs.earned("stage10", {"stage": 10}),
 		"돌파(>10)가 아니라 도달(=10)인데 땄다")
-	assert(TitleDefs.earned("awaken", {"stage": 11, "kills": 100}))
-	# 보너스 합산: damage 칭호 둘을 딴 상태.
-	var got := {"awaken": true, "scholar": true}
+	assert(TitleDefs.earned("stage10", {"stage": 11}))
+	assert(not TitleDefs.earned("trial10", {"trial": 9}), "시련 9로 10칭호를 땄다")
+	assert(TitleDefs.earned("trial10", {"trial": 10}))
+	# 보너스 합산: damage 칭호 둘(stage10 lv2 + stage20 lv3).
+	var got := {"stage10": true, "stage20": true}
 	assert(TitleDefs.bonus("damage", got) == 5, "공짜 레벨 합이 2+3=5 가 아니다")
 	assert(TitleDefs.bonus("tough", got) == 0)
 
@@ -47,9 +48,9 @@ func _init() -> void:
 	scene.titles_got = {}
 	var dmg0: float = scene.damage()
 	var cost0: float = scene.upgrade_cost("damage", scene.stat_lv("damage"))
-	scene.titles_got = {"awaken": true, "hundred": true}   # damage +2 +4 = +6
-	assert(scene._stat_eff("damage") == scene.stat_lv("damage") + 6,
-		"효과 레벨이 +6 이 아니다")
+	scene.titles_got = {"stage10": true, "stage20": true}   # damage +2 +3 = +5
+	assert(scene._stat_eff("damage") == scene.stat_lv("damage") + 5,
+		"효과 레벨이 +5 가 아니다")
 	assert(scene.damage() > dmg0, "칭호를 땄는데 피해가 안 올랐다")
 	# **비용은 그대로여야 한다** — 공짜 레벨이 비용에 붙으면 벌이 된다.
 	assert(is_equal_approx(scene.upgrade_cost("damage", scene.stat_lv("damage")), cost0),
@@ -59,7 +60,7 @@ func _init() -> void:
 	scene.codex = {"slime": 60, "bat": 40}
 	var state: Dictionary = scene._title_state()
 	assert(int(state["kills"]) == 100, "처치 합계가 스냅샷에 안 옮았다")
-	assert(TitleDefs.earned("awaken", state), "기록을 채웠는데 판정이 안 선다")
+	assert(TitleDefs.earned("stage10", state), "기록을 채웠는데 판정이 안 선다")
 
 	print("")
 	print("칭호: 표 %d종 · 짝 조건 판정 · 공짜 레벨(효과만, 비용 불변) OK"

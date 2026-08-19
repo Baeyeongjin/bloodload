@@ -20,6 +20,11 @@ extends RefCounted
 #   knowledge 도감 지식 합계 >= n
 #   skills   보유 스킬 종수 >= n
 #   traits   혈맥 노드 수 >= n
+#   trial    시련 격파 단계 >= n
+#   pets     데려온 펫 종수 >= n
+#   chest    천장 상자 개봉 횟수 >= n
+#   nights   함께한 밤(플레이 시간) >= n 시간
+#   prestige 핏빛 회귀 횟수 >= n
 const TITLES := [
 	{"id": "stage10", "name": "10구간의 주인", "stat": "damage", "levels": 2,
 		"conds": [{"kind": "stage", "n": 10}]},
@@ -221,6 +226,19 @@ const TITLES := [
 		"conds": [{"kind": "species", "n": 22}, {"kind": "knowledge", "n": 100}]},
 	{"id": "pair20", "name": "영원한 밤", "stat": "tough", "levels": 10,
 		"conds": [{"kind": "stage", "n": 500}, {"kind": "hero", "n": 100}]},
+	# ── 특별 칭호 (사장님 2026-08-18) — 새 축들의 기록에 상을 건다 ──────────
+	{"id": "trial10", "name": "유적을 넘은 자", "stat": "damage", "levels": 5,
+		"conds": [{"kind": "trial", "n": 10}]},
+	{"id": "trial25", "name": "파수꾼의 공포", "stat": "damage", "levels": 8,
+		"conds": [{"kind": "trial", "n": 25}]},
+	{"id": "pets25", "name": "만물의 벗", "stat": "tough", "levels": 6,
+		"conds": [{"kind": "pets", "n": 25}]},
+	{"id": "chest10", "name": "천장을 부순 자", "stat": "tough", "levels": 5,
+		"conds": [{"kind": "chest", "n": 10}]},
+	{"id": "night24", "name": "불면의 군주", "stat": "speed", "levels": 5,
+		"conds": [{"kind": "nights", "n": 24}]},
+	{"id": "rebirth3", "name": "세 번 되살아난 왕", "stat": "damage", "levels": 7,
+		"conds": [{"kind": "prestige", "n": 3}]},
 ]
 
 
@@ -244,6 +262,11 @@ static func cond_met(cond: Dictionary, state: Dictionary) -> bool:
 		"knowledge": return int(state.get("knowledge", 0)) >= n
 		"skills": return int(state.get("skills", 0)) >= n
 		"traits": return int(state.get("traits", 0)) >= n
+		"trial": return int(state.get("trial", 0)) >= n
+		"pets": return int(state.get("pets", 0)) >= n
+		"chest": return int(state.get("chest", 0)) >= n
+		"nights": return int(state.get("nights", 0)) >= n
+		"prestige": return int(state.get("prestige", 0)) >= n
 	return false
 
 
@@ -311,6 +334,11 @@ static func cond_text(cond: Dictionary) -> String:
 		"knowledge": return "지식 %d" % n
 		"skills": return "스킬 %d종" % n
 		"traits": return "혈맥 %d노드" % n
+		"trial": return "시련 %d단계" % n
+		"pets": return "펫 %d종" % n
+		"chest": return "천장 상자 %d회" % n
+		"nights": return "함께한 밤 %d시간" % n
+		"prestige": return "회귀 %d회" % n
 	return ""
 
 
