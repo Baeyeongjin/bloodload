@@ -403,6 +403,7 @@ var _last_goal_gem := 0.0
 var _gear_slots := {}       # slot -> {frame, icon, label, btn} 표시 노드
 var _gear_equipped_view: Control
 var _gear_inventory_view: Control
+var _gear_hold_lbl: Label      # 보관 중인 장비가 주는 보유 효과 합계
 var _gear_inventory_grid: GridContainer
 var _gear_mode := "equipped"
 var _gear_mode_buttons := {}
@@ -3133,7 +3134,10 @@ func _build_gear(root: Control) -> void:
 		_gear_filter_buttons[slot_key] = filter_button
 	# 목록 높이는 **창 높이에서 뺀다.** 예전엔 152 로 박아 뒀는데 창을 320 -> 384 로
 	# 늘리자 아래가 통째로 비었다. 고정값을 쓰면 창 크기를 바꿀 때마다 다시 찾아야 한다.
-	var list_top := 102.0
+	_gear_hold_lbl = _panel_label(_gear_inventory_view, Vector2(PAD, 102.0),
+		Type.SIZE_SMALL, Color(0.62, 0.88, 0.70), CONTENT_W, 18.0)
+	_gear_hold_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var list_top := 124.0
 	var scroll := Ui.scroll(Vector2(PAD, list_top),
 		Vector2(CONTENT_W, CONTENT_BOTTOM - 50.0 - list_top))
 	_gear_inventory_view.add_child(scroll)
@@ -3384,6 +3388,17 @@ func _refresh_gear_tabs() -> void:
 
 
 func _refresh_gear_inventory() -> void:
+	if _gear_hold_lbl:
+		# 보관함에 있기만 해도 붙는 몫. 합성해도 하위 종이 남으므로 이 숫자는
+		# **줄지 않는다** — 그게 이 줄을 만든 이유다(사장님).
+		# 짧은 이름으로 적는다 — 정식 이름(최대 체력·피 획득)까지 넣으면 한 줄
+		# 528px 을 넘겨 끝 항목이 잘렸다(사장님 캡처).
+		var short := {"damage": "공격", "tough": "체력", "gold": "혈액"}
+		var parts := PackedStringArray()
+		for st in ["damage", "tough", "gold"]:
+			parts.append("%s +%.0f%%" % [short[st], _collection_bonus(st) * 100.0])
+		_gear_hold_lbl.text = "보유 효과(%d종)  %s" % [gear_inventory.size(),
+			"  ·  ".join(parts)]
 	if not _gear_inventory_grid:
 		return
 	if GearDefs.lock_reason(_gear_filter, stage) != "":
