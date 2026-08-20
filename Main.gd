@@ -12967,13 +12967,19 @@ func _build_power_band() -> void:
 	_power_band.visible = false
 	_power_band.z_index = 14
 	_hud_root.add_child(_power_band)
-	var glass := ColorRect.new()
-	glass.color = Color(0.10, 0.02, 0.05, 0.72)
-	glass.size = POWER_BAND.size
-	glass.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_power_band.add_child(glass)
-	_oath_neon(_power_band, Vector2.ZERO, POWER_BAND.size,
-		Color(1.0, 0.82, 0.42), [[0.0, 2.0, 0.85], [5.0, 4.0, 0.22]])
+	# 전용 판 그림(band_power) — 크레딧이 차서 실제 아트로 갈아 끼웠다.
+	# 9-슬라이스라 폭을 바꿔도 모서리 장식이 안 뭉개진다.
+	var art := NinePatchRect.new()
+	art.texture = Assets.tex("res://assets/ui/band_power.png")
+	art.patch_margin_left = 18
+	art.patch_margin_right = 18
+	art.patch_margin_top = 12
+	art.patch_margin_bottom = 12
+	art.size = POWER_BAND.size
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_power_band.add_child(art)
+	_oath_neon(_power_band, Vector2(2.0, 2.0), POWER_BAND.size - Vector2(4.0, 4.0),
+		Color(1.0, 0.82, 0.42), [[0.0, 2.0, 0.45]])
 	_power_band.add_child(Ui.icon("res://assets/ui/icon_power.png",
 		Vector2(16.0, 13.0), 20.0))
 	# 숫자는 크게 — 이 줄의 주인공이다.
