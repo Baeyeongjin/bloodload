@@ -565,7 +565,10 @@ func attack_interval() -> float:
 
 
 func gold_mult() -> float:
-	return (1.0 + 0.15 * float(_stat_eff("gold") - 1) + _gear_stat("gold") * 0.02) \
+	# 흡혈량 스탯은 삭제됐다(2026-08-20) — 칭호 21종의 공짜 레벨은 그대로 살려서
+	# 이 항이 계속 값을 한다. 사라진 스탯을 읽는 코드를 남기지 않으려 직접 부른다.
+	return (1.0 + 0.15 * float(TitleDefs.bonus("gold", titles_got))
+			+ _gear_stat("gold") * 0.02) \
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
 		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold")) \
@@ -8444,10 +8447,6 @@ func _buy(key: String) -> void:
 	gold -= cost
 	lv[key] = stat_lv(key) + n
 	_apply_hp_growth(old_max)
-	# 흡혈량은 전투력에 안 들어가므로(재화 획득량이지 전투 능력이 아니다) 그냥 사면
-	# 화면에 아무 반응이 없다. 올린 값을 직접 띄운다 — **뭘 사든 반응은 있어야 한다.**
-	if key == "gold":
-		_notify_stat("혈액 획득 x%.2f" % gold_mult())
 	_quest_bump("train")
 	_save_game()
 	_refresh_hud()
@@ -14343,7 +14342,7 @@ func _refresh_pet_own() -> void:
 		rar["col"] if got else Color(0.60, 0.58, 0.62))
 	_pet_detail["desc"].text = str(d["desc"]) if got else "소환에서 만난다"
 	_pet_detail["buff"].text = "%s +%d%%  ·  %s을 물어온다" % [
-		str(StatDefs.of(str(d["stat"])).get("name", d["stat"])),
+		TitleDefs.stat_name(str(d["stat"])),
 		int(round(PetDefs.bonus(_pet_sel, str(d["stat"]), lv, star) * 100.0)),
 		_reward_name(str(d["gain"]))] if got else ""
 	var have := float(pet_bank.get(_pet_sel, 0.0))
@@ -14407,7 +14406,7 @@ func _refresh_pet_feed() -> void:
 	_pet_feed_ui["name"].text = "%s  %d성 %d레벨" % [str(d["name"]), star, lv] \
 		if got else "보유 판에서 펫을 고른다"
 	_pet_feed_ui["stat"].text = "%s +%d%%  ·  수집 x%.2f" % [
-		str(StatDefs.of(str(d["stat"])).get("name", d["stat"])),
+		TitleDefs.stat_name(str(d["stat"])),
 		int(round(PetDefs.bonus(_pet_sel, str(d["stat"]), lv, star) * 100.0)),
 		PetDefs.growth_mult(lv, maxi(1, star))] if got else ""
 	var capped := got and lv >= PetDefs.lv_cap(star)

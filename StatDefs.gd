@@ -23,11 +23,14 @@ extends RefCounted
 # `impl` 이 false 면 스테이지를 넘겨도 안 열린다. 효과가 아직 전투에 안 붙은 스탯을
 # 사게 두면 피만 버리기 때문이다. 해당 마일스톤에서 효과를 붙일 때 true 로 바꾼다.
 
+# **흡혈량(gold)은 뺐다** (2026-08-20, 사장님: "공격력이 아니다").
+# 혈액을 던전·방치로만 벌게 되면(요구 4) 흡혈량은 *자기를 사는 화폐를 자기가
+# 곱하는* 자기참조 승수가 된다 — 업계에서 가장 위험한 구조로 꼽히는 형태다.
+# 스탯 표에서만 사라지고 혈액 배수 자체는 산다: 칭호 21종·장신구·유물·혈맥·
+# 펫·도감·수집·은총이 gold_mult() 로 계속 흘러든다(docs/STATS_REWORK.md 4장).
 const STATS := [
 	{"key": "damage", "name": "공격력", "icon": "stat_damage",
 		"unlock": 1, "impl": true, "base": 10.0, "exp": 1.15},
-	{"key": "gold", "name": "흡혈량", "icon": "stat_drain",
-		"unlock": 1, "impl": true, "base": 14.0, "exp": 1.16},
 	# 체력이 공격력 다음이다. 순서가 곧 "먼저 살아남아라"를 가르친다.
 	{"key": "tough", "name": "체력", "icon": "stat_tough",
 		"unlock": 1, "need": ["damage", 5], "impl": true, "base": 12.0, "exp": 1.15},
