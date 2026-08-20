@@ -8632,30 +8632,15 @@ func _build_start_gate() -> void:
 	_start_gate.size = Vector2(Grid.BG)
 	_start_gate.z_index = 200
 	_hud_root.add_child(_start_gate)
-	# **완전 불투명**이다. 0.92 로 뒀더니 뒤 화면이 다 비쳐 표지로 안 읽혔다.
+	# **로딩의 마지막 단계다.** 표지를 따로 만들지 않는다(사장님) — 검은 화면에
+	# 안내 한 줄이고, 누르면 곧장 게임이다.
 	var shade := ColorRect.new()
 	shade.color = Color(0.02, 0.01, 0.03, 1.0)
 	shade.size = Vector2(Grid.BG)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_start_gate.add_child(shade)
-	# 표지 그림 — 이미 있는 성문 헤더를 쓴다(새 아트를 뽑지 않는다).
-	var art := Ui.image("res://assets/ui/head_gate.png",
-		Vector2(0.0, Grid.BG.y * 0.20), Vector2(Grid.BG.x, 300.0))
-	_start_gate.add_child(art)
-	# 그림 아래를 검게 먹여 글자가 앉을 자리를 만든다.
-	var fade := ColorRect.new()
-	fade.color = Color(0.02, 0.01, 0.03, 0.72)
-	fade.position = Vector2(0.0, Grid.BG.y * 0.20 + 210.0)
-	fade.size = Vector2(Grid.BG.x, 90.0)
-	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_start_gate.add_child(fade)
-	var title := _panel_label(_start_gate, Vector2(0.0, Grid.BG.y * 0.56),
-		Type.SIZE_TITLE, Color(0.86, 0.16, 0.22), Grid.BG.x, 46.0)
-	title.text = "핏빛 군주"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_shop_outline(title, 10)
-	var tap := _panel_label(_start_gate, Vector2(0.0, Grid.BG.y * 0.70),
-		Type.SIZE_MID, Color(0.94, 0.90, 0.88), Grid.BG.x, 30.0)
+	var tap := _panel_label(_start_gate, Vector2(0.0, Grid.BG.y * 0.5 - 16.0),
+		Type.SIZE_MID, Color(0.94, 0.90, 0.88), Grid.BG.x, 32.0)
 	tap.text = "아무 곳이나 누르세요"
 	tap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(tap, 8)
