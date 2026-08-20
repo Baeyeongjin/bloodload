@@ -867,6 +867,16 @@ func _ready() -> void:
 			_oath_view.visible = true
 			_refresh_oath()
 			_oath_play10(gten)
+		# [개발 도구] --oathbuff : 계약을 걸고 전투 화면 카드 위젯을 캡처한다.
+		if arg.begins_with("--oathbuff"):
+			oath_cards = 3
+			oath_first = true
+			var one := _oath_roll(false, false)
+			if not one.is_empty():
+				_oath_use(one)
+			_select_tab("home")
+			if "=" in arg and arg.trim_prefix("--oathbuff=") == "tip":
+				_oath_hud_toggle()
 		# [개발 도구] --oathpick : 10연차 확인 판(교체 여부)을 바로 캡처한다.
 		if arg == "--oathpick":
 			oath_cards = 10
@@ -894,7 +904,7 @@ func _ready() -> void:
 			_dev_oath_force = want
 			_oath_play(false)
 		# [개발 도구] --oath[=N] : 핏빛 계약 판(카드 N장)을 연 채로 캡처한다.
-		if arg.begins_with("--oath") and not arg.begins_with("--oathroll"):
+		if arg == "--oath" or arg.begins_with("--oath="):
 			oath_cards = int(arg.trim_prefix("--oath=")) if "=" in arg else 3
 			gem = maxf(gem, 500.0)
 			_oath_view.visible = true
@@ -5723,6 +5733,8 @@ var _dev_oath_force := ""    # [개발 도구] 연출 캡처용 등급 강제(--
 var oath_fx := {}            # 활성 버프 효과(레벨·공명·각인 반영 후)
 var oath_fx_t := 0.0
 var oath_fx_name := ""
+var oath_fx_id := ""         # 활성 계약 id — 전투 화면 카드 그림에 쓴다
+var oath_fx_rarity := "common"
 var _oath_view: Control
 var _oath_ui := {}
 var _oath_reveal: Control
@@ -10536,6 +10548,7 @@ func _build_oath_view() -> void:
 	_oath_reveal.visible = false
 	_oath_view.add_child(_oath_reveal)
 	# 전투 화면의 활성 버프 한 줄.
+	_build_oath_hud()
 	_oath_buff_lbl = _mk_label(Vector2(0.0, 66.0), Type.SIZE_SMALL,
 		Color(0.98, 0.72, 0.66))
 	_oath_buff_lbl.size = Vector2(Grid.BG.x, 18.0)
@@ -10545,8 +10558,24 @@ func _build_oath_view() -> void:
 
 
 func _refresh_oath() -> void:
+	if _oath_hud:
+		_oath_hud.visible = oath_fx_t > 0.0 and _battle_visible()
+		if _oath_hud.visible:
+			var face := OathDefs.card_face(oath_fx_id)
+			if _oath_hud_face.texture != Assets.tex(face):
+				_oath_hud_face.texture = Assets.tex(face)
+				_oath_glow(_oath_hud_neon, _oath_rcol(oath_fx_rarity))
+			var left := int(ceil(oath_fx_t))
+			_oath_hud_time.text = "%d:%02d" % [left / 60, left % 60] \
+				if left >= 60 else "%d초" % left
+			_oath_hud_time.add_theme_color_override("font_color",
+				Color(1.0, 0.45, 0.42) if oath_fx_t <= 10.0
+				else Color(0.98, 0.86, 0.56))
+		elif _oath_hud_tip and is_instance_valid(_oath_hud_tip):
+			_oath_hud_tip.queue_free()   # 끝난 버프의 설명을 남겨 두지 않는다
+			_oath_hud_tip = null
 	if _oath_buff_lbl:
-		_oath_buff_lbl.visible = oath_fx_t > 0.0
+		_oath_buff_lbl.visible = false   # 카드 위젯이 대신한다(사장님 자리 지정)
 		if oath_fx_t > 0.0:
 			var parts := PackedStringArray()
 			for k in oath_fx:
@@ -11297,6 +11326,102 @@ func _oath_rays(parent: Control, mid: Vector2, rcol: Color) -> void:
 		st2.parallel().tween_property(spark, "position:y", sy - 26.0, 1.6)
 		st2.tween_property(spark, "color:a", 0.0, 1.1)
 
+# 전투 화면 왼쪽 세로 띠의 활성 계약 카드(사장님이 짚은 자리). 카드 그림 +
+# 등급 네온 + 남은 시간이고, 누르면 말풍선으로 무슨 효과인지 적어 준다.
+const OATH_HUD_AT := Vector2(14.0, 104.0)
+const OATH_HUD_CARD := Vector2(52.0, 70.0)
+var _oath_hud: Control
+var _oath_hud_face: TextureRect
+var _oath_hud_neon: Control
+var _oath_hud_time: Label
+var _oath_hud_tip: Control
+
+
+func _build_oath_hud() -> void:
+	_oath_hud = Control.new()
+	_oath_hud.position = OATH_HUD_AT
+	_oath_hud.size = Vector2(OATH_HUD_CARD.x, OATH_HUD_CARD.y + 20.0)
+	_oath_hud.visible = false
+	_oath_hud.z_index = 12
+	_hud_root.add_child(_oath_hud)
+	_oath_hud_neon = _oath_neon(_oath_hud, Vector2.ZERO, OATH_HUD_CARD,
+		Color(0.9, 0.3, 0.3), [[1.0, 2.0, 0.90], [5.0, 4.0, 0.26]])
+	_oath_hud_face = Ui.image("res://assets/ui/oath_card.png", Vector2.ZERO,
+		OATH_HUD_CARD)
+	_oath_hud.add_child(_oath_hud_face)
+	_oath_hud_time = _panel_label(_oath_hud, Vector2(-6.0, OATH_HUD_CARD.y + 2.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), OATH_HUD_CARD.x + 12.0, 16.0)
+	_oath_hud_time.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_oath_hud_time, 5)
+	var hit := Ui.button("", Vector2.ZERO, OATH_HUD_CARD, Type.SIZE_SMALL)
+	hit.modulate = Color(1, 1, 1, 0)
+	hit.pressed.connect(_oath_hud_toggle)
+	_oath_hud.add_child(hit)
+	_pet_hover(hit, _oath_hud_face)
+
+
+# 말풍선 — 카드 오른쪽에 뜨고, 다시 누르거나 버프가 끝나면 사라진다.
+func _oath_hud_toggle() -> void:
+	if _oath_hud_tip and is_instance_valid(_oath_hud_tip):
+		_oath_hud_tip.queue_free()
+		_oath_hud_tip = null
+		return
+	if oath_fx_t <= 0.0:
+		return
+	var tip := Control.new()
+	tip.position = OATH_HUD_AT + Vector2(OATH_HUD_CARD.x + 10.0, 0.0)
+	tip.z_index = 13
+	_hud_root.add_child(tip)
+	_oath_hud_tip = tip
+	var rows := PackedStringArray()
+	for k in oath_fx:
+		rows.append(_oath_fx_long(str(k), float(oath_fx[k])))
+	var w := 186.0
+	var h := 30.0 + float(rows.size()) * 18.0
+	var body := ColorRect.new()
+	body.color = Color(0.06, 0.03, 0.06, 0.92)
+	body.size = Vector2(w, h)
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tip.add_child(body)
+	var rcol := _oath_rcol(oath_fx_rarity)
+	_oath_neon(tip, Vector2.ZERO, Vector2(w, h), rcol,
+		[[0.0, 2.0, 0.85], [4.0, 4.0, 0.22]])
+	# 말머리 — 카드 쪽을 가리키는 작은 세모(마름모를 반만 보이게).
+	var beak := ColorRect.new()
+	beak.color = Color(rcol.r, rcol.g, rcol.b, 0.85)
+	beak.size = Vector2(10.0, 10.0)
+	beak.position = Vector2(-5.0, 22.0)
+	beak.rotation_degrees = 45.0
+	beak.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tip.add_child(beak)
+	var head := _panel_label(tip, Vector2(8.0, 5.0), Type.SIZE_SMALL, rcol,
+		w - 16.0, 18.0)
+	head.text = oath_fx_name
+	_shop_outline(head, 5)
+	for i in rows.size():
+		var ln := _panel_label(tip, Vector2(8.0, 26.0 + float(i) * 18.0),
+			Type.SIZE_SMALL, Color(0.92, 0.90, 0.94), w - 16.0, 16.0)
+		ln.text = "· " + str(rows[i])
+		_shop_outline(ln, 4)
+	tip.modulate.a = 0.0
+	tip.create_tween().tween_property(tip, "modulate:a", 1.0, 0.12)
+
+
+# 말풍선용 긴 이름 — 전투 줄의 축약(_oath_fx_short)과 달리 문장으로 적는다.
+func _oath_fx_long(k: String, v: float) -> String:
+	match k:
+		"attack": return "공격력 +%d%%" % int(v * 100.0)
+		"speed": return "공격 속도 +%d%%" % int(v * 100.0)
+		"armor": return "받는 피해 -%d%%" % int(v * 100.0)
+		"regen": return "회복량 +%d%%" % int(v * 100.0)
+		"regen_max": return "초당 최대체력 %d%% 회복" % int(v * 100.0)
+		"leech": return "흡혈량 +%d%%" % int(v * 100.0)
+		"crit": return "치명 확률 +%d%%p" % int(v)
+		"cleave": return "평타가 광역이 된다"
+		"exec": return "처형 문턱 +%d%%p" % int(v * 100.0)
+	return k
+
+
 # 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
 # 카드 뒤에 등급색 광선이 돌고, 아래는 전용 세트 판 + 등급 리본 + 세 줄.
 func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
@@ -11638,6 +11763,8 @@ func _oath_apply(c: Dictionary, e: Dictionary, resonance: bool, clv: int) -> voi
 			_:
 				oath_fx[str(k)] = v
 	oath_fx_name = str(c["name"])
+	oath_fx_id = str(c["id"])
+	oath_fx_rarity = str(c["rarity"])
 	oath_fx_t = dur if not oath_fx.is_empty() else 0.0
 
 
