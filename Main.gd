@@ -1985,6 +1985,8 @@ const REWARD_CELL := Vector2(116.0, 140.0)
 
 # entries: [{"icon": 경로, "label": "정수 +1.2k"}, ...]
 func _show_reward(title: String, entries: Array) -> void:
+	if _reward_title == null:
+		return   # 화면 없이 도는 계측기 — 받기는 이미 끝났고 그릴 창만 없다
 	_reward_title.text = title
 	for child in _reward_row.get_children():
 		child.queue_free()
@@ -3841,6 +3843,7 @@ func _level_up_selected() -> void:
 	var old_max := max_hp()
 	essence -= cost
 	item["lv"] = int(item.get("lv", 0)) + 1
+	_quest_bump("gear")   # 강화 자리가 둘이다(보관함 상세 · 장착 슬롯)
 	var slot := str(item["slot"])
 	if str(equipped.get(slot, {}).get("inventory_key", "")) == _gear_selected_key:
 		var equipped_item := item.duplicate(true)
@@ -3996,6 +3999,7 @@ func _enhance(slot: String) -> void:
 	var old_max := max_hp()
 	essence -= cost
 	item["lv"] = int(item.get("lv", 0)) + 1
+	_quest_bump("gear")
 	var inventory_key := str(item.get("inventory_key", ""))
 	if gear_inventory.has(inventory_key):
 		gear_inventory[inventory_key]["lv"] = item["lv"]
@@ -4657,6 +4661,7 @@ func _refresh_chest() -> void:
 func _claim_chest() -> void:
 	if chest_gold <= 0.0:
 		return
+	_quest_bump("chest")
 	var hours := chest_minutes / 60.0
 	# 키는 **"label"** 이다(_show_reward). "text" 로 넣었더니 숫자가 통째로
 	# 안 뜨고 아이콘만 셋 남았다(실측).
@@ -4850,6 +4855,9 @@ func _goal_value(kind: String) -> int:
 				sum += int(gacha_pulls[k])
 			return sum
 		"knowledge": return codex_knowledge
+		# 업적 전용(AchieveDefs). 가이드는 안 쓰지만 열쇠는 한 군데서 푼다.
+		"dungeon": return dungeon_best
+		"trial": return trial_stage
 	return 0
 
 
@@ -4879,6 +4887,8 @@ func _claim_goal() -> float:
 	gem += reward
 	_currency_seen["gem"] = true
 	goal_index += 1
+	if _goal_widget == null:
+		return reward   # 화면 없이 도는 계측기 — 지급은 끝났고 그릴 것만 없다
 	_save_game()
 	_refresh_goal_widget()   # _refresh_hud 는 매 프레임 도니까 여기서 부를 필요가 없다
 	return reward
@@ -5935,6 +5945,23 @@ var iap_daily_date := ""    # 구독 일일 지급을 오늘 줬는가
 var pass_points := 0
 var pass_free_got := {}     # 단계 -> true (무료 줄 수령)
 var pass_paid_got := {}     # 단계 -> true (유료 줄 수령)
+var pass_season := -1       # 지금 굴러가는 시즌 번호 (PassDefs.season_of)
+
+
+# 시즌이 넘어갔으면 트랙을 새로 연다(2026-08-20, 사장님 "시즌 배틀패스").
+# **안 받은 칸은 그냥 사라진다** — 시즌제의 뜻이 그것이고, 남겨 두면 다음
+# 시즌에 두 배로 받는 자리가 된다. 그래서 진열에 "n일 남음"을 적는다.
+func _pass_roll_season() -> void:
+	var now := PassDefs.season_of(Time.get_date_string_from_system())
+	if pass_season < 0:
+		pass_season = now      # 첫 실행 — 지금 시즌에서 시작한다
+		return
+	if now == pass_season:
+		return
+	pass_season = now
+	pass_points = 0
+	pass_free_got = {}
+	pass_paid_got = {}
 # ── 프레스티지 "핏빛 회귀" (PrestigeDefs) ──────────────────────────────────
 var prestige_marks := 0     # 혈흔 — 누적. 리셋해도 안 사라진다
 var prestige_count := 0     # 몇 번 회귀했나(화면 표기용)
@@ -5994,6 +6021,7 @@ func _pass_active() -> bool:
 func _pass_add(points: int) -> void:
 	if points <= 0:
 		return
+	_pass_roll_season()
 	pass_points += points
 	if _pass_rows.is_empty():
 		return
@@ -7000,6 +7028,11 @@ var _quest_rows: Array[Dictionary] = []
 var _quest_wrows: Array[Dictionary] = []
 var _quest_day_root: Control
 var _quest_week_root: Control
+# 업적 — 트랙별로 **몇 계단까지 받았나**만 센다(AchieveDefs). 계단 목록을
+# 저장하면 표를 고칠 때 옛 저장이 어긋난다 — 개수 하나면 표가 늘어도 안전하다.
+var achieve_got := {}
+var _achieve_root: Control
+var _achieve_rows: Array[Dictionary] = []
 var _quest_mode_btns := {}
 var _quest_tab_art := {}
 var _quest_claim_all: Button
@@ -7171,6 +7204,10 @@ const OATH_BTN_AT := Vector2(508.0, 212.0)    # 핏빛 계약 — 상시 아이�
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
 # 잘렸다(실측). 잘린 진행도는 거짓말이다.
 const QUEST_BAR_W := 220.0
+# 줄이 서는 창 높이. 판 아래의 "자정에 새로 온다"(-92)에 **닿지 않는** 값이다:
+# 560 - 96(머리) - 92(안내) = 372 는 딱 맞닿아서 마지막 줄이 그 글자에 걸쳤다.
+# 16 을 비워 둔다(실측 캡처).
+const QUEST_ROWS_H := 356.0
 var _quest_view: Control
 var _quest_dot: TextureRect
 var _side_root: Control      # 오른쪽 바로가기 줄(임무·칭호) — 전면 판이 숨긴다
@@ -7281,9 +7318,11 @@ func _build_quests() -> void:
 	# 2026-08-18). 넷이 별개 판이면 "오늘 뭐 남았지"를 네 번 열어 봐야 한다.
 	# **닫기와 같은 줄에 넷을 못 넣는다** — 폭 484 에서 닫기 88 을 빼면 버튼당
 	# 96px 이라 글자가 잘린다. 소탭은 아래 줄로 내리고 넷이 폭을 고르게 쓴다.
-	var tabs := [["day", "일일"], ["week", "주간"], ["attend", "출석"],
-		["boon", "은총"]]
-	var tw := (w - 18.0) / 4.0
+	# 업적이 다섯 번째다(2026-08-20). 폭 440 을 다섯으로 나누면 칸당 83px 이라
+	# 두 글자 라벨(11px)은 그대로 들어간다 — 여기가 늘어날 수 있는 마지막 칸이다.
+	var tabs := [["day", "일일"], ["week", "주간"], ["achieve", "업적"],
+		["attend", "출석"], ["boon", "은총"]]
+	var tw := (w - 24.0) / 5.0
 	for i in tabs.size():
 		var mode := str(tabs[i][0])
 		var tp := Vector2(x + float(i) * (tw + 6.0), QUEST_PANEL.position.y + 54.0)
@@ -7314,6 +7353,10 @@ func _build_quests() -> void:
 	_quest_view.add_child(_quest_week_root)
 	_quest_rows = _quest_build_rows(_quest_day_root, QuestDefs.QUESTS, false)
 	_quest_wrows = _quest_build_rows(_quest_week_root, QuestDefs.WEEKLY, true)
+	_achieve_root = Control.new()
+	_achieve_root.visible = false
+	_quest_view.add_child(_achieve_root)
+	_achieve_rows = _achieve_build_rows(_achieve_root)
 	_attend_root = Control.new()
 	_attend_root.visible = false
 	_quest_view.add_child(_attend_root)
@@ -7327,6 +7370,10 @@ func _build_quests() -> void:
 		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
 		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
 	day_note.text = "자정에 새로 온다"
+	var ach_note := _panel_label(_achieve_root,
+		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
+		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
+	ach_note.text = "지나온 거리에 한 번씩 — 새로 고쳐지지 않는다"
 	var week_note := _panel_label(_quest_week_root,
 		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
 		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
@@ -7349,7 +7396,9 @@ func _build_quests() -> void:
 		for q in QuestDefs.QUESTS:
 			_claim_quest(str(q["id"]))
 		for q in QuestDefs.WEEKLY:
-			_claim_wquest(str(q["id"])))
+			_claim_wquest(str(q["id"]))
+		for t in AchieveDefs.TRACKS:
+			_claim_achieve(str(t["kind"])))
 	_quest_view.add_child(_quest_claim_all)
 	_quest_set_mode("day")
 
@@ -7627,10 +7676,34 @@ func _shop_wcard(parent: Control, y: float, name: String, icon_path: String,
 # 특가: 리본 + 성장 패키지 카드. **구매 버튼은 잠가 둔다** — 결제 SDK 가 아직
 # 없다(사장님 결정: 표와 화면까지). SDK 가 붙으면 ghost 버튼의 pressed 만 잇는다.
 func _build_shop_packs(view: Control) -> void:
-	_shop_ribbon(view, 0.0, "성장 패키지 — 계정당 1회")
+	# 오늘의 특가가 맨 위다 — 아래 성장팩은 구간이 열어 주는 상시 진열이라
+	# **기간제가 그 밑에 깔리면 기간제로 안 읽힌다**(사장님 2026-08-20).
+	_shop_ribbon(view, 0.0, "오늘의 특가 — 자정까지")
+	var ltd := IapDefs.limited_today(Time.get_date_string_from_system())
+	var top := 63.0
+	if not ltd.is_empty():
+		var lr: Dictionary = ltd["reward"]
+		var licon := ""
+		var lpills: Array = []
+		for k in lr:
+			if licon == "":
+				licon = _shop_kind_icon(str(k))
+			if lpills.size() < 3:
+				lpills.append([_shop_kind_icon(str(k)), _n(float(lr[k]))])
+		var lc := _shop_wcard(view, top, str(ltd["name"]), licon,
+			int(ltd["value"]))
+		for j in lpills.size():
+			_shop_pill(lc["root"], Vector2(150.0 + float(j) * 114.0, 60.0),
+				str(lpills[j][0]), str(lpills[j][1]))
+		lc["sub"].text = str(ltd["desc"])
+		lc["price"].text = IapDefs.price_text(int(ltd["price"]))
+		lc["btn"].disabled = true
+		top += SHOP_WCARD_H + 10.0
+	_shop_ribbon(view, top + 4.0, "성장 패키지 — 계정당 1회")
+	top += 67.0
 	for i in IapDefs.PACKS.size():
 		var it: Dictionary = IapDefs.PACKS[i]
-		var y := 63.0 + float(i) * (SHOP_WCARD_H + 10.0)
+		var y := top + float(i) * (SHOP_WCARD_H + 10.0)
 		var reward: Dictionary = it["reward"]
 		var main_icon := ""
 		var pills: Array = []
@@ -7649,20 +7722,26 @@ func _build_shop_packs(view: Control) -> void:
 		card["sub"].text = "계정당 1 / 1"
 		card["btn"].disabled = true
 		_pack_rows.append(card)
-	view.custom_minimum_size.y = 63.0 \
+	view.custom_minimum_size.y = top \
 		+ float(IapDefs.PACKS.size()) * (SHOP_WCARD_H + 10.0)
 
 
 # 정기: 구독 카드 + 보석 충전(등급마다 그림이 다르다 — 레퍼런스 충전소 문법).
 func _build_shop_subs(view: Control) -> void:
 	_shop_ribbon(view, 0.0, "정기 구독 — 최고 효율")
-	var sub_icons := ["gem_chest", "badge_star"]   # 혈세=보물함, 패스=문장
 	var y := 63.0
 	for i in IapDefs.SUBS.size():
 		var it: Dictionary = IapDefs.SUBS[i]
+		# 그림은 **표가 들고 있다**(IapDefs 의 art). 여기 짝 배열로 두었더니
+		# 구독을 하나 늘리자마자 인덱스가 넘쳐 상점이 통째로 안 그려졌다.
 		var card := _shop_wcard(view, y, "%s  ·  %d일" % [str(it["name"]),
-			int(it["days"])], SHOP_DIR + sub_icons[i] + ".png", int(it["value"]))
+			int(it["days"])], SHOP_DIR + str(it.get("art", "badge_star")) + ".png",
+			int(it["value"]))
 		card["sub"].text = str(it["desc"])
+		if str(it["id"]) == "season_pass":
+			# 시즌제 — "언제까지"가 안 보이면 지금 살 이유가 없다.
+			card["sub"].text += "\n이번 시즌 %d일 남음" \
+				% PassDefs.season_days_left(Time.get_date_string_from_system())
 		card["sub"].position.y = 58.0          # 알약 대신 설명 두 줄이 그 자리다
 		card["sub"].size.y = 40.0
 		card["price"].text = IapDefs.price_text(int(it["price"]))
@@ -8194,17 +8273,29 @@ func _refresh_shop() -> void:
 
 # 임무 줄 한 벌 — 일일·주간이 같은 생김새라 짜개는 하나다.
 # 주간 게이지만 금빛 — 어느 판에 있는지 곁눈으로 갈린다.
+# 줄이 12개(일일)·9개(주간)로 늘면서 판 밖으로 넘쳤다 — **스크롤로 감싼다**
+# (2026-08-20). 예전 7줄도 사실 마지막 줄이 "자정에 새로 온다"를 덮고 있었다.
+# 스크롤 안은 지역 좌표라 줄을 0 부터 쌓는다.
 func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dictionary]:
-	var x := QUEST_PANEL.position.x + 22.0
-	var w := QUEST_PANEL.size.x - 44.0
+	# 오른쪽 22 는 판 여백, 16 은 **두루마리 장식 폭**이다 — 그만큼 안 비우면
+	# 스크롤바가 장식 위에 그려진다(실측 캡처).
+	var w := QUEST_PANEL.size.x - 60.0 - Ui.SCROLL_W
+	var sc := Ui.scroll(Vector2(QUEST_PANEL.position.x + 22.0,
+		QUEST_PANEL.position.y + 96.0),
+		Vector2(w + Ui.SCROLL_W, QUEST_ROWS_H))
+	root.add_child(sc)
+	var inner := Control.new()
+	inner.custom_minimum_size = Vector2(w, float(table.size()) * 56.0)
+	sc.add_child(inner)
+	var x := 0.0
 	var rows: Array[Dictionary] = []
 	for i in table.size():
 		var q: Dictionary = table[i]
-		var y := QUEST_PANEL.position.y + 96.0 + float(i) * 56.0
-		root.add_child(Ui.set_row(DUTY, Vector2(x, y), Vector2(w, 50.0)))
-		root.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
+		var y := float(i) * 56.0
+		inner.add_child(Ui.set_row(DUTY, Vector2(x, y), Vector2(w, 50.0)))
+		inner.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
 			Vector2(x + 10.0, y + 11.0), 28.0))
-		var nm := _panel_label(root, Vector2(x + 48.0, y + 6.0),
+		var nm := _panel_label(inner, Vector2(x + 48.0, y + 6.0),
 			Type.SIZE_SMALL, DUTY_INK, w - 170.0, 16.0)
 		nm.text = str(q["name"])
 		var track := ColorRect.new()
@@ -8212,23 +8303,23 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		track.position = Vector2(x + 48.0, y + 30.0)
 		track.size = Vector2(QUEST_BAR_W, 8.0)
 		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		root.add_child(track)
+		inner.add_child(track)
 		var fill := ColorRect.new()
 		fill.color = Color(0.62, 0.42, 0.14) if weekly else DUTY_RED
 		fill.position = track.position
 		fill.size = Vector2(0.0, 8.0)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		root.add_child(fill)
-		var pr := _panel_label(root,
+		inner.add_child(fill)
+		var pr := _panel_label(inner,
 			Vector2(x + 48.0 + QUEST_BAR_W + 8.0, y + 24.0), Type.SIZE_SMALL,
 			DUTY_DIM, 90.0, 20.0)
 		var qid := str(q["id"])
 		var bp := Vector2(x + w - 108.0, y + 9.0)
 		var pill_art := Ui.set_row(DUTY, bp, Vector2(100.0, 32.0))
-		root.add_child(pill_art)
-		root.add_child(Ui.icon("res://assets/ui/%s.png"
+		inner.add_child(pill_art)
+		inner.add_child(Ui.icon("res://assets/ui/%s.png"
 			% _reward_icon(str(q["reward"])), Vector2(bp.x + 12.0, bp.y + 8.0), 16.0))
-		var rw := _panel_label(root, Vector2(bp.x + 34.0, bp.y + 8.0),
+		var rw := _panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
 			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0)
 		rw.text = "+%d" % int(q["amount"])
 		var b := Ui.button("", bp, Vector2(100.0, 32.0), Type.SIZE_SMALL)
@@ -8238,7 +8329,7 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 			b.pressed.connect(func() -> void: _claim_wquest(qid))
 		else:
 			b.pressed.connect(func() -> void: _claim_quest(qid))
-		root.add_child(b)
+		inner.add_child(b)
 		rows.append({"prog": pr, "btn": b, "fill": fill})
 	return rows
 
@@ -8375,9 +8466,120 @@ func _refresh_boon() -> void:
 			DUTY_RED if here else DUTY_DIM)
 
 
+# 업적 줄 — **트랙마다 한 줄**이고 지금 노리는 계단 하나만 적는다.
+# 계단을 전부 늘어놓으면 55줄이라 판이 목록이 아니라 벽이 된다. 다 받은 트랙은
+# "완주"로 남겨 둔다 — 지운 자리는 성취가 아니라 빈칸으로 읽힌다.
+func _achieve_build_rows(root: Control) -> Array[Dictionary]:
+	# 오른쪽 22 는 판 여백, 16 은 **두루마리 장식 폭**이다 — 그만큼 안 비우면
+	# 스크롤바가 장식 위에 그려진다(실측 캡처).
+	var w := QUEST_PANEL.size.x - 60.0 - Ui.SCROLL_W
+	var sc := Ui.scroll(Vector2(QUEST_PANEL.position.x + 22.0,
+		QUEST_PANEL.position.y + 96.0),
+		Vector2(w + Ui.SCROLL_W, QUEST_ROWS_H))
+	root.add_child(sc)
+	var inner := Control.new()
+	inner.custom_minimum_size = Vector2(w, float(AchieveDefs.TRACKS.size()) * 56.0)
+	sc.add_child(inner)
+	var rows: Array[Dictionary] = []
+	for i in AchieveDefs.TRACKS.size():
+		var t: Dictionary = AchieveDefs.TRACKS[i]
+		var kind := str(t["kind"])
+		var y := float(i) * 56.0
+		inner.add_child(Ui.set_row(DUTY, Vector2(0.0, y), Vector2(w, 50.0)))
+		inner.add_child(Ui.icon("res://assets/ui/%s.png" % str(t["icon"]),
+			Vector2(10.0, y + 11.0), 28.0))
+		var nm := _panel_label(inner, Vector2(48.0, y + 6.0),
+			Type.SIZE_SMALL, DUTY_INK, w - 170.0, 16.0)
+		var bar := ColorRect.new()
+		bar.color = Color(0.10, 0.09, 0.12)
+		bar.position = Vector2(48.0, y + 30.0)
+		bar.size = Vector2(QUEST_BAR_W, 8.0)
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		inner.add_child(bar)
+		var fill := ColorRect.new()
+		fill.color = Color(0.72, 0.60, 0.24)      # 업적은 금빛 — 일일(붉음)과 구분
+		fill.position = bar.position
+		fill.size = Vector2(0.0, 8.0)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		inner.add_child(fill)
+		var pr := _panel_label(inner, Vector2(48.0 + QUEST_BAR_W + 8.0, y + 24.0),
+			Type.SIZE_SMALL, DUTY_DIM, 90.0, 20.0)
+		var bp := Vector2(w - 108.0, y + 9.0)
+		var pill_art := Ui.set_row(DUTY, bp, Vector2(100.0, 32.0))
+		inner.add_child(pill_art)
+		var ricon := Ui.icon("res://assets/ui/res_blood.png",
+			Vector2(bp.x + 12.0, bp.y + 8.0), 16.0)
+		inner.add_child(ricon)
+		var rw := _panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
+			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0)
+		var b := Ui.button("", bp, Vector2(100.0, 32.0), Type.SIZE_SMALL)
+		b.modulate = Color(1, 1, 1, 0)
+		_pet_hover(b, pill_art)
+		b.pressed.connect(func() -> void: _claim_achieve(kind))
+		inner.add_child(b)
+		rows.append({"name": nm, "prog": pr, "fill": fill, "btn": b,
+			"rw": rw, "icon": ricon})
+	return rows
+
+
+func _refresh_achieve() -> void:
+	if _achieve_rows.is_empty():
+		return
+	for i in AchieveDefs.TRACKS.size():
+		var t: Dictionary = AchieveDefs.TRACKS[i]
+		var kind := str(t["kind"])
+		var row: Dictionary = _achieve_rows[i]
+		var got := int(achieve_got.get(kind, 0))
+		var step: Dictionary = AchieveDefs.at(kind, got)
+		var b: Button = row["btn"]
+		if step.is_empty():
+			row["name"].text = "%s — 완주" % str(t["name"])
+			row["prog"].text = ""
+			row["fill"].size.x = QUEST_BAR_W
+			row["rw"].text = ""
+			b.disabled = true
+			continue
+		var value := _goal_value(kind)
+		var need := int(step["need"])
+		row["name"].text = str(step["name"])
+		row["prog"].text = "%s/%s" % [_n(float(value)), _n(float(need))]
+		row["fill"].size.x = QUEST_BAR_W * clampf(float(value) / float(need), 0.0, 1.0)
+		row["rw"].text = "+%d" % int(step["amount"])
+		row["icon"].texture = Assets.tex("res://assets/ui/%s.png"
+			% _reward_icon(str(step["reward"])))
+		b.disabled = value < need
+
+
+# 한 번 누르면 **닿은 계단을 다 준다** — 오래 안 열었으면 계단이 여럿 쌓이는데
+# 한 칸씩 누르게 하면 그건 보상이 아니라 일이다.
+func _claim_achieve(kind: String) -> void:
+	var value := _goal_value(kind)
+	var got := int(achieve_got.get(kind, 0))
+	var entries: Array = []
+	while true:
+		var step: Dictionary = AchieveDefs.at(kind, got)
+		if step.is_empty() or value < int(step["need"]):
+			break
+		_grant_reward(str(step["reward"]), float(step["amount"]))
+		entries.append({"icon": "res://assets/ui/%s.png"
+			% _reward_icon(str(step["reward"])),
+			"label": "+%d" % int(step["amount"]), "sub": str(step["name"])})
+		got += 1
+	if entries.is_empty():
+		return
+	achieve_got[kind] = got
+	_show_reward("업적 달성", entries)
+	if _achieve_rows.is_empty():
+		return   # 계측기 — 지급은 끝났다
+	_refresh_achieve()
+	_refresh_hud()
+	_save_game()
+
+
 func _quest_set_mode(mode: String) -> void:
 	_quest_day_root.visible = mode == "day"
 	_quest_week_root.visible = mode == "week"
+	_achieve_root.visible = mode == "achieve"
 	_attend_root.visible = mode == "attend"
 	_boon_root.visible = mode == "boon"
 	for key in _quest_mode_btns:
@@ -8389,11 +8591,13 @@ func _quest_set_mode(mode: String) -> void:
 			DUTY_RED if key == mode else DUTY_DIM)
 	# 일괄 받기는 임무 소탭에서만 뜻이 있다 — 출석은 하루 한 칸이고 은총은
 	# 받을 게 없다. 남겨 두면 누를 수는 있는데 아무 일도 안 일어난다.
-	var on_quest := mode == "day" or mode == "week"
+	# 일괄 받기는 **업적에서도** 뜻이 있다 — 오래 안 열었으면 계단이 여럿 쌓인다.
+	var on_quest := mode == "day" or mode == "week" or mode == "achieve"
 	_quest_claim_all.visible = on_quest
 	for n in _quest_claim_art:
 		n.visible = on_quest
 	_refresh_quests()
+	_refresh_achieve()
 	_refresh_attend()
 	_refresh_boon()
 
@@ -11918,6 +12122,7 @@ func _oath_roll(golden := false, apply := true) -> Dictionary:
 func _oath_use(r: Dictionary) -> void:
 	if r.is_empty():
 		return
+	_quest_bump("oath")   # 굴린 게 아니라 **쓴** 것을 센다
 	_oath_apply(r["contract"], r["engrave"], bool(r["resonance"]), int(r["lv"]))
 	_refresh_oath()
 
@@ -12675,6 +12880,7 @@ func _advance_stage() -> void:
 				_offline_banner.visible = true
 				_offline_t = 5.0
 		stage = next_stage
+		_quest_bump("stage")
 		_boss_time = StageDefs.time_limit(stage)
 		_begin_stage_pose()   # stage 가 정해진 뒤에 부른다 — 보스인지 여기서 갈린다
 		_start_advance()
@@ -13446,6 +13652,8 @@ func _save_game() -> void:
 	cfg.set_value("up", "lv", lv)
 	cfg.set_value("up", "split15", true)
 	cfg.set_value("run", "blood15", true)
+	cfg.set_value("run", "achieve", achieve_got)
+	cfg.set_value("pass", "season", pass_season)
 	cfg.set_value("up", "buy_step", buy_step)
 	cfg.set_value("gear", "equipped", equipped)
 	cfg.set_value("gear", "inventory", gear_inventory)
@@ -13503,6 +13711,8 @@ func _load_game() -> void:
 	# ── 혈액 눈금 이관 (2026-08-20, 한 번만) ──────────────────────────────
 	# 눈금이 15배가 됐으니 지갑도 옮긴다. 안 옮기면 지갑만 1/15 로 쪼그라든다.
 	# **15분할 환급(아래)보다 먼저** 해야 한다 — 그 환급은 새 단위로 나온다.
+	achieve_got = cfg.get_value("run", "achieve", {})
+	pass_season = int(cfg.get_value("pass", "season", -1))
 	var blood15: bool = cfg.has_section_key("run", "blood15")
 	if not blood15:
 		gold *= Balance.BLOOD_UNIT

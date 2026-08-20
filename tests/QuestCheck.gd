@@ -11,8 +11,12 @@ extends SceneTree
 # 지급은 Main._grant_reward 한 곳이 한다 — 여기 이름이 있는데 거기 없으면
 # 조용히 안 들어온다. 실제로 들어오는지는 TicketCheck 이 씬으로 잰다.
 # 소환권은 **TicketDefs 가 안다** — 종류가 늘어도 여기를 고칠 일이 없다.
+# Main._grant_reward 가 실제로 아는 이름들. 여기 없는 이름을 표에 적으면 화면에
+# 줄은 뜨는데 눌러도 아무것도 안 들어온다 — 오타 한 글자가 그렇게 된다.
+# oath_card/oath_gold/feed 는 2026-08-20 에 임무 보상으로 쓰기 시작했다.
 static func known_rewards() -> Array:
-	var out: Array = ["gem", "crystal", "sigil", "essence", "gold"]
+	var out: Array = ["gem", "crystal", "sigil", "essence", "gold", "feed",
+		"oath_card", "oath_gold"]
 	for k in TicketDefs.KINDS + TicketDefs.PET_KINDS:
 		out.append(TicketDefs.reward_of(k))
 	return out

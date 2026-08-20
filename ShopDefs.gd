@@ -31,7 +31,26 @@ const ITEMS := [
 		"icon": "res://assets/ui/res_sigil.png"},
 	{"id": "ticket", "name": "던전 입장권", "sub": "재화 던전 3종 +1판", "cost": 60,
 		"per_day": 1, "icon": "res://assets/ui/tab_raid.png"},
+	# ── 광고 (2026-08-20, 사장님 "광고 보상 확대") ──────────────────────────
+	# cost 0 · ad true 면 보석이 아니라 광고를 낸다. **표를 하나로 둔다** —
+	# 광고를 따로 판으로 만들면 "오늘 뭐 남았지"를 한 군데 더 열어 봐야 한다.
+	# 붙일 SDK 가 아직 없어서 화면에는 "준비 중"으로 뜬다(잠금은 Main 이 건다).
+	#
+	# 보상은 **같은 물건의 무료판**이라 상품 가치를 안 깎는다: 소환권은 정기권의
+	# 1/6, 보석은 충전 최소 단위의 1/6 이다(설계서 9-4 "광고는 하위 호환").
+	{"id": "ad_ticket", "name": "[광고] 소환권", "sub": "소환권 2장", "cost": 0,
+		"per_day": 3, "ad": true, "icon": "res://assets/ui/quest_summon.png"},
+	{"id": "ad_gem", "name": "[광고] 보석", "sub": "보석 50", "cost": 0,
+		"per_day": 3, "ad": true, "icon": "res://assets/items/gem.png"},
+	{"id": "ad_chest", "name": "[광고] 방치 상자", "sub": "그때 받은 혈액만큼 한 번 더",
+		"cost": 0, "per_day": 2, "ad": true,
+		"icon": "res://assets/ui/chest.png"},
 ]
+
+
+# 광고로 여는 줄인가. SDK 가 붙기 전에는 Main 이 버튼을 잠근다.
+static func is_ad(id: String) -> bool:
+	return bool(of(id).get("ad", false))
 
 
 static func of(id: String) -> Dictionary:
@@ -50,6 +69,8 @@ static func open_stage(id: String) -> int:
 		"essence": return RaidDefs.open_stage("essence")
 		"sigil": return RaidDefs.open_stage("pact")
 		"ticket": return RaidDefs.OPEN_STAGE
+		# 광고는 처음부터 보인다 — 초반이 가장 재화가 마른 구간이다.
+		"ad_ticket", "ad_gem", "ad_chest": return 1
 	return 1
 
 
@@ -68,4 +89,6 @@ static func amount(id: String, stage: int, dungeon_floor: int) -> float:
 			return DungeonDefs.sweep_per_hour(maxi(dungeon_floor, 5)) * 8.0
 		"essence": return StageDefs.boss_essence(stage) * 2.0    # 성소 1판 = 3
 		"sigil": return 40.0                                     # 제단 1판 = 60+
+		"ad_ticket": return 2.0
+		"ad_gem": return 50.0
 	return 0.0

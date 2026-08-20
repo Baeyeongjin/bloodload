@@ -9,6 +9,14 @@ class_name PassDefs
 # 줄이 둘인 이유: **무료 줄이 없으면 패스는 그냥 보상 상자**다. 무과금도 같은
 # 트랙을 오르되 받는 것이 적어야, 사는 사람은 "더 받는다"를 사고 안 사는
 # 사람은 "손해 본다"가 아니라 "덜 받는다"가 된다.
+# **시즌제**(2026-08-20, 사장님). 28일이 지나면 트랙이 새로 열린다 — 한 번
+# 다 오르면 끝인 패스는 그 뒤로 살 이유가 없고, 안 산 사람에게도 "다음 판이
+# 온다"가 복귀 이유가 된다. 시즌 번호는 **날짜에서 계산한다**: 서버가 없으니
+# 기준일부터 몇 번째 28일 구간인지로 센다. 시즌이 바뀌면 점수가 0 으로 돌아가고
+# 받은 칸도 비워진다(Main._pass_roll_season).
+const SEASON_DAYS := 28
+const SEASON_EPOCH := "2026-08-25"      # 첫 시즌 시작(월요일)
+
 const STEPS := 30
 # 일일 임무 하나 = 10점, 주간 하나 = 40점. 28일 동안 일일 5종 x 10 x 28 =
 # 1400 + 주간 4종 x 40 x 4주 = 640 -> 2040점. 한 단계 60점이면 34단계라
@@ -16,6 +24,25 @@ const STEPS := 30
 const POINT_QUEST := 10
 const POINT_WEEKLY := 40
 const STEP_POINT := 60
+
+
+# 오늘이 몇 번째 시즌인가. 기준일 이전이면 0 시즌이다.
+static func season_of(date: String) -> int:
+	var d := Time.get_unix_time_from_datetime_string(date)
+	var e := Time.get_unix_time_from_datetime_string(SEASON_EPOCH)
+	if d <= e:
+		return 0
+	return int((d - e) / (float(SEASON_DAYS) * 86400.0))
+
+
+# 이번 시즌이 끝나기까지 남은 날. 진열에 "n일 남음"으로 뜬다.
+static func season_days_left(date: String) -> int:
+	var d := Time.get_unix_time_from_datetime_string(date)
+	var e := Time.get_unix_time_from_datetime_string(SEASON_EPOCH)
+	var span := float(SEASON_DAYS) * 86400.0
+	if d <= e:
+		return SEASON_DAYS
+	return maxi(1, int(ceil((span - fmod(d - e, span)) / 86400.0)))
 
 
 static func step_of(points: int) -> int:

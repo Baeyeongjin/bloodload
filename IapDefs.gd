@@ -21,12 +21,26 @@ class_name IapDefs
 # 목적이다: 구독 > 후반 팩 > 초반 팩.
 const SUBS := [
 	{"id": "blood_tax", "name": "혈세", "days": 30, "price": 11000, "value": 600,
+		"art": "gem_chest",
 		"desc": "매일 보석 100 · 소환권 3\n방치 +4시간 · 던전 +1판 · 광고 제거",
 		"instant": {"gem": 1000.0},
 		"daily": {"gem": 100.0, "ticket_weapon": 1.0, "ticket_armor": 1.0,
 			"ticket_skill": 1.0}},
+	# 소환 정기권 (2026-08-20, 사장님). 혈세는 보석 위주라 **소환권을 직접 파는
+	# 자리가 없었다** — 보석은 상점으로도 새므로 "소환을 더 돌고 싶다"는 욕구에
+	# 정확히 대응하는 상품이 아니다. 여섯 갈래 각 1장이라 어느 갈래도 안 굶는다.
+	# 확률을 안 판다는 원칙(5-1의 2)은 그대로다 — 파는 것은 **장수**다.
+	{"id": "summon_pass", "name": "소환 정기권", "days": 30, "price": 8800,
+		"value": 500,
+		"art": "gem_pouch",
+		"desc": "매일 소환권 6장 (여섯 갈래 각 1)\n첫 구매에 20장 즉시",
+		"instant": {"ticket_weapon": 5.0, "ticket_armor": 5.0,
+			"ticket_trinket": 5.0, "ticket_skill": 5.0},
+		"daily": {"ticket_weapon": 1.0, "ticket_armor": 1.0,
+			"ticket_trinket": 1.0, "ticket_skill": 1.0,
+			"ticket_pet": 1.0, "ticket_petgear": 1.0}},
 	{"id": "season_pass", "name": "성장 패스", "days": 28, "price": 16000,
-		"value": 400,
+		"value": 400, "art": "badge_star",
 		"desc": "임무를 채우면 30단계까지\n단계마다 소환권 · 혈정 · 보석",
 		"instant": {"gem": 300.0},
 		"daily": {}},
@@ -54,6 +68,51 @@ const PACKS := [
 	{"id": "oath_l", "name": "군주의 계약", "open": 60, "price": 33000, "value": 220,
 		"reward": {"oath_gold": 10.0, "oath_card": 20.0}},
 ]
+
+# ── 한정 특가 (2026-08-20, 사장님) ─────────────────────────────────────────
+# 성장팩은 **구간 도달**로만 열려서 "지금 사야 할 이유"가 없었다 — 어제 살 수
+# 있던 것을 내일도 살 수 있으면 그건 진열이지 특가가 아니다.
+#
+# **하루에 하나만 돌린다.** 상시 세일로 보이면 정가가 거짓말이 되므로, 날짜로
+# 하나를 골라 그날 자정까지만 판다. 고르는 자가 날짜라 서버가 필요 없다.
+# 파는 것은 여전히 시간이다 — 여기 어느 줄에도 무과금이 못 얻는 물건은 없다.
+const LIMITED := [
+	{"id": "ltd_summon", "name": "오늘의 소환 특가", "price": 3300, "value": 320,
+		"desc": "소환권 16장",
+		"reward": {"ticket_weapon": 4.0, "ticket_armor": 4.0,
+			"ticket_trinket": 4.0, "ticket_skill": 4.0}},
+	{"id": "ltd_pet", "name": "오늘의 동행 특가", "price": 3300, "value": 320,
+		"desc": "펫 소환권 8장 · 먹이 400",
+		"reward": {"ticket_pet": 4.0, "ticket_petgear": 4.0, "feed": 400.0}},
+	{"id": "ltd_gem", "name": "오늘의 보석 특가", "price": 3300, "value": 350,
+		"desc": "보석 500 · 소환권 6장",
+		"reward": {"gem": 500.0, "ticket_skill": 6.0}},
+	{"id": "ltd_maze", "name": "오늘의 미궁 특가", "price": 3300, "value": 320,
+		"desc": "혈정 1500 · 정수 300",
+		"reward": {"crystal": 1500.0, "essence": 300.0}},
+	{"id": "ltd_oath", "name": "오늘의 계약 특가", "price": 3300, "value": 320,
+		"desc": "계약 카드 6장 · 황금 계약 2장",
+		"reward": {"oath_card": 6.0, "oath_gold": 2.0}},
+]
+
+
+# 오늘의 특가. 날짜 문자열을 열쇠로 쓴다 — 다른 하루 판정(상점 한도·던전 표)이
+# 전부 날짜 문자열이라 규칙을 맞춘다. 하루가 넘어가면 저절로 다음 것이 온다.
+static func limited_today(date: String) -> Dictionary:
+	if LIMITED.is_empty():
+		return {}
+	var n := 0
+	for c in date:
+		n += c.unicode_at(0)
+	return LIMITED[n % LIMITED.size()]
+
+
+static func limited_of(id: String) -> Dictionary:
+	for x in LIMITED:
+		if str(x["id"]) == id:
+			return x
+	return {}
+
 
 # ── 보석 충전 ───────────────────────────────────────────────────────────────
 # 첫 구매 x2 는 **한 번뿐**이다 — 상시 배수는 정가를 거짓말로 만든다.

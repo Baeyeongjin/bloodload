@@ -21,19 +21,29 @@ extends RefCounted
 
 # kind 는 Main._goal_value() 가 "지금 값"을 돌려주는 열쇠다. 새 트랙을 넣으려면
 # 거기에 한 줄을 같이 추가해야 한다 — GoalTest 가 빠진 걸 잡는다.
+# ── 사다리 재조정 (2026-08-20, 사장님 "촘촘하게") ──────────────────────────
+#
+# 1) **간격을 좁혔다.** 배수가 1.6~2.1 이면 열 번째 목표가 첫 목표의 100~600배라
+#    중반부터 가이드 하나가 며칠짜리가 된다 — 화면에 늘 하나만 뜨는 구조라
+#    그동안은 "다음에 뭘 하지"를 아무도 안 알려 준다. 1.38~1.75 로 낮췄다.
+#
+# 2) **두 트랙은 기준값이 틀려 있었다.** 15분할(Balance.SPLIT)로 스탯 레벨이
+#    15배가 되면서 `damage_lv` 목표를 순식간에 넘겼고, 배급을 3배로 올리면서
+#    `pulls` 도 같은 꼴이 됐다. 눈금이 바뀌면 그 눈금을 읽는 목표도 같이
+#    옮겨야 한다 — base 를 10 -> 150(=10x15) · 10 -> 30 으로 맞춘다.
 const TRACKS := [
 	{"kind": "stage", "name": "단계 도달", "unit": "단계",
-		"base": 3.0, "mult": 1.55, "gem": 25.0, "icon": "stat_damage"},
+		"base": 3.0, "mult": 1.38, "gem": 25.0, "icon": "stat_damage"},
 	{"kind": "kills", "name": "처치", "unit": "마리",
-		"base": 120.0, "mult": 2.1, "gem": 18.0, "icon": "stat_drain"},
+		"base": 120.0, "mult": 1.75, "gem": 18.0, "icon": "stat_drain"},
 	{"kind": "hero_lv", "name": "영웅", "unit": "레벨",
-		"base": 5.0, "mult": 1.7, "gem": 20.0, "icon": "stat_tough"},
+		"base": 5.0, "mult": 1.48, "gem": 20.0, "icon": "stat_tough"},
 	{"kind": "damage_lv", "name": "공격력", "unit": "레벨",
-		"base": 10.0, "mult": 1.8, "gem": 15.0, "icon": "stat_damage"},
+		"base": 150.0, "mult": 1.55, "gem": 15.0, "icon": "stat_damage"},
 	{"kind": "pulls", "name": "소환", "unit": "회",
-		"base": 10.0, "mult": 2.0, "gem": 22.0, "icon": "stat_crit"},
+		"base": 30.0, "mult": 1.75, "gem": 22.0, "icon": "stat_crit"},
 	{"kind": "knowledge", "name": "지식", "unit": "레벨",
-		"base": 4.0, "mult": 1.6, "gem": 30.0, "icon": "stat_regen"},
+		"base": 4.0, "mult": 1.42, "gem": 30.0, "icon": "stat_regen"},
 ]
 
 
@@ -72,7 +82,7 @@ static func gem_reward(kind: String, step: int) -> float:
 	var t := track(kind)
 	if t.is_empty():
 		return 0.0
-	return round(float(t["gem"]) * pow(1.35, float(maxi(0, step))))
+	return round(float(t["gem"]) * pow(1.28, float(maxi(0, step))))
 
 
 # 단계만 표기가 다르다. **"3단계"는 화면 어디에도 없는 숫자다** — 상단에는 "1-3"으로

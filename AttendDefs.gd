@@ -13,17 +13,23 @@ class_name AttendDefs
 # 한 바퀴(30칸)를 돌면 다시 1일로 돌아간다 — 끝이 있으면 끝난 뒤에 할 게 없다.
 const DAYS := 30
 
+# 규모 (2026-08-20 개편): 한 바퀴에 **소환권 61장 + 보석 900**(= 30회).
+# 하루로 펴면 약 3회. 목표 30회 중 출석 몫이다(QuestDefs 머리글의 배분표).
+#
 # 7·14·21·30 이 큰 날이다. 나머지는 소소하게 — 매일이 잔칫날이면 잔치가 아니다.
-# 보상 종류는 **소환권 위주**다: 보석으로 주면 소환 아닌 곳으로 샌다
-# (QuestDefs 가 같은 이유로 보석을 25 로 줄였다).
 const REWARDS := {
-	7: {"reward": "ticket_weapon", "amount": 5},
-	14: {"reward": "ticket_armor", "amount": 5},
-	21: {"reward": "ticket_skill", "amount": 5},
-	30: {"reward": "ticket_trinket", "amount": 10},
+	7: {"reward": "ticket_weapon", "amount": 10},
+	14: {"reward": "ticket_armor", "amount": 10},
+	21: {"reward": "ticket_skill", "amount": 10},
+	30: {"reward": "ticket_trinket", "amount": 15},
 }
 
-# 큰 날이 아닌 보통 날. 3일마다 소환권 하나, 나머지는 보석·혈정을 번갈아 —
+# 큰 날에 안 나오는 두 종류(펫·펫장비)를 보통 날의 소환권이 맡는다 —
+# 큰 날 넷은 무기·방어·장신구·스킬이라 그대로 두면 펫 갈래가 굶는다.
+const SMALL_TICKETS := ["ticket_pet", "ticket_petgear"]
+
+
+# 보통 날. 3일마다 소환권 2장, 나머지는 보석·혈정을 번갈아 —
 # 한 종류만 주면 손에 남는 게 한 줄이라 눈에 안 띈다.
 static func of(day: int) -> Dictionary:
 	var d := clampi(day, 1, DAYS)
@@ -32,10 +38,11 @@ static func of(day: int) -> Dictionary:
 		return {"day": d, "reward": str(r["reward"]), "amount": int(r["amount"]),
 			"big": true}
 	if d % 3 == 0:
-		return {"day": d, "reward": "ticket_weapon", "amount": 1, "big": false}
+		return {"day": d, "reward": SMALL_TICKETS[(d / 3) % SMALL_TICKETS.size()],
+			"amount": 2, "big": false}
 	if d % 2 == 0:
-		return {"day": d, "reward": "crystal", "amount": 30, "big": false}
-	return {"day": d, "reward": "gem", "amount": 20, "big": false}
+		return {"day": d, "reward": "crystal", "amount": 200, "big": false}
+	return {"day": d, "reward": "gem", "amount": 100, "big": false}
 
 
 # 30일을 다 받으면 다음 바퀴의 1일로. 0 은 "아직 하나도 안 받음"이다.

@@ -25,6 +25,10 @@ extends SceneTree
 #     godot --headless --script tests/PaceProbe.gd
 #     godot --headless --script tests/PaceProbe.gd -- --days=30
 
+# 하루 소환 횟수 누적 — 이번 배급 개편의 목표 숫자다(사장님: 하루 30회).
+var _pulls_total := 0
+var _pulls_days := 0
+
 const PLAY_MINUTES := 60.0
 const IDLE_HOURS := 8.0
 # 멤버십(설계서 5-3 "혈세") — 사장님이 실제로 산 두 가지 중 하나. 방치 +4시간,
@@ -116,6 +120,9 @@ func _init() -> void:
 	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "유물", "칭호", "회귀",
 			"시련", "펫"]:
 		print("  %-8s x%.2f" % [k, float(a.get(k, 1.0))])
+	print("")
+	print("소환 — 하루 평균 %.1f회 (두 판 합산 %d일 기준, 목표 30)"
+		% [float(_pulls_total) / maxf(1.0, float(_pulls_days)), _pulls_days])
 	print("PaceProbe OK")
 	quit()
 
@@ -288,6 +295,19 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 			game.raid_best["pact"] = int(game.raid_best.get("pact", 0)) + 1
 		# 6.5) 출석 — 30일 표. 소환권은 지갑에 꽂혀 아래 소환이 그날 쓴다.
 		_attend_day(game)
+		# 6.6) 임무 — 일일 표 전부 + 7일마다 주간 표. **표를 읽는다**(2026-08-20):
+		#      예전엔 아래 소환이 "소환권 4 + 보석 2회"로 적혀 있어서 QuestDefs 를
+		#      고쳐도 이 계측기는 옛 숫자를 봤다. 그러면 배급을 늘려도 못 잰다.
+		_quest_day(game, day)
+		# 6.7) 업적 — 지나온 거리에 한 번씩. 누적이라 초반에 뭉치로 들어오고
+		#      뒤로 갈수록 뜸해진다. 그게 이 축의 역할이다(AchieveDefs 머리글).
+		for t in AchieveDefs.TRACKS:
+			game._claim_achieve(str(t["kind"]))
+		# 6.8) 가이드 — 깬 만큼 이어서 받는다(한 줄이라 받으면 다음 것이 온다).
+		#      상한을 두는 이유: 기준값이 틀리면 여기서 무한 루프가 된다.
+		for _i in 200:
+			if game._claim_goal() <= 0.0:
+				break
 		# 7) 소환 — 하루치를 굴려 장비·스킬을 얻는다. 난수는 고정 씨앗이라
 		#    같은 곡선이면 같은 결과가 나온다(_run 첫머리에서 심는다).
 		_summon_day(game, member,
@@ -416,13 +436,38 @@ func _farm(game, seconds: float, eff: float) -> float:
 	return kills * StageDefs.gold_per_kill(st) * game.gold_mult() * eff
 
 
-# 하루치 소환. 보석은 임무 배급(설계서 4-1: 하루 약 25 + 주간 몫)으로,
-# 소환권은 하루 4장 + 주간 몫을 하루로 편 값이다. 멤버십은 매일 보석 100 +
-# 소환권 3(설계서 5-3). 나온 장비는 슬롯별 최고만 장착한다.
+# 하루치 임무 배급. 하루 60분 접속 모델이면 열려 있는 임무는 다 깬다 —
+# 문이 안 열린 것(미궁·재화 던전)만 뺀다. 주간은 7일마다 한 번.
+func _quest_day(game, day: int) -> void:
+	for q in QuestDefs.QUESTS:
+		if _quest_open(game, str(q["id"])):
+			game._grant_reward(str(q["reward"]), float(q["amount"]))
+	if day > 0 and day % 7 == 0:
+		for q in QuestDefs.WEEKLY:
+			if _quest_open(game, str(q["kind"])):
+				game._grant_reward(str(q["reward"]), float(q["amount"]))
+
+
+# 그 임무의 문이 열렸나. 열쇠는 일일의 id 이자 주간의 kind 다(둘이 같은 훅).
+func _quest_open(game, key: String) -> bool:
+	match key:
+		"dungeon":
+			return game.dungeon_best > 0
+		"raid":
+			return game.best_stage >= RaidDefs.OPEN_STAGE
+	return true
+
+
+# 하루치 소환. **지갑을 그대로 태운다** — 소환권과 보석은 위 임무·출석·천장이
+# 이미 꽂아 뒀다. 멤버십 몫은 IapDefs 표에서 읽는다(설계서 5-3).
+# 나온 장비는 슬롯별 최고만 장착한다.
 func _summon_day(game, member: bool, extra := 0) -> void:
-	var pulls := 4 + 2 + extra             # 소환권 4 + 보석 25~35 -> 1~2회
+	var pulls := extra
 	if member:
-		pulls += 3 + 3                     # 소환권 3 + 보석 100 -> 3회
+		var sub := IapDefs.sub_of("blood_tax")
+		var daily: Dictionary = sub.get("daily", {})
+		for k in daily:
+			game._grant_reward(str(k), float(daily[k]))
 	# 출석·천장이 지갑에 꽂아 둔 소환권과 보석을 그날 소진한다.
 	for tk in TicketDefs.KINDS:
 		pulls += int(game.tickets.get(tk, 0))
@@ -431,6 +476,8 @@ func _summon_day(game, member: bool, extra := 0) -> void:
 	if gem_pulls > 0:
 		game.gem -= float(gem_pulls) * GachaDefs.COST
 		pulls += gem_pulls
+	_pulls_total += pulls
+	_pulls_days += 1
 	# 유물은 100구간부터 열린다 — 열리면 뽑기 한 자리를 유물이 가져간다
 	# (실제 유저도 후반엔 유물을 민다).
 	var kinds: Array = ["weapon", "armor", "trinket", "skill"]
