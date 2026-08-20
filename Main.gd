@@ -767,7 +767,6 @@ func _ready() -> void:
 		kills = 0
 		hero_hp = max_hp()
 	_apply_stage_bg()
-	_build_start_gate()
 	_boss_time = StageDefs.time_limit(stage)
 	# 불러온 자리가 보스 구간이면 켤 때도 왼쪽에서 걸어 들어온다 — 구간 전환과 같은 길.
 	_begin_stage_pose()
@@ -949,10 +948,6 @@ func _ready() -> void:
 		if arg == "--bosscut":
 			_select_tab("home")
 			_boss_cut("가고일 군주")
-		# [개발 도구] --gate : 시작 화면을 띄운 채로 캡처한다(autoshot 이 그냥
-		# 지나가므로 이 플래그로만 볼 수 있다).
-		if arg == "--gate":
-			_gate_keep = true
 		# [개발 도구] --home : 홈(사냥) 탭을 연 채로 캡처한다.
 		if arg == "--home":
 			_select_tab("home")
@@ -1201,11 +1196,6 @@ func _ready() -> void:
 			for f in get_tree().get_nodes_in_group("foes"):
 				f.queue_free()
 	if "--autoshot" in args:
-		if not _gate_keep:         # 캡처는 기본적으로 시작 화면을 지나서 찍는다
-			_gate_open = true
-			if _start_gate:
-				_start_gate.queue_free()
-				_start_gate = null
 		_autoshot()
 
 
@@ -8613,64 +8603,7 @@ func _notify_stat(text: String) -> void:
 
 
 # ── 루프 ───────────────────────────────────────────────────────────────────
-# 시작 화면 — 켜자마자 전투가 도는 대신 한 번 멈춰 세운다(사장님).
-# 방치형이라 오프라인 정산은 로드 때 이미 끝났고, 여기서 시간이 흐르면 보지도
-# 못한 전투가 지나가므로 **틱을 통째로 막는다**.
-var _start_gate: Control
-var _gate_open := false
-var _gate_keep := false   # [개발 도구] --gate
-
-
-func _build_start_gate() -> void:
-	# **검사에서는 문을 열어 둔다.** 헤드리스 테스트는 씬을 띄우고 시간을 흘려
-	# 보내는데, 시작 화면이 _process 를 막으면 전부 "안 끝났다"로 죽는다
-	# (TrialCheck 실측). 화면이 없는 실행에는 시작 화면 자체가 뜻이 없다.
-	if DisplayServer.get_name() == "headless":
-		_gate_open = true
-		return
-	_start_gate = Control.new()
-	_start_gate.size = Vector2(Grid.BG)
-	_start_gate.z_index = 200
-	_hud_root.add_child(_start_gate)
-	# **로딩의 마지막 단계다.** 표지를 따로 만들지 않는다(사장님) — 검은 화면에
-	# 안내 한 줄이고, 누르면 곧장 게임이다.
-	var shade := ColorRect.new()
-	shade.color = Color(0.02, 0.01, 0.03, 1.0)
-	shade.size = Vector2(Grid.BG)
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	_start_gate.add_child(shade)
-	var tap := _panel_label(_start_gate, Vector2(0.0, Grid.BG.y * 0.5 - 16.0),
-		Type.SIZE_MID, Color(0.94, 0.90, 0.88), Grid.BG.x, 32.0)
-	tap.text = "아무 곳이나 누르세요"
-	tap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_shop_outline(tap, 8)
-	# 깜빡임 — 멈춘 화면인지 멎은 게임인지 구분이 돼야 한다.
-	var tw := tap.create_tween().set_loops()
-	tw.tween_property(tap, "modulate:a", 0.25, 0.8).set_trans(Tween.TRANS_SINE)
-	tw.tween_property(tap, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if _gate_open or _start_gate == null:
-		return
-	var hit: bool = (event is InputEventMouseButton and event.pressed) \
-		or (event is InputEventKey and event.pressed) \
-		or (event is InputEventScreenTouch and event.pressed)
-	if not hit:
-		return
-	_gate_open = true
-	get_viewport().set_input_as_handled()
-	var t := _start_gate.create_tween()
-	t.tween_property(_start_gate, "modulate:a", 0.0, 0.25)
-	t.tween_callback(func() -> void:
-		if is_instance_valid(_start_gate):
-			_start_gate.queue_free()
-		_start_gate = null)
-
-
 func _process(delta: float) -> void:
-	if not _gate_open:
-		return   # 시작 화면이 떠 있는 동안은 시간이 안 흐른다
 	play_time += delta
 	_tick_hero_state(delta)
 	var visual_frozen := _visual_hitstop_t > 0.0

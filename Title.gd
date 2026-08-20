@@ -13,6 +13,10 @@ extends Control
 # 자산은 게으르게 읽힌다(Assets.tex 가 필요할 때 읽는다). 그래서 여기서 2293장을
 # 미리 읽지 않는다 — 그러면 시작이 되레 느려지고, 몹 한 종 처음 읽기는 29ms 라
 # 게임 중 끊김이 문제가 아니다(BootProbe 실측).
+#
+# 다 읽으면 **막대를 치우고 "아무 곳이나 누르세요"** 로 바꾼다(사장님 2026-08-20).
+# 곧장 넘기면 못 본 사이에 전투가 지나간다. 다 찬 막대를 세워 두는 것도 "멈췄나"
+# 로 읽히므로 막대는 남기지 않는다.
 
 const MAIN := "res://Main.tscn"
 const BG := "res://assets/ui/title_bg.png"
@@ -31,18 +35,21 @@ const VEIL_MAX := 0.82
 # 개발 플래그(캡처·검수)로 켤 때는 0 이다: 도구가 기다릴 이유가 없다.
 const MIN_SHOW := 0.7
 
+var _bar: Control          # 테두리·바탕·채움 세 겹을 한 번에 치우려고 묶는다
 var _fill: ColorRect
 var _pct: Label
 var _t := 0.0
 var _done := false
+var _tap_on := false
 
 
 func _ready() -> void:
 	size = Vector2(W, H)
 	_build()
 	ResourceLoader.load_threaded_request(MAIN)
-	if "--shot-title" in OS.get_cmdline_user_args():
-		_shot()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot-title"):
+			_shot(a.ends_with("=tap"))
 
 
 func _build() -> void:
@@ -82,28 +89,62 @@ func _build() -> void:
 
 	# 막대 — 테두리·바탕·채움 세 겹. ProgressBar 는 스타일박스를 따로 먹여야
 	# 도트 느낌이 나는데, 그 설정이 여기 코드보다 길다.
+	_bar = Control.new()
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_bar)
+
 	var edge := ColorRect.new()
 	edge.color = Color(0.30, 0.12, 0.14)
 	edge.size = Vector2(BAR_W + 4.0, BAR_H + 4.0)
 	edge.position = Vector2((W - BAR_W) * 0.5 - 2.0, BAR_Y - 2.0)
 	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(edge)
+	_bar.add_child(edge)
 
 	var slot := ColorRect.new()
 	slot.color = Color(0.10, 0.05, 0.06)
 	slot.size = Vector2(BAR_W, BAR_H)
 	slot.position = Vector2((W - BAR_W) * 0.5, BAR_Y)
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(slot)
+	_bar.add_child(slot)
 
 	_fill = ColorRect.new()
 	_fill.color = BLOOD
 	_fill.size = Vector2(0.0, BAR_H)
 	_fill.position = slot.position
 	_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_fill)
+	_bar.add_child(_fill)
 
 	_pct = _label("0%", Type.SIZE_SMALL, BAR_Y + 28.0, Color(0.58, 0.44, 0.42), 3)
+
+
+# 로딩이 끝난 자리. 막대와 % 를 치우고 그 자리에 안내를 놓는다 — 화면이 바뀌는
+# 것 자체가 "다 됐다"는 신호라서 따로 완료 표시를 안 붙인다.
+func _tap_ready() -> void:
+	_tap_on = true
+	_bar.hide()
+	_pct.hide()
+	var tap := _label("아무 곳이나 누르세요", Type.SIZE_BODY, BAR_Y - 8.0,
+		Color(0.96, 0.92, 0.90), 6)
+	# 깜빡임 — 멈춘 화면인지 기다리는 화면인지 구분이 돼야 한다. 바닥을 0.45 로
+	# 두는 이유: 그림이 어두워서 더 흐려지면 글자가 통째로 사라진다(실측 캡처).
+	var tw := tap.create_tween().set_loops()
+	tw.tween_property(tap, "modulate:a", 0.45, 0.8).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(tap, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
+
+
+# 마우스 클릭·키·터치 아무거나. **_unhandled_input 이 아니라 _input 이다** —
+# 루트 Control 의 mouse_filter 가 STOP 이라 마우스 버튼은 GUI 에서 먹히고
+# unhandled 까지 안 내려온다.
+func _input(event: InputEvent) -> void:
+	if not _tap_on or _done:
+		return
+	if not (event is InputEventMouseButton or event is InputEventKey
+			or event is InputEventScreenTouch):
+		return
+	if not event.is_pressed():
+		return
+	get_viewport().set_input_as_handled()
+	_enter()
 
 
 # 글자 뒤에 까는 어둠. **GradientTexture2D 를 쓴다** — 알파를 달리한 ColorRect
@@ -145,7 +186,7 @@ func _label(text: String, font_size: int, y: float, col: Color,
 
 
 func _process(delta: float) -> void:
-	if _done:
+	if _done or _tap_on:
 		return
 	_t += delta
 	var progress: Array = []
@@ -154,10 +195,16 @@ func _process(delta: float) -> void:
 
 	match st:
 		ResourceLoader.THREAD_LOAD_LOADED:
-			# 다 읽었어도 최소 시간은 지킨다 — 막대가 끝까지 찬 뒤에 넘어간다.
+			# 다 읽었어도 최소 시간은 지킨다 — 막대가 끝까지 찬 뒤에 바뀐다.
 			p = 1.0
 			if _t >= _min_show():
-				_enter()
+				# 검사·캡처 도구는 문 앞에 세워 두지 않는다. 화면이 없는
+				# 실행에는 안내 자체가 뜻이 없다(헤드리스 검사가 여기서 멎었다).
+				if _auto():
+					_enter()
+				else:
+					_tap_ready()
+				return
 		ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
 			# **여기서 멈추면 유저는 영영 못 들어간다.** 스레드 로딩이 안 되면
 			# 곧장 씬을 바꾼다 — 그쪽은 동기 로딩이라 느릴 뿐 열리기는 한다.
@@ -171,19 +218,31 @@ func _process(delta: float) -> void:
 
 # 개발 플래그로 켰으면 안 기다린다 — 캡처·검수 도구가 0.7초를 서 있을 이유가 없다.
 func _min_show() -> float:
-	return 0.0 if not OS.get_cmdline_user_args().is_empty() else MIN_SHOW
+	return 0.0 if _auto() else MIN_SHOW
 
 
-# [개발 도구] --shot-title : 이 화면을 찍고 끝낸다.
+# 사람이 아니라 도구가 켠 실행인가.
+func _auto() -> bool:
+	return DisplayServer.get_name() == "headless" \
+		or not OS.get_cmdline_user_args().is_empty()
+
+
+# [개발 도구] --shot-title[=tap] : 이 화면을 찍고 끝낸다. =tap 은 로딩이 끝난
+# 뒤(막대 대신 안내)를 찍는다.
 #
 # Main 의 --autoshot 으로는 못 찍는다 — 그 코드는 씬이 넘어간 **뒤에** 도니까
 # 항상 전투 화면이 나온다. 막대는 로딩이 1초 만에 끝나 찍을 때마다 다른 값이
 # 걸리므로, 디자인을 보려고 중간값에 세워 둔다.
-func _shot() -> void:
+func _shot(tap: bool) -> void:
 	_done = true          # _process 가 씬을 넘기지 못하게 잠근다
 	await get_tree().create_timer(0.5).timeout
-	_fill.size.x = BAR_W * 0.45
-	_pct.text = "45%"
+	if tap:
+		_tap_ready()
+		_tap_on = false   # _input 이 씬을 넘기지 못하게 — 찍기만 한다
+		await get_tree().create_timer(0.4).timeout
+	else:
+		_fill.size.x = BAR_W * 0.45
+		_pct.text = "45%"
 	await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("user://autoshot.png")
