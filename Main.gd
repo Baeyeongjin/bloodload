@@ -7057,6 +7057,7 @@ var _quest_claim_art: Array[Control] = []
 # **연속을 안 센다** — 누적이다. 하루 놓쳤다고 처음으로 되돌리면 그 순간이
 # 이탈 지점이 된다(AttendDefs 주석). 그래서 상태가 둘뿐이다:
 # 몇 칸까지 받았나, 오늘 받았나.
+var _attend_btn_art: Control   # 받기 알약 — 오늘 받을 게 있으면 금빛
 var attend_got := 0          # 지금까지 받은 칸 수(30 을 넘으면 다음 바퀴)
 var attend_date := ""        # 마지막으로 받은 날
 var _attend_root: Control
@@ -8404,12 +8405,14 @@ func _attend_build(root: Control) -> void:
 		mark.text = "✓"
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		mark.visible = false
+		_art_set_base(frame, Color.WHITE)   # 호버가 이 색을 지우지 않게
 		_attend_cells.append({"frame": frame, "done": done, "ico": ico,
-			"mark": mark})
+			"mark": mark, "day": day})
 	var ap := Vector2(x + w * 0.5 - 100.0,
 		QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0)
 	var ap_art := Ui.set_row(DUTY, ap, Vector2(200.0, 42.0))
 	root.add_child(ap_art)
+	_attend_btn_art = ap_art
 	_attend_lbl = _panel_label(root, Vector2(ap.x, ap.y + 12.0),
 		Type.SIZE_MID, DUTY_INK, 200.0, 20.0)
 	_attend_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -8429,17 +8432,28 @@ func _refresh_attend() -> void:
 	# 같은 값이다 — 오늘 아직 안 받았으면 다 채운 상태로 보여 준다.
 	if attend_got > 0 and done == 0 and not _attend_claimable():
 		done = AttendDefs.DAYS
+	var ready := _attend_claimable()
 	for i in _attend_cells.size():
 		var c: Dictionary = _attend_cells[i]
 		var got := i < done
+		# **오늘 받을 칸**은 지금 받을 수 있을 때만이다 — 이미 받았으면 그
+		# 다음 칸은 내일 것이라 금빛으로 부르면 거짓말이 된다.
+		var today := ready and i == done
 		c["done"].visible = got
 		c["mark"].visible = got
-		# 오늘 받을 칸만 밝게 — 나머지는 살짝 죽여 시선이 한 곳에 간다.
-		c["ico"].modulate = Color(1, 1, 1, 1) if i == done else Color(1, 1, 1, 0.72)
-	_attend_btn.disabled = not _attend_claimable()
-	_attend_lbl.text = "오늘 받기" if _attend_claimable() else "내일 또"
+		# 액자를 금빛으로 — 임무 줄의 [받기] 와 같은 색이다. 밝기만으로 가르면
+		# 서른 칸 중 어느 것이 오늘인지 안 읽힌다(사장님).
+		_art_set_base(c["frame"], CLAIM_GOLD if today else Color.WHITE)
+		c["day"].text = "오늘" if today else "%d일" % (i + 1)
+		c["day"].add_theme_color_override("font_color",
+			Color(0.22, 0.11, 0.04) if today else DUTY_DIM)
+		c["ico"].modulate = Color(1, 1, 1, 1) if today or got 			else Color(1, 1, 1, 0.72)
+	_attend_btn.disabled = not ready
+	_attend_lbl.text = "오늘 받기" if ready else "내일 또"
 	_attend_lbl.add_theme_color_override("font_color",
-		DUTY_INK if _attend_claimable() else DUTY_DIM)
+		Color(0.22, 0.11, 0.04) if ready else DUTY_DIM)
+	if _attend_btn_art:
+		_art_set_base(_attend_btn_art, CLAIM_GOLD if ready else Color.WHITE)
 
 
 func _boon_build(root: Control) -> void:

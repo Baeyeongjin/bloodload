@@ -103,5 +103,29 @@ func _init() -> void:
 	assert(is_equal_approx(paid, raw * (1.0 + scene._boon("raid"))),
 		"던전 보상에 은총이 어긋나게 붙는다")
 
+	# ── 오늘 칸이 눈에 띄는가 (사장님 2026-08-20) ─────────────────────────
+	# 예전엔 아이콘 밝기 1.0 vs 0.72 로만 갈라서 서른 칸 중 어느 것이 오늘인지
+	# 안 읽혔다. 임무 줄의 [받기] 와 같은 금빛으로 맞췄는지 본다.
+	scene.attend_got = 11
+	scene.attend_date = ""                     # 오늘 아직 안 받음
+	scene._refresh_attend()
+	var cells: Array = scene._attend_cells
+	assert(cells[11]["frame"].modulate == scene.CLAIM_GOLD,
+		"오늘 칸(12일)이 금빛이 아니다")
+	assert(str(cells[11]["day"].text) == "오늘",
+		"오늘 칸이 '오늘'이라고 안 적는다: %s" % str(cells[11]["day"].text))
+	assert(cells[10]["frame"].modulate == Color.WHITE
+		and cells[12]["frame"].modulate == Color.WHITE,
+		"오늘이 아닌 칸까지 금빛이다")
+	assert(not scene._attend_btn.disabled, "받을 수 있는데 버튼이 잠겼다")
+
+	# 받고 나면 금빛이 꺼져야 한다 — 다음 칸은 내일 것이라 부르면 거짓말이다.
+	scene.attend_date = Time.get_date_string_from_system()
+	scene._refresh_attend()
+	for c in cells:
+		assert(c["frame"].modulate == Color.WHITE,
+			"오늘 몫을 받았는데 아직 금빛 칸이 있다")
+	assert(scene._attend_btn.disabled, "이미 받았는데 버튼이 열려 있다")
+
 	print("AttendCheck OK")
 	quit()
