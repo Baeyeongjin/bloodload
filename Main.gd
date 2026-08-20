@@ -541,8 +541,17 @@ func stat_lv(key: String) -> int:
 func damage() -> float:
 	return Balance.hero_damage(_stat_eff("damage"), _gear_stat("damage"), hero_lv) \
 		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage") \
-		+ PactDefs.bonus(pact_lv)) \
+		+ PactDefs.bonus(pact_lv) + _lore_bonus("damage")) \
 		* _relic_mult("damage")
+
+
+# 도감 이정표(장비·스킬 수집) + 연대기(막 도달) 가 주는 몫. 합연산 괄호 A 에
+# 들어간다 — 화면(_refresh_lore)이 이미 이 숫자를 "받는 중"으로 적고 있었는데
+# 전투 계산에는 안 붙어 있었다.
+func _lore_bonus(stat: String) -> float:
+	var key := "hp" if stat == "tough" else stat
+	return LoreDefs.total_bonus(_lore_got("gear"), _lore_got("skill"), key) \
+		+ LoreDefs.act_bonus(StageDefs.act_of(best_stage), key)
 
 
 # 장착 중인 장비가 주는 해당 스탯 합. 없으면 0.
@@ -564,7 +573,9 @@ func _collection_bonus(stat: String) -> float:
 
 func attack_interval() -> float:
 	# 유물 공격속도는 **간격을 줄인다** — 배수를 그냥 곱하면 느려진다. 계약도 같다.
+	# 펫 speed 6종도 여기 붙는다(2026-08-20까지 안 읽히고 있었다).
 	return Balance.attack_interval(_stat_eff("speed")) / _relic_mult("speed") \
+		/ (1.0 + _pet_mult("speed")) \
 		/ (1.0 + _oath_val("speed"))
 
 
@@ -572,7 +583,7 @@ func gold_mult() -> float:
 	# 흡혈량 스탯은 삭제됐다(2026-08-20) — 칭호 21종의 공짜 레벨은 그대로 살려서
 	# 이 항이 계속 값을 한다. 사라진 스탯을 읽는 코드를 남기지 않으려 직접 부른다.
 	return (1.0 + 0.15 * float(TitleDefs.bonus("gold", titles_got))
-			+ _gear_stat("gold") * 0.02) \
+			+ _gear_stat("gold") * 0.02 + _lore_bonus("gold")) \
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
 		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold")) \
@@ -716,8 +727,9 @@ func _codex_act_bonus() -> float:
 func max_hp() -> float:
 	return Balance.hero_max_hp(_stat_eff("tough"), _gear_stat("tough")) \
 		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough") \
-		+ PactDefs.bonus(pact_lv)) \
-		* _trait_mult("hp") * _relic_mult("hp") * TrialDefs.mult(trial_stage)
+		+ PactDefs.bonus(pact_lv) + _lore_bonus("tough")) \
+		* _trait_mult("hp") * _relic_mult("hp") * TrialDefs.mult(trial_stage) \
+		* (1.0 + _pet_mult("tough"))
 
 
 func regen_per_sec() -> float:
