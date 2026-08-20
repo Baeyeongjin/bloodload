@@ -858,6 +858,13 @@ func _ready() -> void:
 			oath_used = int(arg.trim_prefix("--book=")) if "=" in arg else 24
 			_select_tab("shop")
 			_shop_set_mode("book")
+		# [개발 도구] --oath10 : 10회 뽑기 선택 화면을 캡처한다.
+		if arg == "--oath10":
+			oath_cards = 10
+			oath_first = true
+			_oath_view.visible = true
+			_refresh_oath()
+			_oath_play10()
 		# [개발 도구] --oathroll[=등급] : 그 등급이 뜨도록 굴려 연출을 캡처한다.
 		# 확률을 못 기다리므로 결과를 **심어** 두고 연출만 재생한다.
 		if arg.begins_with("--oathroll"):
@@ -10403,6 +10410,23 @@ func _build_oath_view() -> void:
 		_oath_ui[str(spec[0])] = btn
 		_oath_ui[str(spec[0]) + "_lbl"] = bl
 		_oath_ui[str(spec[0]) + "_art"] = art
+	# 10회 뽑기 — 한 번에 열 장 굴리고 **그중 하나를 골라** 건다(사장님).
+	var tp := Vector2(x, top + 546.0)
+	var tsz := Vector2(w, 34.0)
+	var t_art := Ui.set_row(OATH, tp, tsz)
+	_oath_main.add_child(t_art)
+	var t_lbl := _panel_label(_oath_main, tp + Vector2(0.0, 8.0),
+		Type.SIZE_SMALL, OATH_INK, w, 20.0)
+	t_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(t_lbl, 6)
+	var t_btn := Ui.button("", tp, tsz, Type.SIZE_SMALL)
+	t_btn.modulate = Color(1, 1, 1, 0)
+	_oath_main.add_child(t_btn)
+	_pet_hover(t_btn, t_art)
+	_oath_ui["ten"] = t_btn
+	_oath_ui["ten_lbl"] = t_lbl
+	_oath_ui["ten_art"] = t_art
+	t_btn.pressed.connect(func() -> void: _oath_play10())
 	_oath_ui["roll"].pressed.connect(func() -> void: _oath_play(false))
 	_oath_ui["groll"].pressed.connect(func() -> void: _oath_play(true))
 	_oath_ui["buy"].pressed.connect(func() -> void:
@@ -10419,10 +10443,10 @@ func _build_oath_view() -> void:
 			_refresh_oath())
 	# 광고 자리 — SDK 가 오면 개통한다(RaidDefs.AD_BONUS_TRIES 와 같은 원칙:
 	# 붙일 SDK 가 없으면 **자리만** 만들고 눌리지 않게 둔다).
-	var ad_art := Ui.set_row(OATH, Vector2(x, top + 566.0), Vector2(w, 34.0))
+	var ad_art := Ui.set_row(OATH, Vector2(x, top + 588.0), Vector2(w, 34.0))
 	ad_art.modulate = Color(0.55, 0.52, 0.54)
 	_oath_main.add_child(ad_art)
-	var ad := _panel_label(_oath_main, Vector2(x, top + 574.0), Type.SIZE_SMALL,
+	var ad := _panel_label(_oath_main, Vector2(x, top + 596.0), Type.SIZE_SMALL,
 		Color(0.66, 0.62, 0.66), w, 18.0)
 	ad.text = "[광고] 카드 1장  ·  하루 3회 — 준비 중"
 	ad.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -10502,7 +10526,16 @@ func _refresh_oath() -> void:
 	if _oath_buff_lbl:
 		_oath_buff_lbl.visible = oath_fx_t > 0.0
 		if oath_fx_t > 0.0:
-			_oath_buff_lbl.text = "%s  %d초" % [oath_fx_name, int(oath_fx_t)]
+			var parts := PackedStringArray()
+			for k in oath_fx:
+				parts.append(_oath_fx_short(str(k), float(oath_fx[k])))
+			var left := int(ceil(oath_fx_t))
+			var clock := "%d:%02d" % [left / 60, left % 60] if left >= 60 				else "%d초" % left
+			_oath_buff_lbl.text = "◈ %s  ·  %s  ·  %s" 				% [oath_fx_name, " ".join(parts), clock]
+			# 10초 남으면 붉게 — 끝나는 걸 눈으로 알아야 다음 장을 준비한다.
+			_oath_buff_lbl.add_theme_color_override("font_color",
+				Color(1.0, 0.45, 0.42) if oath_fx_t <= 10.0
+				else Color(0.98, 0.82, 0.52))
 	# 아이콘 고동 — 카드가 차 있을 때만(판을 열고 있으면 조용히).
 	if _oath_icon and _oath_view and not _oath_view.visible \
 			and (oath_cards > 0 or not _oath_col_next().is_empty()
@@ -10538,6 +10571,8 @@ func _refresh_oath() -> void:
 		OATH_RED if oath_vow else OATH_DIM)
 	_art_set_base(_oath_ui["vow_art"] as Control,
 		Color(1.25, 0.85, 0.85) if oath_vow else Color(1, 1, 1))
+	_oath_ui["ten_lbl"].text = "10회 뽑기  ·  카드 %d / %d" % [oath_cards, 10]
+	_oath_dim("ten", oath_cards >= 10)
 	_oath_ui["roll_lbl"].text = "계약 발동  %d장" % oath_cards
 	_oath_ui["groll_lbl"].text = "황금 발동  %d장" % oath_gold
 	_oath_ui["buy_lbl"].text = "즉시 충전 · 보석 %d" % int(OathDefs.RECHARGE_GEM)
@@ -10636,7 +10671,7 @@ func _oath_dim(key: String, on: bool) -> void:
 # 공개 연출 5막 (설계 7.5) — 소환진 → 릴(니어미스) → 개봉 → 만월 → 진혈.
 # 전부 코드 연출이고 아트는 마법진·만월 두 장뿐이다.
 func _oath_play(golden: bool) -> void:
-	var r := _oath_roll(golden)
+	var r := _oath_roll(golden, false)
 	if r.is_empty():
 		return
 	_boss_cut_clear()
@@ -10893,6 +10928,115 @@ func _oath_glow(rim: Control, c: Color) -> void:
 			c.b, float(ch.get_meta("glow_a", 0.5)))
 
 
+# 10회 뽑기 — 열 장을 **먼저 다 굴리고**(수집·레벨·천장은 그때 다 반영된다),
+# 격자로 펼친 뒤 하나만 골라 건다. 나머지는 수집으로 남는다.
+func _oath_play10() -> void:
+	if oath_cards < 10 or _oath_reveal == null:
+		return
+	var got: Array = []
+	for i in 10:
+		var r := _oath_roll(false, false)
+		if r.is_empty():
+			break
+		got.append(r)
+	if got.is_empty():
+		return
+	_refresh_oath()
+	_oath_show_pick(got)
+
+
+# 뽑은 것들을 펼쳐 고르게 한다. 1회 뽑기의 결과창과 같은 층을 쓴다.
+func _oath_show_pick(got: Array) -> void:
+	_boss_cut_clear()
+	for ch in _oath_reveal.get_children():
+		ch.queue_free()
+	_oath_reveal.visible = true
+	_oath_reveal.position = Vector2.ZERO
+	var shade := ColorRect.new()
+	shade.color = Color(0.01, 0.0, 0.01, 0.94)
+	shade.size = Vector2(Grid.BG)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_oath_reveal.add_child(shade)
+	var head := _panel_label(_oath_reveal, Vector2(0.0, 40.0), Type.SIZE_MID,
+		Color(0.98, 0.82, 0.46), Grid.BG.x, 28.0)
+	head.text = "%d장을 뽑았다 — 하나를 골라 건다" % got.size()
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(head, 8)
+	if oath_fx_t > 0.0:
+		var cur := _panel_label(_oath_reveal, Vector2(0.0, 72.0),
+			Type.SIZE_SMALL, Color(0.72, 0.86, 0.72), Grid.BG.x, 18.0)
+		cur.text = "지금: %s  %d초 남음  →  고르면 바뀐다" \
+			% [oath_fx_name, int(oath_fx_t)]
+		cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 5 x 2 격자. 카드 앞면 + 등급 테두리 + 이름 + 효과 한 줄.
+	var cw := 96.0
+	var ch2 := 128.0
+	var gap := 12.0
+	var gx := (Grid.BG.x - 5.0 * cw - 4.0 * gap) * 0.5
+	for i in got.size():
+		var r: Dictionary = got[i]
+		var c: Dictionary = r["contract"]
+		var rcol := _oath_rcol(str(r["rarity"]))
+		var at := Vector2(gx + float(i % 5) * (cw + gap),
+			104.0 + float(i / 5) * (ch2 + 84.0))
+		var frame := ColorRect.new()
+		frame.color = Color(rcol.r, rcol.g, rcol.b, 0.85)
+		frame.position = at - Vector2(3.0, 3.0)
+		frame.size = Vector2(cw + 6.0, ch2 + 6.0)
+		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_reveal.add_child(frame)
+		_oath_reveal.add_child(Ui.image(OathDefs.card_face(str(c["id"])),
+			at, Vector2(cw, ch2)))
+		var chip := ColorRect.new()
+		chip.color = Color(0.0, 0.0, 0.0, 0.62)
+		chip.position = at + Vector2(2.0, 2.0)
+		chip.size = Vector2(30.0, 13.0)
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_reveal.add_child(chip)
+		var lvl := _panel_label(_oath_reveal, at + Vector2(2.0, 3.0),
+			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 30.0, 12.0)
+		lvl.add_theme_font_size_override("font_size", 10)
+		lvl.text = "Lv%d" % int(r["lv"])
+		lvl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var nm := _panel_label(_oath_reveal, at + Vector2(0.0, ch2 + 4.0),
+			Type.SIZE_SMALL, rcol, cw, 16.0)
+		nm.text = str(c["name"])
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nm.clip_text = true
+		_shop_outline(nm, 5)
+		var ef := _panel_label(_oath_reveal, at + Vector2(0.0, ch2 + 22.0),
+			Type.SIZE_SMALL, Color(0.86, 0.84, 0.88), cw, 40.0)
+		ef.text = _oath_eff_text(c)
+		ef.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ef.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(ef, 4)
+		var pick := Ui.button("", at - Vector2(3.0, 3.0),
+			Vector2(cw + 6.0, ch2 + 6.0), Type.SIZE_SMALL)
+		pick.modulate = Color(1, 1, 1, 0)
+		pick.pressed.connect(func() -> void:
+			_oath_use(r)
+			_oath_reveal.visible = false
+			_oath_view.visible = false)
+		_oath_reveal.add_child(pick)
+		_pet_hover(pick, frame)
+	# 아무것도 안 걸고 닫기 — 뽑은 것은 이미 수집에 들어갔다.
+	var sk_art := Ui.set_row(OATH, Vector2(88.0, Grid.BG.y - 150.0),
+		Vector2(Grid.BG.x - 176.0, 44.0))
+	_oath_reveal.add_child(sk_art)
+	var sk_lbl := _panel_label(_oath_reveal, Vector2(88.0, Grid.BG.y - 137.0),
+		Type.SIZE_SMALL, OATH_INK, Grid.BG.x - 176.0, 20.0)
+	sk_lbl.text = "안 걸고 닫기 — 수집에는 이미 남았다"
+	sk_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var skip := Ui.button("", Vector2(88.0, Grid.BG.y - 150.0),
+		Vector2(Grid.BG.x - 176.0, 44.0), Type.SIZE_SMALL)
+	skip.modulate = Color(1, 1, 1, 0)
+	skip.pressed.connect(func() -> void:
+		_oath_reveal.visible = false
+		_oath_view.visible = false)
+	_oath_reveal.add_child(skip)
+	_pet_hover(skip, sk_art)
+
+
 # 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
 # 카드 뒤에 등급색 광선이 돌고, 아래는 전용 세트 판 + 등급 리본 + 세 줄.
 func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
@@ -11010,9 +11154,15 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 		else ""]
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(sub, 5)
+	# 지금 도는 계약 — 무엇을 잃고 무엇을 얻는지 나란히 봐야 고를 수 있다.
+	if oath_fx_t > 0.0:
+		var cur := _panel_label(panel, Vector2(px, py + 128.0), Type.SIZE_SMALL,
+			Color(0.72, 0.86, 0.72), pw, 16.0)
+		cur.text = "지금: %s  %d초 남음  →  바꾸면 사라진다" 			% [oath_fx_name, int(oath_fx_t)]
+		cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 서약 정산 줄 — 걸었으면 결과가 보여야 도박이다.
 	if bool(r.get("vow", false)):
-		var vw := _panel_label(panel, Vector2(px, py + 128.0), Type.SIZE_SMALL,
+		var vw := _panel_label(panel, Vector2(px, py + 146.0), Type.SIZE_SMALL,
 			OATH_RED, pw, 16.0)
 		vw.text = "피의 서약 — 판돈이 등급을 밀었다"
 		vw.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -11045,16 +11195,35 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	panel.add_child(ok_art)
 	var ok_lbl := _panel_label(panel, Vector2(px + bw + 12.0, by + 14.0),
 		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), bw, 18.0)
-	ok_lbl.text = "계약 발동!"
+	var live := oath_fx_t > 0.0
+	ok_lbl.text = "이걸로 교체" if live else "계약 발동!"
 	ok_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var ok := Ui.button("", Vector2(px + bw + 12.0, by), Vector2(bw, 46.0),
 		Type.SIZE_SMALL)
 	ok.modulate = Color(1, 1, 1, 0)
 	ok.pressed.connect(func() -> void:
+		_oath_use(r)
 		_oath_reveal.visible = false
 		_oath_view.visible = false)
 	panel.add_child(ok)
 	_pet_hover(ok, ok_art)
+	# 버프가 돌고 있을 때만 [지금 것 유지] — 뽑은 카드는 수집·레벨로 남는다.
+	if live:
+		var keep_art := Ui.set_row(OATH, Vector2(px, by + 54.0), Vector2(pw, 36.0))
+		keep_art.modulate = Color(0.78, 0.78, 0.82)
+		panel.add_child(keep_art)
+		var keep_lbl := _panel_label(panel, Vector2(px, by + 63.0),
+			Type.SIZE_SMALL, OATH_INK, pw, 18.0)
+		keep_lbl.text = "지금 것 유지 — 뽑은 계약은 수집에 남는다"
+		keep_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var keep := Ui.button("", Vector2(px, by + 54.0), Vector2(pw, 36.0),
+			Type.SIZE_SMALL)
+		keep.modulate = Color(1, 1, 1, 0)
+		keep.pressed.connect(func() -> void:
+			_oath_reveal.visible = false
+			_oath_view.visible = false)
+		panel.add_child(keep)
+		_pet_hover(keep, keep_art)
 	# 판이 아래에서 떠오르며 자리를 잡는다.
 	var pt := panel.create_tween()
 	pt.tween_property(panel, "position:y", 0.0, 0.35) \
@@ -11062,6 +11231,20 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	panel.modulate.a = 0.0
 	var pf := panel.create_tween()
 	pf.tween_property(panel, "modulate:a", 1.0, 0.25)
+
+
+func _oath_fx_short(k: String, v: float) -> String:
+	match k:
+		"attack": return "공%+d%%" % int(v * 100.0)
+		"speed": return "속%+d%%" % int(v * 100.0)
+		"armor": return "방%+d%%" % int(v * 100.0)
+		"regen": return "회%+d%%" % int(v * 100.0)
+		"regen_max": return "재생%d%%" % int(v * 100.0)
+		"leech": return "흡%+d%%" % int(v * 100.0)
+		"crit": return "치%+d" % int(v)
+		"cleave": return "광역"
+		"exec": return "처형%+d%%" % int(v * 100.0)
+	return k
 
 
 func _oath_eff_text(c: Dictionary) -> String:
@@ -11138,7 +11321,9 @@ func _oath_rarity_roll(shift: int) -> String:
 
 
 # 탭 한 번 = 룰렛 세 번. 반환은 공개 연출이 읽을 결과 묶음(빈 딕셔너리 = 실패).
-func _oath_roll(golden := false) -> Dictionary:
+# apply=false 면 **뽑기만** 한다(수집·레벨·천장·서약은 그대로). 실제 발동은
+# 결과창에서 사장님이 고른 뒤 _oath_use 가 한다.
+func _oath_roll(golden := false, apply := true) -> Dictionary:
 	if golden:
 		if oath_gold <= 0:
 			return {}
@@ -11214,7 +11399,8 @@ func _oath_roll(golden := false) -> Dictionary:
 	oath_used += 1   # 계약의 서가 이 값으로 찬다
 	_refresh_book()
 	# 적용 + 환급 각인.
-	_oath_apply(c, e, resonance, clv)
+	if apply:
+		_oath_apply(c, e, resonance, clv)
 	if str(e["kind"]) == "refund" and randf() < float(e["v"]):
 		oath_cards += 1
 	_save_game()
@@ -11224,6 +11410,14 @@ func _oath_roll(golden := false) -> Dictionary:
 
 
 # 버프 적용 — 레벨·공명·짙은 피가 주효과를 키우고, 즉발(시간·흡수)은 그 자리서.
+# 결과 하나를 골라 발동한다. 굴림 결과 사전을 그대로 받는다.
+func _oath_use(r: Dictionary) -> void:
+	if r.is_empty():
+		return
+	_oath_apply(r["contract"], r["engrave"], bool(r["resonance"]), int(r["lv"]))
+	_refresh_oath()
+
+
 func _oath_apply(c: Dictionary, e: Dictionary, resonance: bool, clv: int) -> void:
 	var amp := OathDefs.lv_mult(clv)
 	if resonance:

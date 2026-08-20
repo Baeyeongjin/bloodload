@@ -130,20 +130,25 @@ func _init() -> void:
 # 본다 — 질문이 "며칠에 어디까지 갔나"이기 때문이다.
 func _compare(days: int) -> void:
 	print("")
-	print("회귀 정책 (무과금) — 정체 며칠 만에 누르나 · 통산 최고 구간")
+	print("회귀 정책 — 정체 며칠 만에 누르나 · 통산 최고 구간 (+ = 멤버십)")
 	var head := "%-12s" % "정책"
 	for d in _marks(days):
 		head += "%-7s" % ("%d일" % d)
 	head += "  혈흔"
 	print(head)
 	print("-".repeat(head.length()))
-	for after in [0, 1, 3, 7]:
-		var r := _run(days, false, after)
-		var line := "%-12s" % ("안 누름" if after == 0 else "정체 %d일" % after)
-		for d in _marks(days):
-			line += "%-7d" % int(r["peak"][d - 1])
-		line += "  %d" % int(r["diag"][days - 1]["marks"])
-		print(line)
+	# **멤버십도 같이 찍는다** — 90일 표에서 멤버십(256)이 무과금(270)보다 낮게
+	# 나왔다(사장님 보고). 자원이 많은 쪽이 벽에 빨리 닿아 회귀를 더 자주 누르고
+	# 그 되돌림이 후반을 깎는다는 가설이라, 정책별로 갈라 보지 않으면 안 보인다.
+	for member in [false, true]:
+		for after in [0, 1, 3, 7]:
+			var r := _run(days, member, after)
+			var label := "안 누름" if after == 0 else "정체 %d일" % after
+			var line := "%-12s" % (label + ("+" if member else ""))
+			for d in _marks(days):
+				line += "%-7d" % int(r["peak"][d - 1])
+			line += "  %d" % int(r["diag"][days - 1]["marks"])
+			print(line)
 	# **혈흔 하나의 값어치.** 문턱을 두니 총 혈흔이 10개로 줄어(반복 수령이 유일한
 	# 성장 경로였다) 배율이 x1.6 뿐이다. MARK_POWER 가 그 세기를 되찾는 손잡이다 —
 	# MARK_STEP 과 곱으로만 작용하므로 손잡이는 이것 하나면 된다.
