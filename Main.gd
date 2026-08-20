@@ -10674,6 +10674,12 @@ func _oath_play(golden: bool) -> void:
 	var r := _oath_roll(golden, false)
 	if r.is_empty():
 		return
+	_oath_reveal_play(r, golden, [])
+
+
+# 공개 연출 몸통. pick 이 비어 있지 않으면 **10회 뽑기**라, 개봉 끝에서 결과창
+# 대신 고르는 격자를 편다(사장님: 10연차도 1회와 같은 느낌이어야 한다).
+func _oath_reveal_play(r: Dictionary, golden: bool, pick: Array) -> void:
 	_boss_cut_clear()
 	for ch in _oath_reveal.get_children():
 		ch.queue_free()
@@ -10713,6 +10719,19 @@ func _oath_play(golden: bool) -> void:
 		mid - Vector2(66.0, 88.0), Vector2(132.0, 176.0))
 	card.pivot_offset = Vector2(66.0, 88.0)
 	card.modulate = Color(1, 1, 1, 0)
+	# 10연차는 **뭉치**로 보인다 — 뒤에 두 장을 어긋나게 깔아 두께를 준다.
+	if not pick.is_empty():
+		for k in [2, 1]:
+			var back := Ui.image("res://assets/ui/oath_card.png",
+				card.position + Vector2(float(k) * 9.0, float(k) * -7.0),
+				Vector2(132.0, 176.0))
+			back.pivot_offset = Vector2(66.0, 88.0)
+			back.rotation_degrees = float(k) * 4.0
+			back.modulate = Color(0.72, 0.68, 0.72, 0)
+			_oath_reveal.add_child(back)
+			var bkt := back.create_tween()
+			bkt.tween_interval(0.25)
+			bkt.tween_property(back, "modulate:a", 0.9, 0.3)
 	_oath_reveal.add_child(card)
 	t.tween_property(card, "modulate:a", 1.0, 0.25).set_delay(0.25)
 	t.tween_property(card, "position:y", card.position.y, 0.45) \
@@ -10759,13 +10778,13 @@ func _oath_play(golden: bool) -> void:
 		seq.tween_callback(func() -> void: card.scale = Vector2.ONE)
 		seq.tween_interval(dt * 0.5)
 	seq.tween_callback(func() -> void:
-		_oath_burst(card, rim, ring, ring2, rcol, rarity, r))
+		_oath_burst(card, rim, ring, ring2, rcol, rarity, r, pick))
 	_refresh_oath()
 
 
 # 3~5막 — 개봉. 등급이 높을수록 화면이 크게 반응하고, 레전·진혈은 만월이 뜬다.
 func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
-		rcol: Color, rarity: String, r: Dictionary) -> void:
+		rcol: Color, rarity: String, r: Dictionary, pick: Array = []) -> void:
 	if not is_inside_tree() or not is_instance_valid(card) 			or not is_instance_valid(rim):
 		return
 	var big := rarity in ["rare", "epic", "legend", "trueblood"]
@@ -10907,7 +10926,13 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	card.modulate = Color(1.5, 1.4, 1.3)
 	create_tween().tween_property(card, "modulate", Color.WHITE, 0.6)
-	_oath_result(rcol, rarity, r)
+	if pick.is_empty():
+		_oath_result(rcol, rarity, r)
+	else:
+		# 뭉치가 흩어지듯 — 개봉 여운을 조금 두고 격자를 편다.
+		var gt := card.create_tween()
+		gt.tween_interval(0.55)
+		gt.tween_callback(func() -> void: _oath_show_pick(pick))
 
 
 func _oath_rcol(rarity: String) -> Color:
@@ -10942,7 +10967,19 @@ func _oath_play10() -> void:
 	if got.is_empty():
 		return
 	_refresh_oath()
-	_oath_show_pick(got)
+	# 릴은 **가장 높은 등급**에서 멎는다 — 열 장의 결과를 한 번에 말해 준다.
+	var best: Dictionary = got[0]
+	for g in got:
+		if _oath_rank(str(g["rarity"])) > _oath_rank(str(best["rarity"])):
+			best = g
+	_oath_reveal_play(best, false, got)
+
+
+# 등급 순위 — 표 순서를 숫자로. 진혈은 표 밖이라 맨 위.
+func _oath_rank(rarity: String) -> int:
+	if rarity == "trueblood":
+		return 99
+	return ["common", "uncommon", "rare", "epic", "legend"].find(rarity)
 
 
 # 뽑은 것들을 펼쳐 고르게 한다. 1회 뽑기의 결과창과 같은 층을 쓴다.
