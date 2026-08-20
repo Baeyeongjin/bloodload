@@ -10977,6 +10977,31 @@ func _oath_rcol(rarity: String) -> Color:
 
 
 # 결과 판 — 계약명·효과·각인·공명·레벨 + 다시 굴리기.
+# 네온 테두리 한 벌. pads 는 [패드, 선 폭, 알파] 세 겹이다. 1회 뽑기의 릴
+# 글로우와 같은 문법이라 10연차도 같은 결로 빛난다(사장님).
+func _oath_neon(parent: Control, at: Vector2, size: Vector2, col: Color,
+		pads := [[2.0, 4.0, 0.90], [8.0, 6.0, 0.35], [16.0, 10.0, 0.12]]) -> Control:
+	var rim := Control.new()
+	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for spec in pads:
+		var pad: float = spec[0]
+		var layer := Panel.new()
+		var sb := StyleBoxFlat.new()
+		sb.draw_center = false
+		sb.set_border_width_all(int(spec[1]))
+		sb.set_corner_radius_all(6)
+		sb.border_color = Color(col.r, col.g, col.b, float(spec[2]))
+		layer.add_theme_stylebox_override("panel", sb)
+		layer.position = at - Vector2(pad, pad)
+		layer.size = size + Vector2(pad, pad) * 2.0
+		layer.set_meta("glow_sb", sb)
+		layer.set_meta("glow_a", spec[2])
+		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rim.add_child(layer)
+	parent.add_child(rim)
+	return rim
+
+
 # 글로우 3겹에 등급색을 입힌다 — 겹마다 제 알파(meta)로 옅어진다.
 func _oath_glow(rim: Control, c: Color) -> void:
 	for ch in rim.get_children():
@@ -11060,12 +11085,9 @@ func _oath_show_pick(got: Array, back_col := Color(0.9, 0.3, 0.3)) -> void:
 		var rcol := _oath_rcol(str(r["rarity"]))
 		var at := Vector2(gx + float(i % 5) * (cw + gap),
 			104.0 + float(i / 5) * (ch2 + 84.0))
-		var frame := ColorRect.new()
-		frame.color = Color(rcol.r, rcol.g, rcol.b, 0.85)
-		frame.position = at - Vector2(3.0, 3.0)
-		frame.size = Vector2(cw + 6.0, ch2 + 6.0)
-		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_reveal.add_child(frame)
+		# 격자도 같은 네온 — 작은 칸이라 두 겹만 쓴다.
+		var frame := _oath_neon(_oath_reveal, at, Vector2(cw, ch2), rcol,
+			[[2.0, 3.0, 0.90], [7.0, 5.0, 0.28]])
 		var face := Ui.image(OathDefs.card_face(str(c["id"])), at,
 			Vector2(cw, ch2))
 		_oath_reveal.add_child(face)
@@ -11153,13 +11175,7 @@ func _oath_confirm_pick(r: Dictionary, got: Array) -> void:
 		mid - Vector2(72.0, 150.0), Vector2(144.0, 192.0))
 	big.pivot_offset = Vector2(72.0, 96.0)
 	layer.add_child(big)
-	var glow := ColorRect.new()
-	glow.color = Color(rcol.r, rcol.g, rcol.b, 0.85)
-	glow.position = big.position - Vector2(4.0, 4.0)
-	glow.size = Vector2(152.0, 200.0)
-	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(glow)
-	layer.move_child(glow, big.get_index())
+	_oath_neon(layer, big.position, big.size, rcol)
 	var bt := big.create_tween()
 	bt.tween_property(big, "scale", Vector2.ONE, 0.25).from(Vector2(0.7, 0.7)) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
