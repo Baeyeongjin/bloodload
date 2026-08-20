@@ -51,7 +51,10 @@ func _init() -> void:
 	scene.oath_cards = 1
 	var r: Dictionary = scene._oath_roll(false)
 	assert(not r.is_empty(), "카드가 있는데 안 굴렀다")
-	assert(scene.oath_cards <= 1, "카드가 안 줄었다: %d" % scene.oath_cards)
+	# 진혈(0.1%)은 **3장 환급**이 설계라 여기서 늘어난다 — 검사가 그걸 몰라
+	# 1/1000 로 깨졌다(2026-08-20 실측). 환급 각인(refund)도 같은 이유로 +1.
+	assert(scene.oath_cards <= 1 or str(r["rarity"]) == "trueblood",
+		"카드가 안 줄었다: %d (%s)" % [scene.oath_cards, str(r["rarity"])])
 	assert(str(r["contract"]["id"]) != "", "계약이 비었다")
 	assert(str(r["engrave"]["id"]) != "", "각인이 비었다")
 
