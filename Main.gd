@@ -867,6 +867,11 @@ func _ready() -> void:
 			_oath_view.visible = true
 			_refresh_oath()
 			_oath_play10(gten)
+		# [개발 도구] --powerband : 전투력 띠를 띄운 채 캡처한다.
+		if arg == "--powerband":
+			_select_tab("home")
+			_power_toast_t = 999.0
+			_power_band_show(318_900_000.0, 29_400_000.0)
 		# [개발 도구] --oathbuff : 계약을 걸고 전투 화면 카드 위젯을 캡처한다.
 		if arg.begins_with("--oathbuff"):
 			oath_cards = 3
@@ -1246,11 +1251,7 @@ func _build_scene() -> void:
 	_offline_banner.visible = false
 	# 전투력 알림은 **전용 줄**이다. 오프라인·장비 알림과 같은 줄을 쓰면 그쪽이 떠 있는
 	# 동안 상승이 통째로 안 보인다 — 전투력은 오를 때마다 무조건 보여야 한다.
-	_power_toast = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 36.0), Type.SIZE_SMALL,
-		Color(1.0, 0.82, 0.42))
-	_power_toast.size = Vector2(float(Grid.BG.x) - TOP_PAD * 2.0, 24.0)
-	_power_toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_power_toast.visible = false
+	_build_power_band()
 	# 전투 띠 안에서 생존 상태를 바로 읽는다. 오른쪽 절반만 써 오프라인 알림과
 	# 겹치지 않고, 별도 패널을 늘려 전투를 가리지 않는다.
 	_lbl_life = _mk_label(Vector2(float(Grid.BG.x) * 0.52, VIEW_TOP + 12.0),
@@ -8460,8 +8461,12 @@ func _notify_stat(text: String) -> void:
 		return
 	_power_gain = 0.0
 	_power_toast_t = POWER_TOAST_TIME
-	_power_toast.text = text
-	_power_toast.visible = true
+	# 전투력으로 안 잡히는 스탯 — 같은 띠에 문장만 얹는다.
+	if _power_band:
+		_power_num.text = text
+		_power_up.text = ""
+		_power_band_show(0.0, 0.0)
+		_power_num.text = text
 
 
 # ── 루프 ───────────────────────────────────────────────────────────────────
@@ -8494,8 +8499,12 @@ func _process(delta: float) -> void:
 	if _power_toast_t > 0.0:
 		_power_toast_t -= delta
 		if _power_toast_t <= 0.0:
-			_power_toast.visible = false
 			_power_gain = 0.0   # 다음 상승은 처음부터 다시 센다
+			if _power_band and _power_band.visible:
+				var ft := _power_band.create_tween()
+				ft.tween_property(_power_band, "modulate:a", 0.0, 0.25)
+				ft.tween_callback(func() -> void:
+					_power_band.visible = false)
 
 	var foes := get_tree().get_nodes_in_group("foes")
 	if _tick_boss_timer(delta):
@@ -12938,8 +12947,68 @@ func _notify_power(now: float) -> void:
 		return
 	_power_gain += now - before
 	_power_toast_t = POWER_TOAST_TIME
-	_power_toast.text = power_toast(now, _power_gain)
-	_power_toast.visible = true
+	_power_band_show(now, _power_gain)
+
+
+# 전투력 띠 — 참고작 문법(가운데 유리 띠에 큰 숫자, 사장님 레퍼런스).
+# 아트는 안 뽑았다: 반투명 판 + 금빛 네온 테두리로 같은 결이 난다.
+const POWER_BAND := Rect2(96.0, 146.0, 384.0, 46.0)
+var _power_band: Control
+var _power_num: Label
+var _power_up: Label
+
+
+func _build_power_band() -> void:
+	_power_band = Control.new()
+	_power_band.position = POWER_BAND.position
+	_power_band.size = POWER_BAND.size
+	_power_band.pivot_offset = POWER_BAND.size * 0.5
+	_power_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_power_band.visible = false
+	_power_band.z_index = 14
+	_hud_root.add_child(_power_band)
+	var glass := ColorRect.new()
+	glass.color = Color(0.10, 0.02, 0.05, 0.72)
+	glass.size = POWER_BAND.size
+	glass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_power_band.add_child(glass)
+	_oath_neon(_power_band, Vector2.ZERO, POWER_BAND.size,
+		Color(1.0, 0.82, 0.42), [[0.0, 2.0, 0.85], [5.0, 4.0, 0.22]])
+	_power_band.add_child(Ui.icon("res://assets/ui/icon_power.png",
+		Vector2(16.0, 13.0), 20.0))
+	# 숫자는 크게 — 이 줄의 주인공이다.
+	_power_num = _panel_label(_power_band, Vector2(44.0, 8.0), Type.SIZE_MID,
+		Color(1, 1, 1), 200.0, 30.0)
+	_shop_outline(_power_num, 8)
+	_power_up = _panel_label(_power_band, Vector2(240.0, 13.0),
+		Type.SIZE_SMALL, Color(0.62, 0.98, 0.66), 128.0, 20.0)
+	_power_up.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_shop_outline(_power_up, 6)
+	# 옛 라벨은 검사·다른 알림이 참조하므로 남기되 화면에는 안 쓴다.
+	_power_toast = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 36.0), Type.SIZE_SMALL,
+		Color(1.0, 0.82, 0.42))
+	_power_toast.visible = false
+
+
+# 띠를 띄운다. 이미 떠 있으면 숫자만 갈고 한 번 튕긴다(연속 상승이 보인다).
+func _power_band_show(now: float, gain: float) -> void:
+	if _power_band == null:
+		return
+	_power_num.text = _n(now)
+	_power_up.text = "▲ %s" % _n(gain) if gain > 0.0 else ""
+	var fresh := not _power_band.visible
+	_power_band.visible = true
+	var t := _power_band.create_tween()
+	if fresh:
+		_power_band.modulate.a = 0.0
+		t.tween_property(_power_band, "modulate:a", 1.0, 0.15)
+		t.parallel().tween_property(_power_band, "position:y",
+			POWER_BAND.position.y, 0.25) \
+			.from(POWER_BAND.position.y + 14.0) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	else:
+		t.tween_property(_power_band, "scale", Vector2(1.05, 1.05), 0.08)
+		t.tween_property(_power_band, "scale", Vector2.ONE, 0.14)
 
 
 # 재화 해금 (DESIGN 13-1). 첫 화면에 재화가 3개 있으면 뭐가 중요한지 모른다 —
