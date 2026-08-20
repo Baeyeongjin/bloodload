@@ -25,13 +25,13 @@ func _init() -> void:
 	var full := {}
 	for st in StatDefs.STATS:
 		full[str(st["key"])] = 99999
-	assert(not StatDefs.is_open("rage", 8, full), "격노가 8단계에 열렸다")
-	assert(StatDefs.is_open("rage", 9, full), "격노가 9단계에 안 열린다")
+	assert(not StatDefs.is_open("rage", 19, full), "격노가 19단계에 열렸다")
+	assert(StatDefs.is_open("rage", 20, full), "격노가 20단계에 안 열린다")
 	var short := full.duplicate()
-	short["damage"] = 600
-	assert(not StatDefs.is_open("rage", 99, short), "선행 600에 격노가 열렸다")
-	assert(not StatDefs.is_open("grit", 10, full), "강골이 10단계에 열렸다")
-	assert(StatDefs.is_open("grit", 11, full), "강골이 11단계에 안 열린다")
+	short["damage"] = 1500
+	assert(not StatDefs.is_open("rage", 99, short), "선행 1500에 격노가 열렸다")
+	assert(not StatDefs.is_open("grit", 23, full), "강골이 23단계에 열렸다")
+	assert(StatDefs.is_open("grit", 24, full), "강골이 24단계에 안 열린다")
 
 	# 3) 초기화 — 쓴 만큼 정확히 돌려주고 전부 Lv1 이 된다.
 	scene.lv = {"damage": 301, "tough": 151, "rage": 61}

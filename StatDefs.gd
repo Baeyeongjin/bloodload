@@ -42,11 +42,15 @@ const STATS := [
 		"base": 50.0, "exp": 1.35, "cap": 1486},
 	# 격노·강골 — **괄호 A 줄**(2026-08-20, 사장님). 평(damage/tough)이 키운
 	# 밑동을 통째로 곱한다. 합연산이라 상한이 없다(STATS 1장).
+	# **후반 축이다.** 9/11단계로 열었더니 30일차가 190 → 226 으로 뛰어 곡선
+	# 모양이 나빠졌다(30→90 배 1.48 → 1.27, 목표 2.0). 실측 뒤 20/24단계로
+	# 미뤘다 — 30일차(구간 190 언저리)에는 거의 안 열리고 60일 뒤에만 작용해서
+	# **후반만 민다**. 이게 90일 300 미달의 원인(모양 문제)을 겨누는 자리다.
 	{"key": "rage", "name": "격노", "icon": "stat_rage",
-		"unlock": 9, "need": ["damage", 601], "impl": true,
+		"unlock": 20, "need": ["damage", 1501], "impl": true,
 		"base": 20.0, "exp": 1.16},
 	{"key": "grit", "name": "강골", "icon": "stat_grit",
-		"unlock": 11, "need": ["tough", 601], "impl": true,
+		"unlock": 24, "need": ["tough", 1501], "impl": true,
 		"base": 24.0, "exp": 1.16},
 	{"key": "critdmg", "name": "치명타 피해", "icon": "stat_critdmg",
 		"unlock": 5, "need": ["crit", 61], "impl": true, "base": 40.0, "exp": 1.28},
