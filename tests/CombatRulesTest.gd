@@ -331,8 +331,11 @@ func _init() -> void:
 	game.lv["speed"] = int(StatDefs.of("speed")["cap"])
 	assert(is_equal_approx(game.attack_interval(), 0.10),
 		"공격속도가 만렙에서 0.10초가 아니다: %.4f" % game.attack_interval())
-	game.lv["crit"] = 11
-	assert(game._stat_effect("crit") == "10%", "치명타 확률 표기는 숫자+%만 쓴다")
+	# 15분할: 옛 Lv11(=10%) 은 새 151 이다. 표기도 소수 1자리가 됐다 —
+	# 레벨당 0.067%p 라 정수로 적으면 15레벨을 눌러야 숫자가 변한다.
+	game.lv["crit"] = 1 + 15 * 10
+	assert(game._stat_effect("crit") == "10.0%",
+		"치명타 확률 표기가 바뀌었다: %s" % game._stat_effect("crit"))
 	assert(game._base_hit_damage() > game.damage(), "실시간 타격에 치명타 기대값이 빠졌다")
 	# 스킬은 **장착 순서가 곧 우선순위**다. 예전 하드코딩 3종(drain/wave/summon)은
 	# M3 에서 SkillDefs 표(형태_등급)로 바뀌었다.

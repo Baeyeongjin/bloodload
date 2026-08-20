@@ -2803,8 +2803,10 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 		Color(0.62, 0.62, 0.68), 148.0, ROW_H * 0.5)
 	var nm := _panel_label(row, Vector2(60.0, ROW_H * 0.5), Type.SIZE_BODY,
 		Color(0.95, 0.90, 0.88), 144.0, ROW_H * 0.5)
+	# 누적 배수를 같이 적으면서 120 으로는 모자란다. 버튼이 396 부터라 160 까지
+	# 안전하다(2026-08-20).
 	var eff := _panel_label(row, Vector2(208.0, ROW_H * 0.5), Type.SIZE_SMALL,
-		Color(0.98, 0.72, 0.45), 120.0, ROW_H * 0.5)
+		Color(0.98, 0.72, 0.45), 160.0, ROW_H * 0.5)
 	# SIZE_MID(16)로는 "혈액 999.9t"가 153px이라 124px 칸에서 "혈액 1."로 잘렸다.
 	# 칸이 좁으면 글자 크기부터 내린다(UI_RULES 3장).
 	var btn_w := 172.0
@@ -3076,16 +3078,27 @@ func _refresh_growth() -> void:
 
 # 레벨이 아니라 "그래서 뭐가 되는데"를 보여 준다.
 func _stat_effect(key: String) -> String:
+	# **값 + 누적 배수**를 같이 적는다(사장님 2026-08-20). 15분할로 한 레벨의
+	# 절대 증가가 1/15이 되어 정수 표기로는 x1 구매가 화면에 안 잡혔다 —
+	# 참고작이 "+2,979" 처럼 누적을 적는 자리가 이것이다.
+	# **_stat_eff 를 쓴다**: stat_lv 은 구매 단위(15배)라 15분할 뒤로는 틀리고,
+	# 칭호가 준 공짜 레벨도 안 잡혔다(옛 버그).
+	var eff := _stat_eff(key)
 	match key:
-		"damage": return "+%s 피해" % _n(damage())
-		"speed": return "%.2f초 간격" % attack_interval()
-		# "x1.01 흡혈"이라고만 쓰면 체력을 빨아먹는 능력으로 읽힌다. 실제로는
-		# **처치 시 얻는 혈액(재화)의 배수**다 — 회복과 아무 상관이 없다.
-		"gold": return "혈액 x%.2f" % gold_mult()
-		"tough": return "체력 %s" % _n(max_hp())
-		"regen": return "초당 %s 회복" % _n(regen_per_sec())
-		"crit": return "%d%%" % int(minf(1.0, 0.01 * float(stat_lv("crit") - 1)) * 100.0)
-		"critdmg": return "x%.2f 피해" % (1.5 + 0.05 * float(stat_lv("critdmg") - 1))
+		"damage":
+			return "+%s  x%.1f" % [_n(damage()),
+				1.0 + Balance.DMG_PER_LEVEL * (eff - 1.0)]
+		"tough":
+			return "%s  x%.1f" % [_n(max_hp()), 1.0 + 0.06 * (eff - 1.0)]
+		"speed":
+			return "%.2f초  x%.1f" % [attack_interval(), 0.60 / attack_interval()]
+		"regen":
+			return "초당 %s  %.1f%%" % [_n(regen_per_sec()),
+				minf(Balance.REGEN_CAP, Balance.REGEN_PER_LEVEL * (eff - 1.0)) * 100.0]
+		"crit":
+			return "%.1f%%" % (minf(1.0, 0.01 * (eff - 1.0)) * 100.0)
+		"critdmg":
+			return "x%.2f 피해" % (1.5 + 0.05 * (eff - 1.0))
 	return ""
 
 
