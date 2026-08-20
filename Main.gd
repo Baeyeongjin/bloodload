@@ -11146,6 +11146,8 @@ func _oath_confirm_pick(r: Dictionary, got: Array) -> void:
 	layer.add_child(dim)
 	dim.create_tween().tween_property(dim, "color:a", 0.86, 0.18)
 	var mid := Vector2(Grid.BG) * 0.5
+	# 카드 뒤 후광 — 결과창과 같은 빔(사장님: 10회 뽑기도 이렇게).
+	_oath_rays(layer, mid - Vector2(0.0, 54.0), rcol)
 	# 고른 카드를 크게.
 	var big := Ui.image(OathDefs.card_face(str(c["id"])),
 		mid - Vector2(72.0, 150.0), Vector2(144.0, 192.0))
@@ -11212,12 +11214,9 @@ func _oath_confirm_pick(r: Dictionary, got: Array) -> void:
 	_pet_hover(no, no_art)
 
 
-# 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
-# 카드 뒤에 등급색 광선이 돌고, 아래는 전용 세트 판 + 등급 리본 + 세 줄.
-func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
-	var c: Dictionary = r["contract"]
-	var e: Dictionary = r["engrave"]
-	var mid := Vector2(Grid.BG) * 0.5 - Vector2(0.0, 60.0)
+# 카드 뒤 후광 — 방사 빔 두 겹 + 잔불. 결과창과 10연차 확인 판이 같이 쓴다
+# (사장님: 10회 뽑기도 뒤에 이 이펙트를). parent 는 층, mid 는 카드 중심이다.
+func _oath_rays(parent: Control, mid: Vector2, rcol: Color) -> void:
 	# 후광 — 부드러운 방사 빔 두 겹이 서로 반대로 천천히 돈다(사장님
 	# "부드럽고 고급지게"). 빔은 방사형 그라데이션이라 가로·세로 모두
 	# 사그라든다 — 각진 모서리가 없다. 속도 차가 은은한 간섭무늬를 만든다.
@@ -11236,8 +11235,8 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 		var rays := Control.new()
 		rays.position = mid
 		rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_reveal.add_child(rays)
-		_oath_reveal.move_child(rays, 1)     # 카드·만월 뒤
+		parent.add_child(rays)
+		parent.move_child(rays, 1)     # 카드·만월 뒤
 		var count := 7 if li == 0 else 5
 		for i in count:
 			var ray := TextureRect.new()
@@ -11267,7 +11266,7 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 		spark.size = Vector2(ss, ss)
 		spark.color = Color(lit.r, lit.g, lit.b, 0.0)
 		spark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_reveal.add_child(spark)
+		parent.add_child(spark)
 		var sx := mid.x + randf_range(-130.0, 130.0)
 		var sy := mid.y + randf_range(-40.0, 140.0)
 		spark.position = Vector2(sx, sy)
@@ -11279,6 +11278,14 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 		st2.tween_property(spark, "color:a", 0.75, 0.5)
 		st2.parallel().tween_property(spark, "position:y", sy - 26.0, 1.6)
 		st2.tween_property(spark, "color:a", 0.0, 1.1)
+
+# 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
+# 카드 뒤에 등급색 광선이 돌고, 아래는 전용 세트 판 + 등급 리본 + 세 줄.
+func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
+	var c: Dictionary = r["contract"]
+	var e: Dictionary = r["engrave"]
+	var mid := Vector2(Grid.BG) * 0.5 - Vector2(0.0, 60.0)
+	_oath_rays(_oath_reveal, mid, rcol)
 	# 결과 판 — 전용 세트. 아래에서 떠오른다.
 	var panel := Control.new()
 	panel.position = Vector2(0.0, 20.0)
