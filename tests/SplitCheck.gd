@@ -44,7 +44,18 @@ func _init() -> void:
 		assert(absf(Balance.hero_damage(eff, 0.0, 1)
 			- Balance.hero_damage(float(old_lv), 0.0, 1)) < 1e-9, "피해가 어긋난다")
 
-	# 5) 흡혈량은 표에서 사라졌다.
+	# 5) 값이 있는데 "0"으로 찍히면 안 된다. 15분할 뒤 첫 칸 값이 1 미만이라
+	#    스탯 가격이 전부 "혈액 0"으로 보였다(사장님 실플레이).
+	var M := load("res://Main.gd")
+	for spec2 in [[10.0, 1.15], [12.0, 1.15], [20.0, 1.22], [40.0, 1.28]]:
+		var c: float = Balance.upgrade_cost(1, float(spec2[0]), float(spec2[1]))
+		assert(c > 0.0, "첫 칸이 공짜다")
+		assert(M._n(c) != "0", "가격 %.3f 이 화면에 0 으로 찍힌다" % c)
+	assert(M._n(0.0) == "0", "0 은 그대로 0 이어야 한다")
+	assert(M._n(0.004) != "0.0", "아주 작은 값도 0 으로 찍히면 안 된다")
+	assert(M._n(1.0) == "1" and M._n(999.0) == "999", "정수 표기가 바뀌었다")
+
+	# 6) 흡혈량은 표에서 사라졌다.
 	assert(StatDefs.of("gold").is_empty(), "흡혈량이 아직 표에 있다")
 
 	print("SplitCheck OK")
