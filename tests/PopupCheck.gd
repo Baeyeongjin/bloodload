@@ -27,9 +27,14 @@ func _init() -> void:
 		assert(_has_close(v), "%s 에 닫기 버튼이 없다 — 들어가면 못 나온다" % name)
 
 	# 2) 켜면 애니가 걸리고 끝에는 제자리로 수렴한다.
+	#
+	# **await 하지 않고 바로 잰다.** visibility_changed 는 setter 안에서 그 자리
+	# 에서 울리므로 Ui.pop_in 의 시작값(0.92 / a=0)이 즉시 박힌다. 한 프레임
+	# 기다렸다 재면 그 프레임의 delta 가 애니 길이(0.16초)보다 크면 이미 끝나
+	# 있어서 헛통과·헛실패가 난다 — 헤드리스 첫 프레임이 정확히 그렇다
+	# (실측: 한 프레임 뒤 scale 1.004 · a 1.0, 즉 오버슈트까지 지나갔다).
 	var view: Control = scene._codex_view
 	view.visible = true
-	await process_frame
 	assert(view.scale.x < 1.0 or view.modulate.a < 1.0,
 		"창이 켜졌는데 애니가 안 걸렸다 — Ui.pop_in 등록이 빠졌다")
 	# TRANS_BACK 은 1.0 을 살짝 넘겼다가 돌아온다 — "1.0 미만"으로 기다리면

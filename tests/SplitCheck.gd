@@ -56,6 +56,15 @@ func _init() -> void:
 	assert(M._n(0.004) != "0.0", "아주 작은 값도 0 으로 찍히면 안 된다")
 	assert(M._n(1.0) == "1" and M._n(999.0) == "999", "정수 표기가 바뀌었다")
 
+	# 6b) 가격은 올려서 적는다 — 화면이 살 수 있다고 하면 정말로 살 수 있어야
+	#     한다. 내림이면 "혈액 9"인데 9.36 이 필요해 버튼이 안 눌린다.
+	for v in [9.36, 0.4, 1.0, 99.9, 999.6, 1234.5, 2000.0, 1.5e9]:
+		var shown: String = M._n(float(v), true)
+		assert(_parse_n(shown) >= float(v) - 1e-6,
+			"가격 %.2f 가 %s 로 모자라게 적힌다" % [v, shown])
+	assert(M._n(9.36, true) == "10" and M._n(2000.0, true) == "2k",
+		"가격 표기가 필요 이상으로 올라간다")
+
 	# 6) 눈금 — 첫 칸 가격이 정수로 읽혀야 한다(소수점을 없애려고 15배 했다).
 	for spec3 in [[10.0, 1.15], [12.0, 1.15], [20.0, 1.22], [40.0, 1.28]]:
 		assert(Balance.upgrade_cost(1, float(spec3[0]), float(spec3[1])) >= 1.0,
@@ -71,3 +80,13 @@ func _init() -> void:
 
 	print("SplitCheck OK")
 	quit()
+
+
+# "1.3k" -> 1300.0
+func _parse_n(t: String) -> float:
+	var mul := 1.0
+	for u in [["k", 1e3], ["m", 1e6], ["b", 1e9], ["t", 1e12]]:
+		if t.ends_with(str(u[0])):
+			mul = float(u[1])
+			t = t.trim_suffix(str(u[0]))
+	return t.to_float() * mul

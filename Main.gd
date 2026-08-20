@@ -1453,12 +1453,22 @@ func _build_frame() -> void:
 # **대문자가 아니라 소문자인 이유**: 이 폰트(블랙레터)의 대문자 K 는 획이 꺾여
 # "Ж" 처럼 읽힌다 — 실제로 폰트를 렌더해서 확인했다. 소문자 k·m·b·t 는 획이 단순해
 # 그대로 읽힌다. 단위 글자를 바꿀 때는 반드시 같은 방법으로 렌더해서 확인할 것.
-static func _n(v: float) -> String:
+# up=true 는 **가격**이다: 반드시 올려 적는다.
+#
+# 내림으로 적으면 화면이 "혈액 9"인데 실제로는 9.36 이 필요해 버튼이 안 눌린다 —
+# 살 수 있어 보이는데 안 되는 자리라 유저에겐 버그다(사장님 2026-08-20).
+# 올려 적으면 그 반대(안 될 것 같은데 되는 쪽)라 막히는 일이 없다. 값 자체는
+# 안 바꾼다 — 실제로 올려 받으면 누적 비용 항등이 깨진다(SplitCheck 1번).
+#
+# **지갑은 내림(기본), 가격은 올림.** 이 짝이 "화면이 살 수 있다고 하면 정말로
+# 살 수 있다"를 보장한다: floor(지갑) >= ceil(가격) 이면 지갑 >= 가격이다.
+static func _n(v: float, up := false) -> String:
 	# **1 미만을 0 으로 찍지 않는다.** 15분할로 한 칸 값이 1 아래로 내려가면서
-	# (공격력 첫 칸 0.62) 스탯 가격이 통째로 "혈액 0"으로 보였다 — 공짜라는
-	# 거짓말이다(사장님 실플레이 2026-08-20). 0.1 로 바닥을 받쳐서 0.04 같은
-	# 값도 "0.0"이 되지 않게 한다.
-	if v > 0.0 and v < 1.0:
+	# (눈금 15배 전, 공격력 첫 칸 0.62) 스탯 가격이 통째로 "혈액 0"으로 보였다 —
+	# 공짜라는 거짓말이다. 0.1 로 바닥을 받쳐 0.04 도 "0.0"이 되지 않게 한다.
+	if up:
+		v = ceilf(v)
+	elif v > 0.0 and v < 1.0:
 		return "%.1f" % maxf(v, 0.1)
 	if v < 1000.0:
 		return str(int(v))
@@ -1467,6 +1477,9 @@ static func _n(v: float) -> String:
 	while v >= 1000.0 and i < units.size() - 1:
 		v /= 1000.0
 		i += 1
+	# 축약도 같은 이유로 올린다 — 1234 를 "1.2k" 로 적으면 또 모자라다.
+	if up:
+		v = ceilf(v * 10.0) / 10.0
 	return ("%.1f" % v).trim_suffix(".0") + units[i]
 
 
@@ -2469,7 +2482,7 @@ func _refresh_pact() -> void:
 			btn.text = "만렙"
 			btn.disabled = true
 			continue
-		btn.text = "x%d  %s" % [steps, _n(_pact_cost(steps))]
+		btn.text = "x%d  %s" % [steps, _n(_pact_cost(steps), true)]
 		btn.disabled = sigil < _pact_cost(steps)
 
 
@@ -2649,7 +2662,7 @@ func _refresh_trait_info() -> void:
 		_trait_buy.disabled = true
 	else:
 		var cost := TraitDefs.cost(int(n["tier"]))
-		_trait_buy.text = _n(cost)
+		_trait_buy.text = _n(cost, true)
 		_trait_buy.disabled = crystal < cost
 
 
@@ -3137,7 +3150,7 @@ func _refresh_growth() -> void:
 		var cost := _buy_cost(key, _step_for(key))
 		# 상한이 풀리면 아이콘도 돌아와야 한다 — 만렙 분기가 null 로 지운다.
 		Ui.cost_icon(row["btn"], "res://assets/ui/res_blood.png")
-		row["btn"].text = "혈액  %s" % _n(cost)
+		row["btn"].text = "혈액  %s" % _n(cost, true)
 		row["btn"].disabled = gold < cost
 
 
@@ -3749,7 +3762,7 @@ func _refresh_gear_detail() -> void:
 	var highest := GachaDefs.rarity_index(str(item["rarity"])) >= GachaDefs.RARITIES.size() - 1
 	var resource_values := [
 		["정수 %s" % _n(essence), Color(0.68, 0.82, 1.0)],
-		["레벨업 %s" % _n(level_cost), Color(0.82, 0.80, 0.86)],
+		["레벨업 %s" % _n(level_cost, true), Color(0.82, 0.80, 0.86)],
 		["분해 +%s" % _n(salvage), Color(0.82, 0.80, 0.86)],
 		["조각 %d/5" % shards, Color(0.72, 0.72, 0.78)],
 		["최고 등급" if highest else "합성 가능" if shards >= 5 \
@@ -3951,7 +3964,7 @@ func _refresh_gear_slots() -> void:
 		var cost := GearDefs.upgrade_cost(item)
 		nodes["btn_icon"].visible = true
 		# 한 줄로 둔다 — 두 줄이면 아랫줄이 버튼 테두리를 넘는다.
-		nodes["btn_lbl"].text = "정수 %s" % _n(cost)
+		nodes["btn_lbl"].text = "정수 %s" % _n(cost, true)
 		btn.disabled = essence < cost
 		_gate_btn_dim(nodes["btn_tex"], nodes["btn_lbl"], btn.disabled)
 
@@ -14588,7 +14601,7 @@ func _refresh_pet_feed() -> void:
 		* ((1.0 if capped else clampf(feed / maxf(1.0, cost), 0.0, 1.0)) \
 		if got else 0.0)
 	_pet_feed_ui["cost"].text = ("승급하면 더 클 수 있다" if capped \
-		else "다음 레벨  먹이 %s  ·  성공 %d%%  ·  보유 %s" % [_n(cost),
+		else "다음 레벨  먹이 %s  ·  성공 %d%%  ·  보유 %s" % [_n(cost, true),
 		int(round(PetDefs.feed_chance(lv) * 100.0)), _n(feed)]) if got else ""
 	_pet_btn_enable(_pet_feed_ui["one"], got and not capped and feed >= cost)
 	_pet_btn_enable(_pet_feed_ui["ten"],
