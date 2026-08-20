@@ -2792,6 +2792,27 @@ func _toggle_skill(key: String) -> void:
 	_save_game()
 
 
+# 아직 못 얻은 스킬 — 장비 보관함의 "?" 칸과 같은 문법이다.
+func _skill_unknown_card(rarity: Dictionary) -> Control:
+	var cell := Control.new()
+	cell.custom_minimum_size = SK_CARD
+	cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var dim := Color(rarity["col"]) * 0.42
+	var frame := Ui.image("res://assets/ui/slot_common.png",
+		Vector2((SK_CARD.x - 56.0) * 0.5, 0.0), Vector2(56.0, 56.0))
+	frame.modulate = Color(dim.r, dim.g, dim.b, 0.85)
+	cell.add_child(frame)
+	var q := _panel_label(cell, Vector2(0.0, 14.0), Type.SIZE_MID,
+		Color(dim.r * 1.6, dim.g * 1.6, dim.b * 1.6), SK_CARD.x, 28.0)
+	q.text = "?"
+	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var nm := _panel_label(cell, Vector2(0.0, 60.0), Type.SIZE_SMALL,
+		Color(dim.r * 1.4, dim.g * 1.4, dim.b * 1.4), SK_CARD.x, 18.0)
+	nm.text = "%s · 미획득" % str(rarity["name"])
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return cell
+
+
 func _skill_card(key: String) -> Control:
 	var lv := int(skill_owned.get(key, 0))
 	var rarity := SkillDefs.rarity_of(key)
@@ -2854,19 +2875,18 @@ func _refresh_skills(rebuild_info := true) -> void:
 	# 목록은 **등급 낮은 순**이다(보관함과 같은 규칙). 센 것부터 놓으면 새로 뽑은
 	# 낮은 등급이 맨 뒤로 밀려서 조합 재료를 찾을 때마다 끝까지 스크롤해야 한다.
 	# 같은 등급 안에서는 형태 순 → 레벨 높은 순.
-	var keys := skill_owned.keys()
-	keys.sort_custom(func(a: Variant, b: Variant) -> bool:
-		var ra := GachaDefs.rarity_index(str(SkillDefs.split(str(a))[1]))
-		var rb := GachaDefs.rarity_index(str(SkillDefs.split(str(b))[1]))
-		if ra != rb:
-			return ra < rb
-		var sa := SkillDefs.SHAPE_ORDER.find(str(SkillDefs.split(str(a))[0]))
-		var sb := SkillDefs.SHAPE_ORDER.find(str(SkillDefs.split(str(b))[0]))
-		if sa != sb:
-			return sa < sb
-		return int(skill_owned[a]) > int(skill_owned[b]))
-	for key in keys:
-		_skill_grid.add_child(_skill_card(str(key)))
+	# 표 20칸(형태 4 x 등급 5)을 등급 순으로 늘어놓고, 못 얻은 것은 "?" 로
+	# 채운다 — 장비 보관함과 같은 규칙(사장님). 정렬을 따로 안 해도 표가 곧
+	# 순서라, 조합 재료를 찾을 때 자리가 늘 같다.
+	for rarity in GachaDefs.RARITIES:
+		if GachaDefs.rarity_index(str(rarity["key"])) > GachaDefs.SKILL_TOP_INDEX:
+			continue
+		for shape in SkillDefs.SHAPE_ORDER:
+			var key := SkillDefs.key_of(shape, str(rarity["key"]))
+			if skill_owned.has(key):
+				_skill_grid.add_child(_skill_card(key))
+			else:
+				_skill_grid.add_child(_skill_unknown_card(rarity))
 	_skill_bulk_btn.disabled = _skill_levelable().is_empty()
 	_skill_synth_btn.disabled = _skill_synthesizable().is_empty()
 	_skill_auto_btn.set_pressed_no_signal(skill_auto_equip)
