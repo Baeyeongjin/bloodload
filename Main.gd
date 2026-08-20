@@ -11150,7 +11150,7 @@ func _oath_show_pick(got: Array, back_col := Color(0.9, 0.3, 0.3)) -> void:
 	skip.modulate = Color(1, 1, 1, 0)
 	skip.pressed.connect(func() -> void:
 		_oath_reveal.visible = false
-		_oath_view.visible = false)
+		_refresh_oath())   # 판은 남긴다 — 결과를 보고 이어 굴린다
 	_oath_reveal.add_child(skip)
 	_pet_hover(skip, sk_art)
 
@@ -11215,7 +11215,7 @@ func _oath_confirm_pick(r: Dictionary, got: Array) -> void:
 	yes.pressed.connect(func() -> void:
 		_oath_use(r)
 		_oath_reveal.visible = false
-		_oath_view.visible = false)
+		_refresh_oath())   # 판은 남긴다 — 결과를 보고 이어 굴린다
 	layer.add_child(yes)
 	_pet_hover(yes, yes_art)
 	var no_art := Ui.set_row(OATH, Vector2(48.0 + bw2, by), Vector2(bw2, 46.0))
@@ -11404,7 +11404,7 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	ok.pressed.connect(func() -> void:
 		_oath_use(r)
 		_oath_reveal.visible = false
-		_oath_view.visible = false)
+		_refresh_oath())   # 판은 남긴다 — 결과를 보고 이어 굴린다
 	panel.add_child(ok)
 	_pet_hover(ok, ok_art)
 	# 버프가 돌고 있을 때만 [지금 것 유지] — 뽑은 카드는 수집·레벨로 남는다.
@@ -11421,7 +11421,7 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 		keep.modulate = Color(1, 1, 1, 0)
 		keep.pressed.connect(func() -> void:
 			_oath_reveal.visible = false
-			_oath_view.visible = false)
+			_refresh_oath())   # 판은 남긴다 — 결과를 보고 이어 굴린다
 		panel.add_child(keep)
 		_pet_hover(keep, keep_art)
 	# 판이 아래에서 떠오르며 자리를 잡는다.
