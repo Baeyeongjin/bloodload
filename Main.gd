@@ -2064,7 +2064,9 @@ func _panel_label(parent: Control, pos: Vector2, size: int, col: Color,
 
 # 성장 창. 스탯 7개를 스크롤 목록으로 세운다.
 # 한 행에 아이콘 · 레벨 · 이름 · 실제 효과 · 훈련 버튼(비용)이 다 들어간다.
-const BUY_STEPS := [1, 10, 100]
+# -1 = MAX(지금 혈액으로 살 수 있는 만큼). 레벨이 네 자리가 되면서 x100 으로도
+# 손이 아프다 — 참고작·업계 표준(AdVenture Capitalist)이 이 네 칸이다.
+const BUY_STEPS := [1, 10, 100, -1]
 const ROW_H := 60.0
 const STEP_H := 40.0
 
@@ -2107,8 +2109,8 @@ func _build_growth(root: Control) -> void:
 	var step_w := (CONTENT_W - gap * float(BUY_STEPS.size() - 1)) / float(BUY_STEPS.size())
 	for i in BUY_STEPS.size():
 		var n: int = BUY_STEPS[i]
-		var b := Ui.button("x%d" % n, Vector2(PAD + i * (step_w + gap), top),
-			Vector2(step_w, STEP_H))
+		var b := Ui.button("MAX" if n < 0 else "x%d" % n,
+			Vector2(PAD + i * (step_w + gap), top), Vector2(step_w, STEP_H))
 		# 선택 표시는 toggle 로 한다. disabled 로 하면 글자가 흐려져 "선택됨"이 아니라
 		# "못 누름"으로 읽힌다.
 		b.toggle_mode = true
@@ -3089,8 +3091,11 @@ func _stat_effect(key: String) -> String:
 
 # 여러 단계를 한 번에 살 때의 총액. 비용이 지수라 배수만 곱하면 실제보다 싸진다.
 func _buy_cost(key: String, n: int) -> float:
-	var s := StatDefs.of(key)
-	return Balance.buy_cost(stat_lv(key), n, s.get("base", 10.0), s.get("exp", 1.15))
+	# **가격은 한 식만 쓴다.** 여기가 표의 raw exp 를, 시뮬레이션 쪽이
+	# StatDefs.cost_exp(COST_EXP_SCALE 반영)를 쓰고 있었다 — 지금은 SCALE 이 1.0
+	# 이라 값이 같지만, 그 손잡이를 만지는 순간 화면 가격과 곡선이 갈린다.
+	return Balance.buy_cost(stat_lv(key), n,
+		float(StatDefs.of(key).get("base", 10.0)), StatDefs.cost_exp(key))
 
 
 const SLOT_BOX := 80.0    # 등급 틀 크기
@@ -8450,7 +8455,14 @@ func _stat_cap(key: String) -> int:
 
 # 이번 구매의 실제 단계 수 — 상한 앞에서는 닿을 만큼만.
 func _step_for(key: String) -> int:
-	return mini(buy_step, _stat_cap(key) - stat_lv(key))
+	var room := _stat_cap(key) - stat_lv(key)
+	if buy_step >= 0:
+		return mini(buy_step, room)
+	# MAX — 지갑이 닿는 데까지, 단 상한을 넘지 않는다. **음수는 절대 안 돌려준다**:
+	# 음수 n 이 흘러가면 비용이 음수가 되어 혈액이 늘고 레벨이 준다.
+	var st := StatDefs.of(key)
+	return clampi(Balance.max_steps(stat_lv(key), gold,
+		float(st.get("base", 10.0)), StatDefs.cost_exp(key)), 0, room)
 
 
 func _buy(key: String) -> void:
@@ -13291,6 +13303,8 @@ func _save_game() -> void:
 	cfg.set_value("run", "hero_exp", hero_exp)
 	cfg.set_value("run", "hero_hp", hero_hp)
 	cfg.set_value("up", "lv", lv)
+	cfg.set_value("up", "split15", true)
+	cfg.set_value("up", "buy_step", buy_step)
 	cfg.set_value("gear", "equipped", equipped)
 	cfg.set_value("gear", "inventory", gear_inventory)
 	cfg.set_value("gacha", "pity", gacha_pity)
@@ -13402,7 +13416,25 @@ func _load_game() -> void:
 			titles_got[str(id)] = true
 	hero_lv = int(cfg.get_value("run", "hero_lv", 1))
 	hero_exp = float(cfg.get_value("run", "hero_exp", 0.0))
+	buy_step = int(cfg.get_value("up", "buy_step", 1))
 	lv = cfg.get_value("up", "lv", {})
+	# ── 15분할 이관 (2026-08-20, 한 번만) ─────────────────────────────────
+	# 레벨과 효과가 **같이** 환산되므로 로드 직후 전투력이 소수점까지 같다.
+	# 두 번 돌면 레벨이 225배가 되고 안 돌면 1/15 로 붕괴하는데 둘 다 크래시가
+	# 안 난다 — 이 플래그가 유일한 방어선이다.
+	if not cfg.has_section_key("up", "split15"):
+		# 흡혈량은 사라진 스탯이라 **쪼개기 전에** 옛 곡선 값으로 환급한다.
+		# n 은 새 레벨 단위로 넘긴다(buy_cost 가 새 단위를 센다).
+		var gone := maxi(1, int(lv.get("gold", 1)))
+		if gone > 1:
+			gold += Balance.buy_cost(1, Balance.SPLIT * (gone - 1), 14.0, 1.16)
+		lv.erase("gold")
+		for k in lv:
+			lv[k] = 1 + Balance.SPLIT * (maxi(1, int(lv[k])) - 1)
+		# 표 밖으로 나간 죽은 키 청소(옛 저장에 남은 것들).
+		for k in lv.keys():
+			if StatDefs.of(str(k)).is_empty():
+				lv.erase(k)
 	equipped = cfg.get_value("gear", "equipped", {})
 	gear_inventory = cfg.get_value("gear", "inventory", {})
 	if gear_inventory.is_empty():
