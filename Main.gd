@@ -767,6 +767,7 @@ func _ready() -> void:
 		kills = 0
 		hero_hp = max_hp()
 	_apply_stage_bg()
+	_build_start_gate()
 	_boss_time = StageDefs.time_limit(stage)
 	# 불러온 자리가 보스 구간이면 켤 때도 왼쪽에서 걸어 들어온다 — 구간 전환과 같은 길.
 	_begin_stage_pose()
@@ -948,6 +949,10 @@ func _ready() -> void:
 		if arg == "--bosscut":
 			_select_tab("home")
 			_boss_cut("가고일 군주")
+		# [개발 도구] --gate : 시작 화면을 띄운 채로 캡처한다(autoshot 이 그냥
+		# 지나가므로 이 플래그로만 볼 수 있다).
+		if arg == "--gate":
+			_gate_keep = true
 		# [개발 도구] --home : 홈(사냥) 탭을 연 채로 캡처한다.
 		if arg == "--home":
 			_select_tab("home")
@@ -1196,6 +1201,11 @@ func _ready() -> void:
 			for f in get_tree().get_nodes_in_group("foes"):
 				f.queue_free()
 	if "--autoshot" in args:
+		if not _gate_keep:         # 캡처는 기본적으로 시작 화면을 지나서 찍는다
+			_gate_open = true
+			if _start_gate:
+				_start_gate.queue_free()
+				_start_gate = null
 		_autoshot()
 
 
@@ -2138,7 +2148,7 @@ func _build_growth(root: Control) -> void:
 	var rb := Ui.button("초기화",
 		Vector2(PAD + CONTENT_W - reset_w, top), Vector2(reset_w, STEP_H),
 		Type.SIZE_SMALL)
-	rb.pressed.connect(_ask_stat_reset)
+	rb.pressed.connect(_ask_full_reset)
 	_stat_view.add_child(rb)
 
 	# 목록 영역: 배수탭 아래 ~ 창 바닥
@@ -3051,8 +3061,15 @@ func _ask_skill_bulk() -> void:
 			_show_reward("스킬 강화", got.slice(0, mini(got.size(), 5))))
 
 
-# 스탯을 전부 Lv1 로 되돌리고 **쓴 혈액을 전액 돌려준다**(사장님 2026-08-20).
-# 배분을 다시 짜 보는 장치라 손해가 없어야 한다 — 수수료를 물리면 아무도 안 쓴다.
+# **계정 전체 초기화**다(사장님 2026-08-20: "아예 캐릭터 전부 다").
+# 처음부터 다시 돌려 보려는 장치라 스탯만 되돌리면 뜻이 없다 — 저장 파일을
+# 지우고 씬을 새로 연다(_wipe_save). 되돌릴 수 없으니 문구로 분명히 경고한다.
+func _ask_full_reset() -> void:
+	_ask("계정을 처음부터 다시 시작합니다.\n"
+		+ "스탯·장비·스킬·펫·칭호·재화가 전부 사라지고 되돌릴 수 없습니다.",
+		func() -> void: _wipe_save())
+
+
 func _stat_refund_total() -> float:
 	var sum := 0.0
 	for st in StatDefs.STATS:
@@ -3138,7 +3155,10 @@ func _stat_effect(key: String) -> String:
 	var eff := _stat_eff(key)
 	match key:
 		"damage":
-			return "+%s x%.1f" % [_n(damage()),
+			# "+" 한 칸 때문에 124px 를 넘어 배수 끝자리가 잘렸다(실측).
+			# 체력 줄과 같은 문법으로 맞춘다 — 어차피 총 피해값이라 "+" 는
+			# 증가분으로 오해될 여지도 있었다.
+			return "%s x%.1f" % [_n(damage()),
 				1.0 + Balance.DMG_PER_LEVEL * (eff - 1.0)]
 		"tough":
 			return "%s x%.1f" % [_n(max_hp()), 1.0 + 0.06 * (eff - 1.0)]
@@ -8593,7 +8613,79 @@ func _notify_stat(text: String) -> void:
 
 
 # ── 루프 ───────────────────────────────────────────────────────────────────
+# 시작 화면 — 켜자마자 전투가 도는 대신 한 번 멈춰 세운다(사장님).
+# 방치형이라 오프라인 정산은 로드 때 이미 끝났고, 여기서 시간이 흐르면 보지도
+# 못한 전투가 지나가므로 **틱을 통째로 막는다**.
+var _start_gate: Control
+var _gate_open := false
+var _gate_keep := false   # [개발 도구] --gate
+
+
+func _build_start_gate() -> void:
+	# **검사에서는 문을 열어 둔다.** 헤드리스 테스트는 씬을 띄우고 시간을 흘려
+	# 보내는데, 시작 화면이 _process 를 막으면 전부 "안 끝났다"로 죽는다
+	# (TrialCheck 실측). 화면이 없는 실행에는 시작 화면 자체가 뜻이 없다.
+	if DisplayServer.get_name() == "headless":
+		_gate_open = true
+		return
+	_start_gate = Control.new()
+	_start_gate.size = Vector2(Grid.BG)
+	_start_gate.z_index = 200
+	_hud_root.add_child(_start_gate)
+	# **완전 불투명**이다. 0.92 로 뒀더니 뒤 화면이 다 비쳐 표지로 안 읽혔다.
+	var shade := ColorRect.new()
+	shade.color = Color(0.02, 0.01, 0.03, 1.0)
+	shade.size = Vector2(Grid.BG)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_start_gate.add_child(shade)
+	# 표지 그림 — 이미 있는 성문 헤더를 쓴다(새 아트를 뽑지 않는다).
+	var art := Ui.image("res://assets/ui/head_gate.png",
+		Vector2(0.0, Grid.BG.y * 0.20), Vector2(Grid.BG.x, 300.0))
+	_start_gate.add_child(art)
+	# 그림 아래를 검게 먹여 글자가 앉을 자리를 만든다.
+	var fade := ColorRect.new()
+	fade.color = Color(0.02, 0.01, 0.03, 0.72)
+	fade.position = Vector2(0.0, Grid.BG.y * 0.20 + 210.0)
+	fade.size = Vector2(Grid.BG.x, 90.0)
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_start_gate.add_child(fade)
+	var title := _panel_label(_start_gate, Vector2(0.0, Grid.BG.y * 0.56),
+		Type.SIZE_TITLE, Color(0.86, 0.16, 0.22), Grid.BG.x, 46.0)
+	title.text = "핏빛 군주"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(title, 10)
+	var tap := _panel_label(_start_gate, Vector2(0.0, Grid.BG.y * 0.70),
+		Type.SIZE_MID, Color(0.94, 0.90, 0.88), Grid.BG.x, 30.0)
+	tap.text = "아무 곳이나 누르세요"
+	tap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(tap, 8)
+	# 깜빡임 — 멈춘 화면인지 멎은 게임인지 구분이 돼야 한다.
+	var tw := tap.create_tween().set_loops()
+	tw.tween_property(tap, "modulate:a", 0.25, 0.8).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(tap, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _gate_open or _start_gate == null:
+		return
+	var hit: bool = (event is InputEventMouseButton and event.pressed) \
+		or (event is InputEventKey and event.pressed) \
+		or (event is InputEventScreenTouch and event.pressed)
+	if not hit:
+		return
+	_gate_open = true
+	get_viewport().set_input_as_handled()
+	var t := _start_gate.create_tween()
+	t.tween_property(_start_gate, "modulate:a", 0.0, 0.25)
+	t.tween_callback(func() -> void:
+		if is_instance_valid(_start_gate):
+			_start_gate.queue_free()
+		_start_gate = null)
+
+
 func _process(delta: float) -> void:
+	if not _gate_open:
+		return   # 시작 화면이 떠 있는 동안은 시간이 안 흐른다
 	play_time += delta
 	_tick_hero_state(delta)
 	var visual_frozen := _visual_hitstop_t > 0.0

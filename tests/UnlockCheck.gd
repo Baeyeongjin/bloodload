@@ -43,7 +43,7 @@ func _init() -> void:
 	assert(str(scene._stat_rows["tough"]["lock"].text).contains("공격력"),
 		"체력 잠금이 선행을 안 알려 준다: %s" % str(scene._stat_rows["tough"]["lock"].text))
 	# 선행을 채우면 같은 단계에서 바로 열려야 한다(스테이지를 안 넘겨도).
-	scene.lv = {"damage": 61}   # 15분할: 옛 Lv5 = 1 + 15x4
+	scene.lv = {"damage": 60}   # 15분할 문턱(딱 떨어지는 수로 끊었다)
 	scene._refresh_growth()
 	await process_frame
 	assert(bool(scene._stat_rows["tough"]["btn"].visible),

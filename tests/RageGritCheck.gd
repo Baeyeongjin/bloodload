@@ -28,8 +28,8 @@ func _init() -> void:
 	assert(not StatDefs.is_open("rage", 19, full), "격노가 19단계에 열렸다")
 	assert(StatDefs.is_open("rage", 20, full), "격노가 20단계에 안 열린다")
 	var short := full.duplicate()
-	short["damage"] = 1500
-	assert(not StatDefs.is_open("rage", 99, short), "선행 1500에 격노가 열렸다")
+	short["damage"] = 1499
+	assert(not StatDefs.is_open("rage", 99, short), "선행 1499에 격노가 열렸다")
 	assert(not StatDefs.is_open("grit", 23, full), "강골이 23단계에 열렸다")
 	assert(StatDefs.is_open("grit", 24, full), "강골이 24단계에 안 열린다")
 

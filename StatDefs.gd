@@ -17,6 +17,10 @@ extends RefCounted
 # (StageDefs.time_limit), 죽어도 살 게 없으면 그냥 막힌다. 8단계는 40분 넘게
 # 걸렸다. 선행은 공격력 Lv5(누적 약 50 혈액)라 첫 1분 안에 열린다.
 #
+# **문턱은 딱 떨어지는 수로 적는다**(사장님 2026-08-20). 15분할 정확 환산은
+# 1+15x(옛-1) = 61/136/211/1501 이지만 화면에 그 숫자가 뜨면 읽는 사람이 왜
+# 하필 61인지 모른다. 60/135/210/1500 으로 끊는다 — 유효 레벨이 0.07 낮아질
+# 뿐이라 문턱의 뜻은 그대로다.
 # 선행 레벨은 **가르치는 문턱**이지 벽이 아니다 — 누적 비용을 첫 판에 닿는 자리로
 # 잡았다: 공격력5 약 50 · 체력5 약 60 · 공속10 약 470 · 치확5 약 330 · 체력15 약 490.
 #
@@ -33,12 +37,12 @@ const STATS := [
 		"unlock": 1, "impl": true, "base": 10.0, "exp": 1.15},
 	# 체력이 공격력 다음이다. 순서가 곧 "먼저 살아남아라"를 가르친다.
 	{"key": "tough", "name": "체력", "icon": "stat_tough",
-		"unlock": 1, "need": ["damage", 61], "impl": true, "base": 12.0, "exp": 1.15},
+		"unlock": 1, "need": ["damage", 60], "impl": true, "base": 12.0, "exp": 1.15},
 	{"key": "speed", "name": "공격속도", "icon": "stat_speed",
-		"unlock": 2, "need": ["tough", 61], "impl": true,
+		"unlock": 2, "need": ["tough", 60], "impl": true,
 		"base": 20.0, "exp": 1.22, "cap": 14919},
 	{"key": "crit", "name": "치명타 확률", "icon": "stat_crit",
-		"unlock": 4, "need": ["speed", 136], "impl": true,
+		"unlock": 4, "need": ["speed", 135], "impl": true,
 		"base": 50.0, "exp": 1.35, "cap": 1486},
 	# 격노·강골 — **괄호 A 줄**(2026-08-20, 사장님). 평(damage/tough)이 키운
 	# 밑동을 통째로 곱한다. 합연산이라 상한이 없다(STATS 1장).
@@ -47,18 +51,18 @@ const STATS := [
 	# 미뤘다 — 30일차(구간 190 언저리)에는 거의 안 열리고 60일 뒤에만 작용해서
 	# **후반만 민다**. 이게 90일 300 미달의 원인(모양 문제)을 겨누는 자리다.
 	{"key": "rage", "name": "격노", "icon": "stat_rage",
-		"unlock": 20, "need": ["damage", 1501], "impl": true,
+		"unlock": 20, "need": ["damage", 1500], "impl": true,
 		"base": 20.0, "exp": 1.16},
 	{"key": "grit", "name": "강골", "icon": "stat_grit",
-		"unlock": 24, "need": ["tough", 1501], "impl": true,
+		"unlock": 24, "need": ["tough", 1500], "impl": true,
 		"base": 24.0, "exp": 1.16},
 	{"key": "critdmg", "name": "치명타 피해", "icon": "stat_critdmg",
-		"unlock": 5, "need": ["crit", 61], "impl": true, "base": 40.0, "exp": 1.28},
+		"unlock": 5, "need": ["crit", 60], "impl": true, "base": 40.0, "exp": 1.28},
 	# 회복은 **상한 스탯**이다(Balance.REGEN_CAP). 생존시간을 무한대로 보내는
 	# 실질 곱연산이라 STATS 1장 규칙에 걸린다. 상한이 있으니 비용 지수도 무한
 	# 스탯(1.16)이 아니라 상한 스탯 쪽(1.22)으로 올린다 — STATS 6장.
 	{"key": "regen", "name": "체력회복", "icon": "stat_regen",
-		"unlock": 6, "need": ["tough", 211], "impl": true, "base": 15.0, "exp": 1.22,
+		"unlock": 6, "need": ["tough", 210], "impl": true, "base": 15.0, "exp": 1.22,
 		"cap": 1 + Balance.SPLIT * (Balance.REGEN_CAP_LEVEL - 1)},
 ]
 
