@@ -4349,17 +4349,23 @@ func _dev_jump_stage() -> void:
 # high 면 고급 소환권(에픽 확정) 한 장. 아니면 **무료 > 소환권 > 보석** 순으로
 # 낸다 — 소환권을 두고 보석이 나가면 유저가 손해를 본 줄도 모른다. 부분 지불
 # (소환권 3장 + 보석 7회)은 안 한다: 값이 두 줄로 읽히면 무엇을 냈는지 흐려진다.
+# 값은 **소환권을 있는 만큼 먼저** 치르고 모자란 몫만 보석으로 낸다
+# (2026-08-20, 사장님: "소환권이 9개 남아 있으면...").
+#
+# 예전엔 전부 아니면 전무였다: 10연에 권이 9장이면 `have >= 10` 이 거짓이라
+# **9장을 놔둔 채 보석 300** 이 나갔다. 소환권은 소환 말고 쓸 데가 없으므로
+# 아껴 둘 이유가 없고, 남겨 두는 쪽이 손해다.
 func _pull_gacha(count: int) -> void:
 	var have := int(tickets.get(_gacha_kind, 0))
 	var free := count == 1 \
 		and free_pull_date != Time.get_date_string_from_system()
-	var by_ticket := not free and have >= count
-	var cost := 0.0 if (free or by_ticket) else GachaDefs.COST * float(count)
+	var use_tk := 0 if free else mini(have, count)
+	var cost := GachaDefs.COST * float(count - use_tk - (1 if free else 0))
 	if gem < cost:
 		return
 	gem -= cost
-	if by_ticket:
-		tickets[_gacha_kind] = have - count
+	if use_tk > 0:
+		tickets[_gacha_kind] = have - use_tk
 	if free:
 		free_pull_date = Time.get_date_string_from_system()
 	_quest_bump("summon", count)
@@ -5158,13 +5164,22 @@ func _refresh_gacha() -> void:
 		_gacha_btn_icon["one"].texture = Assets.tex(
 			TicketDefs.icon_of(_gacha_kind) if one_ticket \
 			else "res://assets/ui/res_gem.png")
-	var ten_ticket := have >= 10
-	_gacha_btn_lbl["ten"].text = "10연  10" if ten_ticket else "10연  300"
+	# 10연은 값이 **섞일 수 있다**: 권 9장이면 권 9 + 보석 30 이다. 아이콘은
+	# 하나뿐이라 섞였을 때는 글자로 갈라 적는다 — 얼마가 나가는지 누르기 전에
+	# 보여야 한다(사장님).
+	var ten_tk := mini(have, 10)
+	var ten_gem := GachaDefs.COST * float(10 - ten_tk)
+	if ten_tk >= 10:
+		_gacha_btn_lbl["ten"].text = "10연  10"
+	elif ten_tk > 0:
+		_gacha_btn_lbl["ten"].text = "10연  권%d + 보석 %d" % [ten_tk, int(ten_gem)]
+	else:
+		_gacha_btn_lbl["ten"].text = "10연  300"
 	_gacha_btn_icon["ten"].texture = Assets.tex(
-		TicketDefs.icon_of(_gacha_kind) if ten_ticket \
+		TicketDefs.icon_of(_gacha_kind) if ten_tk > 0 \
 		else "res://assets/ui/res_gem.png")
 	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
-	_gacha_buttons["ten"].disabled = not ten_ticket and gem < GachaDefs.COST * 10.0
+	_gacha_buttons["ten"].disabled = gem < ten_gem
 	# 아이콘을 글자 바로 왼쪽에 붙인다 — 고정 x 는 글자 길이에 따라 간격이
 	# 들쭉였다(사장님: "배치가 일그러진 부분"). 라벨이 가운데 정렬이라 폭을 재서 옮긴다.
 	for key in ["one", "ten"]:
