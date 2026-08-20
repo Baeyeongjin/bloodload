@@ -859,12 +859,14 @@ func _ready() -> void:
 			_select_tab("shop")
 			_shop_set_mode("book")
 		# [개발 도구] --oath10 : 10회 뽑기 선택 화면을 캡처한다.
-		if arg == "--oath10":
+		if arg.begins_with("--oath10"):
+			var gten := arg == "--oath10=gold"
 			oath_cards = 10
+			oath_gold = 10
 			oath_first = true
 			_oath_view.visible = true
 			_refresh_oath()
-			_oath_play10()
+			_oath_play10(gten)
 		# [개발 도구] --oathroll[=등급] : 그 등급이 뜨도록 굴려 연출을 캡처한다.
 		# 확률을 못 기다리므로 결과를 **심어** 두고 연출만 재생한다.
 		if arg.begins_with("--oathroll"):
@@ -10411,22 +10413,26 @@ func _build_oath_view() -> void:
 		_oath_ui[str(spec[0]) + "_lbl"] = bl
 		_oath_ui[str(spec[0]) + "_art"] = art
 	# 10회 뽑기 — 한 번에 열 장 굴리고 **그중 하나를 골라** 건다(사장님).
-	var tp := Vector2(x, top + 546.0)
-	var tsz := Vector2(w, 34.0)
-	var t_art := Ui.set_row(OATH, tp, tsz)
-	_oath_main.add_child(t_art)
-	var t_lbl := _panel_label(_oath_main, tp + Vector2(0.0, 8.0),
-		Type.SIZE_SMALL, OATH_INK, w, 20.0)
-	t_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_shop_outline(t_lbl, 6)
-	var t_btn := Ui.button("", tp, tsz, Type.SIZE_SMALL)
-	t_btn.modulate = Color(1, 1, 1, 0)
-	_oath_main.add_child(t_btn)
-	_pet_hover(t_btn, t_art)
-	_oath_ui["ten"] = t_btn
-	_oath_ui["ten_lbl"] = t_lbl
-	_oath_ui["ten_art"] = t_art
-	t_btn.pressed.connect(func() -> void: _oath_play10())
+	# 황금도 같은 줄에 선다: 황금은 등급이 한 칸 위에서 시작하므로 열 장이면
+	# 고를 것이 훨씬 좋다. 위 [즉시 충전] 줄과 겹치던 자리를 내렸다.
+	for spec in [["ten", 0.0], ["gten", 1.0]]:
+		var tp := Vector2(x + float(spec[1]) * (bw + 12.0), top + 566.0)
+		var tsz := Vector2(bw, 34.0)
+		var t_art := Ui.set_row(OATH, tp, tsz)
+		_oath_main.add_child(t_art)
+		var t_lbl := _panel_label(_oath_main, tp + Vector2(0.0, 8.0),
+			Type.SIZE_SMALL, OATH_INK, bw, 20.0)
+		t_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(t_lbl, 6)
+		var t_btn := Ui.button("", tp, tsz, Type.SIZE_SMALL)
+		t_btn.modulate = Color(1, 1, 1, 0)
+		_oath_main.add_child(t_btn)
+		_pet_hover(t_btn, t_art)
+		_oath_ui[str(spec[0])] = t_btn
+		_oath_ui[str(spec[0]) + "_lbl"] = t_lbl
+		_oath_ui[str(spec[0]) + "_art"] = t_art
+	_oath_ui["ten"].pressed.connect(func() -> void: _oath_play10(false))
+	_oath_ui["gten"].pressed.connect(func() -> void: _oath_play10(true))
 	_oath_ui["roll"].pressed.connect(func() -> void: _oath_play(false))
 	_oath_ui["groll"].pressed.connect(func() -> void: _oath_play(true))
 	_oath_ui["buy"].pressed.connect(func() -> void:
@@ -10443,10 +10449,10 @@ func _build_oath_view() -> void:
 			_refresh_oath())
 	# 광고 자리 — SDK 가 오면 개통한다(RaidDefs.AD_BONUS_TRIES 와 같은 원칙:
 	# 붙일 SDK 가 없으면 **자리만** 만들고 눌리지 않게 둔다).
-	var ad_art := Ui.set_row(OATH, Vector2(x, top + 588.0), Vector2(w, 34.0))
+	var ad_art := Ui.set_row(OATH, Vector2(x, top + 608.0), Vector2(w, 34.0))
 	ad_art.modulate = Color(0.55, 0.52, 0.54)
 	_oath_main.add_child(ad_art)
-	var ad := _panel_label(_oath_main, Vector2(x, top + 596.0), Type.SIZE_SMALL,
+	var ad := _panel_label(_oath_main, Vector2(x, top + 616.0), Type.SIZE_SMALL,
 		Color(0.66, 0.62, 0.66), w, 18.0)
 	ad.text = "[광고] 카드 1장  ·  하루 3회 — 준비 중"
 	ad.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -10571,8 +10577,10 @@ func _refresh_oath() -> void:
 		OATH_RED if oath_vow else OATH_DIM)
 	_art_set_base(_oath_ui["vow_art"] as Control,
 		Color(1.25, 0.85, 0.85) if oath_vow else Color(1, 1, 1))
-	_oath_ui["ten_lbl"].text = "10회 뽑기  ·  카드 %d / %d" % [oath_cards, 10]
+	_oath_ui["ten_lbl"].text = "10회 뽑기  %d / 10" % oath_cards
 	_oath_dim("ten", oath_cards >= 10)
+	_oath_ui["gten_lbl"].text = "황금 10회  %d / 10" % oath_gold
+	_oath_dim("gten", oath_gold >= 10)
 	_oath_ui["roll_lbl"].text = "계약 발동  %d장" % oath_cards
 	_oath_ui["groll_lbl"].text = "황금 발동  %d장" % oath_gold
 	_oath_ui["buy_lbl"].text = "즉시 충전 · 보석 %d" % int(OathDefs.RECHARGE_GEM)
@@ -10955,12 +10963,14 @@ func _oath_glow(rim: Control, c: Color) -> void:
 
 # 10회 뽑기 — 열 장을 **먼저 다 굴리고**(수집·레벨·천장은 그때 다 반영된다),
 # 격자로 펼친 뒤 하나만 골라 건다. 나머지는 수집으로 남는다.
-func _oath_play10() -> void:
-	if oath_cards < 10 or _oath_reveal == null:
+func _oath_play10(golden := false) -> void:
+	if _oath_reveal == null:
+		return
+	if (oath_gold if golden else oath_cards) < 10:
 		return
 	var got: Array = []
 	for i in 10:
-		var r := _oath_roll(false, false)
+		var r := _oath_roll(golden, false)
 		if r.is_empty():
 			break
 		got.append(r)
@@ -10972,7 +10982,7 @@ func _oath_play10() -> void:
 	for g in got:
 		if _oath_rank(str(g["rarity"])) > _oath_rank(str(best["rarity"])):
 			best = g
-	_oath_reveal_play(best, false, got)
+	_oath_reveal_play(best, golden, got)
 
 
 # 등급 순위 — 표 순서를 숫자로. 진혈은 표 밖이라 맨 위.
