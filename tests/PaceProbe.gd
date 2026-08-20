@@ -370,13 +370,15 @@ static func _stuck_days(log: Array[int]) -> int:
 #   hero_damage(효과레벨, 장비합, 영웅레벨) x (1 + 수집 + 도감 + 혈맹)
 # 이고 혈맥은 그 바깥에서 곱해진다(dps 쪽). 각 축을 뺀 값과 비교해 몫을 낸다.
 func _axes(game) -> Dictionary:
-	var base := Balance.hero_damage(1, 0.0, 1)
-	var stat_only := Balance.hero_damage(int(game.stat_lv("damage")), 0.0, game.hero_lv)
-	var with_gear := Balance.hero_damage(int(game.stat_lv("damage")),
+	# 15분할(2026-08-20): 구매 레벨은 15배지만 Balance 는 **유효 레벨**을 받는다.
+	# raw 를 넣으면 스탯 축이 x7 대신 x95 로 찍혀 표가 통째로 거짓말이 된다.
+	var eff_lv := 1.0 + float(int(game.stat_lv("damage")) - 1) / float(Balance.SPLIT)
+	var base := Balance.hero_damage(1.0, 0.0, 1)
+	var stat_only := Balance.hero_damage(eff_lv, 0.0, game.hero_lv)
+	var with_gear := Balance.hero_damage(eff_lv,
 		game._gear_stat("damage"), game.hero_lv)
-	var free_lv := int(game._stat_eff("damage")) - int(game.stat_lv("damage"))
-	var with_title := Balance.hero_damage(int(game.stat_lv("damage")) + free_lv,
-		0.0, game.hero_lv)
+	var free_lv: float = float(game._stat_eff("damage")) - eff_lv
+	var with_title := Balance.hero_damage(eff_lv + free_lv, 0.0, game.hero_lv)
 	return {
 		"스탯": stat_only / base,
 		"장비": with_gear / maxf(0.001, stat_only),
@@ -633,15 +635,27 @@ func _shop(game, gold: float) -> float:
 			var cost: float = game.upgrade_cost(key, lv)
 			if cost > gold:
 				continue
-			var score := _gain(game, key, lv) / maxf(1.0, cost)
+			# maxf(1.0, ...) 였는데 15분할로 단가가 1 미만인 구간이 생겼다 —
+			# 그러면 분모가 고정돼 그리디가 가격을 안 본다(2026-08-20).
+			var score := _gain(game, key, lv) / maxf(1e-6, cost)
 			if score > best_score:
 				best_score = score
 				best = key
 				best_cost = cost
 		if best == "":
 			return gold
-		gold -= best_cost
-		game.lv[best] = game.stat_lv(best) + 1
+		# **뭉텅이로 산다.** 한 개씩 사면 15분할 뒤 하루 수천 회라 90일 스윕이
+		# 못 돈다. 같은 스탯을 계속 고를 것이므로 지갑의 1/4 까지 한 번에 밀되,
+		# 상한과 열린 범위를 넘지 않는다(그리디 결과는 사실상 같다).
+		var st := StatDefs.of(best)
+		var lv_now: int = game.stat_lv(best)
+		var room: int = mini(StatDefs.train_cap(game.dungeon_best, game.best_stage),
+			int(st["cap"]) if st.has("cap") else 1 << 30) - lv_now
+		var n := clampi(Balance.max_steps(lv_now, gold * 0.25,
+			float(st.get("base", 10.0)), StatDefs.cost_exp(best)), 1, maxi(1, room))
+		gold -= Balance.buy_cost(lv_now, n, float(st.get("base", 10.0)),
+			StatDefs.cost_exp(best))
+		game.lv[best] = lv_now + n
 	return gold
 
 

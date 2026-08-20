@@ -406,15 +406,21 @@ func _init() -> void:
 	game._skill_cd.clear()
 	game.hero_x = game._strike_spot(target)
 
-	# 격(strike) — 피해 + 20% 피 회수. 모션 동안 놓친 기본공격만큼 최소 피해를 보장한다.
+	# 격(strike) — 피해. 모션 동안 놓친 기본공격만큼 최소 피해를 보장한다.
+	# **피 회수는 없어졌다**(2026-08-20): 혈액은 배급으로만 들어온다(요구 4).
 	game._skill_target = target
 	var hp_before := target.hp
+	var gold_before: float = game.gold
 	var strike_hit: float = game._combat_damage() \
 		* Balance.skill_hit_mult(game.attack_interval(), game.SKILL_DUR) \
 		* SkillDefs.power("strike_common", 0) / 2.2
 	game._skill_cd["strike_common"] = 0.0
 	game._resolve_skill("strike_common")
-	assert(target.hp < hp_before and game.gold > 0.0, "격이 피해/피 회수를 못 한다")
+	assert(target.hp < hp_before, "격이 피해를 못 준다")
+	# 전투가 혈액을 만들면 안 된다 — 그 예외가 하나라도 남으면 소득이 다시
+	# DPS 지수를 타고, 그러면 비용을 지수로 묶어야 해서 레벨을 못 판다.
+	assert(is_equal_approx(game.gold, gold_before),
+		"전투가 혈액을 만들었다: %.2f -> %.2f" % [gold_before, game.gold])
 	assert(is_equal_approx(hp_before - target.hp, strike_hit),
 		"스킬 모션 동안 놓친 기본공격 피해가 보정되지 않았다")
 

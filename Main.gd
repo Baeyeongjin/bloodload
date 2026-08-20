@@ -5282,7 +5282,29 @@ var _income_idx := 0
 var _lbl_income: Label
 
 
+# 초당 혈액 배급 — 처치 보상을 대신한다. 방치와 접속이 **같은 요율**이라
+# "켜 두면 이득"이 아니라 "켜 두든 아니든 같다"가 된다(방치형의 약속).
+#
+# 5/9 인 이유: 옛 하루 = 방치 8h x 0.5 + 접속 1h x 1.0 = 5.0h 등가.
+# 새 모델은 9h x (5/9) = 5.0h — 무과금 하루 총량이 소수점까지 같다.
+const IDLE_EFF := 5.0 / 9.0
+
+
+func blood_per_sec() -> float:
+	if dungeon_on or raid_on != "":
+		return 0.0   # 던전은 제 보상표가 있다(RaidDefs) — 두 번 주지 않는다
+	var p := _offline_profile(stage)
+	var kill_time := maxf(0.2, float(p["hp"]) / maxf(0.001, dps()))
+	return StageDefs.gold_per_kill(stage) * gold_mult() / kill_time * IDLE_EFF
+
+
 func _tick_income() -> void:
+	# 배급은 여기(1초 틱)에서 한 번에 넣는다 — 프레임마다 더하면 부동소수 오차가
+	# 쌓이고, 분당 수입 표시도 같은 자를 써야 한다.
+	var drip := blood_per_sec()
+	if drip > 0.0:
+		gold += drip
+		_income_acc += drip
 	if _income_ring.size() < 60:
 		_income_ring.resize(60)
 	_income_ring[_income_idx] = _income_acc
@@ -9468,9 +9490,10 @@ func _strike_once(who: Foe, dmg: float, skill: Dictionary, fx: String, fx_y: flo
 		fx_skew: float, fx_flip: int, fx_flip_v: int, fx_rot: float) -> void:
 	if not is_instance_valid(who) or who.dying:
 		return
-	var dealt := minf(who.hp, dmg)
 	who.take_damage(dmg)
-	gold += dealt * 0.20
+	# 스킬 흡혈(피해의 20%)은 뺐다 — 혈액은 배급으로만 들어온다(요구 4).
+	# 처치 혈액의 0.02~0.6% 라 곡선 영향은 없었지만, 남겨 두면 "전투가 돈을 준다"
+	# 는 예외가 하나 남아 규칙이 흐려진다.
 	_anim_fx(fx, Vector2(who.position.x,
 		_fx_anchor_y(fx_style, fx, fx_scale, who.body_mid_y(), fx_y)),
 		fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew,
@@ -12171,7 +12194,10 @@ func _spawn_foe() -> void:
 			and RaidDefs.goal(raid_on) == "slay":
 		tier["name_prefix"] = "수호자 "
 	var f := Foe.new()
-	f.setup(tier, _c_enemy_power(), _c_gold_per_kill() * gold_mult(), boss)
+	# 혈액은 **배급으로만** 들어온다(2026-08-20, 사장님 요구 4: 던전+방치).
+	# 처치가 돈을 떨구면 소득이 DPS 지수를 그대로 타서 비용을 지수로 묶어야 하고,
+	# 그러면 레벨을 많이 못 판다 — 요구 1·2가 요구 4에 딸려 있는 이유다.
+	f.setup(tier, _c_enemy_power(), 0.0, boss)
 	if raid_on == "boss":
 		# 체력만 갈아 끼운다 — 40초에 못 눕히는 게 정상이고, 성과는 누적 피해다.
 		f.max_hp = EventDefs.boss_hp(_boss_dps_snap, boss_tier)
@@ -13670,10 +13696,10 @@ func _grant_offline(left_at: float) -> void:
 		stage += 1
 		kills = 0
 		climbed += 1
-	var profile := _offline_profile(stage)
-	var kill_time := maxf(0.2, float(profile["hp"]) / maxf(0.001, dps()))
-	# 자리를 비운 동안은 절반 효율. 방치가 접속보다 이득이면 게임을 안 켜게 된다.
-	var earned := (away / kill_time) * StageDefs.gold_per_kill(stage) * gold_mult() * 0.5
+	# 접속 배급(blood_per_sec)과 **같은 식**을 쓴다 — 요율이 같아야 "방치가 이득"
+	# 도 "접속이 이득"도 아니게 된다(2026-08-20). 옛 0.5 는 접속이 1.0 이던 시절의
+	# 균형추였고, 지금은 양쪽 다 5/9 다.
+	var earned := blood_per_sec() * away
 	# **지갑이 아니라 상자에 담는다.** 눌러서 여는 게 방치 보상의 보상이다.
 	chest_gold += earned
 	chest_minutes += away / 60.0
