@@ -325,10 +325,12 @@ func _init() -> void:
 		"타격 비율이 모션 밖에 있다")
 	game.lv["speed"] = 1
 	assert(is_equal_approx(game.attack_interval(), 0.60))
-	game.lv["speed"] = 500
+	game.lv["speed"] = 7500
 	assert(game.attack_interval() < 0.60 and game.attack_interval() > 0.10)
-	game.lv["speed"] = 1000
-	assert(is_equal_approx(game.attack_interval(), 0.10), "공격속도가 Lv1000에서 0.10초가 아니다")
+	# 15분할: 바닥은 옛 Lv995.5 = 새 14,919 다(0.6 x 0.9982^994.53 = 0.10).
+	game.lv["speed"] = int(StatDefs.of("speed")["cap"])
+	assert(is_equal_approx(game.attack_interval(), 0.10),
+		"공격속도가 만렙에서 0.10초가 아니다: %.4f" % game.attack_interval())
 	game.lv["crit"] = 11
 	assert(game._stat_effect("crit") == "10%", "치명타 확률 표기는 숫자+%만 쓴다")
 	assert(game._base_hit_damage() > game.damage(), "실시간 타격에 치명타 기대값이 빠졌다")

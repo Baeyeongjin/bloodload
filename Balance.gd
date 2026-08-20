@@ -9,6 +9,21 @@ extends RefCounted
 const UP_BASE := 10.0
 const UP_EXP := 1.15
 
+# ── 15분할 (2026-08-20, 사장님 확정 · docs/STATS_REWORK.md) ───────────────
+# 참고작이 Lv.20,000 을 파는 이유는 상한이 커서가 아니라 **비용이 지수가 아니기**
+# 때문이다. 지수 곡선에서 도달 레벨은 ln(예산)/ln(지수) 라, 1.15 로는 혈액을
+# 1e12 부어도 168레벨이 천장이다(실측 90일 181과 일치).
+#
+# 그래서 곡선을 새로 만들지 않고 **눈금을 15등분**한다. r = e^(1/15) 이고
+# base' = base(r-1)/(e-1) 이면 등가 레벨의 누적 비용이 **항등**이다:
+#   옛 누적 b(e^(N-1)-1)/(e-1) == 새 누적 b'(r^(M-1)-1)/(r-1),  M = 1+15(N-1)
+# 곡선(POWER_STEP 1.42 등)이 안 깨지면서 화면 숫자는 15배, 버튼 가격은 1/16 이
+# 된다. 레벨당 효과는 _stat_eff 경계에서 한 번만 나눠 Balance 상수를 지킨다
+# (docs/STATS 6장 "효과는 만지지 않는다").
+const SPLIT := 15
+# 1.0 = 곡선 완전 보존. 낮추면 실제로 빨라지는 대신 곡선 재측정이 강제된다.
+const COST_SCALE := 1.0
+
 
 # 한 단계 올리는 비용. level 은 "지금 레벨"이고, 그 다음 단계를 사는 값이다.
 # base/exp 는 스탯마다 다르다(StatDefs). 안 주면 무한 스탯 기본값을 쓴다.
@@ -16,7 +31,8 @@ const UP_EXP := 1.15
 # **조정은 지수로 한다, 레벨당 효과로 하지 않는다**(docs/STATS.md 6장) —
 # 효과를 만지면 이미 올린 플레이어의 수치가 바뀌어 체감이 어긋난다.
 static func upgrade_cost(level: int, base := UP_BASE, e := UP_EXP) -> float:
-	return base * pow(e, float(level - 1))
+	var r := pow(e, 1.0 / float(SPLIT))
+	return base * (r - 1.0) / (e - 1.0) * COST_SCALE * pow(r, float(level - 1))
 
 
 # level 에서 n 단계를 한 번에 살 때의 총액.
@@ -24,10 +40,27 @@ static func upgrade_cost(level: int, base := UP_BASE, e := UP_EXP) -> float:
 # **배수만 곱하면 안 된다.** 비용이 지수라 `upgrade_cost(lv) * n` 은 실제보다
 # 훨씬 싸다 — x100 버튼이 그 계산을 쓰면 100단계를 헐값에 파는 셈이 된다.
 static func buy_cost(level: int, n: int, base := UP_BASE, e := UP_EXP) -> float:
-	var sum := 0.0
-	for k in n:
-		sum += upgrade_cost(level + k, base, e)
-	return sum
+	if n <= 0:
+		return 0.0
+	# 닫힌식이다. 루프합은 Lv 수천 스케일에서 MAX 버튼을 못 버틴다
+	# (매 갱신마다 수천 회 pow). 등비합이라 값은 루프와 같다(오차 1e-16).
+	var r := pow(e, 1.0 / float(SPLIT))
+	return upgrade_cost(level, base, e) * (pow(r, float(n)) - 1.0) / (r - 1.0)
+
+
+# 가진 혈액으로 몇 단계까지 사는가. MAX 버튼이 쓴다.
+# **음수를 절대 돌려주지 않는다** — 음수 n 이 흘러가면 비용이 음수가 되어
+# 혈액이 늘고 레벨이 준다(설계 검증에서 잡힌 취약점).
+static func max_steps(level: int, purse: float, base := UP_BASE,
+		e := UP_EXP) -> int:
+	var one := upgrade_cost(level, base, e)
+	if one <= 0.0 or purse < one:
+		return 0
+	var r := pow(e, 1.0 / float(SPLIT))
+	# 0.999999 는 부동소수 경계에서 한 단계 크게 나와 결제가 조용히 실패하는 것을
+	# 막는 여유다(살 수 있다고 표시해 놓고 아무 일도 안 일어나는 증상).
+	return maxi(0, int(floor(log(1.0 + purse * (r - 1.0) * 0.999999 / one)
+		/ log(r))))
 
 
 # 치명타 배수. 확률과 피해가 **서로를 증폭하는** 유일한 축이라 둘 다 올려야 값이 난다.
@@ -37,9 +70,9 @@ static func buy_cost(level: int, n: int, base := UP_BASE, e := UP_EXP) -> float:
 # 성장 체감은 똑같다.
 # `dmg_bonus` 는 혈맥(TraitDefs.critdmg)이 치명 피해 배수에 **더하는** 몫이다.
 # 확률이 0이면 여전히 아무 효과가 없다 — 치명타 두 축의 성질은 그대로다.
-static func crit_mult(chance_lv: int, dmg_lv: int, dmg_bonus := 0.0) -> float:
-	var chance := minf(1.0, 0.01 * float(chance_lv - 1))
-	var dmg := 1.5 + 0.05 * float(dmg_lv - 1) + maxf(0.0, dmg_bonus)
+static func crit_mult(chance_lv: float, dmg_lv: float, dmg_bonus := 0.0) -> float:
+	var chance := minf(1.0, 0.01 * (chance_lv - 1.0))
+	var dmg := 1.5 + 0.05 * (dmg_lv - 1.0) + maxf(0.0, dmg_bonus)
 	return 1.0 + chance * (dmg - 1.0)
 
 
@@ -68,8 +101,8 @@ const DMG_BASE := 14.0
 const DMG_PER_LEVEL := 0.035
 
 
-static func hero_damage(damage_level: int, gear_damage: float, hero_level: int) -> float:
-	return (DMG_BASE * (1.0 + DMG_PER_LEVEL * float(maxi(1, damage_level) - 1))
+static func hero_damage(damage_level: float, gear_damage: float, hero_level: int) -> float:
+	return (DMG_BASE * (1.0 + DMG_PER_LEVEL * (maxf(1.0, damage_level) - 1.0))
 		+ maxf(0.0, gear_damage)) * hero_mult(hero_level)
 
 
@@ -95,8 +128,8 @@ static func foe_damage(power: float) -> float:
 	return pow(maxf(0.0, power), FOE_DMG_EXP) * FOE_DMG_BASE
 
 
-static func attack_interval(speed_level: int) -> float:
-	return maxf(0.10, 0.60 * pow(0.9982, float(maxi(1, speed_level) - 1)))
+static func attack_interval(speed_level: float) -> float:
+	return maxf(0.10, 0.60 * pow(0.9982, maxf(1.0, speed_level) - 1.0))
 
 
 # 피해 스킬은 모션 동안 놓친 기본공격 수만큼 최소 피해를 보장한다.
@@ -138,9 +171,9 @@ static func combat_power(dps: float, max_hp: float, regen_per_sec: float) -> flo
 # 체력 레벨당 +2% 였는데, 몹 피해가 적 강화를 그대로 타는 동안 체력만 합연산이라
 # 체력 스탯이 장식이었다(실제로 100단계에서 한 대에 9번 죽었다). 몹 피해 지수를
 # 누르고(foe_damage) 이쪽을 +6% 로 올려 양쪽에서 벌린다.
-static func hero_max_hp(tough_level: int, armor_power: float) -> float:
+static func hero_max_hp(tough_level: float, armor_power: float) -> float:
 	return 100.0 * (1.0
-		+ 0.06 * float(maxi(1, tough_level) - 1)
+		+ 0.06 * (maxf(1.0, tough_level) - 1.0)
 		+ 0.12 * maxf(0.0, armor_power))
 
 
@@ -160,8 +193,8 @@ const REGEN_CAP := 0.05
 const REGEN_CAP_LEVEL := 51   # 0.001 x 50 = 0.05
 
 
-static func hero_regen_per_sec(max_hp: float, regen_level: int) -> float:
-	var rate := minf(REGEN_CAP, REGEN_PER_LEVEL * float(maxi(1, regen_level) - 1))
+static func hero_regen_per_sec(max_hp: float, regen_level: float) -> float:
+	var rate := minf(REGEN_CAP, REGEN_PER_LEVEL * (maxf(1.0, regen_level) - 1.0))
 	return maxf(0.0, max_hp) * rate
 
 

@@ -33,21 +33,21 @@ const STATS := [
 		"unlock": 1, "impl": true, "base": 10.0, "exp": 1.15},
 	# 체력이 공격력 다음이다. 순서가 곧 "먼저 살아남아라"를 가르친다.
 	{"key": "tough", "name": "체력", "icon": "stat_tough",
-		"unlock": 1, "need": ["damage", 5], "impl": true, "base": 12.0, "exp": 1.15},
+		"unlock": 1, "need": ["damage", 61], "impl": true, "base": 12.0, "exp": 1.15},
 	{"key": "speed", "name": "공격속도", "icon": "stat_speed",
-		"unlock": 2, "need": ["tough", 5], "impl": true,
-		"base": 20.0, "exp": 1.22, "cap": 1000},
+		"unlock": 2, "need": ["tough", 61], "impl": true,
+		"base": 20.0, "exp": 1.22, "cap": 14919},
 	{"key": "crit", "name": "치명타 확률", "icon": "stat_crit",
-		"unlock": 4, "need": ["speed", 10], "impl": true,
-		"base": 50.0, "exp": 1.35, "cap": 100},
+		"unlock": 4, "need": ["speed", 136], "impl": true,
+		"base": 50.0, "exp": 1.35, "cap": 1486},
 	{"key": "critdmg", "name": "치명타 피해", "icon": "stat_critdmg",
-		"unlock": 5, "need": ["crit", 5], "impl": true, "base": 40.0, "exp": 1.28},
+		"unlock": 5, "need": ["crit", 61], "impl": true, "base": 40.0, "exp": 1.28},
 	# 회복은 **상한 스탯**이다(Balance.REGEN_CAP). 생존시간을 무한대로 보내는
 	# 실질 곱연산이라 STATS 1장 규칙에 걸린다. 상한이 있으니 비용 지수도 무한
 	# 스탯(1.16)이 아니라 상한 스탯 쪽(1.22)으로 올린다 — STATS 6장.
 	{"key": "regen", "name": "체력회복", "icon": "stat_regen",
-		"unlock": 6, "need": ["tough", 15], "impl": true, "base": 15.0, "exp": 1.22,
-		"cap": Balance.REGEN_CAP_LEVEL},
+		"unlock": 6, "need": ["tough", 211], "impl": true, "base": 15.0, "exp": 1.22,
+		"cap": 1 + Balance.SPLIT * (Balance.REGEN_CAP_LEVEL - 1)},
 ]
 
 
@@ -121,9 +121,13 @@ static func at_cap(key: String, level: int) -> bool:
 # (COST_EXP_SCALE) — 그쪽은 아무리 조여도 교착이 안 생긴다.
 #
 # 60 + 10/층: 100층 1060 · 60 + 2.5/구간: 500구간 1307
-const CAP_BASE := 60
-const CAP_PER_FLOOR := 10
-const CAP_PER_STAGE := 2.5
+# 15분할에 맞춰 계수를 ×15 했다(2026-08-20). 정확 환산은 1+15×59 = 886 인데
+# 끝수를 정리해 900 으로 올린다 — 상한은 브레이크가 아니라 안전장치라 무해하다.
+# **OR 구조("미궁 층 또는 본편 구간 중 큰 쪽")는 그대로다** — 그게 90일차 상한
+# 336 교착의 해법이었다.
+const CAP_BASE := 900
+const CAP_PER_FLOOR := 150
+const CAP_PER_STAGE := 37.5
 
 # 승급 단계는 **표시용**으로 남는다(배지·안내). 상한 계산은 위 식이 한다.
 const PROMO_FLOORS := [0, 20, 40, 80]

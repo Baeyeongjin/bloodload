@@ -226,8 +226,12 @@ func _title_state() -> Dictionary:
 # 스탯의 **효과 레벨** = 산 레벨 + 칭호 공짜 레벨. 효과 계산(피해·체력·회복·수입·
 # 치명·속도)만 이걸 쓰고, **비용·화면의 레벨 표시는 stat_lv 그대로다** — 공짜
 # 레벨이 비용에 붙으면 칭호를 딸수록 다음 강화가 비싸지는 벌이 된다.
-func _stat_eff(key: String) -> int:
-	return stat_lv(key) + TitleDefs.bonus(key, titles_got)
+# 15분할 경계 — **여기 한 곳에서만 나눈다**(2026-08-20). 구매 레벨은 15배지만
+# 효과는 옛 단위(유효 레벨)로 환산해서 Balance 상수를 그대로 쓴다.
+# 칭호 공짜 레벨은 옛 단위 그대로라 TitleDefs 106행을 안 건드린다.
+func _stat_eff(key: String) -> float:
+	return 1.0 + float(stat_lv(key) - 1) / float(Balance.SPLIT) \
+		+ float(TitleDefs.bonus(key, titles_got))
 
 
 # 1초에 한 번 새 칭호를 확인한다. 조건 12종 x 2 비교라 매 프레임도 싸지만,
@@ -2768,6 +2772,18 @@ func _build_skill_view(root: Control) -> void:
 
 
 # 한 행은 ROW_H 높이의 띠다. 그 안에서 아이콘·글자·버튼이 전부 세로 중앙에 온다.
+# 1000 단위 콤마. _n() 은 큰 수를 k/m 으로 줄이는데 레벨은 **정확한 숫자**가
+# 읽혀야 해서(참고작도 "Lv.2,979") 줄이지 않고 끊어 준다.
+static func _comma(v: int) -> String:
+	var t := str(absi(v))
+	var out := ""
+	for i in t.length():
+		if i > 0 and (t.length() - i) % 3 == 0:
+			out += ","
+		out += t[i]
+	return ("-" if v < 0 else "") + out
+
+
 func _stat_row(key: String, disp: String, icon: String) -> Control:
 	var row := Control.new()
 	row.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W, ROW_H)
@@ -2779,8 +2795,10 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 	# 폭은 전부 실측으로 잡았다(11px 기준):
 	#   "레벨 999999" 108 · "치명타 피해"(22px) 144 · "+188.8k 피해" 120 · "혈액 999.9t" 108
 	# 합이 504를 넘으면 어딘가 잘린다 — 잘린 숫자는 틀린 숫자보다 나쁘다(뭔지 모른다).
+	# 15분할로 "Lv 2,362 / 24.2k" 가 되어 144 로는 잘린다. 효과 줄이 208 부터라
+	# 148 까지는 안전하다(2026-08-20).
 	var lv_lbl := _panel_label(row, Vector2(60.0, 0.0), Type.SIZE_SMALL,
-		Color(0.62, 0.62, 0.68), 144.0, ROW_H * 0.5)
+		Color(0.62, 0.62, 0.68), 148.0, ROW_H * 0.5)
 	var nm := _panel_label(row, Vector2(60.0, ROW_H * 0.5), Type.SIZE_BODY,
 		Color(0.95, 0.90, 0.88), 144.0, ROW_H * 0.5)
 	var eff := _panel_label(row, Vector2(208.0, ROW_H * 0.5), Type.SIZE_SMALL,
@@ -3019,7 +3037,10 @@ func _refresh_growth() -> void:
 		var reason := StatDefs.lock_reason(key, StageDefs.major_stage(stage), lv)
 		var open := reason == ""
 		# 상한을 같이 적는다(참고작 "최대 레벨") — 상한이 보여야 승급이 목표가 된다.
-		row["lv"].text = "레벨 %d / %d" % [stat_lv(key), _stat_cap(key)]
+		# 15분할로 레벨이 네 자리가 됐다. 한 칸에 "레벨 2362 / 24205" 를 다 넣으면
+		# 잘리므로 참고작처럼 **둘로 나눈다** — 왼쪽 현재, 오른쪽 위 최대.
+		row["lv"].text = "%s / %s" % [_comma(stat_lv(key)),
+			_n(float(_stat_cap(key)))]
 		row["name"].text = str(s["name"])
 		row["eff"].text = _stat_effect(key) if open else ""
 		row["btn"].visible = open

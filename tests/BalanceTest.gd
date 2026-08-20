@@ -122,8 +122,11 @@ func _init() -> void:
 		"체력이 1단계보다 늦게 열린다 — 죽어도 살 게 없다")
 
 	# 9) 상한 — 상한이 있는 스탯은 만렙에서 멈춘다(곱연산은 유한해야 한다).
-	assert(StatDefs.at_cap("crit", 100))
-	assert(not StatDefs.at_cap("crit", 99))
+	# 15분할 뒤로는 표의 cap 을 읽는다 — 숫자를 박아 두면 분할 배율을 만질 때마다
+	# 검사가 깨진다(2026-08-20).
+	var crit_cap := int(StatDefs.of("crit")["cap"])
+	assert(StatDefs.at_cap("crit", crit_cap))
+	assert(not StatDefs.at_cap("crit", crit_cap - 1))
 	assert(not StatDefs.at_cap("damage", 999999), "무한 스탯에 상한이 걸렸다")
 
 	# 10) 치명타는 확률과 피해가 **둘 다** 올라야 값이 난다.
@@ -137,8 +140,11 @@ func _init() -> void:
 	assert(is_equal_approx(Balance.crit_mult(101, 1), Balance.crit_mult(500, 1)))
 
 	# 11) 스탯마다 비용 곡선이 다르다. 같으면 표를 안 읽고 있는 것이다.
-	var c_dmg := Balance.upgrade_cost(50, 10.0, 1.15)
-	var c_crit := Balance.upgrade_cost(50, 50.0, 1.35)
+	# 15분할 뒤라 옛 Lv50 은 새 736 이다(1 + 15x49). 새 단위로 안 재면 옛 Lv4.3
+	# 자리를 재는 셈이라 지수 격차가 안 벌어진다(2026-08-20).
+	var probe_lv := 1 + Balance.SPLIT * 49
+	var c_dmg := Balance.upgrade_cost(probe_lv, 10.0, 1.15)
+	var c_crit := Balance.upgrade_cost(probe_lv, 50.0, 1.35)
 	assert(c_crit > c_dmg * 10.0, "상한 스탯이 무한 스탯보다 안 가파르다")
 
 	# 12) 생존 수치 — 체력·방어구·회복이 실제 버티는 시간에 연결돼야 한다.
@@ -156,7 +162,10 @@ func _init() -> void:
 	assert(Balance.hero_regen_per_sec(hp0, Balance.REGEN_CAP_LEVEL - 1)
 		< Balance.hero_regen_per_sec(hp0, Balance.REGEN_CAP_LEVEL),
 		"상한 도달 전인데 회복이 안 오른다")
-	assert(StatDefs.at_cap("regen", Balance.REGEN_CAP_LEVEL),
+	# REGEN_CAP_LEVEL 은 **유효 단위**(51)이고 표의 cap 은 구매 단위(751)다 —
+	# 15분할 뒤 두 단위가 갈렸으므로 환산해서 본다(2026-08-20).
+	assert(StatDefs.at_cap("regen",
+		1 + Balance.SPLIT * (Balance.REGEN_CAP_LEVEL - 1)),
 		"회복 상한이 스탯 표에 안 걸려 있다 — 상한 넘게 살 수 있다")
 
 	# 전투력은 **전투 능력 전부**를 반영해야 한다. 예전엔 생존 인자가 장비 방어구
