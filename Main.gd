@@ -2121,13 +2121,14 @@ func _build_growth(root: Control) -> void:
 	var top := PAD + 38.0
 	var gap := 16.0
 	# 배수 넷 + [초기화] 다섯 칸. 초기화는 자주 누를 것이 아니라 폭을 절반만 준다.
-	var reset_w := 74.0
+	var reset_w := 62.0
 	var step_w := (CONTENT_W - reset_w - gap * float(BUY_STEPS.size())) \
 		/ float(BUY_STEPS.size())
 	for i in BUY_STEPS.size():
 		var n: int = BUY_STEPS[i]
 		var b := Ui.button("MAX" if n < 0 else "x%d" % n,
-			Vector2(PAD + i * (step_w + gap), top), Vector2(step_w, STEP_H))
+			Vector2(PAD + i * (step_w + gap), top), Vector2(step_w, STEP_H),
+			Type.SIZE_SMALL)
 		# 선택 표시는 toggle 로 한다. disabled 로 하면 글자가 흐려져 "선택됨"이 아니라
 		# "못 누름"으로 읽힌다.
 		b.toggle_mode = true
@@ -2819,10 +2820,11 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 	# 폭은 전부 실측으로 잡았다(11px 기준):
 	#   "레벨 999999" 108 · "치명타 피해"(22px) 144 · "+188.8k 피해" 120 · "혈액 999.9t" 108
 	# 합이 504를 넘으면 어딘가 잘린다 — 잘린 숫자는 틀린 숫자보다 나쁘다(뭔지 모른다).
-	# 15분할로 "Lv 2,362 / 24.2k" 가 되어 144 로는 잘린다. 효과 줄이 208 부터라
-	# 148 까지는 안전하다(2026-08-20).
+	# 15분할로 "15,750 / 15.7k" 까지 길어졌다. 이 줄은 **위쪽 절반**이라 아래
+	# 줄의 효과 칸(208~)과 안 부딪히고, 오른쪽 잠금·버튼이 336 부터라 200 까지
+	# 안전하다(148 로는 상한이 잘렸다 — 2026-08-20 실측).
 	var lv_lbl := _panel_label(row, Vector2(60.0, 0.0), Type.SIZE_SMALL,
-		Color(0.62, 0.62, 0.68), 148.0, ROW_H * 0.5)
+		Color(0.62, 0.62, 0.68), 200.0, ROW_H * 0.5)
 	var nm := _panel_label(row, Vector2(60.0, ROW_H * 0.5), Type.SIZE_BODY,
 		Color(0.95, 0.90, 0.88), 144.0, ROW_H * 0.5)
 	# 누적 배수를 같이 적어야 해서 120 보다 넓히되, **버튼이 w-172 = 336 부터**라
