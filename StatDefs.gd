@@ -40,6 +40,14 @@ const STATS := [
 	{"key": "crit", "name": "치명타 확률", "icon": "stat_crit",
 		"unlock": 4, "need": ["speed", 136], "impl": true,
 		"base": 50.0, "exp": 1.35, "cap": 1486},
+	# 격노·강골 — **괄호 A 줄**(2026-08-20, 사장님). 평(damage/tough)이 키운
+	# 밑동을 통째로 곱한다. 합연산이라 상한이 없다(STATS 1장).
+	{"key": "rage", "name": "격노", "icon": "stat_rage",
+		"unlock": 9, "need": ["damage", 601], "impl": true,
+		"base": 20.0, "exp": 1.16},
+	{"key": "grit", "name": "강골", "icon": "stat_grit",
+		"unlock": 11, "need": ["tough", 601], "impl": true,
+		"base": 24.0, "exp": 1.16},
 	{"key": "critdmg", "name": "치명타 피해", "icon": "stat_critdmg",
 		"unlock": 5, "need": ["crit", 61], "impl": true, "base": 40.0, "exp": 1.28},
 	# 회복은 **상한 스탯**이다(Balance.REGEN_CAP). 생존시간을 무한대로 보내는

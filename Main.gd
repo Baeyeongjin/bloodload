@@ -541,7 +541,8 @@ func stat_lv(key: String) -> int:
 func damage() -> float:
 	return Balance.hero_damage(_stat_eff("damage"), _gear_stat("damage"), hero_lv) \
 		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage") \
-		+ PactDefs.bonus(pact_lv) + _lore_bonus("damage")) \
+		+ PactDefs.bonus(pact_lv) + _lore_bonus("damage") \
+		+ 0.01 * (_stat_eff("rage") - 1.0)) \
 		* _relic_mult("damage")
 
 
@@ -727,7 +728,8 @@ func _codex_act_bonus() -> float:
 func max_hp() -> float:
 	return Balance.hero_max_hp(_stat_eff("tough"), _gear_stat("tough")) \
 		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough") \
-		+ PactDefs.bonus(pact_lv) + _lore_bonus("tough")) \
+		+ PactDefs.bonus(pact_lv) + _lore_bonus("tough") \
+		+ 0.01 * (_stat_eff("grit") - 1.0)) \
 		* _trait_mult("hp") * _relic_mult("hp") * TrialDefs.mult(trial_stage) \
 		* (1.0 + _pet_mult("tough"))
 
@@ -2118,7 +2120,10 @@ func _build_growth(root: Control) -> void:
 	root.add_child(_stat_view)
 	var top := PAD + 38.0
 	var gap := 16.0
-	var step_w := (CONTENT_W - gap * float(BUY_STEPS.size() - 1)) / float(BUY_STEPS.size())
+	# 배수 넷 + [초기화] 다섯 칸. 초기화는 자주 누를 것이 아니라 폭을 절반만 준다.
+	var reset_w := 74.0
+	var step_w := (CONTENT_W - reset_w - gap * float(BUY_STEPS.size())) \
+		/ float(BUY_STEPS.size())
 	for i in BUY_STEPS.size():
 		var n: int = BUY_STEPS[i]
 		var b := Ui.button("MAX" if n < 0 else "x%d" % n,
@@ -2129,6 +2134,11 @@ func _build_growth(root: Control) -> void:
 		b.pressed.connect(func() -> void: _set_step(n))
 		_stat_view.add_child(b)
 		_step_btns.append(b)
+	var rb := Ui.button("초기화",
+		Vector2(PAD + CONTENT_W - reset_w, top), Vector2(reset_w, STEP_H),
+		Type.SIZE_SMALL)
+	rb.pressed.connect(_ask_stat_reset)
+	_stat_view.add_child(rb)
 
 	# 목록 영역: 배수탭 아래 ~ 창 바닥
 	var list_y := top + STEP_H + 12.0
@@ -2815,10 +2825,10 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 		Color(0.62, 0.62, 0.68), 148.0, ROW_H * 0.5)
 	var nm := _panel_label(row, Vector2(60.0, ROW_H * 0.5), Type.SIZE_BODY,
 		Color(0.95, 0.90, 0.88), 144.0, ROW_H * 0.5)
-	# 누적 배수를 같이 적으면서 120 으로는 모자란다. 버튼이 396 부터라 160 까지
-	# 안전하다(2026-08-20).
+	# 누적 배수를 같이 적어야 해서 120 보다 넓히되, **버튼이 w-172 = 336 부터**라
+	# 208+124 = 332 가 한계다(160 으로 늘렸다가 32px 겹쳤다 — 2026-08-20 실측).
 	var eff := _panel_label(row, Vector2(208.0, ROW_H * 0.5), Type.SIZE_SMALL,
-		Color(0.98, 0.72, 0.45), 160.0, ROW_H * 0.5)
+		Color(0.98, 0.72, 0.45), 124.0, ROW_H * 0.5)
 	# SIZE_MID(16)로는 "혈액 999.9t"가 153px이라 124px 칸에서 "혈액 1."로 잘렸다.
 	# 칸이 좁으면 글자 크기부터 내린다(UI_RULES 3장).
 	var btn_w := 172.0
@@ -3039,6 +3049,34 @@ func _ask_skill_bulk() -> void:
 			_show_reward("스킬 강화", got.slice(0, mini(got.size(), 5))))
 
 
+# 스탯을 전부 Lv1 로 되돌리고 **쓴 혈액을 전액 돌려준다**(사장님 2026-08-20).
+# 배분을 다시 짜 보는 장치라 손해가 없어야 한다 — 수수료를 물리면 아무도 안 쓴다.
+func _stat_refund_total() -> float:
+	var sum := 0.0
+	for st in StatDefs.STATS:
+		var key := str(st["key"])
+		var n := stat_lv(key) - 1
+		if n > 0:
+			sum += Balance.buy_cost(1, n, float(st.get("base", 10.0)),
+				StatDefs.cost_exp(key))
+	return sum
+
+
+func _ask_stat_reset() -> void:
+	var back := _stat_refund_total()
+	if back <= 0.0:
+		return
+	_ask("훈련을 전부 Lv1 로 되돌리고 혈액 %s 를 돌려받습니다." % _n(back),
+		func() -> void:
+			var old_max := max_hp()
+			gold += _stat_refund_total()
+			lv.clear()
+			_apply_hp_growth(old_max)
+			_refresh_growth()
+			_refresh_hud()
+			_save_game())
+
+
 func _set_step(n: int) -> void:
 	buy_step = n
 	for i in _step_btns.size():
@@ -3098,17 +3136,21 @@ func _stat_effect(key: String) -> String:
 	var eff := _stat_eff(key)
 	match key:
 		"damage":
-			return "+%s  x%.1f" % [_n(damage()),
+			return "+%s x%.1f" % [_n(damage()),
 				1.0 + Balance.DMG_PER_LEVEL * (eff - 1.0)]
 		"tough":
-			return "%s  x%.1f" % [_n(max_hp()), 1.0 + 0.06 * (eff - 1.0)]
+			return "%s x%.1f" % [_n(max_hp()), 1.0 + 0.06 * (eff - 1.0)]
 		"speed":
-			return "%.2f초  x%.1f" % [attack_interval(), 0.60 / attack_interval()]
+			return "%.2f초 x%.1f" % [attack_interval(), 0.60 / attack_interval()]
 		"regen":
-			return "초당 %s  %.1f%%" % [_n(regen_per_sec()),
+			return "초당 %s %.1f%%" % [_n(regen_per_sec()),
 				minf(Balance.REGEN_CAP, Balance.REGEN_PER_LEVEL * (eff - 1.0)) * 100.0]
 		"crit":
 			return "%.1f%%" % (minf(1.0, 0.01 * (eff - 1.0)) * 100.0)
+		"rage":
+			return "+%.0f%% x%.2f" % [(eff - 1.0), 1.0 + 0.01 * (eff - 1.0)]
+		"grit":
+			return "+%.0f%% x%.2f" % [(eff - 1.0), 1.0 + 0.01 * (eff - 1.0)]
 		"critdmg":
 			return "x%.2f 피해" % (1.5 + 0.05 * (eff - 1.0))
 	return ""
