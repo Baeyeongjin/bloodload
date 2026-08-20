@@ -9,6 +9,10 @@ func _init() -> void:
 	await process_frame
 	scene._gacha_kind = "weapon"
 	scene.free_pull_date = Time.get_date_string_from_system()   # 무료 판 소진
+	# 천장 상자를 멀리 밀어 둔다 — 열 번 도는 중에 차면 _mile_add 가 소환권을
+	# 2장 돌려줘서 값 계산이 흔들린다(상자는 그것대로 맞는 동작이다).
+	scene.mile_lv = 20
+	scene.mile_fill = 0
 
 	var cases := [
 		# [가진 권, 뽑는 수, 쓸 권, 쓸 보석]
@@ -45,5 +49,40 @@ func _init() -> void:
 	scene._refresh_gacha()
 	var t: String = scene._gacha_btn_lbl["ten"].text
 	assert("9" in t and "30" in t, "섞인 값이 버튼에 안 적힌다: %s" % t)
-	print("PullCostCheck OK")
+	# ── 펫 소환도 같은 규칙인가 ────────────────────────────────────────────
+	# 펫은 _pet_pay 가 **한 장씩** 치르므로 섞이는 것 자체는 원래 됐다.
+	# 문제는 화면이었다: 권이 하나라도 있으면 "10연"이라고만 떠서 보석이 얼마
+	# 나가는지 몰랐고, 잠금이 1회 기준이라 권 1장 + 보석 0 에도 열려 한 번만
+	# 뽑히고 아홉 번이 조용히 실패했다.
+	scene.best_stage = maxi(scene.best_stage, PetDefs.PET_OPEN)
+	for pk in ["pet", "petgear"]:
+		scene.mile_lv = 20
+		scene.mile_fill = 0
+		scene.tickets[pk] = 9
+		scene.gem = 10000.0
+		var pg0: float = scene.gem
+		if pk == "pet":
+			scene._pet_roll_many(10)
+		else:
+			scene._petgear_roll_many(10)
+		assert(int(scene.tickets.get(pk, 0)) == 0,
+			"%s: 권 9장이 안 나갔다 (%d 남음)" % [pk, int(scene.tickets.get(pk, 0))])
+		assert(int(round(pg0 - scene.gem)) == 30,
+			"%s: 보석 %d 가 나갔다 (기대 30 — 권 9장을 놔두고 있다)"
+			% [pk, int(round(pg0 - scene.gem))])
+
+		# 값이 모자라면 10연이 안 열려야 한다 — 열리면 한 번만 뽑히고 만다.
+		scene.tickets[pk] = 1
+		scene.gem = 0.0
+		scene._refresh_pet_roll()
+		assert(scene._pet_roll_ui[pk]["ten"]["btn"].disabled,
+			"%s: 권 1장 보석 0 인데 10연이 열려 있다" % pk)
+
+		# 섞인 값이 버튼에 적히는가.
+		scene.tickets[pk] = 9
+		scene.gem = 10000.0
+		scene._refresh_pet_roll()
+		var pt: String = scene._pet_roll_ui[pk]["ten"]["lbl"].text
+		assert("9" in pt and "30" in pt, "%s: 섞인 값이 안 적힌다: %s" % [pk, pt])
+	print("PullCostCheck OK  (무기·펫·펫장비)")
 	quit()

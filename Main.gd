@@ -14894,14 +14894,29 @@ func _refresh_pet_roll() -> void:
 		var open := best_stage >= PetDefs.PET_OPEN
 		ui["cnt"].text = ("%d장" % have) if open \
 			else "%d구간에 열린다" % PetDefs.PET_OPEN
-		# 소환권이 없으면 보석 시세를 버튼에 적는다 — 안 적으면 "왜 눌리지"가 된다.
+		# 값을 버튼에 적는다 — 안 적으면 "왜 눌리지"가 된다.
+		#
+		# **10연은 값이 섞인다.** _pet_pay 가 한 장씩 치르므로 권 9장이면 아홉
+		# 번은 권, 열 번째는 보석 30 이다(무기 소환과 같다). 그런데 화면에는
+		# 권이 하나라도 있으면 "10연"이라고만 떴다 — 보석이 얼마 나가는지 모른
+		# 채 누르게 된다(사장님 2026-08-20).
+		#
+		# 잠금도 1회 기준이었다: 권 1장 + 보석 0 이면 10연이 열리는데 실제로는
+		# 한 번 뽑고 나머지 아홉 번이 조용히 실패했다. **낼 수 있는 만큼만 연다.**
+		var ten_tk := mini(have, 10)
+		var ten_gem := GachaDefs.COST * float(10 - ten_tk)
 		var by_gem := open and have < 1
 		ui["one"]["lbl"].text = "1회" if not by_gem 			else "1회 · %d" % int(GachaDefs.COST)
-		ui["ten"]["lbl"].text = "10연" if not by_gem 			else "10연 · %d" % int(GachaDefs.COST * 10.0)
+		if ten_tk >= 10:
+			ui["ten"]["lbl"].text = "10연"
+		elif ten_tk > 0:
+			ui["ten"]["lbl"].text = "10연 · 권%d + 보석 %d" % [ten_tk, int(ten_gem)]
+		else:
+			ui["ten"]["lbl"].text = "10연 · %d" % int(ten_gem)
 		ui["one_gem"].visible = by_gem
-		ui["ten_gem"].visible = by_gem
+		ui["ten_gem"].visible = ten_gem > 0.0
 		_pet_btn_enable(ui["one"], open and _pet_can_pay(kind))
-		_pet_btn_enable(ui["ten"], not ui["one"]["btn"].disabled)
+		_pet_btn_enable(ui["ten"], open and gem >= ten_gem)
 
 
 # ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
