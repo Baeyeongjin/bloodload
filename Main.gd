@@ -13415,6 +13415,7 @@ func _save_game() -> void:
 	cfg.set_value("run", "hero_hp", hero_hp)
 	cfg.set_value("up", "lv", lv)
 	cfg.set_value("up", "split15", true)
+	cfg.set_value("run", "blood15", true)
 	cfg.set_value("up", "buy_step", buy_step)
 	cfg.set_value("gear", "equipped", equipped)
 	cfg.set_value("gear", "inventory", gear_inventory)
@@ -13469,6 +13470,12 @@ func _load_game() -> void:
 	stage = clampi(int(cfg.get_value("run", "stage", 1)), 1, StageDefs.total_stages())
 	kills = int(cfg.get_value("run", "kills", 0))
 	gold = float(cfg.get_value("run", "gold", 0.0))
+	# ── 혈액 눈금 이관 (2026-08-20, 한 번만) ──────────────────────────────
+	# 눈금이 15배가 됐으니 지갑도 옮긴다. 안 옮기면 지갑만 1/15 로 쪼그라든다.
+	# **15분할 환급(아래)보다 먼저** 해야 한다 — 그 환급은 새 단위로 나온다.
+	var blood15: bool = cfg.has_section_key("run", "blood15")
+	if not blood15:
+		gold *= Balance.BLOOD_UNIT
 	essence = maxf(0.0, float(cfg.get_value("wallet", "essence", 0.0)))
 	gem = maxf(0.0, float(cfg.get_value("wallet", "gem", 0.0)))
 	crystal = maxf(0.0, float(cfg.get_value("wallet", "crystal", 0.0)))
@@ -13679,6 +13686,8 @@ func _load_game() -> void:
 			for k in old:
 				goal_index += int(old[k])
 	chest_gold = float(cfg.get_value("chest", "gold", 0.0))
+	if not blood15:
+		chest_gold *= Balance.BLOOD_UNIT   # 상자도 같은 눈금
 	chest_minutes = float(cfg.get_value("chest", "minutes", 0.0))
 	codex_found = 0
 	codex_knowledge = 0

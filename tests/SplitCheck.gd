@@ -10,7 +10,8 @@ func _init() -> void:
 		var base: float = spec[0]
 		var e: float = spec[1]
 		for old_lv in [10, 50, 100, 181, 400]:
-			var old_sum := base * (pow(e, float(int(old_lv) - 1)) - 1.0) / (e - 1.0)
+			var old_sum := base * (pow(e, float(int(old_lv) - 1)) - 1.0) / (e - 1.0) \
+				* Balance.COST_SCALE
 			var new_lv: int = 1 + Balance.SPLIT * (int(old_lv) - 1)
 			var new_sum := Balance.buy_cost(1, new_lv - 1, base, e)
 			var err: float = absf(new_sum - old_sum) / maxf(1.0, old_sum)
@@ -54,6 +55,16 @@ func _init() -> void:
 	assert(M._n(0.0) == "0", "0 은 그대로 0 이어야 한다")
 	assert(M._n(0.004) != "0.0", "아주 작은 값도 0 으로 찍히면 안 된다")
 	assert(M._n(1.0) == "1" and M._n(999.0) == "999", "정수 표기가 바뀌었다")
+
+	# 6) 눈금 — 첫 칸 가격이 정수로 읽혀야 한다(소수점을 없애려고 15배 했다).
+	for spec3 in [[10.0, 1.15], [12.0, 1.15], [20.0, 1.22], [40.0, 1.28]]:
+		assert(Balance.upgrade_cost(1, float(spec3[0]), float(spec3[1])) >= 1.0,
+			"첫 칸이 아직 1 미만이다 base %.0f" % spec3[0])
+	# 수입과 비용이 **같은 배수**여야 체감이 안 바뀐다 — 첫 구간 기준 시간비.
+	var pay := StageDefs.gold_per_kill(1)
+	var price := Balance.upgrade_cost(1, 10.0, 1.15)
+	assert(absf(price / pay - 10.0 * (pow(1.15, 1.0 / 15.0) - 1.0) / 0.15) < 1e-9,
+		"수입과 비용의 비가 눈금 때문에 바뀌었다")
 
 	# 6) 흡혈량은 표에서 사라졌다.
 	assert(StatDefs.of("gold").is_empty(), "흡혈량이 아직 표에 있다")

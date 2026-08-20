@@ -261,7 +261,11 @@ static func gold_per_kill(stage: int) -> float:
 	var p := float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE)
 	# **적과 같은 꼴로 눌러 준다** — 적만 완만해지고 수입이 계속 폭발하면 후반이
 	# 거저가 된다. 둘이 같은 모양이어야 "시간당 수입"의 뜻이 유지된다.
-	return (1.0 + GOLD_SLOPE * p) * pow(GOLD_STEP, pow(p, POWER_CURVE))
+	#
+	# BLOOD_UNIT 은 **혈액이 세상에 생기는 유일한 자리**라 여기서 곱한다 — 방치
+	# 배급·상자·소탕·상점이 전부 이 값의 배수라 한 줄로 눈금이 옮겨진다.
+	return (1.0 + GOLD_SLOPE * p) * pow(GOLD_STEP, pow(p, POWER_CURVE)) \
+		* Balance.BLOOD_UNIT
 
 
 # 첫 보스가 일반 장비 첫 강화 1회를 열고, 이후 큰 단계마다 5씩 오른다.

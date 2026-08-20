@@ -11,7 +11,10 @@ func _init() -> void:
 	await process_frame
 	# 옛 저장을 흉내 낸다(로드 경로를 그대로 태운다).
 	var old := {"damage": 100, "tough": 60, "gold": 40, "speed": 20}
-	var dmg_before := Balance.hero_damage(100.0, 0.0, scene.hero_lv)
+	# 칭호는 _stat_eff 안에 들어간다 — **양쪽을 같은 자로 재야 한다**. 앞선
+	# 검사가 남긴 저장에 칭호가 있으면 여기만 맨몸이라 검사가 흔들렸다.
+	var titled := 100.0 + float(TitleDefs.bonus("damage", scene.titles_got))
+	var dmg_before := Balance.hero_damage(titled, 0.0, scene.hero_lv)
 	var cfg := ConfigFile.new()
 	cfg.set_value("up", "lv", old)
 	cfg.set_value("res", "gold", 1000.0)
@@ -33,7 +36,7 @@ func _init() -> void:
 	assert(absf(dmg_after - dmg_before) / dmg_before < 1e-9,
 		"이관 후 피해가 달라졌다: %.6f -> %.6f" % [dmg_before, dmg_after])
 	# 환급이 옛 곡선 누적과 같아야 한다(검증이 잡은 290만 배 오류 자리).
-	var want := 14.0 * (pow(1.16, 39.0) - 1.0) / 0.16
+	var want := 14.0 * (pow(1.16, 39.0) - 1.0) / 0.16 * Balance.COST_SCALE
 	assert(absf((scene.gold - 1000.0) - want) / want < 1e-6,
 		"흡혈량 환급이 틀렸다: %.1f (기대 %.1f)" % [scene.gold - 1000.0, want])
 	print("MigCheck OK  (환급 %.0f 혈액)" % (scene.gold - 1000.0))
