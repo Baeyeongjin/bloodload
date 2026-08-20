@@ -515,6 +515,9 @@ static func name_plate(pos: Vector2, size: Vector2) -> NinePatchRect:
 # 그 반응이고, 0.14초라 연타를 막지 않는다. 닫힘은 안 건드린다: 닫는 건 이미
 # 결과를 본 뒤라 기다릴 이유가 없다.
 static func pop_in(node: Control) -> void:
+	if node == null or node.has_meta("pop_in"):
+		return
+	node.set_meta("pop_in", true)
 	node.visibility_changed.connect(func() -> void:
 		if not node.visible or not node.is_inside_tree():
 			return

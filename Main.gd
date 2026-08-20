@@ -1294,9 +1294,22 @@ func _build_scene() -> void:
 	_build_dialogs()
 	# 창이 뜰 때의 반응을 **한 곳에서** 건다(사장님: "모든 창들 띄울 때 애니메이션").
 	# `visible` 을 켜는 자리가 34곳이라 호출부마다 넣으면 하나씩 빠진다 — Ui.pop_in
-	# 은 켜지는 순간을 시그널로 잡으므로 여기 목록에만 올리면 된다.
-	for v in [_codex_view, _status_view, _quest_view, _rates_view, _bulk_view,
-			_confirm_view, _reward_view]:
+	# 은 켜지는 순간을 시그널로 잡으므로 여기서 한 번만 걸면 된다.
+	#
+	# **손 목록을 버리고 이름으로 훑는다**(2026-08-20, 사장님 "모든 UI에 애니").
+	# 목록에 7개가 올라 있는 동안 판은 28개였다 — 새 창을 만들 때 목록에 올리는
+	# 걸 잊는 게 당연하다. `_..._view` / `_..._detail` 은 이미 이 파일의 약속이라
+	# 그 약속을 읽으면 목록이 저절로 자란다. 다음 창은 아무것도 안 해도 붙는다.
+	for prop in get_property_list():
+		var pname := str(prop["name"])
+		if not (pname.ends_with("_view") or pname.ends_with("_detail")):
+			continue
+		var node = get(pname)
+		if node is Control:
+			Ui.pop_in(node)
+	# 사냥 탭 소탭 셋만 이름이 _panel 이다. _reward_panel 은 _reward_view **안**에
+	# 있어서 부모가 이미 움직인다 — 같이 걸면 두 번 줄어든다.
+	for v in [_trial_panel, _maze_panel, _boss_panel]:
 		if v != null:
 			Ui.pop_in(v)
 	_select_tab("growth")
@@ -1936,10 +1949,14 @@ func _overlay(z: int) -> Control:
 	c.z_index = z
 	var dim := ColorRect.new()
 	dim.color = Color(0.02, 0.02, 0.03, 0.72)
-	dim.size = Vector2(Grid.BG)
+	# **화면보다 크게.** 팝인이 0.92 배로 줄였다 펴는데 딱 맞으면 그 사이
+	# 가장자리 23px 가 안 덮인다 — 어두워지다 만 테두리가 번쩍인다.
+	dim.size = Vector2(Grid.BG) * 1.25
+	dim.position = -Vector2(Grid.BG) * 0.125
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(dim)
 	_hud_root.add_child(c)
+	Ui.pop_in(c)   # 공장에서 건다 — 늦게 만드는 판도 빠지지 않는다
 	return c
 
 
