@@ -7203,7 +7203,10 @@ const TITLE_BTN_AT := Vector2(508.0, 154.0)   # 그 바로 아래 — 같은 세
 const OATH_BTN_AT := Vector2(508.0, 212.0)    # 핏빛 계약 — 상시 아이콘(사장님)
 # 280 이었다가 220 — 수치 라벨이 받기 버튼 밑으로 들어가 "1 / 1"이 "1 /"로
 # 잘렸다(실측). 잘린 진행도는 거짓말이다.
-const QUEST_BAR_W := 220.0
+# 막대 220 이면 그 뒤 진행 글자 칸이 54px 뿐이라 "300/300"(7글자, 56px)이
+# "300/3" 으로 잘렸다(사장님 캡처). 막대를 30 줄여 글자에 84px 를 준다 —
+# 막대는 비율만 보여 주면 되고, 정확한 수를 말하는 건 글자 쪽이다.
+const QUEST_BAR_W := 190.0
 # 줄이 서는 창 높이. 판 아래의 "자정에 새로 온다"(-92)에 **닿지 않는** 값이다:
 # 560 - 96(머리) - 92(안내) = 372 는 딱 맞닿아서 마지막 줄이 그 글자에 걸쳤다.
 # 16 을 비워 둔다(실측 캡처).
@@ -8310,15 +8313,17 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		fill.size = Vector2(0.0, 8.0)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		inner.add_child(fill)
-		var pr := _panel_label(inner,
-			Vector2(x + 48.0 + QUEST_BAR_W + 8.0, y + 24.0), Type.SIZE_SMALL,
-			DUTY_DIM, 90.0, 20.0)
+		var prx := x + 48.0 + QUEST_BAR_W + 8.0
 		var qid := str(q["id"])
 		var bp := Vector2(x + w - 108.0, y + 9.0)
+		var pr := _panel_label(inner, Vector2(prx, y + 24.0), Type.SIZE_SMALL,
+			DUTY_DIM, bp.x - prx - 6.0, 20.0)
 		var pill_art := Ui.set_row(DUTY, bp, Vector2(100.0, 32.0))
 		inner.add_child(pill_art)
-		inner.add_child(Ui.icon("res://assets/ui/%s.png"
-			% _reward_icon(str(q["reward"])), Vector2(bp.x + 12.0, bp.y + 8.0), 16.0))
+		var ricon := Ui.icon("res://assets/ui/%s.png"
+			% _reward_icon(str(q["reward"])), Vector2(bp.x + 12.0, bp.y + 8.0), 16.0)
+		inner.add_child(ricon)
+		_art_set_base(pill_art, Color.WHITE)   # 호버가 이 색을 지우지 않게
 		var rw := _panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
 			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0)
 		rw.text = "+%d" % int(q["amount"])
@@ -8330,7 +8335,8 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		else:
 			b.pressed.connect(func() -> void: _claim_quest(qid))
 		inner.add_child(b)
-		rows.append({"prog": pr, "btn": b, "fill": fill})
+		rows.append({"prog": pr, "btn": b, "fill": fill, "rw": rw,
+			"icon": ricon, "pill": pill_art})
 	return rows
 
 
@@ -8510,6 +8516,7 @@ func _achieve_build_rows(root: Control) -> Array[Dictionary]:
 		var ricon := Ui.icon("res://assets/ui/res_blood.png",
 			Vector2(bp.x + 12.0, bp.y + 8.0), 16.0)
 		inner.add_child(ricon)
+		_art_set_base(pill_art, Color.WHITE)   # 호버가 이 색을 지우지 않게
 		var rw := _panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
 			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0)
 		var b := Ui.button("", bp, Vector2(100.0, 32.0), Type.SIZE_SMALL)
@@ -8518,7 +8525,7 @@ func _achieve_build_rows(root: Control) -> Array[Dictionary]:
 		b.pressed.connect(func() -> void: _claim_achieve(kind))
 		inner.add_child(b)
 		rows.append({"name": nm, "prog": pr, "fill": fill, "btn": b,
-			"rw": rw, "icon": ricon})
+			"rw": rw, "icon": ricon, "pill": pill_art})
 	return rows
 
 
@@ -8531,23 +8538,21 @@ func _refresh_achieve() -> void:
 		var row: Dictionary = _achieve_rows[i]
 		var got := int(achieve_got.get(kind, 0))
 		var step: Dictionary = AchieveDefs.at(kind, got)
-		var b: Button = row["btn"]
 		if step.is_empty():
 			row["name"].text = "%s — 완주" % str(t["name"])
 			row["prog"].text = ""
 			row["fill"].size.x = QUEST_BAR_W
-			row["rw"].text = ""
-			b.disabled = true
+			_row_claim_state(row, "done", 0)
 			continue
 		var value := _goal_value(kind)
 		var need := int(step["need"])
 		row["name"].text = str(step["name"])
 		row["prog"].text = "%s/%s" % [_n(float(value)), _n(float(need))]
 		row["fill"].size.x = QUEST_BAR_W * clampf(float(value) / float(need), 0.0, 1.0)
-		row["rw"].text = "+%d" % int(step["amount"])
 		row["icon"].texture = Assets.tex("res://assets/ui/%s.png"
 			% _reward_icon(str(step["reward"])))
-		b.disabled = value < need
+		_row_claim_state(row, "ready" if value >= need else "wait",
+			int(step["amount"]))
 
 
 # 한 번 누르면 **닿은 계단을 다 준다** — 오래 안 열었으면 계단이 여럿 쌓이는데
@@ -8602,6 +8607,46 @@ func _quest_set_mode(mode: String) -> void:
 	_refresh_boon()
 
 
+# 줄 하나의 **받을 수 있음**을 화면에 새긴다. 셋(일일·주간·업적)이 같은 문법을
+# 쓴다 — 목록마다 다르게 칠하면 같은 뜻이 세 가지로 보인다.
+#
+#   ready : 알약이 금빛 + "받기"   — 지금 누르면 들어온다
+#   wait  : 보통 + "+N"            — 아직 조건이 안 찼다
+#   done  : 죽은 색 + "완료"       — 오늘(또는 영영) 끝났다
+const CLAIM_GOLD := Color(1.0, 0.82, 0.34)
+const CLAIM_DONE := Color(0.52, 0.50, 0.50)
+
+
+func _row_claim_state(row: Dictionary, state: String, amount: int) -> void:
+	var pill: Control = row.get("pill")
+	var rw: Label = row.get("rw")
+	var icon: Control = row.get("icon")
+	var b: Button = row["btn"]
+	b.disabled = state != "ready"
+	if pill == null or rw == null:
+		return
+	match state:
+		"ready":
+			_art_set_base(pill, CLAIM_GOLD)
+			rw.text = "받기"
+			# 금빛 알약 위에는 **어두운 글자**다 — 흰 글자면 바탕에 묻힌다.
+			rw.add_theme_color_override("font_color", Color(0.22, 0.11, 0.04))
+			if icon:
+				icon.visible = false          # "받기" 가 칸을 다 쓴다
+		"done":
+			_art_set_base(pill, CLAIM_DONE)
+			rw.text = "완료"
+			rw.add_theme_color_override("font_color", Color(0.72, 0.70, 0.68))
+			if icon:
+				icon.visible = false
+		_:
+			_art_set_base(pill, Color.WHITE)
+			rw.text = "+%d" % amount
+			rw.add_theme_color_override("font_color", DUTY_INK)
+			if icon:
+				icon.visible = true
+
+
 func _refresh_quests() -> void:
 	if _quest_rows.is_empty():
 		return
@@ -8615,14 +8660,8 @@ func _refresh_quests() -> void:
 		var cnt := mini(_quest_count(id), need)
 		row["prog"].text = "%d/%d" % [cnt, need]
 		row["fill"].size.x = QUEST_BAR_W * float(cnt) / float(need)
-		var b: Button = row["btn"]
-		if quest_got.has(id):
-			b.text = "완료"
-			b.disabled = true
-		else:
-			# 보상 액수를 버튼에 계속 보여 준다 — "다 하면 뭘 받나"가 동기다.
-			b.text = "+%d" % int(q["amount"])
-			b.disabled = not _quest_claimable(id)
+		_row_claim_state(row, "done" if quest_got.has(id) \
+			else ("ready" if _quest_claimable(id) else "wait"), int(q["amount"]))
 		any = any or _quest_claimable(id)
 	for i in QuestDefs.WEEKLY.size():
 		var q: Dictionary = QuestDefs.WEEKLY[i]
@@ -8632,13 +8671,9 @@ func _refresh_quests() -> void:
 		var cnt := mini(int(quest_wprog.get(str(q["kind"]), 0)), need)
 		row["prog"].text = "%d/%d" % [cnt, need]
 		row["fill"].size.x = QUEST_BAR_W * float(cnt) / float(need)
-		var b: Button = row["btn"]
-		if quest_wgot.has(id):
-			b.text = "완료"
-			b.disabled = true
-		else:
-			b.text = "+%d" % int(q["amount"])
-			b.disabled = not _wquest_claimable(id)
+		_row_claim_state(row, "done" if quest_wgot.has(id) \
+			else ("ready" if _wquest_claimable(id) else "wait"),
+			int(q["amount"]))
 		any = any or _wquest_claimable(id)
 	# 알림점·일괄 받기는 일일이든 주간이든 "받을 게 있다"면 켠다.
 	_quest_claim_all.disabled = not any
