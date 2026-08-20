@@ -11074,10 +11074,12 @@ func _oath_show_pick(got: Array, back_col := Color(0.9, 0.3, 0.3)) -> void:
 		cur.text = "지금: %s  %d초 남음  →  고르면 바뀐다" \
 			% [oath_fx_name, int(oath_fx_t)]
 		cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 5 x 2 격자. 카드 앞면 + 등급 테두리 + 이름 + 효과 한 줄.
+	# 5 x 2 격자. 카드마다 **셀 하나에 묶는다** — 그림·테두리·글자가 따로 놀면
+	# 호버가 각자 움직여 어색하다(사장님). 셀 하나가 통째로 커지고 밝아진다.
 	var cw := 96.0
 	var ch2 := 128.0
 	var gap := 12.0
+	var pad := 8.0
 	var gx := (Grid.BG.x - 5.0 * cw - 4.0 * gap) * 0.5
 	for i in got.size():
 		var r: Dictionary = got[i]
@@ -11085,56 +11087,56 @@ func _oath_show_pick(got: Array, back_col := Color(0.9, 0.3, 0.3)) -> void:
 		var rcol := _oath_rcol(str(r["rarity"]))
 		var at := Vector2(gx + float(i % 5) * (cw + gap),
 			104.0 + float(i / 5) * (ch2 + 84.0))
+		var cell := Control.new()
+		cell.position = at - Vector2(pad, pad)
+		cell.size = Vector2(cw + pad * 2.0, ch2 + pad * 2.0 + 60.0)
+		cell.pivot_offset = Vector2(cell.size.x * 0.5, ch2 * 0.5 + pad)
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_oath_reveal.add_child(cell)
+		var in_at := Vector2(pad, pad)      # 셀 안 좌표
 		# 격자도 같은 네온 — 작은 칸이라 두 겹만 쓴다.
-		var frame := _oath_neon(_oath_reveal, at, Vector2(cw, ch2), rcol,
+		_oath_neon(cell, in_at, Vector2(cw, ch2), rcol,
 			[[2.0, 3.0, 0.90], [7.0, 5.0, 0.28]])
-		var face := Ui.image(OathDefs.card_face(str(c["id"])), at,
-			Vector2(cw, ch2))
-		_oath_reveal.add_child(face)
+		cell.add_child(Ui.image(OathDefs.card_face(str(c["id"])), in_at,
+			Vector2(cw, ch2)))
 		var chip := ColorRect.new()
 		chip.color = Color(0.0, 0.0, 0.0, 0.62)
-		chip.position = at + Vector2(2.0, 2.0)
+		chip.position = in_at + Vector2(2.0, 2.0)
 		chip.size = Vector2(30.0, 13.0)
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_oath_reveal.add_child(chip)
-		var lvl := _panel_label(_oath_reveal, at + Vector2(2.0, 3.0),
+		cell.add_child(chip)
+		var lvl := _panel_label(cell, in_at + Vector2(2.0, 3.0),
 			Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), 30.0, 12.0)
 		lvl.add_theme_font_size_override("font_size", 10)
 		lvl.text = "Lv%d" % int(r["lv"])
 		lvl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		var nm := _panel_label(_oath_reveal, at + Vector2(0.0, ch2 + 4.0),
+		var nm := _panel_label(cell, in_at + Vector2(0.0, ch2 + 4.0),
 			Type.SIZE_SMALL, rcol, cw, 16.0)
 		nm.text = str(c["name"])
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		nm.clip_text = true
 		_shop_outline(nm, 5)
-		var ef := _panel_label(_oath_reveal, at + Vector2(0.0, ch2 + 22.0),
+		var ef := _panel_label(cell, in_at + Vector2(0.0, ch2 + 22.0),
 			Type.SIZE_SMALL, Color(0.86, 0.84, 0.88), cw, 40.0)
 		ef.text = _oath_eff_text(c)
 		ef.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ef.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(ef, 4)
-		var pick := Ui.button("", at - Vector2(3.0, 3.0),
-			Vector2(cw + 6.0, ch2 + 6.0), Type.SIZE_SMALL)
+		var pick := Ui.button("", at - Vector2(pad, pad),
+			Vector2(cw + pad * 2.0, ch2 + pad * 2.0), Type.SIZE_SMALL)
 		pick.modulate = Color(1, 1, 1, 0)
 		# 고르면 **바로 걸지 않는다** — 지금 것과 견줘 보고 정한다(사장님).
 		pick.pressed.connect(func() -> void: _oath_confirm_pick(r, got))
 		_oath_reveal.add_child(pick)
-		_pet_hover(pick, frame)
-		# 등장 — 한 장씩 0.06초 간격으로 튀어나온다.
-		var cards: Array[Control] = [frame, face, nm, ef, chip, lvl]
-		for n in cards:
-			(n as CanvasItem).modulate.a = 0.0
-		var pt := frame.create_tween()
+		_pet_hover(pick, cell)
+		# 등장 — 한 장씩 0.06초 간격으로 셀째 튀어나온다.
+		cell.modulate.a = 0.0
+		var pt := cell.create_tween()
 		pt.tween_interval(0.06 * float(i))
-		pt.tween_callback(func() -> void:
-			for n in cards:
-				(n as CanvasItem).modulate.a = 1.0)
-		var sc := frame.create_tween()
+		pt.tween_property(cell, "modulate:a", 1.0, 0.18)
+		var sc := cell.create_tween()
 		sc.tween_interval(0.06 * float(i))
-		sc.tween_property(frame, "scale", Vector2.ONE, 0.22) \
-			.from(Vector2(0.4, 0.4)).set_trans(Tween.TRANS_BACK) \
-			.set_ease(Tween.EASE_OUT)
+		sc.tween_property(cell, "scale", Vector2.ONE, 0.22) 			.from(Vector2(0.4, 0.4)).set_trans(Tween.TRANS_BACK) 			.set_ease(Tween.EASE_OUT)
 	# 아무것도 안 걸고 닫기 — 뽑은 것은 이미 수집에 들어갔다.
 	var sk_art := Ui.set_row(OATH, Vector2(88.0, Grid.BG.y - 150.0),
 		Vector2(Grid.BG.x - 176.0, 44.0))
