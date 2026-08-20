@@ -5169,12 +5169,18 @@ func _refresh_gacha() -> void:
 	# 보여야 한다(사장님).
 	var ten_tk := mini(have, 10)
 	var ten_gem := GachaDefs.COST * float(10 - ten_tk)
+	var ten_mid := true
 	if ten_tk >= 10:
 		_gacha_btn_lbl["ten"].text = "10연  10"
 	elif ten_tk > 0:
-		_gacha_btn_lbl["ten"].text = "10연  권%d + 보석 %d" % [ten_tk, int(ten_gem)]
+		# 섞인 값만 글자가 길다(16자). SIZE_MID 로는 버튼 폭 258 을 넘어
+		# 왼쪽으로 삐져나갔다(사장님 캡처) — 이 줄에서만 한 치수 내린다.
+		_gacha_btn_lbl["ten"].text = "10연  권%d+보석%d" % [ten_tk, int(ten_gem)]
+		ten_mid = false
 	else:
 		_gacha_btn_lbl["ten"].text = "10연  300"
+	_gacha_btn_lbl["ten"].add_theme_font_size_override("font_size",
+		Type.SIZE_MID if ten_mid else Type.SIZE_SMALL)
 	_gacha_btn_icon["ten"].texture = Assets.tex(
 		TicketDefs.icon_of(_gacha_kind) if ten_tk > 0 \
 		else "res://assets/ui/res_gem.png")
@@ -5184,8 +5190,9 @@ func _refresh_gacha() -> void:
 	# 들쭉였다(사장님: "배치가 일그러진 부분"). 라벨이 가운데 정렬이라 폭을 재서 옮긴다.
 	for key in ["one", "ten"]:
 		var lbl2: Label = _gacha_btn_lbl[key]
+		var fs := lbl2.get_theme_font_size("font_size")
 		var fw := lbl2.get_theme_font("font").get_string_size(lbl2.text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, Type.SIZE_MID).x
+			HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		_gacha_btn_icon[key].position.x = lbl2.position.x \
 			+ (258.0 - fw) * 0.5 - 34.0
 	# 그림 버튼·알약의 세트 전환 + 잠김 표시(어두워진다).
@@ -9833,7 +9840,7 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 				f.take_damage(per_tick)
 				_skill_hit_fx(skill, f)
 			_defer_stage_advance = false
-			if kills >= _c_kills_needed():
+			if _c_kill_clear():
 				_advance_stage())
 
 
@@ -9979,7 +9986,7 @@ func _resolve_skill(key: String) -> void:
 			_start_field(fx, fx_fps, fx_scale, fx_style, fx_echo, fx_skew,
 				hit / float(ticks), ticks,
 				float(skill["duration"]) / float(ticks), skill)
-			if kills >= _c_kills_needed():
+			if _c_kill_clear():
 				_advance_stage()
 		"wave":
 			# 튀는 피 — **표창처럼 튕긴다**(RULES.bounce). 전부 동시에 맞으면 광역과
@@ -10074,7 +10081,7 @@ func _resolve_skill(key: String) -> void:
 						_fx_anchor_y(fx_style, fx, fx_scale,
 							f.body_mid_y(), fx_y)),
 						fx_fps, fx_scale, fx_style, 0, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
-			if kills >= _c_kills_needed():
+			if _c_kill_clear():
 				_advance_stage()
 		"ward":
 			_summon_t = float(skill["duration"])
@@ -10143,7 +10150,7 @@ func _bounce_hit(skill: Dictionary, hit: float, state: Dictionary, p: Dictionary
 		float(p["fps"]), float(p["scale"]), str(p["style"]), 0, 1.0,
 		hero_face, float(p["skew"]), false,
 		int(signf(float(p["flip"]))), int(signf(float(p["flip_v"]))))
-	if kills >= _c_kills_needed():
+	if _c_kill_clear():
 		_advance_stage()
 
 
@@ -10429,7 +10436,18 @@ func _start_advance() -> void:
 # 줄 서 있어도 처치 속도는 "한 마리당 달리는 시간 + 처치 시간"으로 정해진다
 # (`FOE_GAP` / `TRAVEL_SPEED`). 그냥 **저 앞에 몇 마리가 보이는가**다.
 func _wave_size(_at_stage: int) -> int:
+	# 물량·버티기 던전은 더 많이 세운다 — 간격이 넓으면 100마리가 곧
+	# **달리기 100번**이 된다(사장님: "몬스터 줜나 나오게").
+	if raid_on != "" and raid_on != "boss" and raid_on != "trial":
+		return RaidDefs.wave_size(raid_on, MAX_FOES)
 	return MAX_FOES
+
+
+# 줄 간격. 물량 던전만 좁힌다 — 여기서만 "한 마리당 달리는 시간"이 판정이다.
+func _c_foe_gap() -> float:
+	if raid_on != "" and raid_on != "boss" and raid_on != "trial":
+		return RaidDefs.foe_gap(raid_on, FOE_GAP)
+	return FOE_GAP
 
 
 # 줄 맨 뒤 몹의 x. 새 몹은 그보다 FOE_GAP 만큼 더 뒤에 선다.
@@ -10494,6 +10512,14 @@ func _c_is_midboss() -> bool:
 		return false
 	return DungeonDefs.is_midboss_floor(dungeon_floor) if dungeon_on \
 		else StageDefs.is_midboss_stage(stage)
+
+
+# 처치로 판이 끝나는가. **0 은 "한 마리면 끝"이 아니라 "처치가 판정이 아님"**
+# 이다(버티기 던전 — 시계가 판정이다). 그걸 `kills >= 0` 으로 물으면 늘 참이라
+# 첫 처치에 끝난다.
+func _c_kill_clear() -> bool:
+	var need := _c_kills_needed()
+	return need > 0 and kills >= need
 
 
 func _c_kills_needed() -> int:
@@ -12600,7 +12626,7 @@ func _spawn_foe() -> void:
 	# **화면 밖까지 나가도 된다** — 그게 "저 앞에 더 있다"이고, 영웅이 달려가 만난다.
 	var tail := _queue_tail_x(get_tree().get_nodes_in_group("foes")) \
 		if is_inside_tree() else -INF
-	var at := FRONT_X if tail == -INF else maxf(tail + FOE_GAP, FRONT_X)
+	var at := FRONT_X if tail == -INF else maxf(tail + _c_foe_gap(), FRONT_X)
 	# 보스·중간보스는 한 마리뿐이라 화면 밖에서 걸어 들어오는 그림이 필요하다.
 	if boss or midboss:
 		at = SPAWN_X
@@ -12788,7 +12814,7 @@ func on_foe_killed(f: Foe) -> void:
 	# 전투 드랍은 없앴다(2026-08-04). 장비가 나오는 곳은 **소환 하나**다 —
 	# 드랍이 알아서 장착까지 해 주면 소환으로 뽑은 장비를 고를 이유가 사라지고,
 	# 보관함에서 하는 선택이 전부 무의미해진다.
-	if not _defer_stage_advance and kills >= _c_kills_needed():
+	if not _defer_stage_advance and _c_kill_clear():
 		_advance_stage()
 	_save_game()
 
@@ -14924,7 +14950,7 @@ func _refresh_pet_roll() -> void:
 		if ten_tk >= 10:
 			ui["ten"]["lbl"].text = "10연"
 		elif ten_tk > 0:
-			ui["ten"]["lbl"].text = "10연 · 권%d + 보석 %d" % [ten_tk, int(ten_gem)]
+			ui["ten"]["lbl"].text = "10연 권%d+보석%d" % [ten_tk, int(ten_gem)]
 		else:
 			ui["ten"]["lbl"].text = "10연 · %d" % int(ten_gem)
 		ui["one_gem"].visible = by_gem

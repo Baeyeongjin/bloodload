@@ -49,6 +49,22 @@ func _init() -> void:
 	scene._refresh_gacha()
 	var t: String = scene._gacha_btn_lbl["ten"].text
 	assert("9" in t and "30" in t, "섞인 값이 버튼에 안 적힌다: %s" % t)
+
+	# **버튼 폭 안에 드는가.** 섞인 값은 글자가 길어서 SIZE_MID 로는 258 을 넘어
+	# 왼쪽으로 삐져나갔다(사장님 캡처). 눈으로만 보면 다음에 또 넘친다.
+	const BTN_W := 258.0
+	for tk in [9, 6, 1]:
+		scene.tickets["weapon"] = tk
+		scene.gem = 10000.0
+		scene._refresh_gacha()
+		var lbl: Label = scene._gacha_btn_lbl["ten"]
+		var fs: int = lbl.get_theme_font_size("font_size")
+		var wpx: float = lbl.get_theme_font("font").get_string_size(
+			lbl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		# 아이콘(34) 자리도 남겨야 한다 — 글자가 꽉 차면 아이콘이 버튼 밖에 붙는다.
+		assert(wpx + 34.0 <= BTN_W,
+			"권 %d일 때 버튼 글자가 %.0fpx — 폭 %.0f 를 넘는다: %s"
+			% [tk, wpx + 34.0, BTN_W, lbl.text])
 	# ── 펫 소환도 같은 규칙인가 ────────────────────────────────────────────
 	# 펫은 _pet_pay 가 **한 장씩** 치르므로 섞이는 것 자체는 원래 됐다.
 	# 문제는 화면이었다: 권이 하나라도 있으면 "10연"이라고만 떠서 보석이 얼마

@@ -29,7 +29,14 @@ const BOSS_EVERY := 10           # 10번째 구간은 보스
 # 천천히 걸어오기를 기다리지 않고 영웅이 달려가므로 고정비가 줄었다. 그래서 40마리는
 # 33초로 짧아졌고, 사장님이 말한 **50초**에 맞추려면 60마리다.
 # 목표는 마릿수가 아니라 구간 길이다(레퍼런스 방치형 40~60초 대역).
-const KILLS_PER_STAGE := 60
+# 60 -> 36 (2026-08-20). 몹 체력이 3배가 됐으니 마리 수를 줄여 구간 시간을
+# 지킨다.
+#
+# **1/3 인 20 이 아니다.** 처음엔 20 으로 뒀는데 구간이 43초 -> 24초로 빨라졌다
+# (실측). 한 마리에 드는 시간은 `처치 + 달려가기` 인데 달려가는 시간은 체력과
+# 상관없이 일정하다 — 그래서 체력을 3배 해도 한 마리가 3배 오래 걸리지는 않는다.
+# 실측 마리당 1.2초로 43초를 채우는 수가 36 이다.
+const KILLS_PER_STAGE := 36
 const MIDBOSS_PREFIXES := ["타락한", "굶주린", "피에 젖은"]
 
 # 막 5개. roster는 그 막에 나오는 몹 키.
@@ -257,6 +264,11 @@ static func enemy_power(stage: int) -> float:
 # 에 지수 단독이 중반을 가난하게 만든 그 실패를 피한다), 지수항이 후반에 몹을
 # 따라간다. GOLD_STEP 을 POWER_STEP 바로 아래에 두면 시간당 수입이 완만히
 # 줄어들어 "후반엔 방치가 필요하다"는 원래 의도도 남는다.
+# 한 마리의 몸값 배수 — 체력을 올린 만큼 여기도 올린다(FoeTiers.HP_BASE 3배).
+# **둘을 따로 만지면 안 된다.** 하나만 바꾸면 방치 수입이 조용히 어긋난다.
+const KILL_WORTH := 3.0
+
+
 static func gold_per_kill(stage: int) -> float:
 	var p := float(maxi(1, stage) - 1) / float(STEPS_PER_STAGE)
 	# **적과 같은 꼴로 눌러 준다** — 적만 완만해지고 수입이 계속 폭발하면 후반이
@@ -264,8 +276,10 @@ static func gold_per_kill(stage: int) -> float:
 	#
 	# BLOOD_UNIT 은 **혈액이 세상에 생기는 유일한 자리**라 여기서 곱한다 — 방치
 	# 배급·상자·소탕·상점이 전부 이 값의 배수라 한 줄로 눈금이 옮겨진다.
+	# KILL_WORTH: 한 마리가 3배 무거워졌으니 한 마리 값도 3배다. 이게 없으면
+	# 방치 수입이 통째로 1/3 이 된다(수입 = 보상 / 처치시간).
 	return (1.0 + GOLD_SLOPE * p) * pow(GOLD_STEP, pow(p, POWER_CURVE)) \
-		* Balance.BLOOD_UNIT
+		* Balance.BLOOD_UNIT * KILL_WORTH
 
 
 # 첫 보스가 일반 장비 첫 강화 1회를 열고, 이후 큰 단계마다 5씩 오른다.

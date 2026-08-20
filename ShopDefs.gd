@@ -82,7 +82,9 @@ static func open_stage(id: String) -> int:
 # 소탕 배율(혈맥 탐욕·군림)은 일부러 안 태운다: 상점은 배급이지 소탕이 아니다.
 static func amount(id: String, stage: int, dungeon_floor: int) -> float:
 	match id:
-		"blood": return StageDefs.gold_per_kill(stage) * 200.0   # 동굴 1판 = 400
+		# KILL_WORTH 로 되나눈다 — RaidDefs.reward 와 같은 이유(뭉치라 나눌
+		# 처치시간이 없다). 안 나누면 몹 체력을 올릴 때마다 상점이 3배로 후해진다.
+		"blood": return StageDefs.gold_per_kill(stage) * 200.0 			/ StageDefs.KILL_WORTH   # 동굴 1판 = 400
 		"crystal":                                               # 소탕 8시간분
 			# 4시간분이면 20층에서 16 이 뜬다 — 노드 한 레벨이 180 인데 45보석짜리
 			# 물건이 그 1/11 이면 살 이유가 없다(화면 실측). 하루 2회 = 소탕 2/3일치.

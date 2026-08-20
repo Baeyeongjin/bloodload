@@ -124,13 +124,24 @@ func _init() -> void:
 		"버티기 시간이 안 길다")
 	# 단일 강적은 한 마리인 대신 두껍다 — 물량과 총량이 비슷해야 공짜가 안 된다.
 	assert(RaidDefs.kills_needed("essence") == 1, "단일 강적이 한 마리가 아니다")
-	assert(is_equal_approx(RaidDefs.hp_mult("blood"), 1.0), "물량 몹이 두껍다")
-	# 수호자의 **실효 체력**이 물량 판 총량과 같은 자리여야 한다. 그놈은 보스
-	# 판정을 받아 FoeTiers 배수가 이미 곱해지므로, 배수만 보면 1보다 작다 —
-	# 그걸 "안 두껍다"로 읽으면 630배짜리 못 잡는 판을 통과시킨다(실제 사고).
+	# 물량 판의 몹은 **잡졸**이다(2026-08-20, 100마리/60초로 바꾸면서). 본편 몹
+	# 그대로면 100마리에 75초가 걸려 시계 안에 못 든다 — 얇은 게 이 판의 정체다.
+	assert(RaidDefs.hp_mult("blood") < 1.0, "물량 몹이 잡졸이 아니다")
+	assert(is_equal_approx(RaidDefs.hp_mult("blood"), RaidDefs.hp_mult("hunt")),
+		"물량 판 둘의 몹 두께가 다르다")
+	# 수호자 한 마리 == 잡졸 SWARM_KILLS 마리. 둘이 어긋나면 한쪽이 공짜가 된다.
+	#
+	# **단위를 맞춰서 잰다.** 수호자는 보스 판정을 받아 FoeTiers 배수가 이미
+	# 곱해지므로 hp_mult 만 보면 1보다 작다 — 그걸 "안 두껍다"로 읽으면
+	# 630배짜리 못 잡는 판을 통과시킨다(실제 사고). 그렇다고 배수를 물량 판의
+	# **마리 수**와 견주면 이번엔 반대로 틀린다: 왼쪽은 본편 몹 단위(25)고
+	# 오른쪽은 잡졸 마리(100)다. 양쪽 다 잡졸 몫으로 환산해서 잰다.
 	var guard := RaidDefs.hp_mult("essence") * FoeTiers.BOSS_HP_MULT
-	assert(guard >= float(RaidDefs.kills_needed("blood")) * 0.7,
-		"수호자가 웨이브 몫에 못 미친다: %.1f" % guard)
+	assert(is_equal_approx(guard,
+		RaidDefs.SLAY_WAVE_WORTH * RaidDefs.SWARM_HP_MULT),
+		"수호자가 잡졸 %d마리 몫이 아니다: %.1f (기대 %.1f)"
+		% [int(RaidDefs.SLAY_WAVE_WORTH), guard,
+		RaidDefs.SLAY_WAVE_WORTH * RaidDefs.SWARM_HP_MULT])
 	assert(guard <= float(RaidDefs.kills_needed("blood")) * 2.0,
 		"수호자가 웨이브 몫보다 지나치게 두껍다: %.1f" % guard)
 	# 성소는 **보스 판정**을 받아야 한 마리로 선다(그래야 웨이브가 안 깔린다).
