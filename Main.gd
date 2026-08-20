@@ -867,6 +867,22 @@ func _ready() -> void:
 			_oath_view.visible = true
 			_refresh_oath()
 			_oath_play10(gten)
+		# [개발 도구] --oathpick : 10연차 확인 판(교체 여부)을 바로 캡처한다.
+		if arg == "--oathpick":
+			oath_cards = 10
+			oath_first = true
+			_oath_view.visible = true
+			var pk: Array = []
+			for i in 10:
+				var one := _oath_roll(false, false)
+				if not one.is_empty():
+					pk.append(one)
+			if not pk.is_empty():
+				_oath_use(pk[0])          # 먼저 하나 걸어 "지금 것" 을 만든다
+				_oath_reveal.visible = true
+				_oath_show_pick(pk)
+				_oath_confirm_pick(pk[pk.size() - 1], pk)
+			_refresh_oath()
 		# [개발 도구] --oathroll[=등급] : 그 등급이 뜨도록 굴려 연출을 캡처한다.
 		# 확률을 못 기다리므로 결과를 **심어** 두고 연출만 재생한다.
 		if arg.begins_with("--oathroll"):
@@ -10937,10 +10953,17 @@ func _oath_burst(card: Control, rim: Control, ring: Control, ring2: Control,
 	if pick.is_empty():
 		_oath_result(rcol, rarity, r)
 	else:
-		# 뭉치가 흩어지듯 — 개봉 여운을 조금 두고 격자를 편다.
+		# 뭉치가 흩어지듯 — 개봉을 **끝까지 보여주고** 격자를 편다. 만월이
+		# 차오르는 중에 덮으면 열 장을 굴린 보람이 사라진다(사장님).
+		var waits := {"common": 1.1, "uncommon": 1.2, "rare": 1.5, "epic": 1.8,
+			"legend": 2.6, "trueblood": 3.0}
 		var gt := card.create_tween()
-		gt.tween_interval(0.55)
-		gt.tween_callback(func() -> void: _oath_show_pick(pick))
+		gt.tween_interval(float(waits.get(rarity, 1.2)))
+		# 카드가 화면 밖으로 날아가며 격자에 자리를 내준다.
+		gt.tween_property(card, "scale", Vector2(0.2, 0.2), 0.25) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+		gt.parallel().tween_property(card, "modulate:a", 0.0, 0.25)
+		gt.tween_callback(func() -> void: _oath_show_pick(pick, rcol))
 
 
 func _oath_rcol(rarity: String) -> Color:
@@ -10993,17 +11016,28 @@ func _oath_rank(rarity: String) -> int:
 
 
 # 뽑은 것들을 펼쳐 고르게 한다. 1회 뽑기의 결과창과 같은 층을 쓴다.
-func _oath_show_pick(got: Array) -> void:
+func _oath_show_pick(got: Array, back_col := Color(0.9, 0.3, 0.3)) -> void:
 	_boss_cut_clear()
 	for ch in _oath_reveal.get_children():
 		ch.queue_free()
 	_oath_reveal.visible = true
 	_oath_reveal.position = Vector2.ZERO
 	var shade := ColorRect.new()
-	shade.color = Color(0.01, 0.0, 0.01, 0.94)
+	shade.color = Color(0.01, 0.0, 0.01, 0.0)
 	shade.size = Vector2(Grid.BG)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_oath_reveal.add_child(shade)
+	shade.create_tween().tween_property(shade, "color:a", 0.94, 0.25)
+	# 소환진이 뒤에 남아 계속 돈다 — 격자가 맨바닥에 뜨면 연출이 끊긴다.
+	var back := Ui.image("res://assets/ui/oath_circle.png",
+		Vector2(Grid.BG.x * 0.5 - 300.0, 150.0), Vector2(600.0, 600.0))
+	back.pivot_offset = Vector2(300.0, 300.0)
+	back.modulate = Color(back_col.r, back_col.g, back_col.b, 0.0)
+	_oath_reveal.add_child(back)
+	var bt := back.create_tween()
+	bt.tween_property(back, "modulate:a", 0.16, 0.5)
+	var bspin := back.create_tween().set_loops()
+	bspin.tween_property(back, "rotation_degrees", 360.0, 60.0).from(0.0)
 	var head := _panel_label(_oath_reveal, Vector2(0.0, 40.0), Type.SIZE_MID,
 		Color(0.98, 0.82, 0.46), Grid.BG.x, 28.0)
 	head.text = "%d장을 뽑았다 — 하나를 골라 건다" % got.size()
@@ -11032,8 +11066,9 @@ func _oath_show_pick(got: Array) -> void:
 		frame.size = Vector2(cw + 6.0, ch2 + 6.0)
 		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_oath_reveal.add_child(frame)
-		_oath_reveal.add_child(Ui.image(OathDefs.card_face(str(c["id"])),
-			at, Vector2(cw, ch2)))
+		var face := Ui.image(OathDefs.card_face(str(c["id"])), at,
+			Vector2(cw, ch2))
+		_oath_reveal.add_child(face)
 		var chip := ColorRect.new()
 		chip.color = Color(0.0, 0.0, 0.0, 0.62)
 		chip.position = at + Vector2(2.0, 2.0)
@@ -11060,12 +11095,24 @@ func _oath_show_pick(got: Array) -> void:
 		var pick := Ui.button("", at - Vector2(3.0, 3.0),
 			Vector2(cw + 6.0, ch2 + 6.0), Type.SIZE_SMALL)
 		pick.modulate = Color(1, 1, 1, 0)
-		pick.pressed.connect(func() -> void:
-			_oath_use(r)
-			_oath_reveal.visible = false
-			_oath_view.visible = false)
+		# 고르면 **바로 걸지 않는다** — 지금 것과 견줘 보고 정한다(사장님).
+		pick.pressed.connect(func() -> void: _oath_confirm_pick(r, got))
 		_oath_reveal.add_child(pick)
 		_pet_hover(pick, frame)
+		# 등장 — 한 장씩 0.06초 간격으로 튀어나온다.
+		var cards: Array[Control] = [frame, face, nm, ef, chip, lvl]
+		for n in cards:
+			(n as CanvasItem).modulate.a = 0.0
+		var pt := frame.create_tween()
+		pt.tween_interval(0.06 * float(i))
+		pt.tween_callback(func() -> void:
+			for n in cards:
+				(n as CanvasItem).modulate.a = 1.0)
+		var sc := frame.create_tween()
+		sc.tween_interval(0.06 * float(i))
+		sc.tween_property(frame, "scale", Vector2.ONE, 0.22) \
+			.from(Vector2(0.4, 0.4)).set_trans(Tween.TRANS_BACK) \
+			.set_ease(Tween.EASE_OUT)
 	# 아무것도 안 걸고 닫기 — 뽑은 것은 이미 수집에 들어갔다.
 	var sk_art := Ui.set_row(OATH, Vector2(88.0, Grid.BG.y - 150.0),
 		Vector2(Grid.BG.x - 176.0, 44.0))
@@ -11082,6 +11129,87 @@ func _oath_show_pick(got: Array) -> void:
 		_oath_view.visible = false)
 	_oath_reveal.add_child(skip)
 	_pet_hover(skip, sk_art)
+
+
+# 격자에서 하나를 고른 뒤 — 지금 도는 계약과 견주고 정한다(사장님).
+# 1회 뽑기 결과창의 [교체]/[유지]와 같은 규칙이다.
+func _oath_confirm_pick(r: Dictionary, got: Array) -> void:
+	var c: Dictionary = r["contract"]
+	var rcol := _oath_rcol(str(r["rarity"]))
+	var layer := Control.new()
+	layer.size = Vector2(Grid.BG)
+	_oath_reveal.add_child(layer)
+	var dim := ColorRect.new()
+	dim.color = Color(0.01, 0.0, 0.01, 0.0)
+	dim.size = Vector2(Grid.BG)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(dim)
+	dim.create_tween().tween_property(dim, "color:a", 0.86, 0.18)
+	var mid := Vector2(Grid.BG) * 0.5
+	# 고른 카드를 크게.
+	var big := Ui.image(OathDefs.card_face(str(c["id"])),
+		mid - Vector2(72.0, 150.0), Vector2(144.0, 192.0))
+	big.pivot_offset = Vector2(72.0, 96.0)
+	layer.add_child(big)
+	var glow := ColorRect.new()
+	glow.color = Color(rcol.r, rcol.g, rcol.b, 0.85)
+	glow.position = big.position - Vector2(4.0, 4.0)
+	glow.size = Vector2(152.0, 200.0)
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(glow)
+	layer.move_child(glow, big.get_index())
+	var bt := big.create_tween()
+	bt.tween_property(big, "scale", Vector2.ONE, 0.25).from(Vector2(0.7, 0.7)) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var nm := _panel_label(layer, Vector2(0.0, mid.y + 54.0), Type.SIZE_MID,
+		rcol, Grid.BG.x, 28.0)
+	nm.text = "%s  Lv%d" % [str(c["name"]), int(r["lv"])]
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(nm, 8)
+	var ef := _panel_label(layer, Vector2(24.0, mid.y + 86.0), Type.SIZE_SMALL,
+		Color(0.94, 0.92, 0.94), Grid.BG.x - 48.0, 20.0)
+	ef.text = _oath_eff_text(c)
+	ef.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(ef, 5)
+	var live := oath_fx_t > 0.0
+	if live:
+		var cur := _panel_label(layer, Vector2(24.0, mid.y + 110.0),
+			Type.SIZE_SMALL, Color(0.72, 0.86, 0.72), Grid.BG.x - 48.0, 18.0)
+		cur.text = "지금: %s  %d초 남음  →  바꾸면 사라진다" \
+			% [oath_fx_name, int(oath_fx_t)]
+		cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(cur, 5)
+	# 버튼 둘 — [교체/발동] · [다시 고르기].
+	var by := mid.y + 146.0
+	var bw2 := (Grid.BG.x - 72.0 - 12.0) * 0.5
+	var yes_art := Ui.set_row(OATH, Vector2(36.0, by), Vector2(bw2, 46.0))
+	yes_art.modulate = Color(1.25, 1.05, 0.85)
+	layer.add_child(yes_art)
+	var yes_lbl := _panel_label(layer, Vector2(36.0, by + 14.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), bw2, 18.0)
+	yes_lbl.text = "이걸로 교체" if live else "이 계약을 건다"
+	yes_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var yes := Ui.button("", Vector2(36.0, by), Vector2(bw2, 46.0),
+		Type.SIZE_SMALL)
+	yes.modulate = Color(1, 1, 1, 0)
+	yes.pressed.connect(func() -> void:
+		_oath_use(r)
+		_oath_reveal.visible = false
+		_oath_view.visible = false)
+	layer.add_child(yes)
+	_pet_hover(yes, yes_art)
+	var no_art := Ui.set_row(OATH, Vector2(48.0 + bw2, by), Vector2(bw2, 46.0))
+	layer.add_child(no_art)
+	var no_lbl := _panel_label(layer, Vector2(48.0 + bw2, by + 14.0),
+		Type.SIZE_SMALL, OATH_INK, bw2, 18.0)
+	no_lbl.text = "다시 고르기"
+	no_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var no := Ui.button("", Vector2(48.0 + bw2, by), Vector2(bw2, 46.0),
+		Type.SIZE_SMALL)
+	no.modulate = Color(1, 1, 1, 0)
+	no.pressed.connect(func() -> void: layer.queue_free())
+	layer.add_child(no)
+	_pet_hover(no, no_art)
 
 
 # 결과창 — 맨바닥에 글자만 띄우던 걸 판으로(사장님 "결과창도 꾸며줘").
