@@ -131,7 +131,9 @@ func take_damage(d: float) -> void:
 	hp -= d
 	_flash_t = 0.10
 	_hit_t = HIT_REACT_DUR
-	self_modulate = Color(7, 7, 8)
+	# 보스는 절반만 하얘진다 — 몸이 커서 잡몹 값 그대로면 화면이 번쩍인다
+	# (사장님: "너무 과해"). 스쿼시도 아래(_draw)에서 같은 비율로 줄인다.
+	self_modulate = Color(3, 3, 3.5) if is_boss or is_midboss 		else Color(7, 7, 8)
 	var main := get_parent()
 	if main and main.has_method("on_foe_hit"):
 		main.on_foe_hit(self, d)
@@ -502,11 +504,12 @@ const TELL_SKEW := 12.0        # 윗변을 옆으로 미는 양 = 바닥 기울�
 func _draw_attack_tell() -> void:
 	if dying or _tell_t < 0.0:
 		return
-	var t := clampf(1.0 - _tell_t / SPECIAL_TELL, 0.0, 1.0)
+	var t := clampf(1.0 - _tell_t / float(_sp[0]), 0.0, 1.0)
 	var r := reach()
-	# 채움은 **가운데에서 좌우로** 벌어진다. 그게 곧 남은 시간이다.
-	_tell_quad(r * t, Color(0.95, 0.22, 0.18, 0.30))
-	_tell_outline(r, Color(1.0, 0.40, 0.30, 0.75))
+	# **테두리만 그린다**(사장님 2026-08-20: "범위만 나오도록"). 채움이
+	# 차오르는 판은 통째로 빨개져 소음이 컸다. 남은 시간은 테두리 밝기가
+	# 말한다 — 임팩트가 가까울수록 진해진다.
+	_tell_outline(r, Color(1.0, 0.40, 0.30, 0.35 + 0.55 * t))
 
 
 func _tell_points(half: float) -> PackedVector2Array:
@@ -537,6 +540,9 @@ func _draw() -> void:
 	var hsc := 1.0
 	var alpha := 1.0
 	var hit_f := clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
+	# 보스·중간보스는 일그러짐 절반 — 플래시와 같은 이유(사장님).
+	if is_boss or is_midboss:
+		hit_f *= 0.5
 	wsc *= 1.0 + 0.12 * hit_f
 	hsc *= 1.0 - 0.10 * hit_f
 	# 왼쪽에서 나온 몹은 오른쪽을 보므로 통째로 뒤집는다. 그림을 따로 뽑지 않고

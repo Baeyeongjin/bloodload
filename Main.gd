@@ -10433,27 +10433,27 @@ func on_foe_meteor(f: Foe) -> void:
 # 시차가 조합을 "연출"로 만든다 — 폭발이 먼저, 파편·불기둥이 반 박자 뒤.
 const SLAM_FX := {
 	"wraith_knight": [
-		["fx_slam_wraith_knight", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_wraith_knight", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 	"gargoyle": [
-		["fx_slam_gargoyle", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_gargoyle", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 	"sanctum_guardian": [
-		["fx_slam_sanctum_guardian", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_sanctum_guardian", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 	"frost_golem": [
-		["fx_slam_frost_golem", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_frost_golem", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 	"eye_mass": [
-		["fx_slam_eye_mass", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_eye_mass", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 	"dark_knight": [
-		["fx_slam_dark_knight", 0.0, -26.0, 2.2, 18.0, null, 0.0]],
+		["fx_slam_dark_knight", 0.0, -34.0, 2.2, 18.0, null, 0.0]],
 	"blood_queen": [
-		["fx_slam_blood_queen", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_blood_queen", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 	"bone_choir": [
-		["fx_slam_bone_choir", 0.0, -24.0, 2.2, 18.0, null, 0.0]],
+		["fx_slam_bone_choir", 0.0, -32.0, 2.2, 18.0, null, 0.0]],
 	"butcher": [
-		["fx_slam_butcher", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_butcher", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 	"plague_hag": [
-		["fx_slam_plague_hag", 0.0, -22.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_plague_hag", 0.0, -30.0, 2.0, 18.0, null, 0.0]],
 	"ruin_warden": [
-		["fx_slam_ruin_warden", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_ruin_warden", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
 }
 # 표에 없는 보스·중간보스 — 중립 파편 + 충격파.
 const SLAM_FX_DEFAULT := [
