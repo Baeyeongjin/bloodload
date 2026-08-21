@@ -10424,219 +10424,136 @@ func on_foe_meteor(f: Foe) -> void:
 			_kill_hero())
 
 
+# 착지 이펙트 3차 (2026-08-20, 사장님: "vfx 디자인 참고해서 다시").
+# 코드 도트 두 판의 교훈: draw_rect 로는 이펙트의 형태 언어(큰 실루엣·방사형
+# 광선·밝기 그라데이션)가 안 나온다 — 픽셀 뿌리기로 보였다. **그림은 창고의
+# 전문 이펙트(vfx_*)가 그리고, 코드는 조합·배치·시차·틴트만 맡는다.**
+#
+# [애니 폴더, x오프셋, y오프셋(지면 기준), 배율, fps, 틴트(null=원색), 시차 초]
+# 시차가 조합을 "연출"로 만든다 — 폭발이 먼저, 파편·불기둥이 반 박자 뒤.
+const SLAM_FX := {
+	"wraith_knight": [
+		["fx_slam_wraith_knight", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+	"gargoyle": [
+		["fx_slam_gargoyle", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+	"sanctum_guardian": [
+		["fx_slam_sanctum_guardian", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
+	"frost_golem": [
+		["vfx_ice_slam", 0.0, -14.0, 2.8, 14.0, null, 0.0],
+		["vfx_ice_spike", -30.0, -12.0, 1.5, 12.0, null, 0.08],
+		["vfx_ice_spike", 30.0, -12.0, 1.5, 12.0, null, 0.14]],
+	"eye_mass": [
+		["vfx_dark_explosion2", 0.0, -26.0, 2.6, 14.0, null, 0.0],
+		["vfx_dark_spin", 0.0, -30.0, 2.2, 14.0, null, 0.10]],
+	"dark_knight": [
+		["vfx_phys_002", 0.0, -30.0, 3.0, 16.0, Color(1.0, 0.95, 0.8), 0.0],
+		["vfx_phys_001", 0.0, -34.0, 2.4, 16.0, Color(0.9, 0.85, 0.7), 0.10]],
+	"blood_queen": [
+		["fx_hit_splash", 0.0, -20.0, 2.2, 16.0, null, 0.0],
+		["vfx_water_splash", 0.0, -10.0, 2.6, 14.0, Color(0.95, 0.15, 0.4), 0.08]],
+	"bone_choir": [
+		["vfx_wind_spread", 0.0, -16.0, 3.0, 12.0, Color(1.0, 0.9, 1.0), 0.0],
+		["vfx_wind_spread", 0.0, -18.0, 3.8, 12.0, Color(0.85, 0.65, 0.9), 0.12]],
+	"butcher": [
+		["vfx_phys_001", 0.0, -28.0, 2.6, 16.0, Color(0.85, 0.25, 0.35), 0.0],
+		["fx_rocks", 0.0, -8.0, 1.0, 12.0, null, 0.08]],
+	"plague_hag": [
+		["vfx_water_splash", 0.0, -12.0, 2.4, 12.0, Color(0.45, 0.95, 0.3), 0.0],
+		["vfx_earth_grow", 0.0, -8.0, 2.0, 10.0, null, 0.12]],
+	"ruin_warden": [
+		["vfx_earth_rock", 0.0, -18.0, 1.7, 12.0, null, 0.0],
+		["fx_rocks", -26.0, -8.0, 1.0, 12.0, null, 0.06],
+		["fx_rocks", 26.0, -8.0, 1.0, 12.0, null, 0.10],
+		["vfx_earth_grow", 0.0, -6.0, 1.4, 10.0, Color(0.8, 1.2, 0.5), 0.16]],
+}
+# 표에 없는 보스·중간보스 — 중립 파편 + 충격파.
+const SLAM_FX_DEFAULT := [
+	["vfx_boom_05", 0.0, -18.0, 1.5, 14.0, null, 0.0],
+	["fx_rocks", 0.0, -8.0, 1.1, 12.0, null, 0.06]]
+
+
 func _slam_wave(at_x: float, r: float, key: String) -> void:
-	var th := FoeTiers.slam_theme(key)
-	var style: String = th[0]
-	var core: Color = th[1]
-	var edge: Color = th[2]
+	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
+	for e in recipe:
+		var delay: float = float(e[6])
+		if delay <= 0.0:
+			_slam_fx_one(at_x, e)
+		else:
+			# 값만 바인드한다 — 노드 참조가 없어서 몹이 먼저 죽어도 안전하다.
+			var t := create_tween()
+			t.tween_interval(delay)
+			t.tween_callback(_slam_fx_one.bind(at_x, e))
+	_shake_combat(4.0)
+
+
+func _slam_fx_one(at_x: float, e: Array) -> void:
+	var n := _anim_fx(str(e[0]), Vector2(at_x + float(e[1]),
+		ground_y + float(e[2])), float(e[4]), float(e[3]), "burst")
+	if n and e[5] != null:
+		n.modulate = e[5]
+
+
+# 수호자 전용 — 퍼지는 전선 + 크리스탈 가시(코드 도트, 사장님 픽 유지).
+func _crystal_wave(at_x: float, r: float) -> void:
+	var core := Color(0.62, 0.88, 1.0)
+	var edge := Color(0.30, 0.55, 0.95)
 	var wave := Node2D.new()
 	wave.position = Vector2(at_x, ground_y)
 	wave.z_index = 4
 	add_child(wave)
 	var st := {"p": 0.0}
+	var DOT := 4.0
 	wave.draw.connect(func() -> void:
-		_slam_draw(wave, style, r, st["p"], core, edge))
-	# 오래 머무는 구조는 길게 튼다 — 웅덩이가 0.45초 만에 마르면 웅덩이가 아니다.
-	var dur := 0.45
-	match style:
-		"boil": dur = 1.1
-		"crack", "sonic", "debris": dur = 0.6
-		"arc": dur = 0.32
-	# 트윈은 wave 소속 — Main 소속이면 wave 가 먼저 죽었을 때 freed 노드를
-	# 계속 만진다(다시 굴리기 크래시와 같은 자리).
+		var p: float = st["p"]
+		var fade: float = 1.0 - p * p
+		var ec := Color(edge.r, edge.g, edge.b, 0.9 * fade)
+		var cc := Color(core.r, core.g, core.b, 0.95 * fade)
+		var front: float = r * minf(1.0, p * 1.15)
+		var fx_: float = floorf(front / DOT) * DOT
+		for side in [-1.0, 1.0]:
+			var ex: float = fx_ * side
+			cv_rect(wave, Rect2(ex - DOT, -DOT * 3.0, DOT * 2.0, DOT * 3.0),
+				Color(core.r, core.g, core.b, 0.35 * fade))
+			cv_rect(wave, Rect2(ex - DOT * 0.5, -DOT * 2.0, DOT, DOT * 2.0), cc)
+			cv_rect(wave, Rect2(ex - DOT * 0.5, -DOT * 3.0, DOT, DOT),
+				Color(1, 1, 1, 0.8 * fade))
+			var n: int = int(fx_ / (DOT * 2.0))
+			for k in range(1, n + 1):
+				cv_rect(wave, Rect2(float(k) * DOT * 2.0 * side - DOT * 0.5,
+					-DOT, DOT, DOT),
+					Color(edge.r, edge.g, edge.b,
+						(0.6 - 0.3 * float(k) / maxf(1.0, float(n))) * fade))
+			for i2 in 4:
+				var sx: float = r * (0.25 + 0.25 * float(i2))
+				if front < sx:
+					continue
+				var grow: float = clampf((front - sx) / (r * 0.2), 0.0, 1.0)
+				var steps: int = int(round((8.0 - float(i2)) * grow))
+				var bx: float = floorf(sx * side / DOT) * DOT
+				if steps > 2:
+					cv_rect(wave, Rect2(bx - DOT * 1.5, -DOT * float(steps),
+						DOT * 3.0, DOT * float(steps)),
+						Color(core.r, core.g, core.b, 0.22 * fade))
+				for st2 in steps:
+					var w2: float = DOT * maxf(1.0, 4.0 - float(st2) * 0.6)
+					cv_rect(wave, Rect2(bx - w2 * 0.5, -DOT * float(st2 + 1),
+						w2, DOT), ec)
+				if steps > 1:
+					cv_rect(wave, Rect2(bx - DOT * 0.5, -DOT * float(steps),
+						DOT, DOT * float(steps - 1)), cc)
+					cv_rect(wave, Rect2(bx - DOT * 0.5, -DOT * float(steps),
+						DOT, DOT), Color(1, 1, 1, 0.85 * fade)))
 	var tw := wave.create_tween()
 	tw.tween_method(func(v: float) -> void:
 		st["p"] = v
-		wave.queue_redraw(), 0.0, 1.0, dur) \
+		wave.queue_redraw(), 0.0, 1.0, 0.45) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_callback(wave.queue_free)
-	_shake_combat(4.0)
 
 
-# 보스별 착지 이펙트 — **구조가 서로 다르다**(2026-08-20 2차, 사장님: "다
-# 똑같은 이펙트"). 1차의 실패: 공통 뼈대(전선+점선)가 화면의 대부분이라 슬롯
-# 패턴만 갈아서는 전부 같아 보였다. 이제 갈래마다 다른 그림을 통째로 그린다.
-# 전부 4px 격자 사각형만 쓴다(도트 문법) · p 0..1 · 원점은 착탄점 발밑.
-func _slam_draw(cv: Node2D, style: String, r: float, p: float,
-		core: Color, edge: Color) -> void:
-	var DOT := 4.0
-	var fade: float = 1.0 - p * p
-	var ec := Color(edge.r, edge.g, edge.b, 0.9 * fade)
-	var cc := Color(core.r, core.g, core.b, 0.95 * fade)
-	match style:
-		"crystal":
-			# 수호자 — 퍼지는 전선 + 크리스탈 가시(사장님이 고른 그 파동).
-			# 이제 이 문법은 수호자 전용이다.
-			var front: float = r * minf(1.0, p * 1.15)
-			var fx_: float = floorf(front / DOT) * DOT
-			for side in [-1.0, 1.0]:
-				var ex: float = fx_ * side
-				cv.draw_rect(Rect2(ex - DOT * 0.5, -DOT * 2.0, DOT, DOT * 2.0), cc)
-				cv.draw_rect(Rect2(ex - DOT * 0.5, -DOT * 3.0, DOT, DOT),
-					Color(1, 1, 1, 0.7 * fade))
-				var n: int = int(fx_ / (DOT * 2.0))
-				for k in range(1, n + 1):
-					cv.draw_rect(Rect2(float(k) * DOT * 2.0 * side - DOT * 0.5,
-						-DOT, DOT, DOT),
-						Color(edge.r, edge.g, edge.b,
-							(0.55 - 0.3 * float(k) / maxf(1.0, float(n))) * fade))
-				for i2 in 4:
-					var sx: float = r * (0.25 + 0.25 * float(i2))
-					if front < sx:
-						continue
-					var grow: float = clampf((front - sx) / (r * 0.2), 0.0, 1.0)
-					var steps: int = int(round((7.0 - float(i2)) * grow))
-					var bx: float = floorf(sx * side / DOT) * DOT
-					for st2 in steps:
-						var w2: float = DOT * maxf(1.0, 4.0 - float(st2) * 0.6)
-						cv.draw_rect(Rect2(bx - w2 * 0.5,
-							-DOT * float(st2 + 1), w2, DOT), ec)
-					if steps > 1:
-						cv.draw_rect(Rect2(bx - DOT * 0.5, -DOT * float(steps),
-							DOT, DOT * float(steps - 1)), cc)
-		"soul":
-			# 망령 기사 — 벤 자리에서 혼불이 떠오른다. 바닥 파동이 없다:
-			# 유령의 칼은 땅을 안 가른다.
-			for k in 6:
-				var ox: float = DOT * float([-4, -2, -1, 1, 3, 5][k])
-				var rise: float = (28.0 + 8.0 * float(k % 3)) * p
-				var sway: float = DOT * float(1 if int(p * 8.0 + float(k)) % 2 == 0 else -1) * 0.5
-				var yy: float = -DOT * 2.0 - rise
-				cv.draw_rect(Rect2(ox + sway - DOT * 0.5, yy, DOT, DOT),
-					cc if k % 2 == 0 else ec)
-				if k % 2 == 0:
-					cv.draw_rect(Rect2(ox + sway - DOT * 0.5, yy + DOT,
-						DOT, DOT), Color(ec.r, ec.g, ec.b, ec.a * 0.5))
-		"pillar":
-			# 가고일 — 착탄점에 화염 기둥 하나가 크게 솟았다 잦아든다. 좌우로
-			# 안 퍼진다: 메테오는 점 타격이다.
-			var hgt: float = 13.0 * minf(1.0, p * 3.0) * (1.0 - 0.5 * p)
-			for k in int(hgt):
-				var sway2: float = DOT * float(int(round(sin(p * 22.0 + float(k) * 0.9))))
-				var w3: float = DOT * (3.0 if k < int(hgt) * 2 / 3 else 2.0)
-				cv.draw_rect(Rect2(sway2 - w3 * 0.5, -DOT * float(k + 1), w3, DOT),
-					ec if k % 3 == 0 else cc)
-			for side in [-1.0, 1.0]:
-				var fx2: float = side * 26.0 * p
-				var fy: float = -44.0 * p + 36.0 * p * p
-				cv.draw_rect(Rect2(floorf(fx2 / DOT) * DOT, floorf(fy / DOT) * DOT,
-					DOT, DOT), cc)
-		"crack":
-			# 프로스트 골렘 — 바닥에 얼음 균열이 지그재그로 뻗는다. 세로 요소가
-			# 없다: 균열은 땅의 그림이다.
-			var reachx: float = r * 0.9 * minf(1.0, p * 1.6)
-			for side in [-1.0, 1.0]:
-				var n2: int = int(reachx / (DOT * 2.0))
-				for k in n2:
-					var gx: float = float(k) * DOT * 2.0 * side
-					var gy: float = -DOT if k % 2 == 0 else 0.0
-					cv.draw_rect(Rect2(gx - DOT * 0.5, gy, DOT, DOT),
-						cc if k < 3 else ec)
-					if k % 3 == 2:
-						cv.draw_rect(Rect2(gx - DOT * 0.5, gy - DOT, DOT, DOT),
-							Color(1, 1, 1, 0.5 * fade))
-		"lash":
-			# 눈알 — 영웅 발밑에서 촉수가 솟구친다(타격점에 뜬다 — 원거리라
-			# 보스 발밑에 그리면 누가 맞았는지 안 보인다).
-			var h4: float = 12.0 * minf(1.0, p * 2.2)
-			var ox4: float = 0.0
-			for k in int(h4):
-				if k > 0 and k % 2 == 0:
-					ox4 += DOT * float(1 if (k / 2) % 2 == 0 else -1)
-				cv.draw_rect(Rect2(ox4 - DOT, -DOT * float(k + 1), DOT * 2.0, DOT),
-					ec if k % 2 == 0 else cc)
-			if h4 > 2.0:
-				cv.draw_rect(Rect2(ox4 - DOT * 1.5, -DOT * (h4 + 1.0),
-					DOT * 3.0, DOT), cc)
-		"arc":
-			# 다크 나이트 — 화면을 가로지르는 거대한 검기. 번쩍하고 사라진다.
-			var half: float = r * 1.1
-			var n5: int = int(half * 2.0 / DOT)
-			for k in n5:
-				var gx2: float = -half + float(k) * DOT
-				var lift: float = -DOT * 3.0 - DOT * floorf(
-					absf(gx2) / half * 3.0)
-				cv.draw_rect(Rect2(gx2, lift, DOT, DOT * 2.0), cc)
-				if k % 2 == 0:
-					cv.draw_rect(Rect2(gx2, lift - DOT, DOT, DOT),
-						Color(1, 1, 1, 0.8 * fade))
-		"spray":
-			# 피의 여왕 — 피보라. 방울이 부채꼴로 튀고 바닥에 웅덩이가 남는다.
-			for k in 8:
-				var vx: float = float(k - 4) * 9.0 + 4.0
-				var vy: float = 34.0 + 7.0 * float(k % 3)
-				var bx2: float = vx * p
-				var by: float = -vy * p + 46.0 * p * p
-				if by >= 0.0:
-					cv.draw_rect(Rect2(floorf(bx2 / DOT) * DOT, 0.0, DOT, DOT),
-						Color(edge.r, edge.g, edge.b, 0.8 * fade))
-				else:
-					cv.draw_rect(Rect2(floorf(bx2 / DOT) * DOT,
-						floorf(by / DOT) * DOT, DOT, DOT),
-						cc if k % 2 == 0 else ec)
-		"sonic":
-			# 뼈의 합창단 — 동심원 음파 고리가 몸에서 밖으로 퍼진다.
-			for ring in 2:
-				var rr: float = r * (0.35 + 0.55 * float(ring)) * minf(1.0, p * 1.4 - 0.25 * float(ring))
-				if rr <= 0.0:
-					continue
-				for k in 14:
-					var ang: float = TAU * float(k) / 14.0
-					var px2: float = floorf(cos(ang) * rr / DOT) * DOT
-					var py: float = floorf(sin(ang) * rr * 0.45 / DOT) * DOT - DOT * 6.0
-					cv.draw_rect(Rect2(px2, py, DOT, DOT),
-						cc if ring == 0 else ec)
-		"cross":
-			# 도살자 — 타격점에 X 참격 + 옆으로 퍼지는 흙먼지.
-			var arm: float = 24.0 * minf(1.0, p * 2.5)
-			for k in int(arm / DOT):
-				for sx2 in [-1.0, 1.0]:
-					cv.draw_rect(Rect2(sx2 * DOT * float(k) - DOT * 0.5,
-						-DOT * 8.0 + DOT * float(k), DOT, DOT), cc)
-					cv.draw_rect(Rect2(sx2 * DOT * float(k) - DOT * 0.5,
-						-DOT * 8.0 - DOT * float(k), DOT, DOT), cc)
-			for side in [-1.0, 1.0]:
-				var dx: float = side * (10.0 + 26.0 * p)
-				cv.draw_rect(Rect2(floorf(dx / DOT) * DOT, -DOT, DOT, DOT),
-					Color(edge.r, edge.g, edge.b, 0.6 * fade))
-		"boil":
-			# 역병의 산파 — 독 웅덩이가 부글부글 끓는다. 오래 남는다(1.1초).
-			var pw2: int = 5
-			for k in pw2:
-				cv.draw_rect(Rect2(DOT * float(k - 2) - DOT * 0.5, -DOT,
-					DOT, DOT), Color(edge.r, edge.g, edge.b, 0.85 * fade))
-			for b2 in 3:
-				var phase: float = fposmod(p * 3.0 + float(b2) * 0.37, 1.0)
-				var bx3: float = DOT * float(b2 - 1) * 2.0
-				if phase < 0.7:
-					cv.draw_rect(Rect2(bx3 - DOT * 0.5,
-						-DOT * (1.0 + floorf(phase * 4.0)), DOT, DOT), cc)
-				else:
-					cv.draw_rect(Rect2(bx3 - DOT * 1.5, -DOT * 4.0,
-						DOT * 3.0, DOT),
-						Color(core.r, core.g, core.b, 0.6 * fade))
-		"debris":
-			# 유적의 파수꾼 — 돌 파편이 포물선으로 튀고 초록 균열이 남는다.
-			for k in 5:
-				var vx2: float = float(k - 2) * 13.0 + 5.0
-				var vy2: float = 30.0 + 9.0 * float(k % 2)
-				var dx2: float = vx2 * p
-				var dy2: float = -vy2 * p + 40.0 * p * p
-				if dy2 < 0.0:
-					var w4: float = DOT * (2.0 if k % 2 == 0 else 1.0)
-					cv.draw_rect(Rect2(floorf(dx2 / DOT) * DOT,
-						floorf(dy2 / DOT) * DOT, w4, w4), ec)
-			for k in 4:
-				cv.draw_rect(Rect2(DOT * float(k * 2 - 3), -DOT if k % 2 == 0 else 0.0,
-					DOT, DOT), cc)
-		_:
-			# 이름 없는 보스·중간보스 — 낮은 돌 파편 계단(수수하게).
-			for i3 in 3:
-				var sx3: float = r * (0.3 + 0.3 * float(i3)) * minf(1.0, p * 1.3)
-				for side in [-1.0, 1.0]:
-					var bx4: float = floorf(sx3 * side / DOT) * DOT
-					cv.draw_rect(Rect2(bx4 - DOT * 0.5, -DOT * 2.0, DOT, DOT * 2.0), ec)
-					cv.draw_rect(Rect2(bx4 - DOT * 0.5, -DOT * 3.0, DOT, DOT), cc)
+# draw 람다 안에서 이름이 짧아야 읽힌다 — Node2D.draw_rect 의 얇은 별칭.
+static func cv_rect(cv: Node2D, rect: Rect2, col: Color) -> void:
+	cv.draw_rect(rect, col)
 
 
 func _kill_hero() -> void:
