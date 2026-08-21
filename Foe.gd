@@ -65,6 +65,17 @@ const DIE_HOP := 22.0     # 떠오르는 높이 (포물선)
 const DIE_DROP := 14.0    # 마지막에 가라앉는 깊이
 const DIE_SPIN := 62.0    # 기우는 각도
 const ATTACK_DUR := 0.42
+# 보스는 스윙 그림이 잡몹의 1.7배 느리게 돈다(사장님: "공격 모션이 너무
+# 빠름"). 몸집 1.4배가 0.42초에 휘두르면 팔랑거린다. **주기(쿨다운)는 그대로**
+# 라 DPS·밸런스는 안 변한다 — 임팩트 시점만 그림을 따라 늦어진다.
+const BOSS_ATTACK_DUR := 0.72
+const MIDBOSS_ATTACK_DUR := 0.55
+
+
+func attack_dur() -> float:
+	if is_boss:
+		return BOSS_ATTACK_DUR
+	return MIDBOSS_ATTACK_DUR if is_midboss else ATTACK_DUR
 # 타격 지점을 **프레임 번호가 아니라 모션 길이의 비율**로 잡는다.
 # 고정 번호(3)로 두면 프레임 수가 다른 모션에서 지점이 밀린다 — 실제로 새로 들어온
 # boss_1~5_attack 이 9프레임이라 타격이 43%가 아니라 33% 지점에서 나가고 있었다.
@@ -191,8 +202,10 @@ const SPECIAL_EVERY := 3       # 세 번째 스윙마다
 const SPECIAL_TELL := 0.85     # 멈춰서 예고하는 시간
 const SPECIAL_REACH := 1.7     # 착탄 범위 배수 — 원 크기가 그대로 이 값이다
 const SPECIAL_DMG := 2.4       # 피해 배수. 대신 원 밖으로 나가면 통째로 빗나간다
-var _sp: Array = FoeTiers.SPECIAL_DEFAULT   # 이 몹의 기전 [예고,피해,사거리,타수]
+var _sp: Array = FoeTiers.SPECIAL_DEFAULT   # 이 몹의 기전 [예고,피해,사거리,타수,움직임]
 var _echo_hit_t := -1.0        # 2연격의 두 번째 타까지 남은 시간
+var _home_x := INF             # 대시 전에 서 있던 자리 — 스윙이 끝나면 돌아간다
+var _move_tw: Tween            # 움직임 트윈 — 죽을 때 같이 멎어야 한다
 # [개발 도구] `--tell` 이 켠다. 매 스윙을 특수로 만들어 **예고판을 화면에 고정**한다.
 # 왜 필요한가: 예고는 0.85초고 주기는 세 스윙마다라, 캡처 시각을 맞추는 것이 사실상
 # 도박이다 — 실제로 6장을 흩뿌려 찍고 한 장도 못 잡았다(2026-08-06). 판 크기·기울기·
@@ -215,9 +228,9 @@ func attack_mult() -> float:
 # 한꺼번에 흔들 이유가 없다. 고칠 근거가 생기면 그때 같은 방식으로 옮긴다.
 func _impact_at() -> float:
 	if not (special_swing and not _special_frames.is_empty()) or _special_dir == "":
-		return ATTACK_DUR * IMPACT_RATIO
+		return attack_dur() * IMPACT_RATIO
 	var peak := Assets.slam_peak_frame(_special_dir)
-	return ATTACK_DUR * (float(peak) + 0.5) / float(_special_frames.size())
+	return attack_dur() * (float(peak) + 0.5) / float(_special_frames.size())
 
 
 # **오프라인 판정이 쓰는 평균 피해 배수.** 실시간은 세 번에 한 번만 SPECIAL_DMG 를
@@ -271,6 +284,12 @@ func _tick_attack(delta: float) -> void:
 		_tell_t -= delta
 		if _tell_t <= 0.0:
 			_tell_t = -1.0
+			# 움직이는 패턴은 이동이 먼저다 — 스윙은 도착해서 시작한다.
+			# 이동 중에는 _attack_anim 이 -1 이라 아래 스윙 틱이 조용히 쉰다.
+			var mv := str(_sp[4]) if special_swing else ""
+			if mv == "dash" or mv == "jump":
+				_special_move(mv)
+				return
 			_attack_anim = 0.0
 			_impact_sent = false
 		return
@@ -285,11 +304,15 @@ func _tick_attack(delta: float) -> void:
 		if not _impact_sent and _attack_anim >= _impact_at():
 			_impact_sent = true
 			var main := get_parent()
-			if main and main.has_method("on_foe_attack"):
+			if special_swing and str(_sp[4]) == "meteor":
+				# 캐스팅 — 때리는 건 하늘에서 떨어지는 쪽이다.
+				if main and main.has_method("on_foe_meteor"):
+					main.on_foe_meteor(self)
+			elif main and main.has_method("on_foe_attack"):
 				main.on_foe_attack(self)
 			if special_swing and int(_sp[3]) > 1:
 				_echo_hit_t = 0.35
-		if _attack_anim >= ATTACK_DUR:
+		if _attack_anim >= attack_dur():
 			_attack_anim = -1.0
 		return
 	_attack_cd -= delta
@@ -303,6 +326,44 @@ func _tick_attack(delta: float) -> void:
 			return
 		_attack_anim = 0.0
 		_impact_sent = false
+
+
+# 움직이는 특수 패턴의 이동부. 트윈은 **자기 소속**이다 — Main 소속이면 몹이
+# 먼저 죽었을 때 freed 노드를 계속 만진다(다시 굴리기 크래시의 자리).
+#
+#   dash: 영웅 앞까지 미끄러져 벤 뒤, 스윙이 끝나면 서 있던 자리로 스르륵.
+#   jump: 떠올라 영웅 자리에 떨어지며 벤다. 착지가 곧 임팩트라 복귀는 없다 —
+#         내려찍은 자리가 새 자리다.
+func _special_move(mv: String) -> void:
+	if _move_tw and _move_tw.is_valid():
+		_move_tw.kill()
+	_move_tw = create_tween()
+	var main := get_parent()
+	var hx: float = main.hero_x if main and "hero_x" in main else position.x
+	# 몸 반폭만큼 떨어져 선다 — 겹치면 스윙이 몸 안에서 나간다.
+	var at := hx + body_half() + 26.0
+	if mv == "dash":
+		if _home_x == INF:
+			_home_x = position.x
+		_move_tw.tween_property(self, "position:x", at, 0.14) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_move_tw.tween_callback(func() -> void:
+			_attack_anim = 0.0
+			_impact_sent = false)
+		# 복귀는 스윙이 끝날 시간에 — 벤 모습을 보여 준 뒤 물러난다.
+		_move_tw.tween_interval(attack_dur() + 0.1)
+		_move_tw.tween_property(self, "position:x", _home_x, 0.35) \
+			.set_trans(Tween.TRANS_SINE)
+		_move_tw.tween_callback(func() -> void: _home_x = INF)
+	else:   # jump
+		_move_tw.tween_property(self, "position:y", position.y - 92.0, 0.18) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_move_tw.parallel().tween_property(self, "position:x", at, 0.36)
+		_move_tw.tween_property(self, "position:y", position.y, 0.16) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_move_tw.tween_callback(func() -> void:
+			_attack_anim = 0.0
+			_impact_sent = false)
 
 
 # 그림자 반지름. Main 이 발밑에 깔아 준다.
@@ -518,7 +579,7 @@ func _draw() -> void:
 		# 보스 5종 중 일부만 전용 모션이 붙어 있어도 나머지가 안 깨진다.
 		var frames := _special_frames if special_swing and not _special_frames.is_empty() \
 			else _attack_frames
-		var attack_i := mini(int(_attack_anim * float(frames.size()) / ATTACK_DUR),
+		var attack_i := mini(int(_attack_anim * float(frames.size()) / attack_dur()),
 			frames.size() - 1)
 		tex = frames[attack_i]
 	elif not dying and not _walk_frames.is_empty():

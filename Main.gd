@@ -10353,6 +10353,43 @@ func _foe_slam_fx(f: Foe) -> void:
 	_slam_wave(f.position.x, f.reach(), f.key)
 
 
+# 메테오(가고일) — 캐스팅이 끝나면 **그 순간의 영웅 자리**에 화염구가 떨어진다.
+# 낙하 0.6초가 곧 회피 창이다: 떨어지는 동안 영웅이 대시로 빠지면 빗나간다.
+# 착탄 판정은 발사 때 박아 둔 자리 기준 — 유도탄이면 회피 창이 거짓말이 된다.
+func on_foe_meteor(f: Foe) -> void:
+	if _hero_dead or _phase != "fight":
+		return
+	var tx := hero_x
+	var ball := _anim_fx("vfx_fire_ball", Vector2(tx + 40.0, ground_y - 380.0),
+		12.0, 1.6, "burst")
+	if ball == null:
+		return
+	ball.rotation_degrees = 115.0   # 낙하 방향으로 눕힌다 — 원본이 옆을 본다
+	var tw := ball.create_tween()
+	tw.tween_property(ball, "position",
+		Vector2(tx, ground_y - 16.0), 0.6) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func() -> void:
+		if is_instance_valid(ball):
+			ball.queue_free()
+		if _hero_dead or _phase != "fight" or not is_instance_valid(f):
+			return
+		_slam_wave(tx, f.reach(), f.key)
+		_shake_combat(4.0)
+		if absf(hero_x - tx) > f.reach():
+			return   # 낙하 중에 빠져나갔다 — 그게 회피다
+		var incoming := Balance.foe_damage(_c_enemy_power()) * f.attack_mult() \
+			* _trait_mult("guard") \
+			* (1.0 - clampf(_oath_val("armor"), 0.0, 0.9))
+		hero_hp = maxf(0.0, hero_hp - incoming)
+		_pop_hero_damage(incoming)
+		_hero_flash_t = 0.10
+		_hero.self_modulate = Color(7, 7, 8)
+		_play("hurt", 0.10)
+		if hero_hp <= 0.0:
+			_kill_hero())
+
+
 func _slam_wave(at_x: float, r: float, key: String) -> void:
 	# 모양·색은 보스 테마 표가 정한다(FoeTiers.SLAM_THEME) — 유령은 혼불,
 	# 화염은 불기둥, 공허는 촉수, 어둠은 검기. 표에 없으면 돌빛 파편.
