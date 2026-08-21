@@ -254,12 +254,23 @@ def main(argv):
 
     jobs = dict(a.split("=", 1) for a in rest)
     for motion, job in jobs.items():
+        # `모션=<job>:air` — 공중 모션(점프 내려찍기). 발 고정 검사를 끄는 게
+        # 아니라 **뒤집는다**: 발이 6칸도 안 뜨면 점프가 아니라 실패다.
+        airborne = job.endswith(":air")
+        if airborne:
+            job = job[:-4]
         paths = fetch(job, os.path.join(tmp_root, motion))
         flips = autoflip(motion, paths)
         if flips:
             print("%-8s f%s 를 좌우 반전했다 (생성기가 돌려 그린 프레임)"
                   % (motion, ",".join(map(str, flips))))
-        ws, hs, _, faces, ch = check(motion, paths, flipped=flips)
+        if airborne:
+            from PIL import Image as _I
+            feet = [ink_box(_I.open(pp).convert("RGBA"))[3] for pp in paths]
+            lift = max(feet) - min(feet)
+            assert lift >= 6,                 "%s: 공중 모션인데 발이 %d칸만 뜬다 - 점프가 안 그려졌다" % (motion, lift)
+        ws, hs, _, faces, ch = check(motion, paths, flipped=flips,
+                                     strict_foot=not airborne)
         dst = os.path.join(ANIM, "%s_%s" % (skin, motion))
         os.makedirs(dst, exist_ok=True)
         for f in os.listdir(dst):

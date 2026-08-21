@@ -38,6 +38,12 @@ const TIERS := {
 	# 시련 전용 보스 (2026-08-18 사장님: "재활용하지 말고 하나 만들어라") —
 	# 단계가 몇이든 얼굴은 이 하나다. 힘은 TrialDefs.eq_stage 가 정한다.
 	"ruin_warden":  {"name": "유적의 파수꾼", "hp_mult": 3.6, "size": 1.4, "event": true},
+	# 성소 전용 수호자 (2026-08-20 사장님: "재활용 보스는 신규로 교체" — 시련의
+	# ruin_warden 과 같은 결정). 성소만 본편 막 보스를 빌려 쓰고 있었다.
+	# hp_mult 1.0: 판 체력은 RaidDefs.hp_mult(잡졸 100마리 몫)가 정한다 —
+	# 여기에 또 얹으면 두 번 곱한다.
+	"sanctum_guardian": {"name": "성소의 수호자", "hp_mult": 1.0, "size": 1.4,
+		"event": true},
 }
 
 

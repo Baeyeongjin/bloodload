@@ -10297,6 +10297,8 @@ func on_foe_hit(_foe: Foe, _damage: float) -> void:
 func on_foe_attack(_foe: Foe) -> void:
 	if _hero_dead or _phase != "fight":
 		return
+	if _foe.special_swing:
+		_foe_slam_fx(_foe)
 	if absf(_foe.position.x - hero_x) > _foe.reach():
 		return
 	# 특수 패턴은 훨씬 아프다. 대신 예고 원 밖으로 나가면(대시) 위 사거리 검사에서
@@ -10315,6 +10317,25 @@ func on_foe_attack(_foe: Foe) -> void:
 	_knock_vx = KNOCK_SPEED * (-1.0 if _foe.position.x > hero_x else 1.0)
 	if hero_hp <= 0.0:
 		_kill_hero()
+
+
+# 특수 패턴 착지 연출 — 발밑 얼음 충격파 + 착탄 범위 양끝의 크리스탈 가시.
+# **빗나가도 뜬다**(on_foe_attack 의 사거리 검사보다 앞) — 이건 몹의 공격 연출이지
+# 명중 연출이 아니다. 헛친 내려찍기가 조용하면 피한 보람도 화면에 없다.
+func _foe_slam_fx(f: Foe) -> void:
+	var at := Vector2(f.position.x, ground_y - 14.0)
+	# 수호자는 정수 크리스탈(사장님 픽: ice_slam + ice_spike). 다른 보스는
+	# 중립 충격파 — 얼음을 화염 보스(가고일)에게 띄우면 그게 새 어색함이다.
+	var icy := f.key == "sanctum_guardian"
+	_anim_fx("vfx_ice_slam" if icy else "vfx_boom_05", at, 14.0, 1.6, "burst")
+	# 가시·파편은 원 판정의 양끝에 — reach() 가 특수 스윙 중이라 이미 1.7배다.
+	# 범위 표시가 곧 이 두 개다: "어디까지 맞는지"가 화면에 그려진다.
+	var r := f.reach()
+	for side in [-1.0, 1.0]:
+		_anim_fx("vfx_ice_spike" if icy else "fx_rocks",
+			Vector2(f.position.x + r * side * 0.8, ground_y - 12.0),
+			12.0, 1.2 if icy else 0.8, "burst")
+	_shake_combat(4.0)
 
 
 func _kill_hero() -> void:
@@ -12589,6 +12610,11 @@ func _spawn_foe() -> void:
 		tier = FoeTiers.get_tier(str(eb["key"]))
 		tier["name"] = str(eb["name"])
 		tier["anim_key"] = str(eb["anim"])
+	elif raid_on != "" and RaidDefs.goal(raid_on) == "slay":
+		# 성소 수호자도 전용 보스다(사장님 2026-08-20) — 여기만 본편 막 보스를
+		# 빌려 쓰고 있었다("또 저놈"). 시련·주간 보스와 같은 규칙으로 맞춘다.
+		tier = FoeTiers.get_tier("sanctum_guardian")
+		tier["anim_key"] = "sanctum_guardian"
 	elif raid_on == "trial":
 		# 전용 보스 — 막 보스를 빌리면 "또 저놈"이 된다(주간 보스와 같은 규칙).
 		tier = FoeTiers.get_tier("ruin_warden")
