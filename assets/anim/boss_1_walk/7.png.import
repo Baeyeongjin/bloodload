@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bnogvmjyix14y"
-path="res://.godot/imported/2.png-60aa12166809b43532c6fa5ba7fd0aee.ctex"
+uid="uid://7upa5fwdjknm"
+path="res://.godot/imported/7.png-ca5c8d8b40bd9fd2b9d7d868a8b2024c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/boss_1_walk/2.png"
-dest_files=["res://.godot/imported/2.png-60aa12166809b43532c6fa5ba7fd0aee.ctex"]
+source_file="res://assets/anim/boss_1_walk/7.png"
+dest_files=["res://.godot/imported/7.png-ca5c8d8b40bd9fd2b9d7d868a8b2024c.ctex"]
 
 [params]
 

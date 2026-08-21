@@ -47,6 +47,25 @@ const TIERS := {
 }
 
 
+# 특수 착지 파동의 테마 — **보스마다 고유 패턴**(사장님 2026-08-20: "다
+# 돌려쓰니까 고유 패턴 넣어주면 좋을듯" — 탭 UI 세트와 같은 결정이다).
+# [모양, 심 색, 테두리 색]. 표에 없는 키는 돌빛 파편(기본)으로 떨어진다 —
+# 중간보스·주간 보스까지 다 적으면 표가 로스터 사본이 된다.
+const SLAM_THEME := {
+	"sanctum_guardian": ["spike", Color(0.62, 0.88, 1.0), Color(0.30, 0.55, 0.95)],
+	"frost_golem": ["spike", Color(0.82, 0.96, 1.0), Color(0.45, 0.70, 0.95)],
+	"wraith_knight": ["wisp", Color(0.65, 1.0, 0.85), Color(0.18, 0.60, 0.48)],
+	"gargoyle": ["flame", Color(1.0, 0.80, 0.35), Color(0.90, 0.38, 0.12)],
+	"eye_mass": ["tendril", Color(0.85, 0.62, 1.0), Color(0.50, 0.26, 0.72)],
+	"dark_knight": ["slash", Color(1.0, 0.42, 0.48), Color(0.60, 0.10, 0.24)],
+}
+
+
+static func slam_theme(key: String) -> Array:
+	return SLAM_THEME.get(key,
+		["rock", Color(0.95, 0.78, 0.45), Color(0.55, 0.40, 0.28)])
+
+
 static func get_tier(key: String) -> Dictionary:
 	var t: Dictionary = TIERS.get(key, TIERS["slime"]).duplicate()
 	t["key"] = key
