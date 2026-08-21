@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dc70md17ndl0f"
-path="res://.godot/imported/5.png-32b9d169df33a263fc8bcaa7a6ae4b8a.ctex"
+uid="uid://c114254mmk8ps"
+path="res://.godot/imported/0.png-b1e9f48a3ba209a24943a486a66aaf76.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/boss_2_special/5.png"
-dest_files=["res://.godot/imported/5.png-32b9d169df33a263fc8bcaa7a6ae4b8a.ctex"]
+source_file="res://assets/anim/boss_2_attack/0.png"
+dest_files=["res://.godot/imported/0.png-b1e9f48a3ba209a24943a486a66aaf76.ctex"]
 
 [params]
 
