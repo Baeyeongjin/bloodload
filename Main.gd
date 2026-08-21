@@ -10439,32 +10439,21 @@ const SLAM_FX := {
 	"sanctum_guardian": [
 		["fx_slam_sanctum_guardian", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
 	"frost_golem": [
-		["vfx_ice_slam", 0.0, -14.0, 2.8, 14.0, null, 0.0],
-		["vfx_ice_spike", -30.0, -12.0, 1.5, 12.0, null, 0.08],
-		["vfx_ice_spike", 30.0, -12.0, 1.5, 12.0, null, 0.14]],
+		["fx_slam_frost_golem", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
 	"eye_mass": [
-		["vfx_dark_explosion2", 0.0, -26.0, 2.6, 14.0, null, 0.0],
-		["vfx_dark_spin", 0.0, -30.0, 2.2, 14.0, null, 0.10]],
+		["fx_slam_eye_mass", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
 	"dark_knight": [
-		["vfx_phys_002", 0.0, -30.0, 3.0, 16.0, Color(1.0, 0.95, 0.8), 0.0],
-		["vfx_phys_001", 0.0, -34.0, 2.4, 16.0, Color(0.9, 0.85, 0.7), 0.10]],
+		["fx_slam_dark_knight", 0.0, -26.0, 2.2, 18.0, null, 0.0]],
 	"blood_queen": [
-		["fx_hit_splash", 0.0, -20.0, 2.2, 16.0, null, 0.0],
-		["vfx_water_splash", 0.0, -10.0, 2.6, 14.0, Color(0.95, 0.15, 0.4), 0.08]],
+		["fx_slam_blood_queen", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
 	"bone_choir": [
-		["vfx_wind_spread", 0.0, -16.0, 3.0, 12.0, Color(1.0, 0.9, 1.0), 0.0],
-		["vfx_wind_spread", 0.0, -18.0, 3.8, 12.0, Color(0.85, 0.65, 0.9), 0.12]],
+		["fx_slam_bone_choir", 0.0, -24.0, 2.2, 18.0, null, 0.0]],
 	"butcher": [
-		["vfx_phys_001", 0.0, -28.0, 2.6, 16.0, Color(0.85, 0.25, 0.35), 0.0],
-		["fx_rocks", 0.0, -8.0, 1.0, 12.0, null, 0.08]],
+		["fx_slam_butcher", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
 	"plague_hag": [
-		["vfx_water_splash", 0.0, -12.0, 2.4, 12.0, Color(0.45, 0.95, 0.3), 0.0],
-		["vfx_earth_grow", 0.0, -8.0, 2.0, 10.0, null, 0.12]],
+		["fx_slam_plague_hag", 0.0, -22.0, 2.0, 18.0, null, 0.0]],
 	"ruin_warden": [
-		["vfx_earth_rock", 0.0, -18.0, 1.7, 12.0, null, 0.0],
-		["fx_rocks", -26.0, -8.0, 1.0, 12.0, null, 0.06],
-		["fx_rocks", 26.0, -8.0, 1.0, 12.0, null, 0.10],
-		["vfx_earth_grow", 0.0, -6.0, 1.4, 10.0, Color(0.8, 1.2, 0.5), 0.16]],
+		["fx_slam_ruin_warden", 0.0, -24.0, 2.0, 18.0, null, 0.0]],
 }
 # 표에 없는 보스·중간보스 — 중립 파편 + 충격파.
 const SLAM_FX_DEFAULT := [
