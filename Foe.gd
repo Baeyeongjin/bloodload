@@ -205,6 +205,7 @@ const SPECIAL_DMG := 2.4       # 피해 배수. 대신 원 밖으로 나가면 �
 var _sp: Array = FoeTiers.SPECIAL_DEFAULT   # 이 몹의 기전 [예고,피해,사거리,타수,움직임]
 var _echo_hit_t := -1.0        # 2연격의 두 번째 타까지 남은 시간
 var _home_x := INF             # 대시 전에 서 있던 자리 — 스윙이 끝나면 돌아간다
+var _airborne := false         # 점프 중 — 걷기 대신 웅크림 프레임을 그린다
 var _move_tw: Tween            # 움직임 트윈 — 죽을 때 같이 멎어야 한다
 # [개발 도구] `--tell` 이 켠다. 매 스윙을 특수로 만들어 **예고판을 화면에 고정**한다.
 # 왜 필요한가: 예고는 0.85초고 주기는 세 스윙마다라, 캡처 시각을 맞추는 것이 사실상
@@ -345,8 +346,16 @@ func _special_move(mv: String) -> void:
 	if mv == "dash":
 		if _home_x == INF:
 			_home_x = position.x
+		# 잔상 — 출발 자리와 길 중간에 반투명 몸이 남았다 사라진다. 이게 없으면
+		# 순간이동으로 보인다(사장님: 대시가 안 읽힌다).
+		if main and main.has_method("_dash_ghost"):
+			main._dash_ghost(self)
 		_move_tw.tween_property(self, "position:x", at, 0.14) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_move_tw.parallel().tween_callback(func() -> void:
+			var m2 := get_parent()
+			if m2 and m2.has_method("_dash_ghost"):
+				m2._dash_ghost(self)).set_delay(0.07)
 		_move_tw.tween_callback(func() -> void:
 			_attack_anim = 0.0
 			_impact_sent = false)
@@ -356,12 +365,16 @@ func _special_move(mv: String) -> void:
 			.set_trans(Tween.TRANS_SINE)
 		_move_tw.tween_callback(func() -> void: _home_x = INF)
 	else:   # jump
-		_move_tw.tween_property(self, "position:y", position.y - 92.0, 0.18) \
+		# 공중에서는 걷기 대신 웅크림 프레임(_draw 의 _airborne 분기) — 걷는
+		# 그림으로 떠다니면 점프가 아니라 미끄럼이다(사장님: "점프 어색").
+		_airborne = true
+		_move_tw.tween_property(self, "position:y", position.y - 120.0, 0.20) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_move_tw.parallel().tween_property(self, "position:x", at, 0.36)
-		_move_tw.tween_property(self, "position:y", position.y, 0.16) \
+		_move_tw.parallel().tween_property(self, "position:x", at, 0.32)
+		_move_tw.tween_property(self, "position:y", position.y, 0.12) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		_move_tw.tween_callback(func() -> void:
+			_airborne = false
 			_attack_anim = 0.0
 			_impact_sent = false)
 
@@ -574,7 +587,10 @@ func _draw() -> void:
 			hsc = 1.0 - 0.80 * f
 		alpha = 1.0 - ease_out
 	var tex: Texture2D = _sprite
-	if not dying and _attack_anim >= 0.0 and not _attack_frames.is_empty():
+	if not dying and _airborne and not _special_frames.is_empty():
+		# 점프 중 — 웅크린 채 난다. 프레임 1(도약 직후)이 그 그림이다.
+		tex = _special_frames[mini(1, _special_frames.size() - 1)]
+	elif not dying and _attack_anim >= 0.0 and not _attack_frames.is_empty():
 		# 특수 스윙은 전용 모션이 있으면 그걸 쓴다. **없으면 평타로 조용히 떨어진다** —
 		# 보스 5종 중 일부만 전용 모션이 붙어 있어도 나머지가 안 깨진다.
 		var frames := _special_frames if special_swing and not _special_frames.is_empty() \

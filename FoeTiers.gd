@@ -56,19 +56,22 @@ const TIERS := {
 # 아니라 상아 뼈 갑옷이고, 가고일은 주황이 아니라 검붉은 몸이다. 파동이
 # **자기 몸 색으로 터져야** 화면이 한 벌로 읽힌다. 값은 boss_N_walk/0.png
 # 의 채도 상위 무리(core=밝은 강조, edge=어두운 몸통).
+# **모양 이름이 아니라 이펙트의 구조 이름이다** (2026-08-20 2차, 사장님:
+# "다 똑같은 이펙트"). 1차는 [전선+점선+슬롯패턴] 한 틀에 슬롯만 갈았는데
+# 화면에선 공통 뼈대가 대부분이라 전부 같아 보였다. 이제 구조가 통째로 다르다
+# — 그리는 코드는 Main._slam_draw 의 match 한 갈래씩이다.
 const SLAM_THEME := {
-	"sanctum_guardian": ["spike", Color(0.62, 0.88, 1.0), Color(0.30, 0.55, 0.95)],
-	"frost_golem": ["spike", Color(0.63, 0.87, 0.93), Color(0.18, 0.41, 0.56)],
-	"wraith_knight": ["wisp", Color(0.80, 0.67, 0.44), Color(0.49, 0.37, 0.21)],
-	"gargoyle": ["flame", Color(0.62, 0.24, 0.20), Color(0.40, 0.13, 0.11)],
-	"eye_mass": ["tendril", Color(0.38, 0.21, 0.55), Color(0.22, 0.08, 0.37)],
-	"dark_knight": ["slash", Color(0.88, 0.83, 0.70), Color(0.47, 0.44, 0.36)],
-	# 주간 보스 4종 + 시련 (2026-08-20 사장님). 색은 스프라이트 실측.
-	"blood_queen": ["pool", Color(0.67, 0.22, 0.39), Color(0.38, 0.02, 0.17)],
-	"bone_choir": ["ring", Color(0.72, 0.58, 0.66), Color(0.36, 0.23, 0.31)],
-	"butcher": ["slash", Color(0.53, 0.15, 0.27), Color(0.36, 0.04, 0.15)],
-	"plague_hag": ["wisp", Color(0.44, 0.75, 0.19), Color(0.14, 0.38, 0.19)],
-	"ruin_warden": ["spike", Color(0.55, 0.72, 0.06), Color(0.26, 0.46, 0.03)],
+	"sanctum_guardian": ["crystal", Color(0.62, 0.88, 1.0), Color(0.30, 0.55, 0.95)],
+	"frost_golem": ["crack", Color(0.63, 0.87, 0.93), Color(0.18, 0.41, 0.56)],
+	"wraith_knight": ["soul", Color(0.80, 0.67, 0.44), Color(0.49, 0.37, 0.21)],
+	"gargoyle": ["pillar", Color(0.86, 0.36, 0.16), Color(0.40, 0.13, 0.11)],
+	"eye_mass": ["lash", Color(0.55, 0.32, 0.78), Color(0.22, 0.08, 0.37)],
+	"dark_knight": ["arc", Color(0.92, 0.88, 0.76), Color(0.47, 0.44, 0.36)],
+	"blood_queen": ["spray", Color(0.78, 0.16, 0.38), Color(0.38, 0.02, 0.17)],
+	"bone_choir": ["sonic", Color(0.78, 0.62, 0.72), Color(0.36, 0.23, 0.31)],
+	"butcher": ["cross", Color(0.62, 0.16, 0.30), Color(0.36, 0.04, 0.15)],
+	"plague_hag": ["boil", Color(0.44, 0.80, 0.20), Color(0.14, 0.38, 0.19)],
+	"ruin_warden": ["debris", Color(0.60, 0.78, 0.10), Color(0.26, 0.46, 0.03)],
 }
 
 
