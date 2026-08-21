@@ -41,6 +41,11 @@ var _pct: Label
 var _t := 0.0
 var _done := false
 var _tap_on := false
+var _entering := false
+# 대기 중 미리 데울 자산 목록 — Assets._cache 가 static 이라 여기서 읽어 두면
+# Main 이 그대로 쓴다. 클릭 후 멈칫의 몸통이 이 로드였다(사장님 지적).
+var _warm: PackedStringArray = []
+var _warm_i := 0
 
 
 func _ready() -> void:
@@ -121,6 +126,15 @@ func _build() -> void:
 # 것 자체가 "다 됐다"는 신호라서 따로 완료 표시를 안 붙인다.
 func _tap_ready() -> void:
 	_tap_on = true
+	# 기다리는 동안 무거운 폴더의 그림을 미리 읽는다 — 프레임당 몇 장씩이라
+	# 안 끊기고, 1~2초만 서 있어도 수백 장이 데워져 입장이 가벼워진다.
+	for d in ["ui", "enemies", "items", "skill_icons", "cards"]:
+		var da := DirAccess.open("res://assets/%s" % d)
+		if da == null:
+			continue
+		for f in da.get_files():
+			if f.ends_with(".png"):
+				_warm.append("res://assets/%s/%s" % [d, f])
 	_bar.hide()
 	_pct.hide()
 	var tap := _label("아무 곳이나 누르세요", Type.SIZE_BODY, BAR_Y - 8.0,
@@ -136,7 +150,7 @@ func _tap_ready() -> void:
 # 루트 Control 의 mouse_filter 가 STOP 이라 마우스 버튼은 GUI 에서 먹히고
 # unhandled 까지 안 내려온다.
 func _input(event: InputEvent) -> void:
-	if not _tap_on or _done:
+	if not _tap_on or _done or _entering:
 		return
 	if not (event is InputEventMouseButton or event is InputEventKey
 			or event is InputEventScreenTouch):
@@ -144,7 +158,17 @@ func _input(event: InputEvent) -> void:
 	if not event.is_pressed():
 		return
 	get_viewport().set_input_as_handled()
-	_enter()
+	# **클릭에는 즉시 반응이 보여야 한다.** 씬 전환의 _ready 가 한 프레임을
+	# 통째로 먹어서(UI 조립) 그냥 넘기면 "눌렀는데 멈췄다"로 읽힌다(사장님).
+	# 어둠이 먼저 내려오면 그 멈칫은 어둠 뒤에서 지나간다.
+	_entering = true
+	var veil := ColorRect.new()
+	veil.color = Color(0.02, 0.01, 0.03, 0.0)
+	veil.size = Vector2(W, H)
+	add_child(veil)
+	var tw2 := veil.create_tween()
+	tw2.tween_property(veil, "color:a", 1.0, 0.22)
+	tw2.tween_callback(_enter)
 
 
 # 글자 뒤에 까는 어둠. **GradientTexture2D 를 쓴다** — 알파를 달리한 ColorRect
@@ -186,6 +210,14 @@ func _label(text: String, font_size: int, y: float, col: Color,
 
 
 func _process(delta: float) -> void:
+	if _tap_on and not _entering and _warm_i < _warm.size():
+		# 프레임당 6장 — 60fps 에서 0.4초면 다 데워진다. 클릭이 먼저 오면
+		# 남은 몫은 Main 이 원래대로 게으르게 읽는다.
+		for _k in 6:
+			if _warm_i >= _warm.size():
+				break
+			Assets.tex(_warm[_warm_i])
+			_warm_i += 1
 	if _done or _tap_on:
 		return
 	_t += delta
