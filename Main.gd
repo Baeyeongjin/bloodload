@@ -10433,27 +10433,27 @@ func on_foe_meteor(f: Foe) -> void:
 # 시차가 조합을 "연출"로 만든다 — 폭발이 먼저, 파편·불기둥이 반 박자 뒤.
 const SLAM_FX := {
 	"wraith_knight": [
-		["fx_slam_wraith_knight", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_wraith_knight", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"gargoyle": [
-		["fx_slam_gargoyle", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_gargoyle", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"sanctum_guardian": [
-		["fx_slam_sanctum_guardian", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_sanctum_guardian", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"frost_golem": [
-		["fx_slam_frost_golem", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_frost_golem", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"eye_mass": [
-		["fx_slam_eye_mass", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_eye_mass", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"dark_knight": [
-		["fx_slam_dark_knight", 0.0, -34.0, 2.2, 18.0, null, 0.0]],
+		["fx_slam_dark_knight", 0.0, 0.0, 2.2, 18.0, null, 0.0]],
 	"blood_queen": [
-		["fx_slam_blood_queen", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_blood_queen", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"bone_choir": [
-		["fx_slam_bone_choir", 0.0, -32.0, 2.2, 18.0, null, 0.0]],
+		["fx_slam_bone_choir", 0.0, -12.0, 2.2, 18.0, null, 0.0]],
 	"butcher": [
-		["fx_slam_butcher", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_butcher", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"plague_hag": [
-		["fx_slam_plague_hag", 0.0, -30.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_plague_hag", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 	"ruin_warden": [
-		["fx_slam_ruin_warden", 0.0, -32.0, 2.0, 18.0, null, 0.0]],
+		["fx_slam_ruin_warden", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
 }
 # 표에 없는 보스·중간보스 — 중립 파편 + 충격파.
 const SLAM_FX_DEFAULT := [
@@ -10478,7 +10478,16 @@ func _slam_wave(at_x: float, r: float, key: String) -> void:
 func _slam_fx_one(at_x: float, e: Array) -> void:
 	var n := _anim_fx(str(e[0]), Vector2(at_x + float(e[1]),
 		ground_y + float(e[2])), float(e[4]), float(e[3]), "burst")
-	if n and e[5] != null:
+	if n == null:
+		return
+	# **원점을 잉크 아래끝에 앉힌다** — 가운데 원점이면 burst 가 크기를
+	# 키웠다 줄일 때마다 밑단이 오르내려서, 잉크가 아래쪽에 몰린 그림(촉수)
+	# 은 지면을 뚫었다(사장님이 빨간 줄로 잡았다). offset 은 로컬 좌표라
+	# 스케일이 뭘 하든 밑단은 ground_y 에 박힌다 — _anim_fx 의 rise/fall
+	# 이 쓰는 그 문법이다.
+	n.offset = Vector2(0.0, -32.0
+		+ Assets.bottom_pad("res://assets/anim/%s" % str(e[0])))
+	if e[5] != null:
 		n.modulate = e[5]
 
 
