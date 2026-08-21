@@ -10340,38 +10340,49 @@ func _foe_slam_fx(f: Foe) -> void:
 	wave.z_index = 4
 	add_child(wave)
 	var st := {"p": 0.0}
+	# **도트로 그린다**(사장님 2026-08-20: "도트 느낌으로"). 매끈한 원·호는 이
+	# 게임에서 혼자 벡터라 이질적이다 — 화면의 모든 도트가 4px(원본 2px x2배)
+	# 이므로 같은 격자에 스냅한 사각형으로만 그린다.
+	var DOT := 4.0
 	wave.draw.connect(func() -> void:
 		var p: float = st["p"]
-		# 전선은 판정보다 한 발 먼저 닿는다 — 그림이 늦으면 "안 닿았는데
-		# 맞았다"로 읽힌다. 반대는 괜찮다(예고가 이미 범위를 보여 줬다).
 		var front: float = r * minf(1.0, p * 1.15)
 		var fade: float = 1.0 - p * p
-		# 1) 지면 섬광 — 세로를 0.22 로 눌러 낮게 깔린 타원. 테두리 호가
-		#    퍼지는 전선이다.
-		wave.draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.22))
-		wave.draw_circle(Vector2.ZERO, front,
-			Color(core.r, core.g, core.b, 0.26 * fade))
-		wave.draw_arc(Vector2.ZERO, front, 0.0, TAU, 40,
-			Color(core.r, core.g, core.b, 0.9 * fade), 3.0)
-		wave.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		# 2) 가시 — 전선이 지나간 슬롯(반경의 1/4 간격)에서 솟는다. 시차가
-		#    "퍼져나간다"를 만든다. 바깥일수록 작아져 힘이 빠지는 게 보인다.
-		for i in 4:
-			var sx: float = r * (0.25 + 0.25 * float(i))
-			if front < sx:
-				continue
-			var grow: float = clampf((front - sx) / (r * 0.2), 0.0, 1.0)
-			var h: float = (26.0 - 4.0 * float(i)) * grow
-			for side in [-1.0, 1.0]:
-				var x: float = sx * side
-				wave.draw_colored_polygon(PackedVector2Array([
-					Vector2(x - 5.0, 0.0), Vector2(x + 5.0, 0.0),
-					Vector2(x + side * 2.0, -h)]),
-					Color(edge.r, edge.g, edge.b, 0.9 * fade))
-				wave.draw_colored_polygon(PackedVector2Array([
-					Vector2(x - 2.0, 0.0), Vector2(x + 2.0, 0.0),
-					Vector2(x + side * 1.0, -h * 0.8)]),
-					Color(core.r, core.g, core.b, 0.95 * fade)))
+		var fx_: float = floorf(front / DOT) * DOT   # 전선을 격자에 스냅
+		for side in [-1.0, 1.0]:
+			# 1) 전선 스파크 — 전선 자리에 세로 두 단. 달리는 파도의 머리다.
+			var ex: float = fx_ * side
+			wave.draw_rect(Rect2(ex - DOT * 0.5, -DOT * 2.0, DOT, DOT * 2.0),
+				Color(core.r, core.g, core.b, 0.95 * fade))
+			wave.draw_rect(Rect2(ex - DOT * 0.5, -DOT * 3.0, DOT, DOT),
+				Color(1.0, 1.0, 1.0, 0.7 * fade))
+			# 2) 지면 잔광 — 착지점에서 전선까지 점점이 도트 줄(두 칸 간격).
+			#    꽉 채우면 띠가 되어 벡터처럼 보인다 — 성긴 게 도트 문법이다.
+			var cell: float = DOT * 2.0
+			var n: int = int(fx_ / cell)
+			for k in range(1, n + 1):
+				var gx: float = float(k) * cell * side
+				wave.draw_rect(Rect2(gx - DOT * 0.5, -DOT, DOT, DOT),
+					Color(edge.r, edge.g, edge.b,
+						(0.55 - 0.3 * float(k) / maxf(1.0, float(n))) * fade))
+			# 3) 가시 — 계단 피라미드(폭 3칸 -> 1칸). 전선이 지나간 슬롯에서
+			#    시차를 두고 솟는다. 삼각형이 아니라 **계단**이라야 도트다.
+			for i2 in 4:
+				var sx: float = r * (0.25 + 0.25 * float(i2))
+				if front < sx:
+					continue
+				var grow: float = clampf((front - sx) / (r * 0.2), 0.0, 1.0)
+				var steps: int = int(round((4.0 - float(i2) * 0.5) * grow))
+				var bx: float = floorf(sx * side / DOT) * DOT
+				for st2 in steps:
+					var w2: float = DOT * maxf(1.0, 3.0 - float(st2))
+					wave.draw_rect(Rect2(bx - w2 * 0.5,
+						-DOT * float(st2 + 1), w2, DOT),
+						Color(edge.r, edge.g, edge.b, 0.9 * fade))
+				if steps > 1:
+					wave.draw_rect(Rect2(bx - DOT * 0.5,
+						-DOT * float(steps), DOT, DOT * float(steps - 1)),
+						Color(core.r, core.g, core.b, 0.95 * fade)))
 	# 트윈은 wave 소속 — Main 소속이면 wave 가 먼저 죽었을 때 freed 노드를
 	# 계속 만진다(다시 굴리기 크래시와 같은 자리).
 	var tw := wave.create_tween()
