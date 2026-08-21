@@ -81,6 +81,7 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	is_midboss = bool(tier.get("midboss", false))
 	display_name = "%s%s" % [str(tier.get("name_prefix", "")), str(tier.get("name", key))]
 	hp_mult = float(tier.get("hp_mult", 1.0))
+	_sp = FoeTiers.special_kind(key)
 	body_scale = float(tier.get("size", 1.0))
 	# 보스·중간보스는 한 마리로 단계를 막는다.
 	max_hp = FoeTiers.foe_hp(hp_mult, power, boss, is_midboss)
@@ -184,9 +185,14 @@ func _process(delta: float) -> void:
 # 전투가 안 보인다. 예고는 "지금 피해야 한다"를 말하는 것이고, 그게 매 순간이면
 # 아무 말도 아니다.
 const SPECIAL_EVERY := 3       # 세 번째 스윙마다
+# 예고·피해·사거리·타수는 **보스마다 다르다**(FoeTiers.SPECIAL_KIND,
+# 2026-08-20 사장님 "고유 패턴"). 아래 상수는 기본형(내려찍기)의 값이자
+# 검사·문서가 참조하는 기준점이다.
 const SPECIAL_TELL := 0.85     # 멈춰서 예고하는 시간
 const SPECIAL_REACH := 1.7     # 착탄 범위 배수 — 원 크기가 그대로 이 값이다
 const SPECIAL_DMG := 2.4       # 피해 배수. 대신 원 밖으로 나가면 통째로 빗나간다
+var _sp: Array = FoeTiers.SPECIAL_DEFAULT   # 이 몹의 기전 [예고,피해,사거리,타수]
+var _echo_hit_t := -1.0        # 2연격의 두 번째 타까지 남은 시간
 # [개발 도구] `--tell` 이 켠다. 매 스윙을 특수로 만들어 **예고판을 화면에 고정**한다.
 # 왜 필요한가: 예고는 0.85초고 주기는 세 스윙마다라, 캡처 시각을 맞추는 것이 사실상
 # 도박이다 — 실제로 6장을 흩뿌려 찍고 한 장도 못 잡았다(2026-08-06). 판 크기·기울기·
@@ -195,7 +201,7 @@ static var force_special := false
 
 
 func attack_mult() -> float:
-	return SPECIAL_DMG if special_swing else 1.0
+	return float(_sp[1]) if special_swing else 1.0
 
 
 # 이 스윙에서 피해가 들어갈 시각.
@@ -219,11 +225,14 @@ func _impact_at() -> float:
 # 오프라인은 "깼다"는데 실제로 돌리면 죽는다 — 조용히 갈라지는 종류라 여기서 맞춘다.
 #
 #   (평타 (n-1)번 + 특수 1번) / n
-static func avg_attack_mult(boss: bool, midboss: bool) -> float:
+# key 를 주면 그 보스의 기전(피해 x 타수)으로 계산한다 — 처형(4.0)과
+# 기습(2.0)은 하루가 다르다. 안 주면 기본형(내려찍기 2.4) 기준이다.
+static func avg_attack_mult(boss: bool, midboss: bool, key := "") -> float:
 	if not (boss or midboss):
 		return 1.0
+	var sp := FoeTiers.special_kind(key)
 	var n := float(SPECIAL_EVERY)
-	return ((n - 1.0) + SPECIAL_DMG) / n
+	return ((n - 1.0) + float(sp[1]) * float(sp[3])) / n
 
 
 # 지금 특수 패턴을 예고하는 중인가. 그리는 쪽(_draw_attack_tell)과 멈추는 쪽이
@@ -249,6 +258,15 @@ func _tick_attack(delta: float) -> void:
 		return
 	# **사거리 검사보다 먼저** 돌린다. 아래 검사에 걸려 빠져나가면 예고가 멈춘 채로
 	# 굳어서 보스가 영영 안 친다.
+	# 2연격의 두 번째 타 — 스윙 애니가 끝난 뒤에도 도착해야 하므로 스윙 밖에서
+	# 센다. 죽은 영웅·전투 이탈은 on_foe_attack 쪽 가드가 거른다.
+	if _echo_hit_t >= 0.0:
+		_echo_hit_t -= delta
+		if _echo_hit_t <= 0.0:
+			_echo_hit_t = -1.0
+			var main2 := get_parent()
+			if main2 and main2.has_method("on_foe_attack"):
+				main2.on_foe_attack(self)
 	if _tell_t >= 0.0:
 		_tell_t -= delta
 		if _tell_t <= 0.0:
@@ -269,6 +287,8 @@ func _tick_attack(delta: float) -> void:
 			var main := get_parent()
 			if main and main.has_method("on_foe_attack"):
 				main.on_foe_attack(self)
+			if special_swing and int(_sp[3]) > 1:
+				_echo_hit_t = 0.35
 		if _attack_anim >= ATTACK_DUR:
 			_attack_anim = -1.0
 		return
@@ -279,7 +299,7 @@ func _tick_attack(delta: float) -> void:
 		special_swing = (is_boss or is_midboss) \
 			and (force_special or _swing_n % SPECIAL_EVERY == 0)
 		if special_swing:
-			_tell_t = SPECIAL_TELL   # 멈춰서 예고부터. 스윙은 그 뒤에 나간다
+			_tell_t = float(_sp[0])   # 멈춰서 예고부터. 스윙은 그 뒤에 나간다
 			return
 		_attack_anim = 0.0
 		_impact_sent = false
@@ -389,7 +409,7 @@ func reach() -> float:
 	var base := _size() * 0.5 + 80.0
 	# 특수 패턴은 넓게 내려찍는다. **예고 중에도 같은 값을 쓴다** — 발밑에 그리는
 	# 원이 곧 이 값이라, 다르면 "원 밖인데 맞았다"가 된다.
-	return base * SPECIAL_REACH if special_swing else base
+	return base * float(_sp[2]) if special_swing else base
 
 
 # 특수 패턴 착탄 예고. **보스·중간보스가 멈춰 있는 동안에만** 발밑에 납작한 고리가

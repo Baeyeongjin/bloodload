@@ -51,14 +51,39 @@ const TIERS := {
 # 돌려쓰니까 고유 패턴 넣어주면 좋을듯" — 탭 UI 세트와 같은 결정이다).
 # [모양, 심 색, 테두리 색]. 표에 없는 키는 돌빛 파편(기본)으로 떨어진다 —
 # 중간보스·주간 보스까지 다 적으면 표가 로스터 사본이 된다.
+# **색은 보스 전용 아트에서 실측했다**(사장님 2026-08-20: "색조 분석해서
+# 통일성"). 임의 RGB 로 정했더니 아트와 어긋났다 — 다크 나이트는 진홍이
+# 아니라 상아 뼈 갑옷이고, 가고일은 주황이 아니라 검붉은 몸이다. 파동이
+# **자기 몸 색으로 터져야** 화면이 한 벌로 읽힌다. 값은 boss_N_walk/0.png
+# 의 채도 상위 무리(core=밝은 강조, edge=어두운 몸통).
 const SLAM_THEME := {
 	"sanctum_guardian": ["spike", Color(0.62, 0.88, 1.0), Color(0.30, 0.55, 0.95)],
-	"frost_golem": ["spike", Color(0.82, 0.96, 1.0), Color(0.45, 0.70, 0.95)],
-	"wraith_knight": ["wisp", Color(0.65, 1.0, 0.85), Color(0.18, 0.60, 0.48)],
-	"gargoyle": ["flame", Color(1.0, 0.80, 0.35), Color(0.90, 0.38, 0.12)],
-	"eye_mass": ["tendril", Color(0.85, 0.62, 1.0), Color(0.50, 0.26, 0.72)],
-	"dark_knight": ["slash", Color(1.0, 0.42, 0.48), Color(0.60, 0.10, 0.24)],
+	"frost_golem": ["spike", Color(0.63, 0.87, 0.93), Color(0.18, 0.41, 0.56)],
+	"wraith_knight": ["wisp", Color(0.80, 0.67, 0.44), Color(0.49, 0.37, 0.21)],
+	"gargoyle": ["flame", Color(0.62, 0.24, 0.20), Color(0.40, 0.13, 0.11)],
+	"eye_mass": ["tendril", Color(0.38, 0.21, 0.55), Color(0.22, 0.08, 0.37)],
+	"dark_knight": ["slash", Color(0.88, 0.83, 0.70), Color(0.47, 0.44, 0.36)],
 }
+
+
+# 특수 공격의 **기전** — 이펙트만 갈랐더니 규칙은 전부 같은 내려찍기였다
+# (사장님: "고유 패턴 작업 들어가자"). 예고·피해·사거리·타수를 가른다.
+#   [예고 초, 피해 배수, 사거리 배수, 타수]
+# 자동 전투라 상태이상은 안 넣는다(HANDOFF 8-1 닫힌 결정 — 둔화는 DPS
+# 한 줄이 된다). 가르는 축은 넷뿐이고 전부 이미 있는 수치 파이프라인이다.
+const SPECIAL_KIND := {
+	"wraith_knight": [0.45, 2.0, 1.7, 1],   # 기습 — 예고가 짧다, 반응할 틈이 없다
+	"gargoyle": [0.85, 2.4, 1.7, 1],        # 내려찍기 — 기본형(발밑 충격파 모션)
+	"frost_golem": [0.85, 1.3, 1.7, 2],     # 시간차 2연격 — 합계는 2.6
+	"eye_mass": [0.85, 2.2, 2.8, 1],        # 원거리 촉수 — 멀리서도 닿는다
+	"dark_knight": [1.30, 4.0, 1.7, 1],     # 처형 — 오래 모아서 크게 벤다
+	"sanctum_guardian": [0.85, 2.4, 1.7, 1],
+}
+const SPECIAL_DEFAULT := [0.85, 2.4, 1.7, 1]   # 표에 없는 보스·중간보스
+
+
+static func special_kind(key: String) -> Array:
+	return SPECIAL_KIND.get(key, SPECIAL_DEFAULT)
 
 
 static func slam_theme(key: String) -> Array:

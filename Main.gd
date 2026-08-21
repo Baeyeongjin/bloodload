@@ -14217,7 +14217,8 @@ func _offline_profile(at_stage: int) -> Dictionary:
 		# 보스·중간보스는 세 번에 한 번 특수 패턴으로 훨씬 아프게 친다. 평타 기준으로만
 		# 계산하면 오프라인이 실제보다 무르게 보고 "깼다"고 판정한다.
 		"damage": Balance.foe_damage(StageDefs.enemy_power(at_stage))
-			* Foe.avg_attack_mult(boss, midboss),
+			* Foe.avg_attack_mult(boss, midboss,
+				str(act["boss"]) if boss else ""),
 		"interval": Balance.foe_attack_interval(hp_mult),
 	}
 
