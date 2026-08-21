@@ -751,8 +751,75 @@ func upgrade_cost(key: String, level: int) -> float:
 	return Balance.upgrade_cost(level, s.get("base", 10.0), StatDefs.cost_exp(key))
 
 
+# ── 로딩 화면 ─────────────────────────────────────────────────────────────
+# 씬 조립(판 28개)을 프레임에 쪼개는 동안 진행 바를 보여 준다. 전면 어둠이
+# 입력도 같이 먹으므로(mouse_filter 기본 STOP) 반쯤 지어진 버튼은 못 누른다.
+# 헤드리스(검사)에서는 아예 안 짓는다 — 검사는 "두 프레임이면 _ready 가
+# 끝난다"를 전제하는데, 레이어가 없으면 _load_tick 이 await 없이 돌아와
+# _ready 가 예전처럼 한 번에 완주한다.
+var _load_layer: CanvasLayer = null
+var _load_fill: ColorRect = null
+
+
+func _build_loading() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	_load_layer = CanvasLayer.new()
+	_load_layer.layer = 100
+	add_child(_load_layer)
+	var box := Control.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_load_layer.add_child(box)
+	var dark := ColorRect.new()
+	dark.color = Color(0.02, 0.01, 0.03)
+	dark.size = Vector2(Grid.BG)
+	box.add_child(dark)
+	var lbl := Label.new()
+	lbl.theme = Type.theme()
+	lbl.text = "피를 깨우는 중..."
+	lbl.add_theme_color_override("font_color", Color(0.78, 0.62, 0.66))
+	lbl.size = Vector2(float(Grid.BG.x), 30.0)
+	lbl.position = Vector2(0.0, float(Grid.BG.y) * 0.56)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(lbl)
+	var frame := ColorRect.new()
+	frame.color = Color(0.13, 0.05, 0.08)
+	frame.size = Vector2(240.0, 10.0)
+	frame.position = Vector2(float(Grid.BG.x) * 0.5 - 120.0,
+		float(Grid.BG.y) * 0.56 + 44.0)
+	box.add_child(frame)
+	_load_fill = ColorRect.new()
+	_load_fill.color = Color(0.66, 0.14, 0.18)
+	_load_fill.position = frame.position + Vector2(2.0, 2.0)
+	_load_fill.size = Vector2(0.0, 6.0)
+	box.add_child(_load_fill)
+
+
+# 진행 바를 p 까지 채우고 한 프레임 쉰다 — 이 쉼이 로딩 화면을 그리게 한다.
+func _load_tick(p: float) -> void:
+	if _load_layer == null:
+		return
+	_load_fill.size.x = 236.0 * clampf(p, 0.0, 1.0)
+	await get_tree().process_frame
+
+
+func _load_done() -> void:
+	if _load_layer == null:
+		return
+	_load_fill.size.x = 236.0
+	var layer := _load_layer
+	var box: Control = layer.get_child(0)
+	_load_layer = null          # 치트키 가드도 여기서 풀린다
+	var tw := create_tween()
+	tw.tween_property(box, "modulate:a", 0.0, 0.25).set_delay(0.05)
+	tw.tween_callback(layer.queue_free)
+
+
 func _ready() -> void:
 	randomize()
+	set_process(false)      # 조립 중 _process 는 아직 없는 노드를 만진다
+	_build_loading()
+	await _load_tick(0.05)
 	var args := OS.get_cmdline_user_args()
 	var preview_stage := 0
 	for arg in args:
@@ -760,7 +827,7 @@ func _ready() -> void:
 			_dev_weak = DEV_WEAK_MULT
 		if arg.begins_with("--stage="):
 			preview_stage = StageDefs.parse(arg.trim_prefix("--stage="))
-	_build_scene()
+	await _build_scene()
 	_load_game()
 	if preview_stage > 0:
 		stage = preview_stage
@@ -1199,6 +1266,8 @@ func _ready() -> void:
 			_walk_only = true
 			for f in get_tree().get_nodes_in_group("foes"):
 				f.queue_free()
+	set_process(true)
+	_load_done()
 	if "--autoshot" in args:
 		_autoshot()
 
@@ -1285,17 +1354,20 @@ func _build_scene() -> void:
 	_lbl_life.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lbl_life.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# 콘텐츠 창 — 탭으로 하나만 띄운다. 세로 화면에서 전부 펼치면 전투가 안 보인다.
-	_build_panels()
+	await _load_tick(0.15)
+	await _build_panels()
 	_build_goal_widget()
 	_build_chest()
 	_build_tabbar()
 	# 임무판·도감판은 맨 나중 — 팝업이라 모든 창 위에 그려져야 한다.
 	# 도감을 _build_panels 안에서 지었더니 탭바보다 먼저 붙어 어둠막이 하단
 	# 탭을 못 덮었다(실측 캡처).
+	await _load_tick(0.85)
 	_build_quests()
 	_build_codex_view()
 	_build_oath_view()
 	_build_dialogs()
+	await _load_tick(0.95)
 	# 창이 뜰 때의 반응을 **한 곳에서** 건다(사장님: "모든 창들 띄울 때 애니메이션").
 	# `visible` 을 켜는 자리가 34곳이라 호출부마다 넣으면 하나씩 빠진다 — Ui.pop_in
 	# 은 켜지는 순간을 시그널로 잡으므로 여기서 한 번만 걸면 된다.
@@ -2086,11 +2158,17 @@ func _build_panels() -> void:
 		_hud_root.add_child(c)
 		_panels[name] = c
 	_build_growth(_panels["growth"])
+	await _load_tick(0.27)
 	_build_gear(_panels["gear"])
+	await _load_tick(0.38)
 	_build_gacha(_panels["summon"])
+	await _load_tick(0.48)
 	_build_shop(_panels["shop"])
+	await _load_tick(0.58)
 	_build_raids(_panels["raid"])
+	await _load_tick(0.68)
 	_build_pet(_panels["pet"])
+	await _load_tick(0.76)
 
 
 # 창 안 라벨. _mk_label 은 HUD 루트에 붙지만 창 안 글씨는 창과 같이 숨어야 한다.
@@ -4275,6 +4353,8 @@ var _dev_weak := 1.0
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _load_layer != null:
+		return          # 조립 중 치트키는 반쯤 지어진 판을 만진다
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
 		return
