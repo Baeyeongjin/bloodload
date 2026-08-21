@@ -1,5 +1,33 @@
 class_name IapDefs
 
+# **결제 SDK 전 테스트 모드** (2026-08-20, 사장님: "결제 연결 안 했으니 다
+# 살 수 있도록"). 켜져 있으면 상점의 모든 구매 버튼이 눌리고 누르는 즉시
+# 지급된다 — 돈은 안 나간다. SDK 를 붙이는 날 이 한 줄을 false 로.
+const DEV_FREE := true
+
+# 달성 타임세일 (사장님: "레벨 달성하면 싸게 살 수 있는 거") — 구간을
+# 처음 밟는 순간 열리고 24시간 뒤 닫힌다. **달성의 상장**이라 정가 팩과
+# 달리 할인가가 붙는다. 놓치면 그만 — 그 아까움이 타임세일의 동력이다.
+const FLASH_HOURS := 24
+const FLASH := [
+	{"id": "flash_25", "at": 25, "name": "동굴 개방 기념", "price": 1100,
+		"orig": 3300, "reward": {"gem": 300.0, "ticket_weapon": 5.0}},
+	{"id": "flash_50", "at": 50, "name": "성소 개방 기념", "price": 3300,
+		"orig": 11000, "reward": {"gem": 600.0, "ticket_skill": 10.0}},
+	{"id": "flash_80", "at": 80, "name": "제단 개방 기념", "price": 5500,
+		"orig": 16500, "reward": {"gem": 900.0, "oath_card": 10.0}},
+	{"id": "flash_120", "at": 120, "name": "심연 돌파 기념", "price": 11000,
+		"orig": 33000, "reward": {"gem": 1500.0, "ticket_trinket": 15.0,
+			"oath_gold": 3.0}},
+]
+
+
+static func flash_of(id: String) -> Dictionary:
+	for x in FLASH:
+		if str(x["id"]) == id:
+			return x
+	return {}
+
 # 과금 상품 (MONETIZATION_PLAN 5장). **결제 SDK 는 아직 없다** — 표와 진열
 # 화면까지 만들고 구매 버튼은 잠가 둔다(사장님 결정). SDK 가 붙으면 _buy 훅
 # 하나만 이어면 되도록, 지급 내용을 여기 데이터로 적어 둔다.

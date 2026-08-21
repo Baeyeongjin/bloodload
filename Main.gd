@@ -5980,6 +5980,40 @@ var pass_points := 0
 var pass_free_got := {}     # 단계 -> true (무료 줄 수령)
 var pass_paid_got := {}     # 단계 -> true (유료 줄 수령)
 var pass_season := -1       # 지금 굴러가는 시즌 번호 (PassDefs.season_of)
+var flash_open := {}        # 달성 세일 id -> 만료 유닉스 시각 (지나면 닫힘)
+var flash_bought := {}      # 산 것 — 세일은 계정당 1회다
+
+
+# 구간을 처음 밟는 순간 그 구간의 세일이 열린다(24시간). _advance_stage 가
+# best_stage 를 올린 직후 부른다 — 여기 말고 다른 갱신 경로는 없다.
+# _advance_stage 초입에서 부르면 best_stage 갱신 전이라 한 구간 늦는다 —
+# 다음 프레임으로 미룬다(그 사이 best_stage 는 이미 올라 있다).
+func _flash_roll_later() -> void:
+	call_deferred("_flash_roll")
+
+
+func _flash_roll() -> void:
+	for f in IapDefs.FLASH:
+		var id := str(f["id"])
+		if best_stage >= int(f["at"]) and not flash_open.has(id) \
+				and not flash_bought.has(id):
+			flash_open[id] = Time.get_unix_time_from_system() \
+				+ IapDefs.FLASH_HOURS * 3600.0
+
+
+func _flash_left(id: String) -> float:
+	return float(flash_open.get(id, 0.0)) - Time.get_unix_time_from_system()
+
+
+func _flash_buy(id: String) -> void:
+	var f := IapDefs.flash_of(id)
+	if f.is_empty() or flash_bought.has(id) or _flash_left(id) <= 0.0:
+		return
+	flash_bought[id] = true
+	flash_open.erase(id)
+	_iap_grant(f["reward"], str(f["name"]))
+	_refresh_shop()
+	_save_game()
 
 
 # 시즌이 넘어갔으면 트랙을 새로 연다(2026-08-20, 사장님 "시즌 배틀패스").
@@ -7098,7 +7132,7 @@ func _boon(kind: String) -> float:
 # 붙는 자리라 한쪽만 곱하면 화면에 적힌 수와 실제 들어오는 양이 갈린다.
 # 부르는 곳이 넷이다: 소탕 지급 · 격파 지급 · 상세판 표시 · 목록 표시.
 func _raid_gain(kind: String, n: int) -> float:
-	return RaidDefs.reward(kind, n) * (1.0 + _boon("raid"))
+	return RaidDefs.reward(kind, n, best_stage) * (1.0 + _boon("raid"))
 
 
 # 이번 주의 열쇠 — 가장 가까운 지난 월요일. 날짜만 쓰므로 시간대 경계의 몇 시간
@@ -7714,11 +7748,42 @@ func _shop_wcard(parent: Control, y: float, name: String, icon_path: String,
 # 특가: 리본 + 성장 패키지 카드. **구매 버튼은 잠가 둔다** — 결제 SDK 가 아직
 # 없다(사장님 결정: 표와 화면까지). SDK 가 붙으면 ghost 버튼의 pressed 만 잇는다.
 func _build_shop_packs(view: Control) -> void:
+	# 달성 세일이 맨 위 — "네가 해낸 것"의 상장이라 날짜 로테이션(오늘의
+	# 특가)보다 개인적이다. 열린 것만 진열하고 24시간이 지나면 사라진다.
+	var ftop := 0.0
+	for f in IapDefs.FLASH:
+		var fid := str(f["id"])
+		if _flash_left(fid) <= 0.0 or flash_bought.has(fid):
+			continue
+		if ftop == 0.0:
+			_shop_ribbon(view, 0.0, "달성 세일 — 24시간")
+			ftop = 63.0
+		var fr: Dictionary = f["reward"]
+		var ficon := ""
+		var fpills: Array = []
+		for k in fr:
+			if ficon == "":
+				ficon = _shop_kind_icon(str(k))
+			if fpills.size() < 3:
+				fpills.append([_shop_kind_icon(str(k)), _n(float(fr[k]))])
+		var fc := _shop_wcard(view, ftop, str(f["name"]),
+			ficon, int(round(100.0 * (1.0 - float(f["price"]) / float(f["orig"])))))
+		for j in fpills.size():
+			_shop_pill(fc["root"], Vector2(150.0 + float(j) * 114.0, 60.0),
+				str(fpills[j][0]), str(fpills[j][1]))
+		var hrs := int(ceil(_flash_left(fid) / 3600.0))
+		fc["sub"].text = "%s시간 남음 · 정가 %s" 			% [hrs, IapDefs.price_text(int(f["orig"]))]
+		fc["price"].text = IapDefs.price_text(int(f["price"]))
+		fc["btn"].disabled = not IapDefs.DEV_FREE
+		fc["btn"].pressed.connect(_flash_buy.bind(fid))
+		ftop += SHOP_WCARD_H + 10.0
+	if ftop > 0.0:
+		ftop += 4.0
 	# 오늘의 특가가 맨 위다 — 아래 성장팩은 구간이 열어 주는 상시 진열이라
 	# **기간제가 그 밑에 깔리면 기간제로 안 읽힌다**(사장님 2026-08-20).
-	_shop_ribbon(view, 0.0, "오늘의 특가 — 자정까지")
+	_shop_ribbon(view, ftop, "오늘의 특가 — 자정까지")
 	var ltd := IapDefs.limited_today(Time.get_date_string_from_system())
-	var top := 63.0
+	var top := ftop + 63.0
 	if not ltd.is_empty():
 		var lr: Dictionary = ltd["reward"]
 		var licon := ""
@@ -7735,7 +7800,7 @@ func _build_shop_packs(view: Control) -> void:
 				str(lpills[j][0]), str(lpills[j][1]))
 		lc["sub"].text = str(ltd["desc"])
 		lc["price"].text = IapDefs.price_text(int(ltd["price"]))
-		lc["btn"].disabled = true
+		lc["btn"].disabled = not IapDefs.DEV_FREE
 		top += SHOP_WCARD_H + 10.0
 	_shop_ribbon(view, top + 4.0, "성장 패키지 — 계정당 1회")
 	top += 67.0
@@ -7758,7 +7823,9 @@ func _build_shop_packs(view: Control) -> void:
 			_shop_pill(card["root"], Vector2(150.0 + float(j) * 114.0, 60.0),
 				str(pills[j][0]), str(pills[j][1]))
 		card["sub"].text = "계정당 1 / 1"
-		card["btn"].disabled = true
+		# SDK 전 테스트 모드 — 눌리면 즉시 지급(IapDefs.DEV_FREE 주석).
+		card["btn"].disabled = not IapDefs.DEV_FREE or iap_bought.has(str(it["id"]))
+		card["btn"].pressed.connect(_iap_buy.bind(str(it["id"])))
 		_pack_rows.append(card)
 	view.custom_minimum_size.y = top \
 		+ float(IapDefs.PACKS.size()) * (SHOP_WCARD_H + 10.0)
@@ -7783,7 +7850,8 @@ func _build_shop_subs(view: Control) -> void:
 		card["sub"].position.y = 58.0          # 알약 대신 설명 두 줄이 그 자리다
 		card["sub"].size.y = 40.0
 		card["price"].text = IapDefs.price_text(int(it["price"]))
-		card["btn"].disabled = true
+		card["btn"].disabled = not IapDefs.DEV_FREE
+		card["btn"].pressed.connect(_iap_buy.bind(str(it["id"])))
 		y += SHOP_WCARD_H + 10.0
 	_shop_ribbon(view, y + 4.0, "보석 충전 — 첫 구매 2배")
 	y += 67.0
@@ -7798,7 +7866,8 @@ func _build_shop_subs(view: Control) -> void:
 		card["amount"].text = _n(float(g["gem"]))
 		card["left"].text = "첫 구매 %s" % _n(float(g["gem"]) * IapDefs.FIRST_BUY_MULT)
 		card["price"].text = IapDefs.price_text(int(g["price"]))
-		card["btn"].disabled = true
+		card["btn"].disabled = not IapDefs.DEV_FREE
+		card["btn"].pressed.connect(_iap_buy.bind(str(g["id"])))
 	view.custom_minimum_size.y = y + 2.0 * (SHOP_VCARD_H + 10.0)
 
 
@@ -10786,7 +10855,8 @@ func _c_enemy_power() -> float:
 	if raid_on == "trial":
 		return StageDefs.enemy_power(TrialDefs.eq_stage(trial_stage + 1))
 	if raid_on != "":
-		return StageDefs.enemy_power(RaidDefs.eq_stage(_raid_stage(), raid_on))
+		return StageDefs.enemy_power(
+			RaidDefs.eq_stage(_raid_stage(), raid_on, best_stage))
 	return StageDefs.enemy_power(DungeonDefs.eq_stage(dungeon_floor)) if dungeon_on \
 		else StageDefs.enemy_power(stage)
 
@@ -10798,7 +10868,8 @@ func _c_act_data() -> Dictionary:
 		# 그 막의 보스가 시련의 얼굴이다 — 배경은 wide_raid_trial 이 따로 맡는다.
 		return StageDefs.act_data(TrialDefs.eq_stage(trial_stage + 1))
 	if raid_on != "":
-		return StageDefs.act_data(RaidDefs.eq_stage(_raid_stage(), raid_on))
+		return StageDefs.act_data(
+			RaidDefs.eq_stage(_raid_stage(), raid_on, best_stage))
 	return StageDefs.act_data(DungeonDefs.eq_stage(dungeon_floor) if dungeon_on else stage)
 
 
@@ -13090,6 +13161,7 @@ func _gain_exp(amount: float) -> void:
 
 
 func _advance_stage() -> void:
+	_flash_roll_later()
 	if _fade_t > 0.0:
 		return
 	_clear_foes()
@@ -13986,6 +14058,8 @@ func _save_game() -> void:
 	cfg.set_value("run", "blood15", true)
 	cfg.set_value("run", "achieve", achieve_got)
 	cfg.set_value("pass", "season", pass_season)
+	cfg.set_value("iap", "flash_open", flash_open)
+	cfg.set_value("iap", "flash_bought", flash_bought)
 	cfg.set_value("up", "buy_step", buy_step)
 	cfg.set_value("gear", "equipped", equipped)
 	cfg.set_value("gear", "inventory", gear_inventory)
@@ -14045,6 +14119,8 @@ func _load_game() -> void:
 	# **15분할 환급(아래)보다 먼저** 해야 한다 — 그 환급은 새 단위로 나온다.
 	achieve_got = cfg.get_value("run", "achieve", {})
 	pass_season = int(cfg.get_value("pass", "season", -1))
+	flash_open = cfg.get_value("iap", "flash_open", {})
+	flash_bought = cfg.get_value("iap", "flash_bought", {})
 	var blood15: bool = cfg.has_section_key("run", "blood15")
 	if not blood15:
 		gold *= Balance.BLOOD_UNIT

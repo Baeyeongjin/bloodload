@@ -136,27 +136,33 @@ static func open_stage(kind: String) -> int:
 	return OPEN_STAGE
 # 등가 구간은 **그 던전이 열리는 구간**에서 출발한다 — 제단(40)이 동굴(20)과
 # 같은 세기로 시작하면 늦게 열리는 던전이 공짜가 된다.
-static func eq_stage(n: int, kind := "blood") -> int:
-	return mini(open_stage(kind) + (n - 1) * STEP_PER_STAGE, StageDefs.total_stages())
+# best 를 주면 **내 진행도를 따라 세진다** (2026-08-20, 사장님: "던전이
+# 너무 쉽다"). 고정 계단(open + 6/단계)만으로는 본편이 앞서갈수록 던전이
+# 공짜가 됐다 — 계단과 (내 최고 구간 - 15) 중 높은 쪽에서 출발한다.
+# -15 는 여유다: 막 열린 유저에게는 계단이 그대로이고, 앞서간 유저에게는
+# 제 화력 언저리의 판이 된다. 보상도 같은 등가 구간 시세라 따라 오른다.
+static func eq_stage(n: int, kind := "blood", best := 0) -> int:
+	var base := maxi(open_stage(kind), best - 15)
+	return mini(base + (n - 1) * STEP_PER_STAGE, StageDefs.total_stages())
 
 
 # 혈액 = 등가 구간 시세 400킬 분량. 정수 = 등가 구간 보스 3마리 분량.
 # 인장 = 도전 단계 선형(60 + 15/단계) — 혈맹 비용도 선형이라 나란히 간다.
 # 킬 수가 아니라 뭉치로 주는 이유: 판이 45초라 킬 시세로는 티가 안 난다.
-static func reward(kind: String, n: int) -> float:
+static func reward(kind: String, n: int, best := 0) -> float:
 	if kind == "blood":
 		# **KILL_WORTH 로 되나눈다.** 마리당 값이 3배가 됐는데(몹 체력 3배)
 		# 여기는 나눌 처치시간이 없어서 그대로 두면 뭉치가 3배가 된다 —
 		# 방치 수입은 `보상/처치시간` 이라 중립이지만 뭉치는 아니다.
 		# 뜻은 그대로 "등가 구간 400킬 분량의 시간"이다.
-		return StageDefs.gold_per_kill(eq_stage(n, kind)) * 400.0 			/ StageDefs.KILL_WORTH
+		return StageDefs.gold_per_kill(eq_stage(n, kind, best)) * 400.0 			/ StageDefs.KILL_WORTH
 	if kind == "pact":
 		return 60.0 + 15.0 * float(n - 1)
 	# 먹이 — 선형. 펫 레벨 비용(40 x 1.18^lv)이 지수라, 하루치(3판)로 초반은
 	# 몇 레벨씩 오르고 뒤로 갈수록 던전 단계를 밀어야 따라간다.
 	if kind == "hunt":
 		return 80.0 + 20.0 * float(n - 1)
-	return StageDefs.boss_essence(eq_stage(n, kind)) * 3.0
+	return StageDefs.boss_essence(eq_stage(n, kind, best)) * 3.0
 
 
 static func label(kind: String, n: int) -> String:
