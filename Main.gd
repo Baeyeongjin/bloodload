@@ -208,6 +208,10 @@ func _offline_cap_hours() -> float:
 # ── 칭호(TitleDefs) ────────────────────────────────────────────────────────
 # 딴 칭호의 집합. 조건은 기록의 순수 함수지만, "새로 땄다" 배너를 위해 저장한다.
 var titles_got := {}
+# 획득했지만 아직 안 본 칭호. 텍스트 배너 대신 도감 버튼의 알림점이 알린다
+# (사장님 2026-08-21: "알림 뜨는 거 없애고 점만 달아줘 — 받을 게 있구나
+# 생각이 드니까"). 칭호 소탭을 여는 순간 비운다.
+var titles_new := {}
 var _title_check_t := 0.0
 
 
@@ -259,13 +263,12 @@ func _tick_titles(delta: float) -> void:
 		if titles_got.has(id) or not TitleDefs.earned(id, state):
 			continue
 		titles_got[id] = true
+		titles_new[id] = true
 		_claim_title_milestones()
-		_offline_banner.text = "칭호 획득 — %s (%s +%d)" % [str(t["name"]),
-			TitleDefs.stat_name(str(t["stat"])), int(t["levels"])]
-		_offline_banner.add_theme_color_override("font_color", Color(0.92, 0.82, 0.62))
-		_offline_banner.visible = true
-		_offline_t = 5.0
 		_save_game()
+	# 로드 직후의 남은 알림도 이 1초 틱이 다시 켠다 — 갱신 경로가 하나다.
+	if _codex_dot:
+		_codex_dot.visible = not titles_new.is_empty()
 var play_time := 0.0
 
 # 성장 스탯 (골드로 올린다). 방치형은 이 숫자가 오르는 것 자체가 보상이다.
@@ -7362,6 +7365,7 @@ const QUEST_BAR_W := 190.0
 const QUEST_ROWS_H := 356.0
 var _quest_view: Control
 var _quest_dot: TextureRect
+var _codex_dot: TextureRect
 var _side_root: Control      # 오른쪽 바로가기 줄(임무·칭호) — 전면 판이 숨긴다
 var _raid_place: Label       # 도전 헤더 이름표·대사 — 소탭 따라 바뀐다
 var _raid_line: Label
@@ -7412,6 +7416,10 @@ func _build_quests() -> void:
 		TITLE_BTN_AT + Vector2(4.0, 4.0), 48.0)
 	_side_root.add_child(c_icon)
 	_nav_hover(t_btn, c_icon)
+	_codex_dot = Ui.icon("res://assets/ui/dot_alert.png",
+		TITLE_BTN_AT + Vector2(-4.0, -2.0), TAB_DOT)
+	_codex_dot.visible = false
+	_side_root.add_child(_codex_dot)
 	# 셋째 버튼 — **핏빛 계약**(사장님: 언제든 돌리는 상시 아이콘). 카드가 차
 	# 있으면 붉게 고동친다(_refresh_oath) — "지금 굴릴 수 있다"가 눈에 밟히게.
 	var o_btn := Button.new()
@@ -14129,6 +14137,7 @@ func _save_game() -> void:
 	cfg.set_value("run", "dungeon_best", dungeon_best)
 	cfg.set_value("run", "traits", traits)
 	cfg.set_value("run", "titles", titles_got)
+	cfg.set_value("run", "titles_new", titles_new)
 	cfg.set_value("run", "title_worn", title_worn)
 	cfg.set_value("run", "hero_lv", hero_lv)
 	cfg.set_value("run", "hero_exp", hero_exp)
@@ -14260,6 +14269,7 @@ func _load_game() -> void:
 	for id in saved_titles:
 		if not TitleDefs.title(str(id)).is_empty():
 			titles_got[str(id)] = true
+	titles_new = cfg.get_value("run", "titles_new", {})
 	hero_lv = int(cfg.get_value("run", "hero_lv", 1))
 	hero_exp = float(cfg.get_value("run", "hero_exp", 0.0))
 	buy_step = int(cfg.get_value("up", "buy_step", 1))
@@ -14786,6 +14796,11 @@ func _codex_set_mode(mode: String) -> void:
 	if mode == "foe":
 		_refresh_codex()
 	elif mode == "title":
+		if not titles_new.is_empty():
+			titles_new.clear()
+			_save_game()
+		if _codex_dot:
+			_codex_dot.visible = false
 		_refresh_titles()
 	elif mode == "oath":
 		_refresh_oath_codex()
