@@ -10372,10 +10372,10 @@ func _foe_slam_fx(f: Foe) -> void:
 				if front < sx:
 					continue
 				var grow: float = clampf((front - sx) / (r * 0.2), 0.0, 1.0)
-				var steps: int = int(round((4.0 - float(i2) * 0.5) * grow))
+				var steps: int = int(round((7.0 - float(i2) * 1.0) * grow))
 				var bx: float = floorf(sx * side / DOT) * DOT
 				for st2 in steps:
-					var w2: float = DOT * maxf(1.0, 3.0 - float(st2))
+					var w2: float = DOT * maxf(1.0, 4.0 - float(st2) * 0.6)
 					wave.draw_rect(Rect2(bx - w2 * 0.5,
 						-DOT * float(st2 + 1), w2, DOT),
 						Color(edge.r, edge.g, edge.b, 0.9 * fade))
