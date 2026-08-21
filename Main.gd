@@ -10322,19 +10322,63 @@ func on_foe_attack(_foe: Foe) -> void:
 # 특수 패턴 착지 연출 — 발밑 얼음 충격파 + 착탄 범위 양끝의 크리스탈 가시.
 # **빗나가도 뜬다**(on_foe_attack 의 사거리 검사보다 앞) — 이건 몹의 공격 연출이지
 # 명중 연출이 아니다. 헛친 내려찍기가 조용하면 피한 보람도 화면에 없다.
+# **자산이 아니라 코드로 그린다**(사장님 ③, 2026-08-20). 스프라이트 이펙트는
+# 크기가 고정이라 착탄 범위(reach)와 안 맞았다 — 첫 판은 충격파가 몸을 감싸는
+# "번쩍"이 됐다(실측 캡처). 코드는 판정 반경을 그대로 그리므로
+# **보이는 범위 = 맞는 범위**가 항등이다. 그림: 바닥에 낮게 깔린 섬광이
+# 착탄 반경까지 퍼지고, 전선이 지나간 자리마다 크리스탈 가시가 솟는다.
+# 가시 높이 26px — 바닥 근처에만 그려서 전투 화면을 안 가린다(VFX 원칙).
 func _foe_slam_fx(f: Foe) -> void:
-	var at := Vector2(f.position.x, ground_y - 14.0)
-	# 수호자는 정수 크리스탈(사장님 픽: ice_slam + ice_spike). 다른 보스는
-	# 중립 충격파 — 얼음을 화염 보스(가고일)에게 띄우면 그게 새 어색함이다.
-	var icy := f.key == "sanctum_guardian"
-	_anim_fx("vfx_ice_slam" if icy else "vfx_boom_05", at, 14.0, 1.6, "burst")
-	# 가시·파편은 원 판정의 양끝에 — reach() 가 특수 스윙 중이라 이미 1.7배다.
-	# 범위 표시가 곧 이 두 개다: "어디까지 맞는지"가 화면에 그려진다.
 	var r := f.reach()
-	for side in [-1.0, 1.0]:
-		_anim_fx("vfx_ice_spike" if icy else "fx_rocks",
-			Vector2(f.position.x + r * side * 0.8, ground_y - 12.0),
-			12.0, 1.2 if icy else 0.8, "burst")
+	# 수호자는 정수 크리스탈 색, 다른 보스는 돌·흙 색 — 얼음을 화염 보스
+	# (가고일)에게 띄우면 그게 새 어색함이다. 모양은 같고 색만 다르다.
+	var icy := f.key == "sanctum_guardian"
+	var core := Color(0.62, 0.88, 1.0) if icy else Color(0.95, 0.78, 0.45)
+	var edge := Color(0.30, 0.55, 0.95) if icy else Color(0.55, 0.40, 0.28)
+	var wave := Node2D.new()
+	wave.position = Vector2(f.position.x, ground_y)
+	wave.z_index = 4
+	add_child(wave)
+	var st := {"p": 0.0}
+	wave.draw.connect(func() -> void:
+		var p: float = st["p"]
+		# 전선은 판정보다 한 발 먼저 닿는다 — 그림이 늦으면 "안 닿았는데
+		# 맞았다"로 읽힌다. 반대는 괜찮다(예고가 이미 범위를 보여 줬다).
+		var front: float = r * minf(1.0, p * 1.15)
+		var fade: float = 1.0 - p * p
+		# 1) 지면 섬광 — 세로를 0.22 로 눌러 낮게 깔린 타원. 테두리 호가
+		#    퍼지는 전선이다.
+		wave.draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.22))
+		wave.draw_circle(Vector2.ZERO, front,
+			Color(core.r, core.g, core.b, 0.26 * fade))
+		wave.draw_arc(Vector2.ZERO, front, 0.0, TAU, 40,
+			Color(core.r, core.g, core.b, 0.9 * fade), 3.0)
+		wave.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# 2) 가시 — 전선이 지나간 슬롯(반경의 1/4 간격)에서 솟는다. 시차가
+		#    "퍼져나간다"를 만든다. 바깥일수록 작아져 힘이 빠지는 게 보인다.
+		for i in 4:
+			var sx: float = r * (0.25 + 0.25 * float(i))
+			if front < sx:
+				continue
+			var grow: float = clampf((front - sx) / (r * 0.2), 0.0, 1.0)
+			var h: float = (26.0 - 4.0 * float(i)) * grow
+			for side in [-1.0, 1.0]:
+				var x: float = sx * side
+				wave.draw_colored_polygon(PackedVector2Array([
+					Vector2(x - 5.0, 0.0), Vector2(x + 5.0, 0.0),
+					Vector2(x + side * 2.0, -h)]),
+					Color(edge.r, edge.g, edge.b, 0.9 * fade))
+				wave.draw_colored_polygon(PackedVector2Array([
+					Vector2(x - 2.0, 0.0), Vector2(x + 2.0, 0.0),
+					Vector2(x + side * 1.0, -h * 0.8)]),
+					Color(core.r, core.g, core.b, 0.95 * fade)))
+	# 트윈은 wave 소속 — Main 소속이면 wave 가 먼저 죽었을 때 freed 노드를
+	# 계속 만진다(다시 굴리기 크래시와 같은 자리).
+	var tw := wave.create_tween()
+	tw.tween_method(func(v: float) -> void:
+		st["p"] = v
+		wave.queue_redraw(), 0.0, 1.0, 0.45) 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(wave.queue_free)
 	_shake_combat(4.0)
 
 
