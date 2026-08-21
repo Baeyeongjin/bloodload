@@ -98,7 +98,14 @@ func _init() -> void:
 	boss_tier["anim_key"] = "boss_1"
 	var boss := Foe.new()
 	boss.setup(boss_tier, 1.0, 1.0, true)
-	assert(boss._walk_frames.size() == 5, "boss_1_walk이 보스에 연결되지 않았다")
+	# 장수를 박아 두지 않는다 — 5로 적어 뒀다가 걷기를 9장으로 다시 뽑자
+	# 연결은 멀쩡한데 검사만 죽었다(2026-08-20). 뜻은 "전용 walk 이 붙었나"다:
+	# 비어 있지 않고, 실제 폴더의 장수와 같으면 연결된 것이다.
+	var walk_n := DirAccess.get_files_at("res://assets/anim/boss_1_walk").size() / 2
+	assert(boss._walk_frames.size() > 0
+		and boss._walk_frames.size() == walk_n,
+		"boss_1_walk이 보스에 연결되지 않았다 (%d/%d)"
+		% [boss._walk_frames.size(), walk_n])
 	# 보스 전용 attack 은 자산이 없으면 원본 몹 것으로 **조용히** 떨어진다 — 화면상
 	# 티가 안 나므로 프레임 수로 구분한다(보스 9장 vs 원본 몹 7장).
 	assert(boss._attack_frames.size()
