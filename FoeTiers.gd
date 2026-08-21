@@ -63,6 +63,12 @@ const SLAM_THEME := {
 	"gargoyle": ["flame", Color(0.62, 0.24, 0.20), Color(0.40, 0.13, 0.11)],
 	"eye_mass": ["tendril", Color(0.38, 0.21, 0.55), Color(0.22, 0.08, 0.37)],
 	"dark_knight": ["slash", Color(0.88, 0.83, 0.70), Color(0.47, 0.44, 0.36)],
+	# 주간 보스 4종 + 시련 (2026-08-20 사장님). 색은 스프라이트 실측.
+	"blood_queen": ["pool", Color(0.67, 0.22, 0.39), Color(0.38, 0.02, 0.17)],
+	"bone_choir": ["ring", Color(0.72, 0.58, 0.66), Color(0.36, 0.23, 0.31)],
+	"butcher": ["slash", Color(0.53, 0.15, 0.27), Color(0.36, 0.04, 0.15)],
+	"plague_hag": ["wisp", Color(0.44, 0.75, 0.19), Color(0.14, 0.38, 0.19)],
+	"ruin_warden": ["spike", Color(0.55, 0.72, 0.06), Color(0.26, 0.46, 0.03)],
 }
 
 
@@ -84,8 +90,24 @@ const SPECIAL_KIND := {
 	"eye_mass": [0.85, 2.2, 2.8, 1, ""],
 	"dark_knight": [1.30, 4.0, 1.7, 1, ""],
 	"sanctum_guardian": [0.85, 2.4, 1.7, 1, "jump"],
+	# 주간 보스 — 매주 얼굴이 바뀌는 자리라 넷이 서로도 달라야 한다.
+	"blood_queen": [0.70, 2.2, 1.7, 1, "dash"],   # 흡혈 — 벤 만큼 제 피를 채운다
+	"bone_choir": [0.85, 1.8, 3.2, 1, ""],        # 비명 — 판 끝까지 닿는 음파
+	"butcher": [0.70, 2.8, 1.7, 1, "dash"],       # 돌진 강타 — 여왕보다 둔하고 아프다
+	"plague_hag": [0.85, 2.0, 1.7, 1, "meteor"],  # 독 구슬 — 하늘에서 떨어진다
+	"ruin_warden": [1.00, 3.0, 1.9, 1, "jump"],   # 대지 격노 — 유적째로 내려찍는다
 }
 const SPECIAL_DEFAULT := [0.85, 2.4, 1.7, 1, ""]   # 표에 없는 보스·중간보스
+
+
+const METEOR_ART := {
+	"gargoyle": "vfx_fire_ball",
+	"plague_hag": "vfx_earth_ball",
+}
+
+
+static func meteor_art(key: String) -> String:
+	return METEOR_ART.get(key, "vfx_fire_ball")
 
 
 static func special_kind(key: String) -> Array:

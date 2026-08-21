@@ -10324,6 +10324,11 @@ func on_foe_attack(_foe: Foe) -> void:
 		* _trait_mult("guard") \
 		* (1.0 - clampf(_oath_val("armor"), 0.0, 0.9))
 	hero_hp = maxf(0.0, hero_hp - incoming)
+	# 피의 여왕 — 특수로 벤 만큼 제 피를 채운다(가한 피해의 절반). 표에 축을
+	# 늘리지 않고 여기 한 줄이다: 흡혈 보스는 하나뿐이고, 둘째가 생기면 그때
+	# 표로 올린다. 주간 보스는 누적 피해 콘텐츠라 회복이 벽이 되지 않는다.
+	if _foe.key == "blood_queen" and _foe.special_swing:
+		_foe.hp = minf(_foe.max_hp, _foe.hp + incoming * 0.5)
 	_pop_hero_damage(incoming)
 	_hero_flash_t = 0.10
 	_hero.self_modulate = Color(7, 7, 8)
@@ -10360,8 +10365,8 @@ func on_foe_meteor(f: Foe) -> void:
 	if _hero_dead or _phase != "fight":
 		return
 	var tx := hero_x
-	var ball := _anim_fx("vfx_fire_ball", Vector2(tx + 40.0, ground_y - 380.0),
-		12.0, 1.6, "burst")
+	var ball := _anim_fx(FoeTiers.meteor_art(f.key),
+		Vector2(tx + 40.0, ground_y - 380.0), 12.0, 1.6, "burst")
 	if ball == null:
 		return
 	ball.rotation_degrees = 115.0   # 낙하 방향으로 눕힌다 — 원본이 옆을 본다
@@ -10509,6 +10514,28 @@ func _slam_shape(cv: Node2D, shape: String, x: float, side: float, slot: int,
 			if h3 > 2:
 				cv.draw_rect(Rect2(x + side * DOT - DOT * 0.5,
 					-DOT * 2.0, DOT, DOT), cc)
+		"pool":
+			# 피 웅덩이 — 낮은 둔덕에서 방울이 튄다. 솟는 높이보다 **바닥의
+			# 넓이**가 이 모양의 말이다(여왕의 우아함 — 가시처럼 사납지 않다).
+			var pw: int = int(round((3.0 - float(slot) * 0.5) * grow))
+			for k in pw:
+				cv.draw_rect(Rect2(x - DOT * 1.5 + DOT * float(k), -DOT,
+					DOT, DOT), ec)
+			if pw > 1:
+				var bob: float = -DOT * (2.0 + float(int(p * 10.0) % 2))
+				cv.draw_rect(Rect2(x - DOT * 0.5, bob, DOT, DOT), cc)
+		"ring":
+			# 음파 고리 — ㄷ자 조각이 위로 떠 간다. 기둥이 아니라 **고리**라야
+			# 소리로 읽힌다(합창단).
+			var rh: int = int(round((4.0 - float(slot) * 0.5) * grow))
+			for k in rh:
+				var yy2: float = -DOT * float(k * 2 + 1)
+				cv.draw_rect(Rect2(x - DOT * 1.5, yy2, DOT, DOT),
+					cc if k == rh - 1 else ec)
+				cv.draw_rect(Rect2(x + DOT * 0.5, yy2, DOT, DOT),
+					cc if k == rh - 1 else ec)
+				if k == rh - 1:
+					cv.draw_rect(Rect2(x - DOT * 0.5, yy2 - DOT, DOT, DOT), cc)
 		_:
 			# 돌 파편 — 낮은 계단. 이름 없는 보스들의 기본값이라 수수하게.
 			var s4: int = int(round((4.0 - float(slot) * 0.5) * grow))

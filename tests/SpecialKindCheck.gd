@@ -21,6 +21,16 @@ func _init() -> void:
 		seen[str(sp2)] = true
 	assert(seen.size() >= 4, "막 보스 기전이 %d종뿐 — 돌려쓰고 있다" % seen.size())
 
+	# 주간 보스 4종 + 시련 — 매주 얼굴이 바뀌는 자리라 넷이 서로도 달라야 한다.
+	# 파동 테마도 함께: 표에 없으면 돌빛 기본값으로 떨어져 "또 그 파동"이 된다.
+	var wseen := {}
+	for k in ["blood_queen", "bone_choir", "butcher", "plague_hag",
+			"ruin_warden"]:
+		assert(FoeTiers.SPECIAL_KIND.has(k), "%s 가 기전 표에 없다" % k)
+		assert(FoeTiers.SLAM_THEME.has(k), "%s 가 파동 표에 없다" % k)
+		wseen[str(FoeTiers.special_kind(k))] = true
+	assert(wseen.size() >= 4, "주간 보스 기전이 %d종뿐" % wseen.size())
+
 	# 3) 평균 배수가 기전을 따라가는가 — 오프라인 판정이 이 값으로 계산한다.
 	var n := float(Foe.SPECIAL_EVERY)
 	assert(is_equal_approx(Foe.avg_attack_mult(true, false, "dark_knight"),
