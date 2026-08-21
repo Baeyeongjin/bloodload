@@ -4298,6 +4298,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_show_reward("검수 지급", [{"icon": "res://assets/ui/res_gem.png",
 			"label": "100구간", "sub": "전 콘텐츠 해금"}])
 		return
+	# Ctrl+H — **해금만**(재화·구간 점프 없음). Ctrl+G 는 재화를 쏟아서 검수
+	# 중 밸런스 체감이 망가진다 — 성소 수호자가 한 방에 죽어 패턴 구경도 못
+	# 했다(사장님). 자기 실제 화력으로 콘텐츠만 열어 본다.
+	if key.keycode == KEY_H and key.ctrl_pressed:
+		_dev_unlock(100)
+		_show_reward("검수 해금", [{"icon": "res://assets/ui/badge_promo.png",
+			"label": "전 콘텐츠", "sub": "재화·성장은 그대로"}])
+		return
 	if key.keycode != KEY_F9:
 		return
 	gem += CHEAT_GEMS
@@ -14306,12 +14314,21 @@ func _grant_offline(left_at: float) -> void:
 
 # [개발 도구] 검수 상태로 한 방에 — 명령줄 --god 과 게임 안 F8 이 같이 쓴다.
 # 세이브를 덮으므로 검수 전용이다.
-func _dev_god(want: int) -> void:
-	best_stage = clampi(want, 1, StageDefs.total_stages())
-	stage = best_stage
+# 해금만 — 재화·스탯은 안 건드린다. 자기 화력 그대로 콘텐츠를 연다.
+# 주의: best_stage 는 저장되므로 주간 보스·시련 세기도 그 구간을 따라간다
+# (Ctrl+G 와 같은 속성 — 검수용 저장에서 쓸 것).
+func _dev_unlock(want: int) -> void:
+	best_stage = maxi(best_stage, clampi(want, 1, StageDefs.total_stages()))
 	# 미궁은 개방 상한 안에서 최고 기록을 세워 둔다 — 혈맥·소탕이 열린다.
 	dungeon_best = maxi(dungeon_best,
 		maxi(0, DungeonDefs.open_floors(best_stage) - 1))
+	_refresh_hud()
+	_save_game()
+
+
+func _dev_god(want: int) -> void:
+	_dev_unlock(want)
+	stage = best_stage
 	gold = 1e12
 	essence = 1e9
 	gem = 1e6
