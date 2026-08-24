@@ -1264,6 +1264,9 @@ func _ready() -> void:
 		# 예고(0.85초)가 세 스윙마다 오므로 그냥 찍으면 잡히지 않는다.
 		if arg == "--tell":
 			Foe.force_special = true
+		# [개발 도구] --drop: 핏방울을 바로 떨어뜨려 자리·반짝임을 캡처한다.
+		if arg == "--drop":
+			_drop_t = 0.1
 		# [개발 도구] --walk: 무리를 치우고 계속 걷게 해 스크롤 이음매를 확인한다.
 		if arg == "--walk":
 			_walk_only = true
@@ -9084,6 +9087,7 @@ func _notify_stat(text: String) -> void:
 # ── 루프 ───────────────────────────────────────────────────────────────────
 func _process(delta: float) -> void:
 	play_time += delta
+	_drop_tick(delta)
 	if _slam_demo != "":
 		_slam_demo_t -= delta
 		if _slam_demo_t <= 0.0:
@@ -10352,6 +10356,106 @@ const HIT_SHAKE := 5.5      # 기본 타격. 2.0 은 "밀렸다" 정도라 맞�
 var _shake_cd := 0.0
 var _hitstop_cd := 0.0
 var _hitstop_frame := -1
+
+# ── 일일 수집물 "핏방울" ───────────────────────────────────────────────────
+# 전투 띠에 가끔 핏방울이 떨어지고 **탭하면 줍는다** (사장님 2026-08-24,
+# 방치형 레퍼런스 비교 ② "줍는 재미"). 임무·상자와 달리 "화면을 보고
+# 있어야 생기는" 보상이라 방치와 접속 사이를 메운다. 하루 20개 —
+# 다 주우면 보석 40(일일 임무 75의 반)이라 수급 곡선을 안 흔든다.
+const DROP_PER_DAY := 20
+const DROP_GEM := 2.0
+const DROP_LIFE := 25.0           # 안 주우면 사라진다 — 다음 방울이 곧 온다
+var drop_date := ""
+var drop_got := 0
+var _drop: Sprite2D = null
+var _drop_t := 12.0               # 첫 방울은 켜고 조금 있다가
+var _drop_life := 0.0
+
+
+func _drop_roll_day() -> void:
+	var today := Time.get_date_string_from_system()
+	if drop_date != today:
+		drop_date = today
+		drop_got = 0
+
+
+func _drop_tick(delta: float) -> void:
+	if _drop != null:
+		_drop_life -= delta
+		if _drop_life <= 0.0:
+			_drop_gone()
+		return
+	# 전면 판이 덮었거나 던전 안이면 안 떨어뜨린다 — 줍지 못할 방울은 없다.
+	if _tab in FULL_TABS or _in_raid():
+		return
+	_drop_roll_day()
+	if drop_got >= DROP_PER_DAY:
+		return
+	_drop_t -= delta
+	if _drop_t <= 0.0:
+		_drop_spawn()
+
+
+func _drop_spawn() -> void:
+	_drop = Sprite2D.new()
+	_drop.texture = Assets.tex("res://assets/ui/res_blood.png")
+	_drop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_drop.scale = Vector2(1.5, 1.5)
+	_drop.position = Vector2(randf_range(60.0, float(Grid.BG.x) - 60.0),
+		ground_y - 200.0)
+	_drop.z_index = 4
+	add_child(_drop)
+	_drop_life = DROP_LIFE
+	var tw := _drop.create_tween()
+	tw.tween_property(_drop, "position:y", ground_y - 20.0, 0.5) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BOUNCE)
+	# 착지 후 반짝임 — "저건 눌리는 것"이라는 신호는 이것 하나다.
+	var pulse := _drop.create_tween().set_loops()
+	pulse.tween_interval(0.5)
+	pulse.tween_property(_drop, "modulate", Color(1.6, 1.6, 1.6), 0.45)
+	pulse.tween_property(_drop, "modulate", Color(1, 1, 1), 0.45)
+
+
+# 수명이 다했다 — 조용히 사라진다. 놓친 걸 벌하지 않는다(다음 방울이 온다).
+func _drop_gone() -> void:
+	var d := _drop
+	_drop = null
+	_drop_t = randf_range(35.0, 75.0)
+	var tw := d.create_tween()
+	tw.tween_property(d, "modulate:a", 0.0, 0.4)
+	tw.tween_callback(d.queue_free)
+
+
+func _drop_take() -> void:
+	var d := _drop
+	_drop = null
+	drop_got += 1
+	_drop_t = randf_range(35.0, 75.0)
+	gem += DROP_GEM
+	# 혈액은 덤 — 지금 벌이의 2분치. 시세를 따로 두면 이 방울이 경제의
+	# 딴 주머니가 된다(시간 왜곡과 같은 원칙: 배급의 앞당김만 판다).
+	gold += blood_per_sec() * 120.0
+	_pop_number("+보석 %d" % int(DROP_GEM), d.position.x, d.position.y - 40.0,
+		Color(0.88, 0.66, 0.98), false, 1.0)
+	var tw := d.create_tween()
+	tw.set_parallel()
+	tw.tween_property(d, "scale", Vector2(2.4, 2.4), 0.22)
+	tw.tween_property(d, "modulate:a", 0.0, 0.22)
+	tw.chain().tween_callback(d.queue_free)
+	_refresh_hud()
+	_save_game()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# 핏방울 줍기 — HUD 가 안 먹은 클릭만 여기로 내려온다(터치는 마우스로
+	# 에뮬레이션되므로 마우스 하나만 본다).
+	var mb := event as InputEventMouseButton
+	if _drop == null or mb == null or not mb.pressed \
+			or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if mb.position.distance_to(_drop.position) < 48.0:
+		_drop_take()
+
 
 # ── 피해 숫자 ──────────────────────────────────────────────────────────────
 # **치명타 표시는 없다.** 치명타는 확률을 굴리지 않고 기댓값을 곱하는 결정론 축이라
@@ -14175,6 +14279,8 @@ func _save_game() -> void:
 	cfg.set_value("quest", "wgot", quest_wgot)
 	cfg.set_value("shop", "date", shop_date)
 	cfg.set_value("shop", "used", shop_used)
+	cfg.set_value("drop", "date", drop_date)
+	cfg.set_value("drop", "got", drop_got)
 	cfg.set_value("raid", "best", raid_best)
 	cfg.set_value("raid", "date", raid_date)
 	cfg.set_value("raid", "left", raid_left)
@@ -14384,6 +14490,8 @@ func _load_game() -> void:
 	_raid_roll_day()
 	shop_date = str(cfg.get_value("shop", "date", ""))
 	shop_used = cfg.get_value("shop", "used", {})
+	drop_date = str(cfg.get_value("drop", "date", ""))
+	drop_got = int(cfg.get_value("drop", "got", 0))
 	_shop_roll_day()
 	boss_week = str(cfg.get_value("boss", "week", ""))
 	boss_date = str(cfg.get_value("boss", "date", ""))
