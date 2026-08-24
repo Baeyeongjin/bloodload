@@ -98,7 +98,8 @@ func _init() -> void:
 		"이번 주 은총이 훅에 안 붙는다")
 	assert(is_equal_approx(scene._boon("없는종류"), 0.0), "모르는 종류에 값이 붙는다")
 	# 던전 보상은 **표시와 지급이 같은 함수**를 지나야 한다(_raid_gain).
-	var raw: float = RaidDefs.reward("blood", 1)
+	# 진행도 연동(best) 이후로는 지급과 같은 자(best_stage)로 재야 한다.
+	var raw: float = RaidDefs.reward("blood", 1, scene.best_stage)
 	var paid: float = scene._raid_gain("blood", 1)
 	assert(is_equal_approx(paid, raw * (1.0 + scene._boon("raid"))),
 		"던전 보상에 은총이 어긋나게 붙는다")

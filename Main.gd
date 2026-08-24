@@ -7526,18 +7526,8 @@ func _build_quests() -> void:
 	_boon_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_quest_view.add_child(_boon_root)
 	_boon_build(_boon_root)
-	var day_note := _panel_label(_quest_day_root,
-		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
-		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
-	day_note.text = "자정에 새로 온다"
-	var ach_note := _panel_label(_achieve_root,
-		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
-		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
-	ach_note.text = "지나온 거리에 한 번씩 — 새로 고쳐지지 않는다"
-	var week_note := _panel_label(_quest_week_root,
-		Vector2(x, QUEST_PANEL.position.y + QUEST_PANEL.size.y - 92.0),
-		Type.SIZE_SMALL, DUTY_DIM, w, 16.0)
-	week_note.text = "월요일마다 새로 온다"
+	# 판 하단의 갱신 주기 멘트("자정에 새로 온다" 들)는 사장님 지시로 전부
+	# 뺐다(2026-08-24) — 자리만 차지하는 잔소리였다.
 	var cap := Vector2(x + w * 0.5 - 100.0,
 		QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0)
 	var cap_art := Ui.set_row(DUTY, cap, Vector2(200.0, 42.0))
@@ -8622,12 +8612,12 @@ func _refresh_attend() -> void:
 		_art_set_base(c["frame"], CLAIM_GOLD if today else Color.WHITE)
 		c["day"].text = "오늘" if today else "%d일" % (i + 1)
 		c["day"].add_theme_color_override("font_color",
-			Color(0.22, 0.11, 0.04) if today else DUTY_DIM)
+			DUTY_INK if today else DUTY_DIM)
 		c["ico"].modulate = Color(1, 1, 1, 1) if today or got 			else Color(1, 1, 1, 0.72)
 	_attend_btn.disabled = not ready
 	_attend_lbl.text = "오늘 받기" if ready else "내일 또"
 	_attend_lbl.add_theme_color_override("font_color",
-		Color(0.22, 0.11, 0.04) if ready else DUTY_DIM)
+		DUTY_INK if ready else DUTY_DIM)
 	if _attend_btn_art:
 		_art_set_base(_attend_btn_art, CLAIM_GOLD if ready else Color.WHITE)
 
@@ -8643,10 +8633,6 @@ func _boon_build(root: Control) -> void:
 	var now_text := _panel_label(root, Vector2(x, y + 70.0), Type.SIZE_BODY,
 		DUTY_INK, w, 26.0)
 	now_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var until := _panel_label(root, Vector2(x, y + 110.0), Type.SIZE_SMALL,
-		DUTY_DIM, w, 16.0)
-	until.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	until.text = "월요일에 바뀐다"
 	# **여섯 종을 다 늘어놓는다.** 다음 주 하나만 예고하면 "언제 그게 오나"를
 	# 못 세는데, 차례가 보이면 기다릴 주를 고를 수 있다. 긴 설명이 큰 글씨로는
 	# 카드를 넘쳐서(실측) 줄마다 작은 글씨 한 줄로 눕힌다.
@@ -8834,8 +8820,9 @@ func _row_claim_state(row: Dictionary, state: String, amount: int) -> void:
 		"ready":
 			_art_set_base(pill, CLAIM_GOLD)
 			rw.text = "받기"
-			# 금빛 알약 위에는 **어두운 글자**다 — 흰 글자면 바탕에 묻힌다.
-			rw.add_theme_color_override("font_color", Color(0.22, 0.11, 0.04))
+			# 본문과 같은 흰색 — 외곽선이 있어 금빛에도 안 묻힌다(사장님:
+			# 어두운 글자는 이질감).
+			rw.add_theme_color_override("font_color", DUTY_INK)
 			if icon:
 				icon.visible = false          # "받기" 가 칸을 다 쓴다
 		"done":
