@@ -305,6 +305,8 @@ var _hero_frames: Array = []
 var _hero_anim := 0.0
 # 영웅 외형. 확장은 캐릭터 추가가 아니라 스킨이라, 이 값만 바꾸면 모션 전체가 갈린다.
 var skin := "valentino_1"
+# 산 스킨들 (id -> true). 기본 의상은 늘 보유다 — 표에 안 적는다.
+var skins_owned := {}
 var _motion := ""
 var _motion_hold := 0.0   # 이 시간이 남아 있는 동안은 idle 로 안 돌아간다
 var hero_hp := 100.0
@@ -545,6 +547,7 @@ func damage() -> float:
 	return Balance.hero_damage(_stat_eff("damage"), _gear_stat("damage"), hero_lv) \
 		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage") \
 		+ PactDefs.bonus(pact_lv) + _lore_bonus("damage") \
+		+ SkinDefs.bonus("attack", skins_owned) \
 		+ 0.01 * (_stat_eff("rage") - 1.0)) \
 		* _relic_mult("damage")
 
@@ -587,7 +590,8 @@ func gold_mult() -> float:
 	# 흡혈량 스탯은 삭제됐다(2026-08-20) — 칭호 21종의 공짜 레벨은 그대로 살려서
 	# 이 항이 계속 값을 한다. 사라진 스탯을 읽는 코드를 남기지 않으려 직접 부른다.
 	return (1.0 + 0.15 * float(TitleDefs.bonus("gold", titles_got))
-			+ _gear_stat("gold") * 0.02 + _lore_bonus("gold")) \
+			+ _gear_stat("gold") * 0.02 + _lore_bonus("gold")
+			+ SkinDefs.bonus("gold", skins_owned)) \
 		* Balance.hero_mult(hero_lv) \
 		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
 		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold")) \
@@ -732,6 +736,7 @@ func max_hp() -> float:
 	return Balance.hero_max_hp(_stat_eff("tough"), _gear_stat("tough")) \
 		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough") \
 		+ PactDefs.bonus(pact_lv) + _lore_bonus("tough") \
+		+ SkinDefs.bonus("tough", skins_owned) \
 		+ 0.01 * (_stat_eff("grit") - 1.0)) \
 		* _trait_mult("hp") * _relic_mult("hp") * TrialDefs.mult(trial_stage) \
 		* (1.0 + _pet_mult("tough"))
@@ -7560,6 +7565,8 @@ func _build_quests() -> void:
 var shop_date := ""
 var shop_used := {}          # id -> 오늘 산 횟수
 var _shop_view: Control
+var _wear_view: Control
+var _wear_rows: Array[Dictionary] = []
 var _pack_view: Control
 var _sub_view: Control
 var _shop_mode_btns := {}
@@ -7614,8 +7621,8 @@ func _build_shop(root: Control) -> void:
 	# 넷째로 **패스**가 붙었다 — 정기 소탭에서 사는 물건이지만 진행 트랙은
 	# 따로 볼 자리가 있어야 한다(30단계를 카드 한 장에 못 적는다).
 	var modes := [["pack", "특가"], ["sub", "정기"], ["pass", "패스"],
-		["book", "계약서"], ["trade", "교환"]]
-	var sw := (CONTENT_W - 8.0 * 4.0) / 5.0
+		["book", "계약서"], ["trade", "교환"], ["wear", "의상"]]
+	var sw := (CONTENT_W - 8.0 * 5.0) / 6.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
 		var tb := TextureButton.new()
@@ -7649,6 +7656,8 @@ func _build_shop(root: Control) -> void:
 	_build_shop_book(_book_view)
 	_shop_view = _shop_scroll_view(root)
 	_build_shop_trade(_shop_view)
+	_wear_view = _shop_scroll_view(root)
+	_build_shop_wear(_wear_view)
 	_shop_set_mode("pack")
 
 
@@ -7823,6 +7832,62 @@ func _shop_wcard(parent: Control, y: float, name: String, icon_path: String,
 	var btn := _shop_ghost(card, card.size, card)
 	return {"root": card, "title": title, "icon": icon, "sub": sub,
 		"price": price, "lock": lock, "btn": btn}
+
+
+# ── 의상실 (사장님 2026-08-24) ──────────────────────────────────────────────
+# 스킨은 보석으로 사고, 산 것 중 하나를 입는다. 카드 그림은 그 스킨의
+# idle 첫 프레임 — 소스는 왼쪽 보기라 뒤집어 화면 규칙(오른쪽)에 맞춘다.
+func _build_shop_wear(view: Control) -> void:
+	var y := 0.0
+	for sk in SkinDefs.SKINS:
+		var id := str(sk["id"])
+		var card := _shop_wcard(view, y, str(sk["name"]),
+			"res://assets/anim/%s_idle/0.png" % id, 0)
+		card["icon"].flip_h = true
+		card["sub"].text = str(sk["desc"])
+		card["btn"].pressed.connect(_wear_click.bind(id))
+		_wear_rows.append(card)
+		y += SHOP_WCARD_H + 10.0
+	view.custom_minimum_size.y = y
+
+
+func _refresh_wear() -> void:
+	if _wear_rows.is_empty():
+		return
+	for i in SkinDefs.SKINS.size():
+		var sk: Dictionary = SkinDefs.SKINS[i]
+		var id := str(sk["id"])
+		var card: Dictionary = _wear_rows[i]
+		var owned := skins_owned.has(id) or id == "valentino_1"
+		if skin == id:
+			card["price"].text = "장착 중"
+		elif owned:
+			card["price"].text = "장착하기"
+		else:
+			card["price"].text = "보석 %d" % int(sk["price"])
+		card["btn"].disabled = skin == id
+		card["root"].modulate = Color(1, 1, 1) if owned \
+			else Color(0.74, 0.70, 0.74)
+
+
+func _wear_click(id: String) -> void:
+	var sk := SkinDefs.of(id)
+	if sk.is_empty() or skin == id:
+		return
+	if not (skins_owned.has(id) or id == "valentino_1"):
+		if gem < float(sk["price"]):
+			return
+		gem -= float(sk["price"])
+		skins_owned[id] = true
+		_show_reward("의상 구매", [{"icon": "res://assets/anim/%s_idle/0.png" % id,
+			"label": str(sk["name"]), "sub": str(sk["desc"])}])
+	# 갈아입는다 — _play 는 같은 모션이면 안 다시 트니 캐시를 깬다.
+	skin = id
+	_motion = ""
+	_play("idle")
+	_refresh_wear()
+	_refresh_hud()
+	_save_game()
 
 
 # ── 소탭 셋의 진열 ──────────────────────────────────────────────────────────
@@ -8271,6 +8336,7 @@ func _build_shop_trade(view: Control) -> void:
 func _shop_set_mode(mode: String) -> void:
 	# 스크롤 안 inner 를 들고 있으므로 겉(ScrollContainer)을 눌러 끈다.
 	_shop_view.get_parent().visible = mode == "trade"
+	_wear_view.get_parent().visible = mode == "wear"
 	_pack_view.get_parent().visible = mode == "pack"
 	_sub_view.get_parent().visible = mode == "sub"
 	_pass_view.get_parent().visible = mode == "pass"
@@ -8285,8 +8351,11 @@ func _shop_set_mode(mode: String) -> void:
 		"pass": _shop_line.text = "부지런한 분께는 매일 몫이 쌓이지요."
 		"book": _shop_line.text = "운을 굴리는 분께는… 이 서(書)가 어울리죠."
 		"trade": _shop_line.text = "보석이라면 무엇이든 바꿔 드리죠."
+		"wear": _shop_line.text = "옷이 날개랬죠… 군주님껜 더더욱."
 	if mode == "trade":
 		_refresh_shop()
+	elif mode == "wear":
+		_refresh_wear()
 	elif mode == "pack":
 		_refresh_packs()
 	elif mode == "pass":
@@ -14239,6 +14308,8 @@ func _save_game() -> void:
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
 	cfg.set_value("run", "traits", traits)
+	cfg.set_value("run", "skin", skin)
+	cfg.set_value("run", "skins", skins_owned)
 	cfg.set_value("run", "titles", titles_got)
 	cfg.set_value("run", "titles_new", titles_new)
 	cfg.set_value("run", "title_worn", title_worn)
@@ -14375,6 +14446,12 @@ func _load_game() -> void:
 		if not TitleDefs.title(str(id)).is_empty():
 			titles_got[str(id)] = true
 	titles_new = cfg.get_value("run", "titles_new", {})
+	skins_owned = cfg.get_value("run", "skins", {})
+	skin = str(cfg.get_value("run", "skin", "valentino_1"))
+	if SkinDefs.of(skin).is_empty():
+		skin = "valentino_1"      # 표에서 빠진 스킨을 입고 있으면 평상복으로
+	_motion = ""
+	_play("idle")
 	hero_lv = int(cfg.get_value("run", "hero_lv", 1))
 	hero_exp = float(cfg.get_value("run", "hero_exp", 0.0))
 	buy_step = int(cfg.get_value("up", "buy_step", 1))
