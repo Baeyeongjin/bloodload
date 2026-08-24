@@ -8424,9 +8424,20 @@ func _shop_buy(id: String) -> void:
 			_raid_roll_day()
 			for k in RaidDefs.RAIDS:
 				raid_left[k] = _raid_left(str(k)) + 1
+		"warp":
+			# 방치 적립과 **같은 식**(blood_per_sec + 소탕 절반) — 요율이 다르면
+			# 이 상품이 방치의 시세표를 거짓말로 만든다. 지갑이 아니라 상자에
+			# 담는 것도 같은 이유: 눌러 여는 게 방치 보상의 보상이다.
+			chest_gold += blood_per_sec() * ShopDefs.WARP_HOURS * 3600.0
+			chest_minutes += ShopDefs.WARP_HOURS * 60.0
+			if dungeon_best > 0:
+				crystal += ShopDefs.WARP_HOURS * _sweep_per_hour() * 0.5
+			_refresh_chest()
 	# 산 것을 보상창으로 편다 — 지갑 숫자만 바뀌면 눌렀는지 모른다(방치 보상과 같은 길).
+	var big := "+1판" if id == "ticket" \
+		else ("+%d시간" % int(ShopDefs.WARP_HOURS) if id == "warp" else _n(amt))
 	_show_reward(str(it["name"]), [{"icon": str(it["icon"]),
-		"label": "+1판" if id == "ticket" else _n(amt), "sub": str(it["sub"])}])
+		"label": big, "sub": str(it["sub"])}])
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_shop()
@@ -8445,7 +8456,8 @@ func _refresh_shop() -> void:
 		card["title"].text = str(it["name"])
 		# 그림 위 숫자는 수량만 — "1회 6"이 값으로 읽힌 사고의 재발 방지.
 		card["amount"].text = "+1판" if id == "ticket" \
-			else _n(ShopDefs.amount(id, stage, dungeon_best))
+			else ("+%d시간" % int(ShopDefs.WARP_HOURS) if id == "warp" \
+			else _n(ShopDefs.amount(id, stage, dungeon_best)))
 		card["left"].text = "%d구간부터" % need if locked \
 			else "오늘 %d / %d" % [left, int(it["per_day"])]
 		card["price"].text = "잠김" if locked else "보석 %d" % int(it["cost"])

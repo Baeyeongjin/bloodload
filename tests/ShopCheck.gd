@@ -18,7 +18,9 @@ func _init() -> void:
 		var id := str(it["id"])
 		assert(FileAccess.file_exists(str(it["icon"])),
 			"%s 아이콘 파일이 없다: %s" % [id, str(it["icon"])])
-		assert(int(it["per_day"]) > 0 and int(it["cost"]) > 0, "%s 값이 0" % id)
+		# 광고 줄(ad)은 보석이 아니라 광고가 값이다 — cost 0 이 정상.
+		assert(int(it["per_day"]) > 0 and (int(it["cost"]) > 0
+			or ShopDefs.is_ad(id)), "%s 값이 0" % id)
 	# 해금 계단은 던전 표를 읽어야 한다 — 여기 숫자를 박으면 계단을 옮길 때마다
 	# 상점만 딴 소리를 한다(던전 표가 그 실수로 두 번 깨졌다).
 	assert(ShopDefs.open_stage("crystal") == DungeonDefs.OPEN_STAGE)
@@ -71,6 +73,14 @@ func _init() -> void:
 	scene._shop_buy("ticket")
 	assert(scene._raid_left("blood") == left0 + 1, "입장권이 판을 안 늘렸다")
 	assert(scene._shop_left("ticket") == 0, "입장권 한도가 안 깎였다")
+
+	# 시간 왜곡은 지갑이 아니라 **상자**에 담긴다 — 방치 적립과 같은 길.
+	var chest0: float = scene.chest_gold
+	var mins0: float = scene.chest_minutes
+	scene._shop_buy("warp")
+	assert(scene.chest_gold > chest0, "시간 왜곡이 상자에 안 담겼다")
+	assert(is_equal_approx(scene.chest_minutes, mins0 + ShopDefs.WARP_HOURS * 60.0),
+		"시간 왜곡 분이 안 맞다: %f" % scene.chest_minutes)
 	# 한도 소진 — 지갑이 안 움직여야 한다.
 	var gem1: float = scene.gem
 	scene._shop_buy("ticket")
