@@ -115,7 +115,7 @@ def check(motion, paths, strict_foot=True, flipped=None, skip_face=False):
         digests.append(md5(raw).hexdigest())
         im = Image.open(p).convert("RGBA")
         w, h = im.size
-        assert w == h and w in (32, 64, 96, 128), "%s f%d 캔버스 %dx%d" % (motion, i, w, h)
+        assert w >= h and h in (32, 64, 96, 128), "%s f%d 캔버스 %dx%d" % (motion, i, w, h)
         bb = ink_box(im)
         assert bb is not None, "%s f%d 가 통째로 비었다" % (motion, i)
         assert (bb[2] - bb[0]) * (bb[3] - bb[1]) > 60, "%s f%d 잉크가 너무 적다" % (motion, i)
@@ -304,6 +304,28 @@ def main(argv):
         if flips:
             print("%-8s f%s 를 좌우 반전했다 (생성기가 돌려 그린 프레임)"
                   % (motion, ",".join(map(str, flips))))
+        # **가로 중심 정렬** — f0 잉크 중심을 캔버스 중심으로. 반전은 캔버스
+        # 중심 기준 미러라 치우친 시드를 반대쪽으로 옮겨 놓는다(2026-08-24
+        # 실측: 스킨 12모션이 15~17px 옆으로 순간이동). 같은 dx 를 전 프레임에
+        # 적용하고, 잘리면 양쪽을 똑같이 늘려 중심을 지킨다.
+        _f0c = _Im.open(paths[0]).convert("RGBA")
+        _bbc = ink_box(_f0c)
+        _dx = _f0c.width // 2 - (_bbc[0] + _bbc[2]) // 2
+        if abs(_dx) > 2:
+            _pad = 0
+            for _p in paths:
+                _b = ink_box(_Im.open(_p).convert("RGBA"))
+                _pad = max(_pad, -(_b[0] + _dx),
+                           _b[2] + _dx - (_f0c.width - 1))
+            _pad = max(0, (_pad + 1) // 2 * 2)
+            for _p in paths:
+                _im = _Im.open(_p).convert("RGBA")
+                _out = _Im.new("RGBA",
+                    (_im.width + 2 * _pad, _im.height), (0, 0, 0, 0))
+                _out.paste(_im, (_dx + _pad, 0))
+                _out.save(_p)
+            print("%-8s 가로 중심 %+dpx 이동 (캔버스 +%d)"
+                  % (motion, _dx, 2 * _pad))
         if airborne:
             from PIL import Image as _I
             feet = [ink_box(_I.open(pp).convert("RGBA"))[3] for pp in paths]
