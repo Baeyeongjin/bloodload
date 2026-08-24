@@ -21,6 +21,14 @@ const SKINS := [
 		"bonus": {"gold": 0.10}, "desc": "보유 시 혈액 +10%"},
 	{"id": "grim", "name": "사신 대군주", "price": 1200,
 		"bonus": {"attack": 0.10}, "desc": "보유 시 공격 +10%"},
+	{"id": "abyss", "name": "심연의 군주", "price": 1200,
+		"bonus": {"tough": 0.10}, "desc": "보유 시 체력 +10%"},
+	# 웃긴 스킨 둘은 값을 낮춘다 — 위엄이 아니라 웃음을 파는 물건이다.
+	{"id": "hawaii", "name": "한여름 바캉스", "price": 800,
+		"bonus": {"gold": 0.10}, "desc": "보유 시 혈액 +10%"},
+	{"id": "pink", "name": "핑크빛 군주", "price": 800,
+		"bonus": {"gold": 0.05, "tough": 0.05},
+		"desc": "보유 시 혈액 +5% · 체력 +5%"},
 ]
 
 
