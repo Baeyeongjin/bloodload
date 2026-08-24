@@ -285,6 +285,21 @@ def main(argv):
                 _out.paste(_im, (0, _dy))
                 _out.save(_p)
             print("%-8s 발 기준선 %+dpx 이동" % (motion, _dy))
+        # **뻗는 방향 통일** — f0 대비 잉크가 오른쪽으로 확장되면 생성기가
+        # 오른쪽 보기로 그린 것이다(원본 규격은 왼쪽 보기). 기하 판정이라
+        # 색 기반 autoflip 과 달리 갑주 색에 안 속는다. 2026-08-24 실측:
+        # --no-flip 으로 깐 스킨 4종 15모션이 몬스터 반대쪽을 때렸다.
+        _b0 = ink_box(_Im.open(paths[0]).convert("RGBA"))
+        _L = _R = 0
+        for _p in paths[1:]:
+            _b = ink_box(_Im.open(_p).convert("RGBA"))
+            _L = max(_L, _b0[0] - _b[0])
+            _R = max(_R, _b[2] - _b0[2])
+        if _R > _L + 4:
+            for _p in paths:
+                _Im.open(_p).convert("RGBA").transpose(
+                    _Im.FLIP_LEFT_RIGHT).save(_p)
+            print("%-8s 오른쪽으로 뻗어 좌우 반전 (L%d/R%d)" % (motion, _L, _R))
         flips = [] if no_flip else autoflip(motion, paths)
         if flips:
             print("%-8s f%s 를 좌우 반전했다 (생성기가 돌려 그린 프레임)"
