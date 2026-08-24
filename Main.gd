@@ -2002,6 +2002,12 @@ func _build_dialogs() -> void:
 				_info_view.visible = false
 				_codex_view.visible = true
 				_codex_set_mode("title")
+			elif idx == 1:
+				# 외형 변경 — 의상실로 이어진다. 칭호 설정이 도감으로
+				# 이어지는 것과 같은 문법이다 (사장님 2026-08-24).
+				_info_view.visible = false
+				_select_tab("shop")
+				_shop_set_mode("wear")
 			else:
 				_info_note.text = "다음 업데이트에서 열린다"
 				_info_note.modulate.a = 1.0
