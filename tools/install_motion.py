@@ -269,6 +269,22 @@ def main(argv):
         if airborne:
             job = job[:-4]
         paths = fetch(job, os.path.join(tmp_root, motion))
+        # **발 기준선 정렬** — 시드가 캔버스 어디에 있었든, f0 의 잉크 밑단을
+        # 발렌티노 규격(64 캔버스 48 / 32 캔버스 32)으로 옮기고 같은 오프셋을
+        # 전 프레임에 적용한다. 2026-08-24 실측: edit_image 로 만든 64 시드가
+        # 몸을 위 절반에 놓아 스킨 4종이 공격 때 16px 위로 순간이동했다.
+        from PIL import Image as _Im
+        _f0 = _Im.open(paths[0]).convert("RGBA")
+        _target = 48 if _f0.height == 64 else 32
+        _bb = ink_box(_f0)
+        _dy = _target - _bb[3]
+        if _dy != 0:
+            for _p in paths:
+                _im = _Im.open(_p).convert("RGBA")
+                _out = _Im.new("RGBA", _im.size, (0, 0, 0, 0))
+                _out.paste(_im, (0, _dy))
+                _out.save(_p)
+            print("%-8s 발 기준선 %+dpx 이동" % (motion, _dy))
         flips = [] if no_flip else autoflip(motion, paths)
         if flips:
             print("%-8s f%s 를 좌우 반전했다 (생성기가 돌려 그린 프레임)"
