@@ -18,12 +18,15 @@ func _init() -> void:
 	var gem0: float = scene.gem
 	scene._wear_click("demon_king")
 	assert(scene.skins_owned.has("demon_king"), "구매가 안 됐다")
-	assert(scene.skin == "demon_king", "장착이 안 됐다")
+	assert(scene.skin == "valentino_1", "상점 구매가 장착까지 해 버렸다")
 	assert(scene.gem < gem0, "보석이 안 빠졌다")
+	# 갈아입기는 외형 판 — 돈을 안 받는다.
 	var gem1: float = scene.gem
-	scene._wear_click("valentino_1")
-	assert(scene.skin == "valentino_1" and is_equal_approx(scene.gem, gem1),
-		"갈아입기에 돈을 받았다")
+	scene._outfit_pick("demon_king")
+	assert(scene.skin == "demon_king" and is_equal_approx(scene.gem, gem1),
+		"외형 변경이 안 되거나 돈을 받았다")
+	scene._outfit_pick("pink")
+	assert(scene.skin == "demon_king", "미보유 스킨이 장착됐다")
 	assert(SkinDefs.bonus("attack", scene.skins_owned) > 0.0, "보유 효과가 없다")
 	var poor: float = 10.0
 	scene.gem = poor

@@ -151,6 +151,9 @@ var _info_view: Control
 var _info_body: Control
 var _info_power: Label
 var _info_note: Label
+var _outfit_view: Control
+var _outfit_cells: Array[Dictionary] = []
+var _outfit_note: Label
 var best_stage := 1
 # ── 핏빛 미궁 (DungeonDefs, EXPANSION 7장) ────────────────────────────────
 # 미궁에 있는 동안에도 `stage` 는 본편 위치 그대로다 — 나가면 그 자리로 돌아온다.
@@ -1033,6 +1036,11 @@ func _ready() -> void:
 		# [개발 도구] --info : 군주의 기록 판을 연 채로 캡처한다.
 		if arg == "--info":
 			_show_info()
+		# [개발 도구] --outfit : 외형 변경 판을 연 채로 캡처한다(몇 벌 보유 상태).
+		if arg == "--outfit":
+			skins_owned = {"demon_king": true, "dragon": true, "pink": true}
+			_refresh_outfit()
+			_outfit_view.visible = true
 		# [개발 도구] --trial[=N|=in] : 시련 판(N단계 격파)으로, =in 이면 전투까지.
 		if arg.begins_with("--trial"):
 			if "=" in arg and arg.trim_prefix("--trial=").is_valid_int():
@@ -2003,11 +2011,10 @@ func _build_dialogs() -> void:
 				_codex_view.visible = true
 				_codex_set_mode("title")
 			elif idx == 1:
-				# 외형 변경 — 의상실로 이어진다. 칭호 설정이 도감으로
-				# 이어지는 것과 같은 문법이다 (사장님 2026-08-24).
-				_info_view.visible = false
-				_select_tab("shop")
-				_shop_set_mode("wear")
+				# 외형 변경 — 그 자리에서 갈아입는다(사장님 2026-08-24:
+				# "상점에서는 그냥 구매만"). 산 스킨을 고르는 자체 판.
+				_refresh_outfit()
+				_outfit_view.visible = true
 			else:
 				_info_note.text = "다음 업데이트에서 열린다"
 				_info_note.modulate.a = 1.0
@@ -2031,6 +2038,60 @@ func _build_dialogs() -> void:
 		Color(0.68, 0.66, 0.72), 528.0, 20.0)
 	ihint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ihint.text = "빈 곳을 눌러 닫기"
+
+	# ── 외형 변경 판 — 산 스킨을 그 자리에서 갈아입는다 ───────────────────
+	# 상점 의상실은 구매 전용이다(사장님 2026-08-24). 군주의 기록(62) 위에
+	# 뜨므로 z 는 한 층 위.
+	_outfit_view = _overlay(63)
+	var otap := Button.new()
+	otap.flat = true
+	otap.size = Vector2(Grid.BG)
+	otap.focus_mode = Control.FOCUS_NONE
+	otap.pressed.connect(func() -> void: _outfit_view.visible = false)
+	_outfit_view.add_child(otap)
+	_outfit_view.add_child(Ui.panel(Vector2(24.0, 120.0), Vector2(528.0, 610.0)))
+	var otitle := _dlg_label(_outfit_view, Vector2(24.0, 136.0), Type.SIZE_BODY,
+		Color(1.0, 0.88, 0.55), 528.0, 32.0)
+	otitle.text = "외형 변경"
+	otitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	for i in SkinDefs.SKINS.size():
+		var sk2: Dictionary = SkinDefs.SKINS[i]
+		var id2 := str(sk2["id"])
+		var col := i % 3
+		var row := i / 3
+		var cell := Control.new()
+		cell.position = Vector2(40.0 + float(col) * 168.0,
+			184.0 + float(row) * 158.0)
+		cell.size = Vector2(160.0, 148.0)
+		_outfit_view.add_child(cell)
+		var icon := Ui.icon("res://assets/anim/%s_idle/0.png" % id2,
+			Vector2(32.0, 4.0), 96.0)
+		icon.flip_h = true      # 소스는 왼쪽 보기 — 화면 규칙은 오른쪽
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cell.add_child(icon)
+		var nm := _dlg_label(cell, Vector2(0.0, 106.0), Type.SIZE_SMALL,
+			Color(0.92, 0.88, 0.86), 160.0, 20.0)
+		nm.text = str(sk2["name"])
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var st := _dlg_label(cell, Vector2(0.0, 126.0), Type.SIZE_SMALL,
+			Color(0.72, 0.68, 0.72), 160.0, 18.0)
+		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var ob := Button.new()
+		ob.flat = true
+		ob.size = cell.size
+		ob.focus_mode = Control.FOCUS_NONE
+		ob.pressed.connect(_outfit_pick.bind(id2))
+		cell.add_child(ob)
+		_outfit_cells.append({"root": cell, "icon": icon, "name": nm,
+			"state": st, "btn": ob})
+	_outfit_note = _dlg_label(_outfit_view, Vector2(24.0, 680.0),
+		Type.SIZE_SMALL, Color(0.98, 0.80, 0.55), 528.0, 20.0)
+	_outfit_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_outfit_note.modulate.a = 0.0
+	var ohint := _dlg_label(_outfit_view, Vector2(24.0, 704.0), Type.SIZE_SMALL,
+		Color(0.68, 0.66, 0.72), 528.0, 20.0)
+	ohint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ohint.text = "빈 곳을 눌러 닫기"
 
 
 
@@ -7840,6 +7901,40 @@ func _shop_wcard(parent: Control, y: float, name: String, icon_path: String,
 		"price": price, "lock": lock, "btn": btn}
 
 
+func _refresh_outfit() -> void:
+	for i in SkinDefs.SKINS.size():
+		var sk2: Dictionary = SkinDefs.SKINS[i]
+		var id2 := str(sk2["id"])
+		var cell: Dictionary = _outfit_cells[i]
+		var owned := skins_owned.has(id2) or id2 == "valentino_1"
+		if skin == id2:
+			cell["state"].text = "장착 중"
+			cell["name"].add_theme_color_override("font_color",
+				Color(1.0, 0.88, 0.55))
+		else:
+			cell["state"].text = "" if owned else "미보유"
+			cell["name"].add_theme_color_override("font_color",
+				Color(0.92, 0.88, 0.86))
+		cell["root"].modulate = Color(1, 1, 1) if owned \
+			else Color(0.55, 0.52, 0.56)
+
+
+func _outfit_pick(id: String) -> void:
+	if skin == id:
+		return
+	if not (skins_owned.has(id) or id == "valentino_1"):
+		_outfit_note.text = "상점 의상실에서 살 수 있다"
+		_outfit_note.modulate.a = 1.0
+		var tw3 := create_tween()
+		tw3.tween_property(_outfit_note, "modulate:a", 0.0, 1.6).set_delay(0.8)
+		return
+	skin = id
+	_motion = ""
+	_play("idle")
+	_refresh_outfit()
+	_save_game()
+
+
 # ── 의상실 (사장님 2026-08-24) ──────────────────────────────────────────────
 # 스킨은 보석으로 사고, 산 것 중 하나를 입는다. 카드 그림은 그 스킨의
 # idle 첫 프레임 — 소스는 왼쪽 보기라 뒤집어 화면 규칙(오른쪽)에 맞춘다.
@@ -7865,32 +7960,24 @@ func _refresh_wear() -> void:
 		var id := str(sk["id"])
 		var card: Dictionary = _wear_rows[i]
 		var owned := skins_owned.has(id) or id == "valentino_1"
-		if skin == id:
-			card["price"].text = "장착 중"
-		elif owned:
-			card["price"].text = "장착하기"
-		else:
-			card["price"].text = "보석 %d" % int(sk["price"])
-		card["btn"].disabled = skin == id
-		card["root"].modulate = Color(1, 1, 1) if owned \
+		# 상점은 **구매 전용** — 갈아입기는 군주의 기록 > 외형 변경에서
+		# (사장님 2026-08-24). 산 것은 "보유 중"으로 못 박는다.
+		card["price"].text = "보유 중" if owned else "보석 %d" % int(sk["price"])
+		card["btn"].disabled = owned
+		card["root"].modulate = Color(1, 1, 1) if not owned \
 			else Color(0.74, 0.70, 0.74)
 
 
 func _wear_click(id: String) -> void:
 	var sk := SkinDefs.of(id)
-	if sk.is_empty() or skin == id:
+	if sk.is_empty() or skins_owned.has(id) or id == "valentino_1":
 		return
-	if not (skins_owned.has(id) or id == "valentino_1"):
-		if gem < float(sk["price"]):
-			return
-		gem -= float(sk["price"])
-		skins_owned[id] = true
-		_show_reward("의상 구매", [{"icon": "res://assets/anim/%s_idle/0.png" % id,
-			"label": str(sk["name"]), "sub": str(sk["desc"])}])
-	# 갈아입는다 — _play 는 같은 모션이면 안 다시 트니 캐시를 깬다.
-	skin = id
-	_motion = ""
-	_play("idle")
+	if gem < float(sk["price"]):
+		return
+	gem -= float(sk["price"])
+	skins_owned[id] = true
+	_show_reward("의상 구매", [{"icon": "res://assets/anim/%s_idle/0.png" % id,
+		"label": str(sk["name"]), "sub": str(sk["desc"])}])
 	_refresh_wear()
 	_refresh_hud()
 	_save_game()
