@@ -105,7 +105,7 @@ def autoflip(motion, paths):
     return flipped
 
 
-def check(motion, paths, strict_foot=True, flipped=None):
+def check(motion, paths, strict_foot=True, flipped=None, skip_face=False):
     """설치 전에 다 본다. 실패는 assert 로 즉시 멈춘다."""
     digests, boxes, faces = [], [], []
     for i, p in enumerate(paths):
@@ -137,8 +137,10 @@ def check(motion, paths, strict_foot=True, flipped=None):
     #
     # 그래서 몹은 **사람이 대조표를 보고 확인한다.** 여기서 없는 검사를 있는 척하지
     # 않는다 - 통과 도장이 거짓이면 검사가 없는 것보다 나쁘다.
-    known = [(i, v) for i, v in enumerate(faces) if v is not None]
-    if not known:
+    known = [] if skip_face else         [(i, v) for i, v in enumerate(faces) if v is not None]
+    if skip_face:
+        print("        [주의] %s: --no-flip - 방향은 대조표로 확인할 것" % motion)
+    if not known and not skip_face:
         print("        [주의] %s: 망토가 없어 방향 자동 판정 불가 - 대조표를 볼 것" % motion)
     if known:
         bad = [i for i, v in known if v < 0.0]
@@ -232,6 +234,13 @@ def main(argv):
     if "--no-span" in argv:
         argv = [a for a in argv if a != "--no-span"]
         REACH = set()
+    # --no-flip: 자동 반전을 끈다. **붉은 계열 갑주 스킨에 필수** — facing() 이
+    # 어두운 붉은색을 망토로 읽는데, 마왕(용암 갑주)은 몸 전체가 그 색이라
+    # 멀쩡한 왼쪽 보기를 오른쪽 보기로 오판해 통째로 뒤집었다(2026-08-24 실측,
+    # 사장님: "캐릭터는 오른쪽을 봐야한다"). 끄면 방향은 사람이 눈으로 본다.
+    no_flip = "--no-flip" in argv
+    if no_flip:
+        argv = [a for a in argv if a != "--no-flip"]
     check_only = argv[0] == "--check"
     if check_only:
         argv = argv[1:]
@@ -260,7 +269,7 @@ def main(argv):
         if airborne:
             job = job[:-4]
         paths = fetch(job, os.path.join(tmp_root, motion))
-        flips = autoflip(motion, paths)
+        flips = [] if no_flip else autoflip(motion, paths)
         if flips:
             print("%-8s f%s 를 좌우 반전했다 (생성기가 돌려 그린 프레임)"
                   % (motion, ",".join(map(str, flips))))
@@ -270,7 +279,8 @@ def main(argv):
             lift = max(feet) - min(feet)
             assert lift >= 6,                 "%s: 공중 모션인데 발이 %d칸만 뜬다 - 점프가 안 그려졌다" % (motion, lift)
         ws, hs, _, faces, ch = check(motion, paths, flipped=flips,
-                                     strict_foot=not airborne)
+                                     strict_foot=not airborne,
+                                     skip_face=no_flip)
         dst = os.path.join(ANIM, "%s_%s" % (skin, motion))
         os.makedirs(dst, exist_ok=True)
         for f in os.listdir(dst):
