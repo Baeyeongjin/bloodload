@@ -92,6 +92,22 @@ func _init() -> void:
 	scene.fuse_pity["gear:" + fuse_key] = 1
 	scene._refresh_bulk()
 	assert(scene._bulk_pity_bar.size.x > w0, "확정 바가 누적을 안 탄다")
+	# 조합 실행 — 확인창이 **조합 창보다 위**에 떠야 한다. 아래에 깔리면
+	# 눌러도 아무 일이 없는 것처럼 보인다(2026-08-25 실제 버그: 확인창 z=60,
+	# 조합 창 z=64 라 확인창이 뒤에 숨었다).
+	scene.gacha_shards["gear:" + fuse_key] = GearDefs.FUSE_SHARDS
+	scene._bulk_selected = {fuse_key: true}
+	scene._refresh_bulk()
+	assert(not scene._bulk_run.disabled, "고른 게 있는데 조합 버튼이 잠겨 있다")
+	scene._run_bulk()
+	assert(scene._confirm_view.visible, "조합 확인창이 안 떴다")
+	assert(scene._confirm_view.z_index > scene._bulk_view.z_index,
+		"확인창이 조합 창 뒤에 깔린다 — 눌러도 반응이 없어 보인다")
+	assert(scene._confirm_action.is_valid(), "확인창에 실행이 안 걸렸다")
+	var shards_before := int(scene.gacha_shards.get("gear:" + fuse_key, 0))
+	scene._confirm_action.call()
+	assert(int(scene.gacha_shards.get("gear:" + fuse_key, 0)) < shards_before,
+		"확인을 눌러도 조합이 조각을 안 쓴다")
 	scene._bulk_view.visible = false
 
 	print("PullUiCheck OK")

@@ -1932,7 +1932,7 @@ const DLG_H := 248.0
 
 func _build_dialogs() -> void:
 	# 확인창
-	_confirm_view = _overlay(60)
+	_confirm_view = _overlay(70)
 	_confirm_view.add_child(Ui.panel(DLG_AT, Vector2(DLG_W, DLG_H)))
 	var title := _dlg_label(_confirm_view, Vector2(DLG_AT.x, DLG_AT.y + 20.0),
 		Type.SIZE_BODY, Color(0.96, 0.90, 0.86), DLG_W, 32.0)
@@ -1956,7 +1956,7 @@ func _build_dialogs() -> void:
 
 	# 보상창 — 빈 곳 아무 데나 눌러 닫는다. 읽고 나면 바로 없애고 싶은 창이라
 	# 닫기 버튼을 찾게 하지 않는다.
-	_reward_view = _overlay(61)
+	_reward_view = _overlay(71)
 	var tap := Button.new()
 	tap.flat = true
 	tap.size = Vector2(Grid.BG)
