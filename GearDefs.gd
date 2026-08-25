@@ -153,7 +153,7 @@ static func power(item: Dictionary) -> float:
 # 조각은 소모된다 — 천장이 받친다. 표는 등급 인덱스 순서다.
 const FUSE_SHARDS := 3
 const FUSE_RATE := [0.8, 0.6, 0.45, 0.3, 0.2, 0.15]
-const FUSE_PITY := [2, 3, 4, 5, 6, 7]
+const FUSE_PITY := [3, 5, 7, 9, 11, 13]
 
 
 static func fuse_rate(item: Dictionary) -> float:
