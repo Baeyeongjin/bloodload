@@ -5353,38 +5353,6 @@ func _synthesize_skill(key: String) -> String:
 	return next
 
 
-func _skill_synthesizable() -> Array[String]:
-	var out: Array[String] = []
-	for key in skill_owned:
-		if SkillDefs.promote_key(str(key)).is_empty():
-			continue
-		if int(gacha_shards.get("skill:" + str(key), 0)) >= SkillDefs.SYNTH_SHARDS:
-			out.append(str(key))
-	return out
-
-
-func _ask_skill_synth() -> void:
-	var keys := _skill_synthesizable()
-	if keys.is_empty():
-		return
-	_ask("스킬 %d종을 다음 등급으로 올립니다.\n각각 조각 %d개를 쓰고 원래 스킬은 한 벌 남습니다."
-		% [keys.size(), SkillDefs.SYNTH_SHARDS], func() -> void:
-		var got: Array = []
-		for key in keys:
-			var next := _synthesize_skill(key)
-			if not next.is_empty():
-				var r := SkillDefs.rarity_of(next)
-				got.append({"icon": SkillDefs.icon_path(next),
-					"label": SkillDefs.name_of(next),
-					"sub": str(r["name"]), "col": r["col"]})
-		if skill_auto_equip:
-			_auto_equip_skills()
-		_refresh_skills()
-		_save_game()
-		if not got.is_empty():
-			_show_reward("스킬 조합", got.slice(0, mini(got.size(), 5))))
-
-
 func _gacha_kind_name() -> String:
 	if _gacha_kind in GearDefs.SLOTS:
 		return str(GearDefs.SLOT_NAME[_gacha_kind])
