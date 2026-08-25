@@ -3738,17 +3738,8 @@ func _refresh_bulk() -> void:
 				_bulk_selected[key] = true
 			_refresh_bulk()
 		var card := _bulk_card(key, pick)
-		# **재료를 넣기 전부터** 확정까지 몇 번 남았는지 보인다(사장님
-		# 2026-08-25). 이게 없으면 어느 걸 골라야 이득인지 알 수 없다.
-		var probe3 := {"rarity": _bulk_rarity_of(key)}
-		var cap3 := GearDefs.fuse_pity(probe3)
-		var tr3 := int(fuse_pity.get(_bulk_rarity_of(key), 0))
-		var pl3 := _panel_label(card, Vector2(6.0, 116.0), Type.SIZE_SMALL,
-			Color(0.98, 0.86, 0.52) if tr3 + 1 >= cap3 else Color(0.70, 0.68, 0.76),
-			104.0, 18.0)
-		pl3.text = "확정까지 %d회" % maxi(1, cap3 - tr3)
-		pl3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		pl3.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 카드에는 확정 횟수를 안 적는다 — 천장이 **등급 통** 하나라 칸마다
+		# 같은 숫자가 반복돼 헷갈린다(사장님 2026-08-25). 아래 확정 바가 그 자리다.
 		# 안 고른 칸은 어둡게. 테두리를 덧그리는 대신 밝기로 가르면 등급 색이 안 죽는다.
 		card.modulate = Color(1, 1, 1) if _bulk_selected.has(key) else Color(0.42, 0.42, 0.46)
 		_bulk_grid.add_child(card)
