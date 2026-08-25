@@ -32,16 +32,19 @@ func _init() -> void:
 	assert(DungeonDefs.open_floors(open0 + 10) == 10, "10구간 뒤가 10층이 아니다")
 	assert(DungeonDefs.open_floors(9999) == DungeonDefs.FLOOR_CAP,
 		"개방 상한이 안 걸린다")
-	# 주기: 5층 중간보스, 10층 보스, 겹치지 않는다.
-	for f in [5, 15, 95]:
-		assert(DungeonDefs.is_midboss_floor(f) and not DungeonDefs.is_boss_floor(f))
-	for f in [10, 50, 100]:
-		assert(DungeonDefs.is_boss_floor(f) and not DungeonDefs.is_midboss_floor(f))
-	assert(DungeonDefs.kills_needed(3) == DungeonDefs.KILLS_PER_FLOOR)
-	assert(DungeonDefs.kills_needed(10) == 1)
-	# 제한 시간: 본편과 같은 문법 (보스·중간보스만).
-	assert(DungeonDefs.time_limit(3) == 0.0, "일반 층에 제한 시간이 걸렸다")
-	assert(DungeonDefs.time_limit(10) == StageDefs.TIME_BOSS)
+	# **층마다 보스 하나**다 (사장님 2026-08-25). 중간보스는 없어졌다.
+	for f in [1, 3, 5, 10, 50, 100]:
+		assert(DungeonDefs.is_boss_floor(f) and not DungeonDefs.is_midboss_floor(f),
+			"%d층이 보스층이 아니다" % f)
+		assert(DungeonDefs.kills_needed(f) == 1, "%d층 목표가 한 마리가 아니다" % f)
+		assert(DungeonDefs.time_limit(f) == StageDefs.TIME_BOSS,
+			"%d층에 보스 제한 시간이 안 걸렸다" % f)
+	# 보스 체력 보정 — 그대로 두면 옛 일반 층(잡몹 5)의 일곱 배라 벽이 된다.
+	assert(DungeonDefs.BOSS_HP_SCALE > 0.0 and DungeonDefs.BOSS_HP_SCALE < 1.0,
+		"미궁 보스 체력 보정이 범위를 벗어났다")
+	assert(FoeTiers.BOSS_HP_MULT * DungeonDefs.BOSS_HP_SCALE
+		> float(DungeonDefs.KILLS_PER_FLOOR),
+		"미궁 보스가 옛 일반 층보다 가볍다")
 	# 깊이 색: 채널이 1을 안 넘고(밝아지면 안 된다) 깊을수록 어둡다.
 	var t1 := DungeonDefs.depth_tint(1)
 	var t100 := DungeonDefs.depth_tint(100)
@@ -92,7 +95,7 @@ func _init() -> void:
 	var eq3 := DungeonDefs.eq_stage(3)
 	assert(is_equal_approx(scene._c_enemy_power(), StageDefs.enemy_power(eq3)),
 		"미궁 몹 세기가 등가 구간 값이 아니다")
-	assert(scene._c_kills_needed() == DungeonDefs.KILLS_PER_FLOOR)
+	assert(scene._c_kills_needed() == 1, "미궁 층 목표가 한 마리가 아니다")
 	assert("미궁" in scene._c_label())
 	# 혈액은 본편 시세다 — 등가 구간 시세로 주면 미궁이 더 나은 사냥터가 된다.
 	assert(is_equal_approx(scene._c_gold_per_kill(), StageDefs.gold_per_kill(home_stage)),
@@ -102,8 +105,13 @@ func _init() -> void:
 		await process_frame
 	scene.kills = scene._c_kills_needed()
 	scene._advance_stage()
+	# **여운(CLEAR_HOLD)이 지나야 층 처리가 돈다** — 격파 즉시 암전을 걸면
+	# 쓰러지는 그림도 배너도 못 본다(사장님 2026-08-25). 결과를 기다린다.
 	var waited := 0.0
-	while scene._fade_t > 0.0 and waited < 5.0:
+	while scene.dungeon_best != 3 and waited < 8.0:
+		await process_frame
+		waited += scene.get_process_delta_time()
+	while scene._fade_t > 0.0 and waited < 12.0:
 		await process_frame
 		waited += scene.get_process_delta_time()
 	assert(scene.dungeon_best == 3, "층 기록이 안 남았다: %d" % scene.dungeon_best)

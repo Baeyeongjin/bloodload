@@ -171,11 +171,12 @@ func _init() -> void:
 		await process_frame
 	scene.kills = scene._c_kills_needed()
 	scene._advance_stage()
+	# 격파 뒤 **여운(CLEAR_HOLD)** 이 지나야 암전이 시작된다(2026-08-25) —
+	# 결과가 나올 때까지 기다린다.
 	var w3 := 0.0
-	while scene._fade_t > 0.0 and w3 < 5.0:
+	while scene.raid_on != "blood" and w3 < 12.0:
 		await process_frame
 		w3 += scene.get_process_delta_time()
-	await process_frame
 	assert(scene.raid_on == "blood", "연속 도전인데 다시 안 들어갔다")
 	# 표가 떨어지면 멈춘다 — 안 그러면 켠 채로 잊었을 때 하루치를 다 태운다.
 	# **전투가 설 때까지 기다린다** — 암전 중에 부르면 _advance_stage 가 조용히

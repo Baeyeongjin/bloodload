@@ -17,7 +17,11 @@ const FLOOR_CAP := 100
 # 첫 벽(30 부근)을 한 번 밀고 나서야 미궁이 보인다 — 한꺼번에 열리면 어디부터
 # 손대야 할지 못 고른다(RaidDefs.OPEN_STAGE 주석의 그 계단).
 const OPEN_STAGE := 35          # 본편 35구간을 넘어야 미궁이 열린다
-const KILLS_PER_FLOOR := 5      # 일반 층 = 몹 5마리 (EXPANSION 7장)
+const KILLS_PER_FLOOR := 5      # (옛 규칙 — 지금은 층마다 보스 하나다)
+# 미궁 보스 체력 배수 보정. FoeTiers.BOSS_HP_MULT(35) x 이 값이 실제 무게다:
+# 35 x 0.25 = 8.75 = 옛 일반 층(잡몹 5마리)의 1.75배. 층이 보스전이 됐으니
+# 조금 더 무겁되, 그대로 두면 일곱 배라 벽이 된다(2026-08-25).
+const BOSS_HP_SCALE := 0.25
 # 층당 등가 구간 보폭. **총 구간이 500 이 되면서 8 은 역전을 만들었다** —
 # 30층이 이미 267구간 난이도라 본편(256)보다 어려워서 미궁이 안 올라가고,
 # 미궁이 여는 훈련 상한도 같이 멈춘다. 그러면 혈액이 쓸 곳을 잃는다
@@ -31,26 +35,25 @@ static func eq_stage(floor: int) -> int:
 		OPEN_STAGE + (maxi(1, floor) - 1) * EQ_STEP)
 
 
-# 5층마다 중간보스, 10층마다 보스 — 본편의 주기(MIDBOSS_STEP·보스 10)와 같은
-# 문법이라 배우는 것 없이 읽힌다.
-static func is_boss_floor(floor: int) -> bool:
-	return maxi(1, floor) % 10 == 0
+# **미궁은 층마다 보스다** (사장님 2026-08-25: "미궁 6마리만 잡으면 끝인데
+# 보스 돌아가면서 잡는거면 좋겠어"). 잡몹 다섯을 치우는 층은 본편과 구별이
+# 안 됐다 — 한 층 = 한 보스여야 "탑을 오른다"가 된다. 얼굴은 막을 돌아가며
+# 바뀐다(Main._c_act_data 가 층으로 막을 고른다).
+static func is_boss_floor(_floor: int) -> bool:
+	return true
 
 
-static func is_midboss_floor(floor: int) -> bool:
-	return maxi(1, floor) % 10 == 5
+static func is_midboss_floor(_floor: int) -> bool:
+	return false
 
 
-static func kills_needed(floor: int) -> int:
-	return 1 if is_boss_floor(floor) or is_midboss_floor(floor) \
-		else KILLS_PER_FLOOR
+static func kills_needed(_floor: int) -> int:
+	return 1
 
 
-# 제한 시간도 본편 문법 그대로: 보스·중간보스 층에만 건다.
-static func time_limit(floor: int) -> float:
-	if is_boss_floor(floor):
-		return StageDefs.TIME_BOSS
-	return StageDefs.TIME_MIDBOSS if is_midboss_floor(floor) else 0.0
+# 층마다 보스전이니 제한 시간도 늘 걸린다.
+static func time_limit(_floor: int) -> float:
+	return StageDefs.TIME_BOSS
 
 
 # 본편 최고 기록이 미궁을 몇 층까지 여는가 (EXPANSION 7장의 교차 잠금).

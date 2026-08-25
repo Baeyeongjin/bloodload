@@ -11576,7 +11576,13 @@ func _c_act_data() -> Dictionary:
 	if raid_on != "":
 		return StageDefs.act_data(
 			RaidDefs.eq_stage(_raid_stage(), raid_on, best_stage))
-	return StageDefs.act_data(DungeonDefs.eq_stage(dungeon_floor) if dungeon_on else stage)
+	if dungeon_on:
+		# **층마다 얼굴이 바뀐다** (사장님 2026-08-25: "보스 돌아가면서").
+		# 등가 구간으로 고르면 같은 막이 여러 층 이어져 "또 저놈"이 된다 —
+		# 층 번호로 막을 직접 돌린다. 세기는 _c_enemy_power 가 따로 잰다.
+		var ai := (maxi(1, dungeon_floor) - 1) % StageDefs.ACTS.size()
+		return StageDefs.act_data(ai * StageDefs.STEPS_PER_STAGE + 1)
+	return StageDefs.act_data(stage)
 
 
 func _c_gold_per_kill() -> float:
@@ -13638,6 +13644,12 @@ func _spawn_foe() -> void:
 		if mult != 1.0:
 			f.max_hp *= mult
 			f.hp = f.max_hp
+	# **미궁 보스는 배수를 눌러 준다.** 층마다 보스로 바꾼 뒤(2026-08-25)
+	# BOSS_HP_MULT(35) 를 그대로 두면 잡몹 다섯(5)의 일곱 배라 한 층이 통째로
+	# 벽이 된다. 다섯 마리 몫보다 조금 더 무겁게만 둔다.
+	if dungeon_on and boss:
+		f.max_hp *= DungeonDefs.BOSS_HP_SCALE
+		f.hp = f.max_hp
 	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
 	if dungeon_on:
 		f.modulate = DungeonDefs.depth_tint(dungeon_floor)
@@ -13905,7 +13917,12 @@ func _advance_stage() -> void:
 		# 연속 도전 — 표가 남아 있으면 같은 던전에 다시 들어간다. 재입장은
 		# **암전이 끝난 뒤**여야 한다(_raid_enter 는 페이드 중엔 조용히 빠진다).
 		var again := _raid_repeat and _raid_left(kind) > 0
-		_fade(func() -> void:
+		# **여운.** 예전엔 마지막 놈이 쓰러지는 그 프레임에 암전이 시작돼서
+		# 사망 연출도, 방금 뜬 보상 배너도 못 보고 판이 끊겼다(사장님
+		# 2026-08-25: "던전이 끝나면 그냥 갑자기 확 끝나버리네").
+		# 상태(raid_on·표·보상)는 이미 위에서 정리했으니 이 사이에 두 번
+		# 격파되지 않는다 — 화면만 조금 더 머문다.
+		var finish := func() -> void: _fade(func() -> void:
 			kills = 0
 			# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
 			# 회복은 여기서 한 번 — 안 그러면 앞 구간에서 깎인 체력이 그대로 넘어와
@@ -13920,6 +13937,10 @@ func _advance_stage() -> void:
 			# 가드에 걸려 조용히 빠진다(실측: 다시 안 들어갔다). 깃발만 세운다.
 			if again:
 				_raid_again = kind)
+		if is_inside_tree():
+			get_tree().create_timer(CLEAR_HOLD).timeout.connect(finish)
+		else:
+			finish.call()
 		_refresh_dungeon()
 		if not again:
 			_return_gate("raid")   # 연속이 아니면 들어온 페이지로 (사장님)
@@ -13927,7 +13948,8 @@ func _advance_stage() -> void:
 		return
 	# ── 미궁: 층을 하나 오른다. 본편(stage)은 안 건드린다 ──────────────────
 	if dungeon_on:
-		_fade(func() -> void:
+		# 재화 던전과 같은 여운 — 쓰러지는 그림과 첫 돌파 배너를 볼 시간이다.
+		var finish_maze := func() -> void: _fade(func() -> void:
 			kills = 0
 			# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
 			# 회복은 여기서 한 번 — 안 그러면 앞 구간에서 깎인 체력이 그대로 넘어와
@@ -13960,6 +13982,10 @@ func _advance_stage() -> void:
 			_begin_stage_pose()
 			_start_advance()
 			_apply_stage_bg())
+		if is_inside_tree():
+			get_tree().create_timer(CLEAR_HOLD).timeout.connect(finish_maze)
+		else:
+			finish_maze.call()
 		_refresh_dungeon()
 		_save_game()
 		return
@@ -14063,6 +14089,10 @@ func _clear_foes() -> void:
 
 # 전투 띠만 덮는 암전. 화면 전체를 덮으면 20킬마다 UI 까지 깜빡여서 성가시다.
 # 바뀌는 건 전투 띠뿐이라 거기만 가린다.
+# 판이 끝나고 암전이 시작되기까지의 여운. 쓰러지는 그림과 보상 배너를 볼
+# 시간이다 — 0 이면 "이겼다"가 화면에서 통째로 사라진다(사장님 2026-08-25).
+const CLEAR_HOLD := 1.1
+
 const FADE_OUT := 0.28
 const FADE_HOLD := 0.14
 const FADE_IN := 0.4
