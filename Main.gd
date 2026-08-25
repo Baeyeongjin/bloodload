@@ -4290,6 +4290,31 @@ func _build_gacha(root: Control) -> void:
 		gb.position = bpos
 		gb.pressed.connect(func() -> void: _pull_gacha(count))
 		_gacha_buttons[key] = gb
+	# 아랫줄 — 30연·50연 + 남은 권 털기 (사장님 2026-08-25: "소환권이 6개
+	# 애매하게 남았을 때 6개 뽑기"). 권 잔량 버튼은 2~9장일 때만 보인다 —
+	# 1장은 1회 버튼이, 10장부터는 10연이 이미 그 값이다.
+	for pair2 in [["thirty", 24.0, 30], ["fifty", 203.0, 50], ["left", 382.0, 0]]:
+		var key2: String = pair2[0]
+		var bpos2 := Vector2(pair2[1], 694.0)
+		var count2: int = pair2[2]
+		_gacha_btn_tex[key2] = _shop_tex(root,
+			"res://assets/ui/sets/forge_button.png", bpos2, Vector2(170.0, 48.0))
+		var blb2 := _panel_label(root, bpos2 + Vector2(0.0, 13.0), Type.SIZE_SMALL,
+			Color(1.0, 0.96, 0.90), 170.0, 24.0)
+		blb2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_shop_outline(blb2, 8)
+		_gacha_btn_lbl[key2] = blb2
+		var gb2 := _shop_ghost(root, Vector2(170.0, 48.0), _gacha_btn_tex[key2])
+		gb2.position = bpos2
+		if count2 > 0:
+			gb2.pressed.connect(func() -> void: _pull_gacha(count2))
+		else:
+			# 남은 권 전부 — 누르는 순간의 잔량으로 뽑는다.
+			gb2.pressed.connect(func() -> void:
+				var n := int(tickets.get(_gacha_kind, 0))
+				if n >= 2 and n <= 9:
+					_pull_gacha(n))
+		_gacha_buttons[key2] = gb2
 	_mile_strip(root, Vector2(214.0, 442.0), 300.0)
 	_build_rates_table(root)
 	_gacha_reveal = Control.new()
@@ -5164,6 +5189,18 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 		Color(0.96, 0.84, 0.58), CONTENT_W, 28.0)
 	title.text = "%s 소환 결과" % _gacha_kind_name()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 30·50연은 카드가 판을 넘는다 — 여럿이면 스크롤 통에 담는다(사장님 2026-08-25).
+	var grid2: Control = null
+	if items.size() > 1:
+		var scroll2 := ScrollContainer.new()
+		scroll2.position = Vector2(0.0, 48.0)
+		scroll2.size = Vector2(PANEL_W, 600.0)
+		scroll2.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_gacha_reveal.add_child(scroll2)
+		grid2 = Control.new()
+		grid2.custom_minimum_size = Vector2(PANEL_W - 16.0,
+			float((items.size() + 4) / 5) * 100.0 + 8.0)
+		scroll2.add_child(grid2)
 	var cards: Array[Control] = []
 	for i in items.size():
 		var item: Dictionary = items[i]
@@ -5172,9 +5209,12 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 		var one := items.size() == 1
 		var card := Control.new()
 		card.position = Vector2(232.0, 56.0) if one else \
-			Vector2(48.0 + float(i % 5) * 100.0, 54.0 + float(i / 5) * 100.0)
+			Vector2(48.0 + float(i % 5) * 100.0, 6.0 + float(i / 5) * 100.0)
 		card.size = Vector2(112.0, 160.0) if one else Vector2(80.0, 96.0)
-		_gacha_reveal.add_child(card)
+		if one:
+			_gacha_reveal.add_child(card)
+		else:
+			grid2.add_child(card)
 		var rarity := GachaDefs.rarity(str(item.get("rarity", "common")))
 		var icon_path := GearDefs.icon_path(item) if item.get("kind", "") == "gear" \
 			else str(item["icon"])
@@ -5218,6 +5258,14 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	# **버튼 둘이다** (사장님 2026-08-13): 예전엔 장비 소환에 "보관함 확인" 하나뿐이라
 	# 연달아 뽑으려면 보관함에 들렀다가 되돌아와야 했다. 창을 닫기만 하는 "확인"과
 	# 그 자리로 데려가는 "보러 가기"를 나눈다 — 뽑은 것마다 갈 곳이 다르다.
+	# 결과 창에서 바로 이어 뽑기 (사장님 2026-08-25) — 1·10·30·50연.
+	for i3 in 4:
+		var cnt4: int = [1, 10, 30, 50][i3]
+		var pb := Ui.button(str(["1회", "10연", "30연", "50연"][i3]),
+			Vector2(30.0 + float(i3) * 135.0, FULL_BOTTOM - 118.0),
+			Vector2(126.0, 46.0), Type.SIZE_SMALL)
+		pb.pressed.connect(_pull_gacha.bind(cnt4))
+		_gacha_reveal.add_child(pb)
 	var kind_now := _gacha_kind
 	var ok := Ui.button("확인", Vector2(30.0, FULL_BOTTOM - 60.0),
 		Vector2(250.0, 50.0), Type.SIZE_SMALL)
@@ -5356,6 +5404,26 @@ func _refresh_gacha() -> void:
 		else "res://assets/ui/res_gem.png")
 	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = gem < ten_gem
+	# 아랫줄 — 30연·50연은 10연과 같은 셈(권을 있는 만큼 먼저, 모자란 몫만 보석).
+	for pr in [["thirty", 30], ["fifty", 50]]:
+		var key3: String = pr[0]
+		var cnt3: int = pr[1]
+		var tk3 := mini(have, cnt3)
+		var gm3 := GachaDefs.COST * float(cnt3 - tk3)
+		if tk3 >= cnt3:
+			_gacha_btn_lbl[key3].text = "%d연  권%d" % [cnt3, cnt3]
+		elif tk3 > 0:
+			_gacha_btn_lbl[key3].text = "%d연 권%d+%d" % [cnt3, tk3, int(gm3)]
+		else:
+			_gacha_btn_lbl[key3].text = "%d연  %d" % [cnt3, int(gm3)]
+		_gacha_buttons[key3].disabled = gem < gm3
+	var odd := have >= 2 and have <= 9
+	_gacha_btn_tex["left"].visible = odd
+	_gacha_btn_lbl["left"].visible = odd
+	_gacha_buttons["left"].visible = odd
+	if odd:
+		_gacha_btn_lbl["left"].text = "권 %d장 뽑기" % have
+		_gacha_buttons["left"].disabled = false
 	# 아이콘을 글자 바로 왼쪽에 붙인다 — 고정 x 는 글자 길이에 따라 간격이
 	# 들쭉였다(사장님: "배치가 일그러진 부분"). 라벨이 가운데 정렬이라 폭을 재서 옮긴다.
 	for key in ["one", "ten"]:
@@ -5366,13 +5434,14 @@ func _refresh_gacha() -> void:
 		_gacha_btn_icon[key].position.x = lbl2.position.x \
 			+ (258.0 - fw) * 0.5 - 34.0
 	# 그림 버튼·알약의 세트 전환 + 잠김 표시(어두워진다).
-	for key in ["one", "ten"]:
+	for key in ["one", "ten", "thirty", "fifty", "left"]:
 		_gacha_btn_tex[key].texture = Assets.tex(
 			"res://assets/ui/sets/%s_button.png" % set_name)
 		var dim: bool = _gacha_buttons[key].disabled
 		_gacha_btn_tex[key].modulate = Color(0.5, 0.47, 0.5) if dim else Color(1, 1, 1)
 		_gacha_btn_lbl[key].modulate = Color(0.6, 0.58, 0.6) if dim else Color(1, 1, 1)
-		_gacha_btn_icon[key].modulate = Color(0.6, 0.58, 0.6) if dim else Color(1, 1, 1)
+		if key in _gacha_btn_icon:
+			_gacha_btn_icon[key].modulate = Color(0.6, 0.58, 0.6) if dim else Color(1, 1, 1)
 	_gacha_table_tex.texture = Assets.tex(
 		"res://assets/ui/sets/%s_pill.png" % set_name)
 	var ty: float = TABLE_Y[set_name]
