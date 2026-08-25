@@ -378,7 +378,12 @@ func _special_move(mv: String) -> void:
 		_move_tw.tween_callback(func() -> void:
 			_airborne = false
 			_attack_anim = 0.0
-			_impact_sent = false)
+			_impact_sent = false
+			# **내려선 자리가 새 제자리다.** 대시는 원래 칸으로 돌아오지만
+			# 점프는 뛰어든 곳에 남는다 — stop_x 를 안 옮기면 Main._foe_arrived
+			# 가 영영 거짓이 되어 영웅이 그 몹을 다시는 못 때린다
+			# (사장님 2026-08-25: "보스가 점프공격하고나서 캐릭터 공격을 멈춤").
+			stop_x = position.x)
 
 
 # 그림자 반지름. Main 이 발밑에 깔아 준다.

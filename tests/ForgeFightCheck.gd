@@ -90,5 +90,40 @@ func _init() -> void:
 			"피가 2%% 남았는데 8초간 못 때렸다 (사거리 %f, 간격 %f, 모션 %s, 도착 %s, 몸통 %f)"
 			% [scene._front_reach(), scene._foe_gap(foe), scene._motion,
 			str(scene._foe_arrived(foe)), foe.body_half()])
+	# ── 점프 공격 뒤에도 때리는가 ──────────────────────────────────────────
+	# 수호자(sanctum_guardian)는 특수 패턴이 **jump** 다. 뛰어든 자리에 남는데
+	# stop_x 를 안 옮기면 _foe_arrived 가 영영 거짓이 되어 공격이 통째로 멈춘다
+	# (사장님 2026-08-25 실측). 특수를 강제로 켜서 그 상태를 태운다.
+	assert(str(FoeTiers.special_kind("sanctum_guardian")[4]) == "jump",
+		"수호자가 점프 패턴이 아니다 — 이 검사의 전제가 깨졌다")
+	if is_instance_valid(foe) and not foe.dying:
+		foe.hp = foe.max_hp        # 점프를 여러 번 볼 수 있게 되살린다
+		Foe.force_special = true
+		var jumped := false
+		var t3 := 0.0
+		while t3 < 10.0 and is_instance_valid(foe) and not foe.dying:
+			await process_frame
+			t3 += scene.get_process_delta_time()
+			if absf(foe.position.x - foe.stop_x) > 2.0:
+				jumped = true
+			elif jumped:
+				break              # 착지했다 — 여기서부터 다시 때려야 한다
+		Foe.force_special = false
+		assert(jumped, "특수(점프)가 한 번도 안 나왔다")
+		assert(scene._foe_arrived(foe) or not is_instance_valid(foe) or foe.dying,
+			"점프 착지 뒤에도 제자리 판정이 거짓이다 (x=%f stop=%f)"
+			% [foe.position.x, foe.stop_x])
+		var hp2: float = foe.hp
+		var t4 := 0.0
+		var hit2 := false
+		while t4 < 8.0 and is_instance_valid(foe) and not foe.dying:
+			await process_frame
+			t4 += scene.get_process_delta_time()
+			if foe.hp < hp2:
+				hit2 = true
+				break
+		assert(hit2 or not is_instance_valid(foe) or foe.dying,
+			"점프 뒤 8초간 못 때렸다 (x=%f stop=%f 도착=%s)"
+			% [foe.position.x, foe.stop_x, str(scene._foe_arrived(foe))])
 	print("ForgeFightCheck OK")
 	quit(0)
