@@ -78,6 +78,13 @@ func _init() -> void:
 	scene._set_gear_mode("inventory")
 	scene._open_bulk("fuse")
 	assert(scene._bulk_view.visible, "조합 창이 안 열렸다")
+	# **입력에서도 맨 위여야 한다.** z_index 는 그리기 순서만 바꾼다 — 클릭은
+	# 형제 중 나중 자식이 먼저 받으므로, 늦게 지어진 가이드 카드가 판 위를
+	# 가로챘다(사장님 2026-08-25: 조합 창에서 가이드 보상이 눌렸다).
+	var sibs: Array = scene._hud_root.get_children()
+	assert(sibs.find(scene._bulk_view) > sibs.find(scene._goal_widget),
+		"조합 창이 가이드 카드보다 입력 뒤에 있다 (%d vs %d)"
+		% [sibs.find(scene._bulk_view), sibs.find(scene._goal_widget)])
 	assert(scene._bulk_candidates().has(fuse_key), "조각이 찬 장비가 후보에 없다")
 	# 등급 탭 — 다른 등급을 고르면 그 등급만 남는다.
 	var rar := str(scene.gear_inventory[fuse_key]["rarity"])

@@ -2105,6 +2105,14 @@ func _build_dialogs() -> void:
 
 
 # 화면 전체를 덮는 반투명 판. 뒤 화면이 비쳐야 "어느 창 위에 떴는지"가 읽힌다.
+# 전면 판을 **입력에서도 맨 위**로 올린다. z_index 는 그리기 순서만 바꾼다 —
+# 클릭은 형제 중 **나중 자식**이 먼저 받으므로, 늦게 지어진 위젯(가이드 카드
+# 등)이 판 위를 가로챈다(사장님 2026-08-25: 조합 창에서 가이드 보상이 눌렸다).
+func _front(view: Control) -> void:
+	if view and view.get_parent():
+		view.get_parent().move_child(view, -1)
+
+
 func _overlay(z: int) -> Control:
 	var c := Control.new()
 	c.size = Vector2(Grid.BG)
@@ -2136,6 +2144,7 @@ func _dlg_label(parent: Control, pos: Vector2, size: int, col: Color,
 func _ask(text: String, on_ok: Callable) -> void:
 	_confirm_body.text = text
 	_confirm_action = on_ok
+	_front(_confirm_view)      # 어떤 판 위에서든 확인은 맨 위다
 	_confirm_view.visible = true
 
 
@@ -2195,6 +2204,7 @@ func _show_reward(title: String, entries: Array) -> void:
 			sub.text = str(e["sub"])
 			sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_reward_row.add_child(cell)
+	_front(_reward_view)
 	_reward_view.visible = true
 
 
@@ -3631,6 +3641,7 @@ func _open_bulk(mode: String, kind := "gear") -> void:
 	_bulk_mode = mode
 	_bulk_kind = kind
 	_bulk_tab = "all"
+	_front(_bulk_view)
 	_bulk_selected.clear()
 	_bulk_view.visible = true
 	_refresh_bulk()
