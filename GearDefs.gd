@@ -10,13 +10,16 @@ extends RefCounted
 const SLOTS := ["weapon", "armor", "trinket"]
 const SLOT_NAME := {"weapon": "무기", "armor": "방어구", "trinket": "장신구"}
 const SLOT_UNLOCK := {"weapon": 1, "armor": 5, "trinket": 10}
-const STAT_NAME := {"damage": "공격력", "tough": "최대 체력", "gold": "피 획득"}
+const STAT_NAME := {"damage": "공격력", "tough": "최대 체력", "critdmg": "치명타 피해"}
 
 # 등급. power는 스탯 배수이자 드랍 가중치의 역수 역할을 한다.
 const RARITY := GachaDefs.RARITIES
 
-# 슬롯이 올리는 스탯. 무기=피해, 방어구=체력(=생존 대신 방치 안정성), 장신구=흡혈량.
-const SLOT_STAT := {"weapon": "damage", "armor": "tough", "trinket": "gold"}
+# 슬롯이 올리는 스탯. 무기=피해, 방어구=체력(=생존 대신 방치 안정성).
+# 장신구는 **치명타 피해**다(사장님 2026-08-25: "피 획득/흡혈량은 없애고
+# 공격력이나 치명타 피해량으로"). 공격력은 무기·스탯·혈맥이 이미 밀고 있어
+# 또 붙이면 밋밋하다 — 축을 갈라야 "무기냐 장신구냐"가 선택이 된다.
+const SLOT_STAT := {"weapon": "damage", "armor": "tough", "trinket": "critdmg"}
 
 const CATALOG := {
 	"weapon": {

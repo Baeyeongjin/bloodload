@@ -129,13 +129,18 @@ func _init() -> void:
 	assert(not StatDefs.at_cap("crit", crit_cap - 1))
 	assert(not StatDefs.at_cap("damage", 999999), "무한 스탯에 상한이 걸렸다")
 
-	# 10) 치명타는 확률과 피해가 **둘 다** 올라야 값이 난다.
-	assert(is_equal_approx(Balance.crit_mult(1, 1), 1.0), "1레벨에서 배수가 1이 아니다")
+	# 10) 치명타 — **기본 확률 10%** 가 깔려 있다(사장님 2026-08-25). 0 이면
+	# 장신구의 치명 피해가 통째로 죽은 값이 된다.
+	assert(is_equal_approx(Balance.BASE_CRIT, 0.10), "기본 치명 확률이 10%가 아니다")
+	assert(Balance.crit_mult(1, 1) > 1.0, "기본 확률이 있는데 배수가 1이다")
 	var only_chance := Balance.crit_mult(50, 1)
 	var only_dmg := Balance.crit_mult(1, 50)
 	var both := Balance.crit_mult(50, 50)
 	assert(both > only_chance and both > only_dmg, "치명타 두 축이 안 곱해진다")
-	assert(is_equal_approx(only_dmg, 1.0), "확률 0인데 피해만으로 배수가 올랐다")
+	# 피해만 올려도 기본 확률(10%) 몫만큼은 오른다 — 그래도 확률을 같이
+	# 올린 쪽이 훨씬 커야 두 축이 서로를 증폭한다는 성질이 남는다.
+	assert(only_dmg > 1.0 and both > only_dmg * 1.5,
+		"치명 두 축이 서로를 증폭하지 않는다")
 	# 확률은 100%에서 멈춘다 — 그 위로는 슈퍼 치명타로 승계한다(docs/STATS.md 3장).
 	assert(is_equal_approx(Balance.crit_mult(101, 1), Balance.crit_mult(500, 1)))
 

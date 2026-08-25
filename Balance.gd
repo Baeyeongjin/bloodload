@@ -78,8 +78,14 @@ static func max_steps(level: int, purse: float, base := UP_BASE,
 # 성장 체감은 똑같다.
 # `dmg_bonus` 는 혈맥(TraitDefs.critdmg)이 치명 피해 배수에 **더하는** 몫이다.
 # 확률이 0이면 여전히 아무 효과가 없다 — 치명타 두 축의 성질은 그대로다.
+# **기본 치명타 확률**(사장님 2026-08-25). 0 이면 치명 피해 옵션이 통째로
+# 죽은 값이 된다 — 장신구가 치명 피해를 맡게 되면서 반드시 필요해졌다.
+# 스탯 레벨은 여기에 더한다: 기본 10% + 레벨당 1%p.
+const BASE_CRIT := 0.10
+
+
 static func crit_mult(chance_lv: float, dmg_lv: float, dmg_bonus := 0.0) -> float:
-	var chance := minf(1.0, 0.01 * (chance_lv - 1.0))
+	var chance := minf(1.0, BASE_CRIT + 0.01 * (chance_lv - 1.0))
 	var dmg := 1.5 + 0.05 * (dmg_lv - 1.0) + maxf(0.0, dmg_bonus)
 	return 1.0 + chance * (dmg - 1.0)
 

@@ -15,7 +15,9 @@ func _init() -> void:
 	var seen := {}
 	var known_kind := ["stage", "floor", "hero", "kills", "species", "knowledge",
 		"skills", "traits", "trial", "pets", "chest", "nights", "prestige"]
-	var known_stat := ["damage", "speed", "tough", "gold"]
+	# gold(피 획득)는 없어졌다 — 종 수집 칭호 21종은 치명 피해로 옮겼다
+	# (사장님 2026-08-25).
+	var known_stat := ["damage", "speed", "tough", "critdmg"]
 	for t in TitleDefs.TITLES:
 		var id := str(t["id"])
 		assert(not seen.has(id), "id 중복: %s" % id)

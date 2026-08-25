@@ -108,8 +108,9 @@ func _init() -> void:
 	scene.traits["wealth_1"] = TraitDefs.MAX_LV
 	assert(scene.max_hp() > hp0 * 1.095 and scene.max_hp() < hp0 * 1.105,
 		"굳은 피 I(+10%%)이 체력에 안 보인다")
-	assert(scene.gold_mult() > gold0 * 1.095 and scene.gold_mult() < gold0 * 1.105,
-		"갈증 I(+10%%)이 혈액 배수에 안 보인다")
+	# 갈증(혈액)은 없어졌다 — 탐욕 1~3 티어는 치명 피해로 옮겼다(2026-08-25).
+	assert(is_equal_approx(scene._trait_add("critdmg"), 0.10),
+		"잔혹 I(+10%%)이 치명 피해에 안 보인다: %f" % scene._trait_add("critdmg"))
 	# 방치 상한: 긴 잠 2개 = +4시간.
 	scene.traits["wealth_4"] = TraitDefs.MAX_LV
 	scene.traits["wealth_5"] = TraitDefs.MAX_LV

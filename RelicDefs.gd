@@ -37,9 +37,9 @@ const RELICS := [
 	{"id": "fallen_halo", "name": "타락한 후광", "rarity": "rare",
 		"kind": "hp", "value": 0.10, "icon": "relic_fallen_halo"},
 	{"id": "golden_mask", "name": "황금 가면", "rarity": "rare",
-		"kind": "gold", "value": 0.10, "icon": "relic_golden_mask"},
+		"kind": "critdmg", "value": 0.10, "icon": "relic_golden_mask"},
 	{"id": "silver_ring", "name": "은빛 반지", "rarity": "rare",
-		"kind": "gold", "value": 0.10, "icon": "relic_silver_ring"},
+		"kind": "critdmg", "value": 0.10, "icon": "relic_silver_ring"},
 	{"id": "witch_tear", "name": "마녀의 눈물", "rarity": "rare",
 		"kind": "speed", "value": 0.10, "icon": "relic_witch_tear"},
 	{"id": "milky_map", "name": "별의 지도", "rarity": "rare",
@@ -128,7 +128,7 @@ static func effect_text(r: Dictionary, lv: int) -> String:
 		"hp": return "체력 +%d%%" % int(v * 100.0)
 		"critdmg": return "치명피해 +%d%%" % int(v * 100.0)
 		"speed": return "공속 +%d%%" % int(v * 100.0)
-		"gold": return "흡혈 +%d%%" % int(v * 100.0)
+		"critdmg": return "치명 피해 +%d%%" % int(v * 100.0)
 		"sweep": return "소탕 +%d%%" % int(v * 100.0)
 		"hours": return "방치 +%.1f시간" % v
 	return ""

@@ -12,7 +12,7 @@ class_name BoonDefs
 # 값은 전부 "하루 벌이의 절반쯤"으로 맞췄다: 은총이 있는 주와 없는 주가 두 배
 # 차이 나면 없는 주가 손해로 읽혀서, 안 오는 주에 접속을 쉬게 만든다.
 const BOONS := [
-	{"id": "moon", "name": "핏빛 만월", "kind": "gold", "value": 0.5,
+	{"id": "moon", "name": "붉은 달", "kind": "critdmg", "value": 0.5,
 		"text": "사냥 혈액 +50%"},
 	{"id": "tide", "name": "혈정의 물결", "kind": "sweep", "value": 1.0,
 		"text": "미궁 소탕 2배"},

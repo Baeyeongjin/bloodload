@@ -272,8 +272,8 @@ func _init() -> void:
 	assert(is_equal_approx(FoeTiers.codex_bonus(0, "damage"), 0.0))
 	assert(FoeTiers.codex_bonus(22, "damage") > FoeTiers.codex_bonus(3, "damage"),
 		"도감 보정이 누적되지 않는다")
-	assert(is_equal_approx(FoeTiers.codex_bonus(9, "gold"), 0.0), "흡혈 보상이 일찍 열린다")
-	assert(FoeTiers.codex_bonus(10, "gold") > 0.0)
+	assert(is_equal_approx(FoeTiers.codex_bonus(9, "crit"), 0.0), "치명 보상이 일찍 열린다")
+	assert(FoeTiers.codex_bonus(10, "crit") > 0.0)
 	assert(FoeTiers.codex_bonus(44, "tough") > 0.0, "체력 보상이 안 붙는다")
 	# 칸을 정확히 밟았을 때만 수령한다 — 합계는 1씩만 오르므로 두 번 밟히지 않는다.
 	assert(not FoeTiers.codex_reward_at(3).is_empty())

@@ -602,16 +602,23 @@ func attack_interval() -> float:
 		/ (1.0 + _oath_val("speed"))
 
 
+# 장신구 전투력 1점이 치명 피해 배수에 더하는 몫. **작게 잡는다** — 치명은
+# 확률과 곱해져 자라는 축이라(확률 100%면 그대로 dps 배수), 옛 혈액 계수
+# 0.02 를 그대로 옮기면 후반에 배수가 열 배로 튄다(2026-08-25 환산).
+const GEAR_CRITDMG := 0.01
+
+# 사라진 혈액 배수를 메우는 기본 계수(2026-08-25). 옵션에 붙던 배수를
+# 전투 축으로 옮기면서 수급이 통째로 빠졌다 — 총량이 비슷하게 남도록
+# 기본 곡선을 올린다. 곡선을 손대면 이 값도 다시 재야 한다.
+const BLOOD_MAKEUP := 6.0
+
+
 func gold_mult() -> float:
-	# 흡혈량 스탯은 삭제됐다(2026-08-20) — 칭호 21종의 공짜 레벨은 그대로 살려서
-	# 이 항이 계속 값을 한다. 사라진 스탯을 읽는 코드를 남기지 않으려 직접 부른다.
-	return (1.0 + 0.15 * float(TitleDefs.bonus("gold", titles_got))
-			+ _gear_stat("gold") * 0.02 + _lore_bonus("gold")
-			+ SkinDefs.bonus("gold", skins_owned)) \
-		* Balance.hero_mult(hero_lv) \
-		* (1.0 + _collection_bonus("gold") + FoeTiers.codex_bonus(codex_knowledge,"gold")) \
-		* _trait_mult("gold") * _relic_mult("gold") * (1.0 + _boon("gold")) \
-		* (1.0 + _pet_mult("gold")) * (1.0 + _oath_val("leech"))
+	# **혈액 획득 배수는 옵션에서 사라졌다**(사장님 2026-08-25:
+	# "피획득 흡혈량 증가 같은 건 없애줘"). 칭호·장비·도감·펫·유물·
+	# 혈맥·은총·계약에 붙던 몫은 전투 축(공격력·치명)으로 옮겼고,
+	# 사라진 수급은 BLOOD_MAKEUP 이 기본 곡선에서 메운다.
+	return BLOOD_MAKEUP * Balance.hero_mult(hero_lv)
 
 
 func dps() -> float:
@@ -700,7 +707,9 @@ func _base_hit_damage() -> float:
 		* (1.0 + _oath_val("attack")) \
 		* Balance.crit_mult(_stat_eff("crit") + int(_oath_val("crit")),
 			_stat_eff("critdmg"),
-			_trait_add("critdmg") + RelicDefs.add("critdmg", relics))
+			_trait_add("critdmg") + RelicDefs.add("critdmg", relics)
+			+ _gear_stat("critdmg") * GEAR_CRITDMG
+			+ _collection_bonus("critdmg") + _boon("critdmg"))
 
 
 # 실제 타격 피해. 대상을 주면 그 몹의 **지식 레벨**만큼 더 아프게 때린다.
@@ -1870,9 +1879,13 @@ func _show_info() -> void:
 		kills += float(codex[k])
 	var mins := int(play_sec / 60.0)
 	# 치명 두 축은 Balance.crit_mult 와 같은 눈금으로 읽는다(1레벨 = 0%).
-	var crit_pct := int(minf(100.0, maxf(0.0, float(_stat_eff("crit")) - 1.0)))
+	# 기본 확률(BASE_CRIT)이 깔려 있다 — Balance.crit_mult 와 같은 눈금.
+	var crit_pct := int(minf(100.0, Balance.BASE_CRIT * 100.0
+		+ maxf(0.0, float(_stat_eff("crit")) - 1.0)))
 	var critdmg := 1.5 + 0.05 * (float(_stat_eff("critdmg")) - 1.0) \
-		+ _trait_add("critdmg") + RelicDefs.add("critdmg", relics)
+		+ _trait_add("critdmg") + RelicDefs.add("critdmg", relics) \
+		+ _gear_stat("critdmg") * GEAR_CRITDMG \
+		+ _collection_bonus("critdmg") + _boon("critdmg")
 	var sections: Array = [
 		["능력치", [
 			["평타 한 방", _n(_base_hit_damage() * (1.0 + _codex_act_bonus()))],
@@ -2879,7 +2892,7 @@ static func _trait_effect_text(n: Dictionary) -> String:
 		"hp": return "체력 +%d%%" % int(v * 100.0)
 		"regen": return "회복 +%d%%" % int(v * 100.0)
 		"guard": return "피해 -%d%%" % int(v * 100.0)
-		"gold": return "혈액 +%d%%" % int(v * 100.0)
+		"critdmg": return "치명 피해 +%d%%" % int(v * 100.0)
 		"hours": return "방치 +%d시간" % int(v)
 		"sweep": return "소탕 +%d%%" % int(v * 100.0)
 	return ""
@@ -4002,9 +4015,9 @@ func _refresh_gear_inventory() -> void:
 		# **줄지 않는다** — 그게 이 줄을 만든 이유다(사장님).
 		# 짧은 이름으로 적는다 — 정식 이름(최대 체력·피 획득)까지 넣으면 한 줄
 		# 528px 을 넘겨 끝 항목이 잘렸다(사장님 캡처).
-		var short := {"damage": "공격", "tough": "체력", "gold": "혈액"}
+		var short := {"damage": "공격", "tough": "체력", "critdmg": "치명피해"}
 		var parts := PackedStringArray()
-		for st in ["damage", "tough", "gold"]:
+		for st in ["damage", "tough", "critdmg"]:
 			parts.append("%s +%.0f%%" % [short[st], _collection_bonus(st) * 100.0])
 		_gear_hold_lbl.text = "보유 효과(%d종)  %s" % [gear_inventory.size(),
 			"  ·  ".join(parts)]
@@ -4376,7 +4389,7 @@ func _gear_gain_line(item: Dictionary) -> String:
 	# (사장님 2026-08-25: "폰트 짤리는거 수정").
 	match str(item.get("stat", "")):
 		"tough": return "체력 +%s%%" % _n(p * 12.0, true)
-		"gold": return "혈액 +%s%%" % _n(p * 2.0, true)
+		"critdmg": return "치명피해 +%s%%" % _n(p * GEAR_CRITDMG * 100.0, true)
 	return "공격 +%s" % _n(p, true)
 
 
@@ -6163,7 +6176,7 @@ func _refresh_status() -> void:
 	_status_head.text = "지식 합계  %d / %d" % [codex_knowledge,
 		FoeTiers.codex_max_knowledge()]
 	var now: Array[String] = []
-	for stat in ["damage", "gold", "tough"]:
+	for stat in ["damage", "crit", "tough"]:
 		var rate := FoeTiers.codex_bonus(codex_knowledge, stat)
 		if rate > 0.0:
 			now.append("%s +%d%%" % [FoeTiers.codex_stat_name(stat), int(rate * 100.0)])
@@ -12908,7 +12921,7 @@ func _oath_fx_long(k: String, v: float) -> String:
 		"armor": return "받는 피해 -%d%%" % int(v * 100.0)
 		"regen": return "회복량 +%d%%" % int(v * 100.0)
 		"regen_max": return "초당 최대체력 %d%% 회복" % int(v * 100.0)
-		"leech": return "흡혈량 +%d%%" % int(v * 100.0)
+		"critdmg": return "치명 피해 +%d%%" % int(v * 100.0)
 		"crit": return "치명 확률 +%d%%p" % int(v)
 		"cleave": return "평타가 광역이 된다"
 		"exec": return "처형 문턱 +%d%%p" % int(v * 100.0)
@@ -13058,7 +13071,7 @@ func _oath_fx_short(k: String, v: float) -> String:
 		"armor": return "방%+d%%" % int(v * 100.0)
 		"regen": return "회%+d%%" % int(v * 100.0)
 		"regen_max": return "재생%d%%" % int(v * 100.0)
-		"leech": return "흡%+d%%" % int(v * 100.0)
+		"critdmg": return "치명%+d%%" % int(v * 100.0)
 		"crit": return "치%+d" % int(v)
 		"cleave": return "광역"
 		"exec": return "처형%+d%%" % int(v * 100.0)
@@ -13076,7 +13089,7 @@ func _oath_eff_text(c: Dictionary) -> String:
 			"armor": parts.append("받는 피해 -%d%%" % int(v * 100.0))
 			"regen": parts.append("회복 +%d%%" % int(v * 100.0))
 			"regen_max": parts.append("초당 최대체력 %d%% 회복" % int(v * 100.0))
-			"leech": parts.append("흡혈량 +%d%%" % int(v * 100.0))
+			"critdmg": parts.append("치명 피해 +%d%%" % int(v * 100.0))
 			"crit": parts.append("치명 확률 +%d%%p" % int(v))
 			"cleave": parts.append("평타가 광역이 된다")
 			"time": parts.append("제한 시간 +%d초" % int(v))
@@ -15404,7 +15417,7 @@ func _codex_head_text(mode: String) -> Array:
 			return [" · ".join(parts), _gain_text(
 				FoeTiers.codex_bonus(codex_knowledge, "damage"),
 				FoeTiers.codex_bonus(codex_knowledge, "hp"),
-				FoeTiers.codex_bonus(codex_knowledge, "gold"))]
+				FoeTiers.codex_bonus(codex_knowledge, "crit"))]
 		"gear", "skill":
 			var marks: Array = LoreDefs.SKILL_MARKS if mode == "skill" 				else LoreDefs.GEAR_MARKS
 			var got := _lore_got(mode)
@@ -15416,7 +15429,7 @@ func _codex_head_text(mode: String) -> Array:
 				head += "  ·  다음 이정표까지 %d종" % left
 			return [head, _gain_text(LoreDefs.bonus(marks, got, "damage"),
 				LoreDefs.bonus(marks, got, "hp"),
-				LoreDefs.bonus(marks, got, "gold"))]
+				LoreDefs.bonus(marks, got, "crit"))]
 		"title":
 			# 칭호는 배율이 아니라 **훈련 공짜 레벨**을 준다(TitleDefs).
 			var lv := 0
@@ -15434,14 +15447,14 @@ func _codex_head_text(mode: String) -> Array:
 
 
 # "지금 받는 것: 공격 +12% · 체력 +8%" — 0 인 항목은 안 적는다(빈 줄이 낫다).
-func _gain_text(dmg: float, hp: float, gold: float) -> String:
+func _gain_text(dmg: float, hp: float, crit: float) -> String:
 	var parts := PackedStringArray()
 	if dmg > 0.0:
 		parts.append("공격 +%d%%" % int(round(dmg * 100.0)))
 	if hp > 0.0:
 		parts.append("체력 +%d%%" % int(round(hp * 100.0)))
-	if gold > 0.0:
-		parts.append("흡혈 +%d%%" % int(round(gold * 100.0)))
+	if crit > 0.0:
+		parts.append("치명 확률 +%d%%" % int(round(crit * 100.0)))
 	return "아직 받는 게 없다" if parts.is_empty() 		else "지금 받는 것: " + " · ".join(parts)
 
 func _codex_set_mode(mode: String) -> void:

@@ -19,7 +19,7 @@ const GEAR_MARKS := [
 	{"need": 10, "stat": "damage", "rate": 0.02},
 	{"need": 24, "stat": "hp", "rate": 0.03},
 	{"need": 40, "stat": "damage", "rate": 0.03},
-	{"need": 56, "stat": "gold", "rate": 0.05},
+	{"need": 56, "stat": "crit", "rate": 0.05},
 	{"need": 72, "stat": "damage", "rate": 0.05},
 ]
 

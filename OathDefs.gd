@@ -19,7 +19,7 @@ const GOLD_GEM := 60.0       # 황금 계약서 1장
 
 # 계약 12종 — effects 의 키가 Main 의 훅과 1:1 이다:
 #   attack 공격배수+ · speed 공속+ · armor 받는피해- · regen 회복배수+ ·
-#   regen_max 초당 최대체력% 회복 · leech 흡혈량(혈액)+ · crit 치명확률 레벨+ ·
+#   regen_max 초당 최대체력% 회복 · critdmg 치명 피해 배수+ · crit 치명확률 레벨+ ·
 #   cleave 평타 광역 · time 제한시간+초 · exec 처형 문턱+ ·
 #   devour 보스 체력 % 즉시 흡수(즉발)
 const CONTRACTS := [
@@ -32,7 +32,7 @@ const CONTRACTS := [
 	{"id": "skin", "name": "굳은 살가죽", "rarity": "uncommon",
 		"effects": {"armor": 0.35, "regen": 1.0}, "dur": 180.0},
 	{"id": "redthirst", "name": "붉은 갈증", "rarity": "uncommon",
-		"effects": {"leech": 1.0}, "dur": 180.0},
+		"effects": {"critdmg": 1.0}, "dur": 180.0},
 	{"id": "instinct", "name": "사냥꾼의 직감", "rarity": "uncommon",
 		"effects": {"crit": 25.0}, "dur": 180.0},
 	{"id": "frenzy", "name": "피의 광란", "rarity": "rare",
