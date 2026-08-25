@@ -6057,7 +6057,7 @@ var _title_badges: Array[TextureRect] = []
 
 # 칭호 보상 스탯 → 아이콘 (스탯 창과 같은 그림).
 const TITLE_STAT_ICON := {"damage": "stat_damage", "speed": "stat_speed",
-	"tough": "stat_tough", "gold": "res_blood"}
+	"tough": "stat_tough", "critdmg": "stat_critdmg"}
 # 임무판과 같은 판(QUEST_PANEL) 안에 산다 — 줄 폭도 그 판 기준이다.
 # 칭호 줄 폭 — 도감 팝업 안쪽(484)에서 스크롤 여백 16 과 얇은 바 10 을 뺀다.
 const TITLE_ROW_W := 484.0 - 16.0 - CODEX_BAR_W
@@ -6142,8 +6142,10 @@ func _refresh_titles() -> void:
 		_title_conds[i].text = cond_str
 		_title_rewards[i].text = "%s\n+%d" % [TitleDefs.stat_name(str(t["stat"])),
 			int(t["levels"])]
+		# 표에 없는 스탯이 와도 화면이 죽지 않게 기본값을 둔다 — 대괄호
+		# 접근은 키가 없으면 그 자리에서 터진다(2026-08-25 실측).
 		_title_reward_icons[i].texture = Assets.tex("res://assets/ui/%s.png" \
-			% TITLE_STAT_ICON[str(t["stat"])])
+			% str(TITLE_STAT_ICON.get(str(t["stat"]), "stat_damage")))
 		_title_names[i].add_theme_color_override("font_color",
 			Color(0.92, 0.82, 0.62) if got else Color(0.62, 0.60, 0.68))
 		if i < _title_badges.size():

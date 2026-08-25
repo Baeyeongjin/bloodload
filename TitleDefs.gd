@@ -347,5 +347,5 @@ static func stat_name(stat: String) -> String:
 		"damage": return "공격력"
 		"speed": return "공격속도"
 		"tough": return "체력"
-		"gold": return "흡혈량"
+		"critdmg": return "치명 피해"
 	return stat
