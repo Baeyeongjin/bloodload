@@ -280,7 +280,7 @@ def main(argv):
         # 몸을 위 절반에 놓아 스킨 4종이 공격 때 16px 위로 순간이동했다.
         from PIL import Image as _Im
         if trim_floor:
-            _floor = ink_box(_Im.open(paths[0]).convert("RGBA"))[3] + 2
+            _floor = ink_box(_Im.open(paths[0]).convert("RGBA"))[3] + 1
             _cut = 0
             for _p in paths[1:]:
                 _im = _Im.open(_p).convert("RGBA")
