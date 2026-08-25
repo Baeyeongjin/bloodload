@@ -120,6 +120,10 @@ var stage := 1
 var kills := 0
 var gold := 0.0
 # 조합 천장 — "gear:<보관키>" -> 실패 누적. 성공하면 지운다(사장님 2026-08-25).
+# 조합 천장 — **등급 하나당 카운터 하나**다(사장님 2026-08-25). 무기·방어구·
+# 장신구·스킬이 같은 등급이면 같은 통에 쌓인다: "언커먼 조합 10회째는 확정".
+# 아이템별로 두면 종이 수십 개라 천장에 영영 못 닿는다.
+# 키는 등급 키("common"·"uncommon"…). 조각 곳간(gacha_shards)은 아이템별 그대로.
 var fuse_pity := {}
 var gem := 0.0
 # 혈정 — 미궁 전용 재화(EXPANSION 6장). 획득은 미궁(첫 돌파 + 소탕)뿐이고
@@ -3471,12 +3475,18 @@ func _build_gear(root: Control) -> void:
 		# 강화(정수 레벨업)는 삭제됐다(사장님 2026-08-25). 대신 **이 장비가
 		# 스탯을 얼마나 올리는지**를 적는다 — 전투력 원값("+8")은 그 자체로는
 		# 큰지 작은지 읽히지 않는다(같은 날 캡처).
+		# **두 줄로 나눈다.** 한 줄에 붙이면 "레벨 320 · 공격 +370" 이 칸(SLOT_GAP)
+		# 을 넘쳐 옆 칸과 겹치고 끝이 잘린다(사장님 2026-08-25 캡처).
+		var lv_lbl := _panel_label(_gear_equipped_view,
+			Vector2(at.x + SLOT_BOX * 0.5 - SLOT_GAP * 0.5, 176.0),
+			Type.SIZE_SMALL, Color(0.80, 0.78, 0.84), SLOT_GAP, 20.0)
+		lv_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var stat_lbl := _panel_label(_gear_equipped_view,
-			Vector2(at.x + SLOT_BOX * 0.5 - SLOT_GAP * 0.5, 178.0),
+			Vector2(at.x + SLOT_BOX * 0.5 - SLOT_GAP * 0.5, 196.0),
 			Type.SIZE_SMALL, Color(0.68, 0.86, 0.72), SLOT_GAP, 20.0)
 		stat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl,
-			"stat": stat_lbl}
+			"lv": lv_lbl, "stat": stat_lbl}
 	_gear_inventory_view = Control.new()
 	_gear_inventory_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_inventory_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3732,7 +3742,7 @@ func _refresh_bulk() -> void:
 		# 2026-08-25). 이게 없으면 어느 걸 골라야 이득인지 알 수 없다.
 		var probe3 := {"rarity": _bulk_rarity_of(key)}
 		var cap3 := GearDefs.fuse_pity(probe3)
-		var tr3 := int(fuse_pity.get(_bulk_owned_key(key), 0))
+		var tr3 := int(fuse_pity.get(_bulk_rarity_of(key), 0))
 		var pl3 := _panel_label(card, Vector2(6.0, 116.0), Type.SIZE_SMALL,
 			Color(0.98, 0.86, 0.52) if tr3 + 1 >= cap3 else Color(0.70, 0.68, 0.76),
 			104.0, 18.0)
@@ -3873,7 +3883,7 @@ func _refresh_bulk_pity() -> void:
 	if only == "":
 		var best := -1
 		for key in _bulk_candidates():
-			var t2 := int(fuse_pity.get(_bulk_owned_key(key), 0))
+			var t2 := int(fuse_pity.get(_bulk_rarity_of(key), 0))
 			if t2 > best:
 				best = t2
 				only = str(key)
@@ -3881,7 +3891,7 @@ func _refresh_bulk_pity() -> void:
 	var tries := 0
 	if only != "":
 		rar_key = _bulk_rarity_of(only)
-		tries = int(fuse_pity.get(_bulk_owned_key(only), 0))
+		tries = int(fuse_pity.get(_bulk_rarity_of(only), 0))
 	var cap := GearDefs.fuse_pity({"rarity": rar_key})
 	var next_name := str(GachaDefs.RARITIES[mini(
 		GachaDefs.rarity_index(rar_key) + 1,
@@ -4180,7 +4190,8 @@ func _refresh_gear_detail() -> void:
 	var owned_key := "gear:" + _gear_selected_key
 	var shards := int(gacha_shards.get(owned_key, 0))
 	var highest := GachaDefs.rarity_index(str(item["rarity"])) >= GachaDefs.RARITIES.size() - 1
-	var pity_left := maxi(1, GearDefs.fuse_pity(item) - int(fuse_pity.get(owned_key, 0)))
+	var pity_left := maxi(1, GearDefs.fuse_pity(item)
+		- int(fuse_pity.get(str(item.get("rarity", "common")), 0)))
 	var up_cost0 := GearDefs.upgrade_cost(item)
 	var resource_values := [
 		["조각 %d/%d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
@@ -4291,17 +4302,19 @@ func _synthesize(old_key: String) -> String:
 	if item.is_empty() or int(gacha_shards.get(owned_key, 0)) < GearDefs.FUSE_SHARDS:
 		return ""
 	_quest_bump("gear")   # 임무 "장비 조합"은 시도를 센다 — 실패도 조합이다
-	var tries := int(fuse_pity.get(owned_key, 0)) + 1
+	# 천장은 **등급 통**에 쌓인다 — 같은 등급이면 무기든 스킬이든 한 줄.
+	var rar_pity := str(item.get("rarity", "common"))
+	var tries := int(fuse_pity.get(rar_pity, 0)) + 1
 	if tries < GearDefs.fuse_pity(item) and randf() >= GearDefs.fuse_rate(item):
 		gacha_shards[owned_key] = int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
-		fuse_pity[owned_key] = tries
+		fuse_pity[rar_pity] = tries
 		_fuse_failed = true
 		# **빈손으로 돌려보내지 않는다** (사장님 2026-08-25): 조각 셋을 썼으면
 		# 같은 등급 장비 하나는 나온다. 천장은 그대로 쌓인다.
 		_fuse_gain = _receive_gacha_gear(str(item.get("rarity", "common")),
 			str(item.get("slot", "weapon")))
 		return ""
-	fuse_pity.erase(owned_key)
+	fuse_pity.erase(rar_pity)
 	var old_max := max_hp()
 	var slot := str(item["slot"])
 	var was_equipped := str(equipped.get(slot, {}).get("inventory_key", "")) == old_key
@@ -4349,6 +4362,7 @@ func _refresh_gear_slots() -> void:
 			nodes["frame"].modulate = Color(0.45, 0.45, 0.5)
 			nodes["label"].text = GearDefs.SLOT_NAME[slot]
 			nodes["label"].add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+			nodes["lv"].text = ""
 			nodes["stat"].text = "비었음"
 			continue
 		nodes["icon"].texture = Assets.tex(GearDefs.icon_path(item))
@@ -4358,8 +4372,8 @@ func _refresh_gear_slots() -> void:
 		# 레벨은 강화 버튼을 누르면 오르는 수치로 이미 읽힌다.
 		nodes["label"].text = str(item["name"])
 		nodes["label"].add_theme_color_override("font_color", Color(item["col"]))
-		nodes["stat"].text = "Lv.%d · %s" % [int(item.get("lv", 0)),
-			_gear_gain_line(item)]
+		nodes["lv"].text = "레벨 %d" % int(item.get("lv", 0))
+		nodes["stat"].text = _gear_gain_line(item)
 
 
 # 이 장비 하나가 실제로 올려 주는 값. **슬롯마다 단위가 다르다** — 무기는
@@ -4367,10 +4381,12 @@ func _refresh_gear_slots() -> void:
 # 12%/점, 장신구는 혈액의 2%/점이다. 화면에 같은 단위로 적으면 거짓말이 된다.
 func _gear_gain_line(item: Dictionary) -> String:
 	var p := GearDefs.power(item)
+	# **좁은 칸이라 축약한다** — 후반 값은 네 자리를 넘어 칸을 넘친다
+	# (사장님 2026-08-25: "폰트 짤리는거 수정").
 	match str(item.get("stat", "")):
-		"tough": return "체력 +%d%%" % int(p * 12.0)
-		"gold": return "혈액 +%d%%" % int(p * 2.0)
-	return "공격 +%s" % _n(p)
+		"tough": return "체력 +%s%%" % _n(p * 12.0, true)
+		"gold": return "혈액 +%s%%" % _n(p * 2.0, true)
+	return "공격 +%s" % _n(p, true)
 
 
 func _build_gacha(root: Control) -> void:
@@ -5339,10 +5355,11 @@ func _synthesize_skill(key: String) -> String:
 	if int(gacha_shards.get(owned_key, 0)) < GearDefs.FUSE_SHARDS:
 		return ""
 	var probe := {"rarity": str(SkillDefs.split(key)[1])}
-	var tries := int(fuse_pity.get(owned_key, 0)) + 1
+	var rar_pity := str(probe["rarity"])
+	var tries := int(fuse_pity.get(rar_pity, 0)) + 1
 	if tries < GearDefs.fuse_pity(probe) and randf() >= GearDefs.fuse_rate(probe):
 		gacha_shards[owned_key] = int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
-		fuse_pity[owned_key] = tries
+		fuse_pity[rar_pity] = tries
 		_fuse_failed = true
 		# 빈손으로 안 보낸다 — 같은 등급 스킬 하나(장비와 같은 규칙).
 		var got_row := _receive_gacha_skill(str(probe["rarity"]))
@@ -5352,7 +5369,7 @@ func _synthesize_skill(key: String) -> String:
 				"label": str(got_row["name"]),
 				"sub": str(rr["name"]), "col": rr["col"]}
 		return ""
-	fuse_pity.erase(owned_key)
+	fuse_pity.erase(rar_pity)
 	gacha_shards[owned_key] = int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
 	# 원본은 남는다(사장님: 보유 보상이 있으니 한 벌은 무조건) — 장착도 그대로.
 	if skill_owned.has(next):
@@ -14954,6 +14971,11 @@ func _load_game() -> void:
 	gacha_owned = cfg.get_value("gacha", "owned", {})
 	gacha_shards = cfg.get_value("gacha", "shards", {})
 	fuse_pity = cfg.get_value("gacha", "fuse_pity", {})
+	# 2026-08-25 이전 저장본은 키가 "gear:도끼"·"skill:ward_common" 이었다.
+	# 등급 통으로 바뀌었으니 그 줄은 버린다 — 남겨 두면 안 쓰이는 쓰레기다.
+	for k in fuse_pity.keys():
+		if ":" in str(k):
+			fuse_pity.erase(k)
 	for old_key in gear_key_map:
 		var new_key: String = str(gear_key_map[old_key])
 		if new_key == old_key:

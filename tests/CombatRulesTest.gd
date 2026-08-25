@@ -656,7 +656,9 @@ func _init() -> void:
 		"조각이 모자란데 조합이 굴렀다")
 	# 천장 직전으로 맞추면 이번 시도는 **확정**이라 굴림 없이 검사가 결정적이다.
 	game.gacha_shards[synth_owned_key] = GearDefs.FUSE_SHARDS
-	game.fuse_pity[synth_owned_key] = GearDefs.fuse_pity(game.gear_inventory[synth_key]) - 1
+	# 천장은 **등급 통**이다(2026-08-25) — 키가 등급 키다.
+	var synth_rar := str(game.gear_inventory[synth_key]["rarity"])
+	game.fuse_pity[synth_rar] = GearDefs.fuse_pity(game.gear_inventory[synth_key]) - 1
 	var shards_before := int(game.gacha_shards[synth_owned_key])
 	var rarity_before := GachaDefs.rarity_index(str(game.gear_inventory[synth_key]["rarity"]))
 	game._synthesize_selected()
@@ -669,7 +671,7 @@ func _init() -> void:
 	# 통과 여부가 갈린다(실제로 5 -> 3 으로 나와 이 검사가 한 번 틀렸다).
 	assert(int(game.gacha_shards.get(synth_owned_key, 0)) < shards_before,
 		"합성이 재료 조각을 소모하지 않는다")
-	assert(not game.fuse_pity.has(synth_owned_key), "성공했는데 천장 누적이 안 지워졌다")
+	assert(not game.fuse_pity.has(synth_rar), "성공했는데 등급 천장이 안 지워졌다")
 	var gems_before: float = game.gem
 	game._grant_test_gems()
 	assert(is_equal_approx(game.gem, gems_before + 3000.0), "테스트 보석 충전이 작동하지 않는다")

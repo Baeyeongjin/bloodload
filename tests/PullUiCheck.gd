@@ -96,10 +96,11 @@ func _init() -> void:
 	# 확정 바 — 누적이 늘면 막대도 길어진다.
 	scene._bulk_selected = {fuse_key: true}
 	scene._refresh_bulk()
-	scene.fuse_pity["gear:" + fuse_key] = 0
+	# 천장은 **등급 통**이다(사장님 2026-08-25) — 키가 등급 키다.
+	scene.fuse_pity[rar] = 0
 	scene._refresh_bulk()
 	var w0: float = scene._bulk_pity_bar.size.x
-	scene.fuse_pity["gear:" + fuse_key] = 		GearDefs.fuse_pity(scene.gear_inventory[fuse_key]) - 1
+	scene.fuse_pity[rar] = 		GearDefs.fuse_pity(scene.gear_inventory[fuse_key]) - 1
 	scene._refresh_bulk()
 	assert(scene._bulk_pity_bar.size.x > w0,
 		"확정 바가 누적을 안 탄다: %f -> %f (%s)"
@@ -118,6 +119,9 @@ func _init() -> void:
 	scene._bulk_selected = {fuse_key: true}
 	scene._refresh_bulk()
 	assert(not scene._bulk_run.disabled, "고른 게 있는데 조합 버튼이 잠겨 있다")
+	# **등급 통이 하나다** — 같은 등급의 다른 종을 굴려도 같은 카운터가 오른다.
+	scene.fuse_pity[rar] = 2
+	assert(int(scene.fuse_pity.get(rar, 0)) == 2, "등급 천장이 안 쌓인다")
 	scene._run_bulk()
 	assert(scene._confirm_view.visible, "조합 확인창이 안 떴다")
 	assert(scene._confirm_view.z_index > scene._bulk_view.z_index,
@@ -143,12 +147,12 @@ func _init() -> void:
 	var fail_slot := str(fail_item["slot"])
 	# 천장 직전 -1 로 두고 확률을 0 으로 눌러 **반드시 실패**하게 만든다.
 	scene.gacha_shards["gear:" + fail_key] = GearDefs.FUSE_SHARDS
-	scene.fuse_pity["gear:" + fail_key] = 0
+	scene.fuse_pity[fail_rar] = 0
 	var guard_n := 0
 	while guard_n < 40:
 		guard_n += 1
 		scene.gacha_shards["gear:" + fail_key] = GearDefs.FUSE_SHARDS
-		scene.fuse_pity["gear:" + fail_key] = 0
+		scene.fuse_pity[fail_rar] = 0
 		if scene._synthesize(fail_key).is_empty() and scene._fuse_failed:
 			break
 	assert(scene._fuse_failed, "실패를 한 번도 못 만들었다")
@@ -191,20 +195,20 @@ func _init() -> void:
 	assert(not sk_key.is_empty(), "승급할 스킬 키가 없다")
 	scene.skill_owned[sk_key] = 1
 	scene.gacha_shards["skill:" + sk_key] = GearDefs.FUSE_SHARDS
-	scene.fuse_pity.erase("skill:" + sk_key)
+	scene.fuse_pity.erase("common")
 	scene._open_bulk("fuse", "skill")
 	assert(scene._bulk_view.visible, "스킬 조합 창이 안 열렸다")
 	assert(scene._bulk_candidates().has(sk_key),
 		"조각이 찬 스킬이 후보에 없다")
 	# 천장 직전으로 두면 이번 시도는 확정이라 검사가 결정적이다.
-	scene.fuse_pity["skill:" + sk_key] = 		GearDefs.fuse_pity({"rarity": "common"}) - 1
+	scene.fuse_pity["common"] = GearDefs.fuse_pity({"rarity": "common"}) - 1
 	var next_key := SkillDefs.promote_key(sk_key)
 	scene._synthesize_skill(sk_key)
 	assert(scene.skill_owned.has(next_key), "확정인데 승급이 안 됐다")
 	assert(int(scene.gacha_shards["skill:" + sk_key]) == 0,
 		"스킬 조합이 조각 %d개를 안 썼다" % GearDefs.FUSE_SHARDS)
-	assert(not scene.fuse_pity.has("skill:" + sk_key),
-		"성공했는데 스킬 천장이 안 지워졌다")
+	assert(not scene.fuse_pity.has("common"),
+		"성공했는데 등급 천장이 안 지워졌다")
 	scene._bulk_view.visible = false
 
 	print("PullUiCheck OK")
