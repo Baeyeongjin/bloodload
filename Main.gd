@@ -5176,6 +5176,23 @@ func _gacha_kind_name() -> String:
 	return "유물" if _gacha_kind == "relic" else "스킬"
 
 
+# 값 표기 조각 — 아이콘(16px) + 숫자. "권/보석" 글자 대신 아이콘으로 적는다
+# (사장님 2026-08-25: "이것도 권이라 나옴").
+func _price_bit(row: Control, icon_path: String, txt: String) -> void:
+	if icon_path != "":
+		var ic := TextureRect.new()
+		ic.texture = Assets.tex(icon_path)
+		ic.custom_minimum_size = Vector2(16.0, 16.0)
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		row.add_child(ic)
+	if txt != "":
+		var lb := _panel_label(row, Vector2.ZERO, Type.SIZE_SMALL,
+			Color(0.98, 0.88, 0.62), 60.0, 18.0)
+		lb.text = txt
+
+
 func _show_gacha_results(items: Array[Dictionary]) -> void:
 	if not _gacha_reveal:
 		return
@@ -5297,27 +5314,17 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	for cnt4 in [1, 10, 30, 50]:
 		var tk4: int = mini(have2, cnt4)
 		var gm4 := GachaDefs.COST * float(cnt4 - tk4)
-		var price := ""
-		if cnt4 == 1 and free2:
-			price = "무료"
+		var fr4: bool = cnt4 == 1 and free2
+		if fr4:
 			gm4 = 0.0
-		elif tk4 >= cnt4:
-			price = "권%d" % cnt4
-		elif tk4 > 0:
-			price = "권%d+보석%d" % [tk4, int(gm4)]
-		else:
-			price = "보석%d" % int(gm4)
 		if cnt4 >= 30 and gem < gm4:
 			continue
 		opts.append({"label": ("%d연" % cnt4) if cnt4 > 1 else "1회",
-			"count": cnt4, "price": price, "off": gem < gm4})
+			"count": cnt4, "tk": (0 if fr4 else tk4), "gm": int(gm4),
+			"free": fr4, "off": gem < gm4})
 		if cnt4 == 10 and have2 >= 2 and have2 <= 9:
 			opts.append({"label": "권 %d장" % have2, "count": have2,
-				"price": "권%d" % have2, "off": false})
-	if opts.size() >= 5:
-		# 다섯이면 값 글자가 이웃과 겹친다 — 섞인 값의 "보석"만 줄인다.
-		for o in opts:
-			o["price"] = str(o["price"]).replace("+보석", "+")
+				"tk": have2, "gm": 0, "free": false, "off": false})
 	var bw := minf(126.0, (516.0 - float(opts.size() - 1) * 9.0) / float(opts.size()))
 	var bx0 := (PANEL_W - (bw * float(opts.size())
 		+ 9.0 * float(opts.size() - 1))) * 0.5
@@ -5329,11 +5336,21 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 		pb.disabled = bool(o2["off"])
 		pb.pressed.connect(_pull_gacha.bind(int(o2["count"])))
 		_gacha_reveal.add_child(pb)
-		var pl := _panel_label(_gacha_reveal,
-			Vector2(bx + bw * 0.5 - 81.0, 690.0),
-			Type.SIZE_SMALL, Color(0.98, 0.88, 0.62), 162.0, 16.0)
-		pl.text = str(o2["price"])
-		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var row := HBoxContainer.new()
+		row.position = Vector2(bx + bw * 0.5 - 67.0, 687.0)
+		row.size = Vector2(134.0, 20.0)
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 2)
+		_gacha_reveal.add_child(row)
+		if bool(o2["free"]):
+			_price_bit(row, "", "무료")
+		else:
+			if int(o2["tk"]) > 0:
+				_price_bit(row, TicketDefs.icon_of(_gacha_kind), str(o2["tk"]))
+			if int(o2["gm"]) > 0:
+				if int(o2["tk"]) > 0:
+					_price_bit(row, "", "+")
+				_price_bit(row, "res://assets/ui/res_gem.png", str(o2["gm"]))
 	var kind_now := _gacha_kind
 	var ok := Ui.button("확인", Vector2(30.0, FULL_BOTTOM - 60.0),
 		Vector2(250.0, 50.0), Type.SIZE_SMALL)
