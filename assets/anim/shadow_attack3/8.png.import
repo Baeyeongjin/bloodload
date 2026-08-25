@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cjiov0mhxskti"
-path="res://.godot/imported/6.png-08c3d5c5217b526c85d7a506ae63fe38.ctex"
+uid="uid://kjnm0h0p8oea"
+path="res://.godot/imported/8.png-3f6a8537d0bff50493788c0905f0bf3f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/dragon_attack/6.png"
-dest_files=["res://.godot/imported/6.png-08c3d5c5217b526c85d7a506ae63fe38.ctex"]
+source_file="res://assets/anim/shadow_attack3/8.png"
+dest_files=["res://.godot/imported/8.png-3f6a8537d0bff50493788c0905f0bf3f.ctex"]
 
 [params]
 
