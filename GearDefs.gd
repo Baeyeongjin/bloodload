@@ -151,9 +151,12 @@ static func power(item: Dictionary) -> float:
 # 조합 (사장님 2026-08-25): 조각 FUSE_SHARDS 개로 1회 **시도**, 등급별 성공
 # 확률(FUSE_RATE)과 등급별 천장(FUSE_PITY — 그 회차째 시도는 확정). 실패해도
 # 조각은 소모된다 — 천장이 받친다. 표는 등급 인덱스 순서다.
+#
+# **천장은 등급이 오를수록 가까워진다**(10/10/8/7/5/3). 확률이 낮은 쪽일수록
+# 천장이 멀면 상위 등급이 사실상 잠긴다 — 확률로 조이고 천장으로 푼다.
 const FUSE_SHARDS := 3
 const FUSE_RATE := [0.8, 0.6, 0.45, 0.3, 0.2, 0.15]
-const FUSE_PITY := [3, 5, 7, 9, 11, 13]
+const FUSE_PITY := [10, 10, 8, 7, 5, 3]
 
 
 static func fuse_rate(item: Dictionary) -> float:

@@ -178,8 +178,9 @@ func _init() -> void:
 	for i in range(1, GearDefs.FUSE_RATE.size()):
 		assert(GearDefs.FUSE_RATE[i] < GearDefs.FUSE_RATE[i - 1],
 			"높은 등급 조합이 더 쉽다")
-		assert(GearDefs.FUSE_PITY[i] >= GearDefs.FUSE_PITY[i - 1],
-			"높은 등급 천장이 더 가깝다")
+		# 확률이 낮은 쪽일수록 천장은 **가깝다** — 확률로 조이고 천장으로 푼다.
+		assert(GearDefs.FUSE_PITY[i] <= GearDefs.FUSE_PITY[i - 1],
+			"높은 등급 천장이 더 멀다")
 	assert(GearDefs.FUSE_SHARDS > 0 and GearDefs.fuse_pity(it) > 0)
 	assert(GearDefs.fuse_rate(it) > 0.0 and GearDefs.fuse_rate(it) <= 1.0)
 	var keep0 := GearDefs.collection_rate(GearDefs.make("weapon", 5,

@@ -15475,12 +15475,19 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 		Vector2(220.0, 52.0), "1회")
 	var ten := _pet_btn(root, Vector2(PAD + CONTENT_W - 244.0, PET_GRID_Y + 372.0),
 		Vector2(220.0, 52.0), "10연")
+	# 남은 권 털기 — 2~9장일 때만 뜬다(장비 소환과 같은 규칙, 사장님 2026-08-25).
+	var left := _pet_btn(root, Vector2(PAD + (CONTENT_W - 220.0) * 0.5,
+		PET_GRID_Y + 432.0), Vector2(220.0, 52.0), "")
 	if kind == "pet":
 		one["btn"].pressed.connect(func() -> void: _pet_roll())
 		ten["btn"].pressed.connect(func() -> void: _pet_roll_many(10))
+		left["btn"].pressed.connect(func() -> void:
+			_pet_roll_many(int(tickets.get("pet", 0))))
 	else:
 		one["btn"].pressed.connect(func() -> void: _petgear_roll())
 		ten["btn"].pressed.connect(func() -> void: _petgear_roll_many(10))
+		left["btn"].pressed.connect(func() -> void:
+			_petgear_roll_many(int(tickets.get("petgear", 0))))
 	# 보석 결제일 때 값 옆에 뜨는 재화 아이콘(사장님) — 글자만 있으면 무슨
 	# 재화인지 한 번 더 읽어야 한다.
 	var g1 := Ui.icon("res://assets/ui/res_gem.png",
@@ -15492,7 +15499,7 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	g2.visible = false
 	root.add_child(g2)
 	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten,
-		"one_gem": g1, "ten_gem": g2}
+		"one_gem": g1, "ten_gem": g2, "left": left}
 	# 승급 문구가 있던 자리 — 문구는 뺐다(사장님 2026-08-18).
 	_mile_strip(root, Vector2(PAD + (CONTENT_W - 300.0) * 0.5,
 		PET_GRID_Y + 210.0), 300.0)
@@ -15663,6 +15670,13 @@ func _refresh_pet_roll() -> void:
 		ui["ten_gem"].visible = ten_gem > 0.0
 		_pet_btn_enable(ui["one"], open and _pet_can_pay(kind))
 		_pet_btn_enable(ui["ten"], open and gem >= ten_gem)
+		var odd := open and have >= 2 and have <= 9
+		ui["left"]["art"].visible = odd
+		ui["left"]["lbl"].visible = odd
+		ui["left"]["btn"].visible = odd
+		if odd:
+			ui["left"]["lbl"].text = "권 %d장 뽑기" % have
+			_pet_btn_enable(ui["left"], true)
 
 
 # ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
@@ -16030,15 +16044,30 @@ func _show_pet_results(rows: Array) -> void:
 	title.text = "소환 결과" if rows.size() > 1 else "새 동행" \
 		if int(rows[0].get("star", 0)) <= 1 else "다시 만났다"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 30·50연은 카드가 판을 넘는다 — 여럿이면 스크롤 통에 담는다(장비와 같은 문법).
+	var grid3: Control = null
+	if rows.size() > 1:
+		var scroll3 := ScrollContainer.new()
+		scroll3.position = Vector2(0.0, 56.0)
+		scroll3.size = Vector2(PANEL_W, 550.0)
+		scroll3.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_pet_reveal.add_child(scroll3)
+		grid3 = Control.new()
+		grid3.custom_minimum_size = Vector2(PANEL_W - 16.0,
+			float((rows.size() + 4) / 5) * 150.0 + 8.0)
+		scroll3.add_child(grid3)
 	var cards: Array[Control] = []
 	for i in rows.size():
 		var row: Dictionary = rows[i]
 		var one := rows.size() == 1
 		var card := Control.new()
 		card.position = Vector2(232.0, 120.0) if one else \
-			Vector2(48.0 + float(i % 5) * 100.0, 90.0 + float(i / 5) * 150.0)
+			Vector2(48.0 + float(i % 5) * 100.0, 8.0 + float(i / 5) * 150.0)
 		card.size = Vector2(112.0, 160.0) if one else Vector2(80.0, 120.0)
-		_pet_reveal.add_child(card)
+		if one:
+			_pet_reveal.add_child(card)
+		else:
+			grid3.add_child(card)
 		var rar := GachaDefs.rarity(str(row["rarity"]))
 		var icon_path: String = ("res://assets/anim/pet_%s_idle/0.png" \
 			if bool(row["pet"]) else "res://assets/items/petw_%s.png") \
@@ -16070,6 +16099,68 @@ func _show_pet_results(rows: Array) -> void:
 		sb.text = str(row["sub"])
 		sb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cards.append(card)
+	# 보유 줄 + 이어 뽑기 — 장비 소환 결과 창과 같은 문법(사장님 2026-08-25).
+	var pkind := "pet" if bool(rows[0].get("pet", true)) else "petgear"
+	var have3 := int(tickets.get(pkind, 0))
+	var px3 := (PANEL_W - 320.0) * 0.5
+	_pet_reveal.add_child(Ui.set_pill(NEST, Vector2(px3, 612.0),
+		Vector2(150.0, 30.0)))
+	_pet_reveal.add_child(Ui.icon(TicketDefs.icon_of(pkind),
+		Vector2(px3 + 14.0, 617.0), 20.0))
+	var tl3 := _panel_label(_pet_reveal, Vector2(px3 + 40.0, 613.0),
+		Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 100.0, 28.0)
+	tl3.text = str(have3)
+	_pet_reveal.add_child(Ui.set_pill(NEST, Vector2(px3 + 158.0, 612.0),
+		Vector2(162.0, 30.0)))
+	_pet_reveal.add_child(Ui.icon("res://assets/ui/res_gem.png",
+		Vector2(px3 + 172.0, 617.0), 20.0))
+	var gl3 := _panel_label(_pet_reveal, Vector2(px3 + 198.0, 613.0),
+		Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 112.0, 28.0)
+	gl3.text = _n(gem)
+	# 30·50연은 **낼 수 있을 때만** 버튼이 보인다. 권이 2~9장이면 털기도 낀다.
+	var opts3: Array = []
+	for cnt5 in [1, 10, 30, 50]:
+		var tk5: int = mini(have3, cnt5)
+		var gm5 := GachaDefs.COST * float(cnt5 - tk5)
+		if cnt5 >= 30 and gem < gm5:
+			continue
+		opts3.append({"label": ("%d연" % cnt5) if cnt5 > 1 else "1회",
+			"count": cnt5, "tk": tk5, "gm": int(gm5), "off": gem < gm5})
+		if cnt5 == 10 and have3 >= 2 and have3 <= 9:
+			opts3.append({"label": "권 %d장" % have3, "count": have3,
+				"tk": have3, "gm": 0, "off": false})
+	var bw3 := minf(126.0, (516.0 - float(opts3.size() - 1) * 9.0) / float(opts3.size()))
+	var bx03 := (PANEL_W - (bw3 * float(opts3.size())
+		+ 9.0 * float(opts3.size() - 1))) * 0.5
+	for i5 in opts3.size():
+		var o5: Dictionary = opts3[i5]
+		var bx5 := bx03 + float(i5) * (bw3 + 9.0)
+		var pb5 := Ui.button("", Vector2(bx5, 646.0), Vector2(bw3, 54.0),
+			Type.SIZE_SMALL)
+		pb5.disabled = bool(o5["off"])
+		var cnt6: int = int(o5["count"])
+		if pkind == "pet":
+			pb5.pressed.connect(func() -> void: _pet_roll_many(cnt6))
+		else:
+			pb5.pressed.connect(func() -> void: _petgear_roll_many(cnt6))
+		_pet_reveal.add_child(pb5)
+		var nm5 := _panel_label(_pet_reveal, Vector2(bx5, 652.0),
+			Type.SIZE_SMALL, Color(1.0, 0.96, 0.90), bw3, 18.0)
+		nm5.text = str(o5["label"])
+		nm5.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var row5 := HBoxContainer.new()
+		row5.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row5.position = Vector2(bx5 + bw3 * 0.5 - 67.0, 674.0)
+		row5.size = Vector2(134.0, 20.0)
+		row5.alignment = BoxContainer.ALIGNMENT_CENTER
+		row5.add_theme_constant_override("separation", 2)
+		_pet_reveal.add_child(row5)
+		if int(o5["tk"]) > 0:
+			_price_bit(row5, TicketDefs.icon_of(pkind), str(o5["tk"]))
+		if int(o5["gm"]) > 0:
+			if int(o5["tk"]) > 0:
+				_price_bit(row5, "", "+")
+			_price_bit(row5, "res://assets/ui/res_gem.png", str(o5["gm"]))
 	# [보관함으로]가 확인 옆에 선다(사장님) — 뽑은 걸 바로 보러 가는 지름길.
 	# 펫 뽑기면 보유 탭, 장비 뽑기면 장비 탭이다.
 	var dest := "own" if bool(rows[0].get("pet", true)) else "gear"
