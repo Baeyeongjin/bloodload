@@ -1408,6 +1408,7 @@ func _build_scene() -> void:
 	_build_codex_view()
 	_build_oath_view()
 	_build_dialogs()
+	_build_clear_view()
 	await _load_tick(0.95)
 	# 창이 뜰 때의 반응을 **한 곳에서** 건다(사장님: "모든 창들 띄울 때 애니메이션").
 	# `visible` 을 켜는 자리가 34곳이라 호출부마다 넣으면 하나씩 빠진다 — Ui.pop_in
@@ -2156,6 +2157,48 @@ func _dlg_label(parent: Control, pos: Vector2, size: int, col: Color,
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	parent.add_child(l)
 	return l
+
+
+# ── 클리어 연출 ────────────────────────────────────────────────────────────
+# 던전이 끝나면 상단 띠(_offline_banner)만 떴는데, 그건 판이 끝났다는 신호로
+# 너무 약했다 — 화면이 뜬금없이 넘어가는 것으로 읽혔다(사장님 2026-08-25:
+# "걍 모든 던전들 클리어하면 클리어했다 나와야할듯"). 가운데에 크게 띄운다.
+var _clear_view: Control
+var _clear_title: Label
+var _clear_sub: Label
+
+
+func _build_clear_view() -> void:
+	_clear_view = Control.new()
+	_clear_view.size = Vector2(Grid.BG)
+	_clear_view.visible = false
+	_clear_view.z_index = 80
+	_clear_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_root.add_child(_clear_view)
+	_clear_title = _dlg_label(_clear_view, Vector2(0.0, 330.0), Type.SIZE_TITLE,
+		Color(1.0, 0.90, 0.55), float(Grid.BG.x), 48.0)
+	_shop_outline(_clear_title, 10)
+	_clear_sub = _dlg_label(_clear_view, Vector2(0.0, 386.0), Type.SIZE_BODY,
+		Color(0.94, 0.90, 0.94), float(Grid.BG.x), 30.0)
+	_shop_outline(_clear_sub, 6)
+
+
+func _show_clear(title: String, sub: String) -> void:
+	if _clear_view == null or not is_inside_tree():
+		return
+	_clear_title.text = title
+	_clear_sub.text = sub
+	_front(_clear_view)
+	_clear_view.visible = true
+	_clear_view.modulate.a = 0.0
+	_clear_view.pivot_offset = Vector2(Grid.BG) * 0.5
+	_clear_view.scale = Vector2(0.82, 0.82)
+	var tw := create_tween()
+	tw.tween_property(_clear_view, "modulate:a", 1.0, 0.12)
+	tw.parallel().tween_property(_clear_view, "scale", Vector2.ONE, 0.26) 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(CLEAR_HOLD - 0.62)
+	tw.tween_property(_clear_view, "modulate:a", 0.0, 0.24)
+	tw.tween_callback(func() -> void: _clear_view.visible = false)
 
 
 func _ask(text: String, on_ok: Callable) -> void:
@@ -11694,11 +11737,17 @@ func _boss_exit(reason: String) -> void:
 	_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
 	_offline_banner.visible = true
 	_offline_t = 4.0
-	_restart_stage(reason, true)
-	_refresh_currency_visibility()
-	_refresh_dungeon()
-	_return_gate("boss")
-	_save_game()
+	_show_clear("도전 종료", "이번 주 누적 피해 %s" % _n(boss_dmg))
+	var go_boss := func() -> void:
+		_restart_stage(reason, true)
+		_refresh_currency_visibility()
+		_refresh_dungeon()
+		_return_gate("boss")
+		_save_game()
+	if is_inside_tree():
+		get_tree().create_timer(CLEAR_HOLD).timeout.connect(go_boss)
+	else:
+		go_boss.call()
 
 
 # 계약 도감 — 12종을 줄로 세운다. 딴 것은 등급색·레벨·효과가 보이고, 못 딴
@@ -13310,11 +13359,20 @@ func _trial_exit(reason: String) -> void:
 	_offline_banner.add_theme_color_override("font_color", Color(0.62, 0.95, 0.68))
 	_offline_banner.visible = true
 	_offline_t = 4.0
-	_restart_stage(reason, true)
-	_refresh_currency_visibility()
-	_refresh_dungeon()
-	_return_gate("trial")
-	_save_game()
+	_show_clear("클리어!", reason)
+	# **여운** — 재화 던전·미궁과 같은 규칙(사장님 2026-08-25:
+	# "유적도 클리어시 너무 빨리 화면을 돌아옴"). 쓰러지는 그림과
+	# 방금 뜬 배너를 볼 시간이다.
+	var go_trial := func() -> void:
+		_restart_stage(reason, true)
+		_refresh_currency_visibility()
+		_refresh_dungeon()
+		_return_gate("trial")
+		_save_game()
+	if is_inside_tree():
+		get_tree().create_timer(CLEAR_HOLD).timeout.connect(go_trial)
+	else:
+		go_trial.call()
 
 
 func _claim_milestone(i: int) -> void:
@@ -13924,6 +13982,9 @@ func _advance_stage() -> void:
 			else (Color(0.92, 0.82, 0.62) if kind == "pact" else Color(0.74, 0.84, 1.0)))
 		_offline_banner.visible = true
 		_offline_t = 4.0
+		_show_clear("클리어!", "%s  ·  %s +%s"
+			% [RaidDefs.label(kind, n),
+			str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)])
 		raid_on = ""
 		_quest_bump("raid")   # 주간 임무(재화 던전 격파)가 센다
 		_boss_cut_clear()     # 수호자 판이면 컷신 띠가 떠 있을 수 있다
@@ -13961,7 +14022,8 @@ func _advance_stage() -> void:
 		return
 	# ── 미궁: 층을 하나 오른다. 본편(stage)은 안 건드린다 ──────────────────
 	if dungeon_on:
-		# 재화 던전과 같은 여운 — 쓰러지는 그림과 첫 돌파 배너를 볼 시간이다.
+		# 재화 던전과 같은 여운 — 쓰러지는 그림과 클리어 연출을 볼 시간이다.
+		_show_clear("클리어!", "%s 돌파" % DungeonDefs.label(dungeon_floor))
 		var finish_maze := func() -> void: _fade(func() -> void:
 			kills = 0
 			# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
@@ -13981,6 +14043,7 @@ func _advance_stage() -> void:
 				_offline_banner.visible = true
 				_offline_t = 3.0
 			dungeon_best = maxi(dungeon_best, dungeon_floor)
+		# (연출은 암전 **전에** 이미 떴다 — 아래 _show_clear 참고)
 			_claim_promo_reward()
 			_quest_bump("dungeon")
 			var open := DungeonDefs.open_floors(best_stage)
@@ -14104,7 +14167,7 @@ func _clear_foes() -> void:
 # 바뀌는 건 전투 띠뿐이라 거기만 가린다.
 # 판이 끝나고 암전이 시작되기까지의 여운. 쓰러지는 그림과 보상 배너를 볼
 # 시간이다 — 0 이면 "이겼다"가 화면에서 통째로 사라진다(사장님 2026-08-25).
-const CLEAR_HOLD := 1.1
+const CLEAR_HOLD := 1.8
 
 const FADE_OUT := 0.28
 const FADE_HOLD := 0.14

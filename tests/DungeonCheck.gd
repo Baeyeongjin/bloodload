@@ -105,6 +105,10 @@ func _init() -> void:
 		await process_frame
 	scene.kills = scene._c_kills_needed()
 	scene._advance_stage()
+	# 클리어 연출이 **암전 전에** 떠야 한다 — 안 그러면 판이 뜬금없이
+	# 넘어간 것으로 읽힌다(사장님 2026-08-25).
+	assert(scene._clear_view.visible, "클리어 연출이 안 떴다")
+	assert(scene._clear_title.text != "", "클리어 문구가 비었다")
 	# **여운(CLEAR_HOLD)이 지나야 층 처리가 돈다** — 격파 즉시 암전을 걸면
 	# 쓰러지는 그림도 배너도 못 본다(사장님 2026-08-25). 결과를 기다린다.
 	var waited := 0.0
