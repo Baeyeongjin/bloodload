@@ -4299,8 +4299,13 @@ func _build_gacha(root: Control) -> void:
 		var count2: int = pair2[2]
 		_gacha_btn_tex[key2] = _shop_tex(root,
 			"res://assets/ui/sets/forge_button.png", bpos2, Vector2(258.0, 58.0))
-		var blb2 := _panel_label(root, bpos2 + Vector2(0.0, 17.0), Type.SIZE_MID,
-			Color(1.0, 0.96, 0.90), 258.0, 24.0)
+		var bic2 := Ui.icon("res://assets/ui/res_gem.png",
+			bpos2 + Vector2(52.0, 15.0), 28.0)
+		bic2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(bic2)
+		_gacha_btn_icon[key2] = bic2
+		var blb2 := _panel_label(root, bpos2 + Vector2(0.0, 16.0), Type.SIZE_MID,
+			Color(1.0, 0.96, 0.90), 258.0, 28.0)
 		blb2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(blb2, 8)
 		_gacha_btn_lbl[key2] = blb2
@@ -5471,12 +5476,14 @@ func _refresh_gacha() -> void:
 	_gacha_btn_tex["left"].visible = odd
 	_gacha_btn_lbl["left"].visible = odd
 	_gacha_buttons["left"].visible = odd
+	_gacha_btn_icon["left"].visible = odd
 	if odd:
 		_gacha_btn_lbl["left"].text = "권 %d장 뽑기" % have
+		_gacha_btn_icon["left"].texture = Assets.tex(TicketDefs.icon_of(_gacha_kind))
 		_gacha_buttons["left"].disabled = false
 	# 아이콘을 글자 바로 왼쪽에 붙인다 — 고정 x 는 글자 길이에 따라 간격이
 	# 들쭉였다(사장님: "배치가 일그러진 부분"). 라벨이 가운데 정렬이라 폭을 재서 옮긴다.
-	for key in ["one", "ten"]:
+	for key in ["one", "ten", "left"]:
 		var lbl2: Label = _gacha_btn_lbl[key]
 		var fs := lbl2.get_theme_font_size("font_size")
 		var fw := lbl2.get_theme_font("font").get_string_size(lbl2.text,
