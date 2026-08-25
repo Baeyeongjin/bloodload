@@ -5186,6 +5186,7 @@ func _price_bit(row: Control, icon_path: String, txt: String) -> void:
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(ic)
 	if txt != "":
 		var lb := _panel_label(row, Vector2.ZERO, Type.SIZE_SMALL,
@@ -5287,25 +5288,24 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	# 보유 줄 — 메인 판과 같은 문법(알약 + 아이콘 + 숫자, 사장님 캡처).
 	# 소환권 4종 전부 + 보석. 세트 결도 종류를 따른다(대장간/점성소).
 	var setn2 := "forge" if _gacha_kind in GearDefs.SLOTS else "astro"
-	var px2 := 16.0
-	for i4 in TicketDefs.KINDS.size():
-		var tkk: String = TicketDefs.KINDS[i4]
-		_gacha_reveal.add_child(Ui.image(
-			"res://assets/ui/sets/%s_pill.png" % setn2,
-			Vector2(px2, 612.0), Vector2(90.0, 30.0)))
-		_gacha_reveal.add_child(Ui.icon(TicketDefs.icon_of(tkk),
-			Vector2(px2 + 12.0, 617.0), 20.0))
-		var tl := _panel_label(_gacha_reveal, Vector2(px2 + 36.0, 613.0),
-			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 48.0, 28.0)
-		tl.text = str(int(tickets.get(tkk, 0)))
-		px2 += 98.0
+	# **지금 소환의 권 + 보석만** (사장님: "다 나와있네") — 다른 권은 여기서
+	# 못 쓰는 재화라 소음이다.
+	var px2 := (PANEL_W - 320.0) * 0.5
 	_gacha_reveal.add_child(Ui.image(
 		"res://assets/ui/sets/%s_pill.png" % setn2,
-		Vector2(px2, 612.0), Vector2(152.0, 30.0)))
+		Vector2(px2, 612.0), Vector2(150.0, 30.0)))
+	_gacha_reveal.add_child(Ui.icon(TicketDefs.icon_of(_gacha_kind),
+		Vector2(px2 + 14.0, 617.0), 20.0))
+	var tl2 := _panel_label(_gacha_reveal, Vector2(px2 + 40.0, 613.0),
+		Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 100.0, 28.0)
+	tl2.text = str(have2)
+	_gacha_reveal.add_child(Ui.image(
+		"res://assets/ui/sets/%s_pill.png" % setn2,
+		Vector2(px2 + 158.0, 612.0), Vector2(162.0, 30.0)))
 	_gacha_reveal.add_child(Ui.icon("res://assets/ui/res_gem.png",
-		Vector2(px2 + 12.0, 617.0), 20.0))
-	var gl2 := _panel_label(_gacha_reveal, Vector2(px2 + 36.0, 613.0),
-		Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 108.0, 28.0)
+		Vector2(px2 + 172.0, 617.0), 20.0))
+	var gl2 := _panel_label(_gacha_reveal, Vector2(px2 + 198.0, 613.0),
+		Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 112.0, 28.0)
 	gl2.text = _n(gem)
 	var free2 := free_pull_date != Time.get_date_string_from_system()
 	# 30·50연은 **낼 수 있을 때만 버튼이 보인다** — 잠긴 큰 버튼은 자리만
@@ -5331,13 +5331,19 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	for i3 in opts.size():
 		var o2: Dictionary = opts[i3]
 		var bx := bx0 + float(i3) * (bw + 9.0)
-		var pb := Ui.button(str(o2["label"]), Vector2(bx, 650.0),
-			Vector2(bw, 38.0), Type.SIZE_SMALL)
+		# 값은 **버튼 안** 아랫줄에 (사장님: "아이콘이 버튼 안으로").
+		var pb := Ui.button("", Vector2(bx, 646.0),
+			Vector2(bw, 54.0), Type.SIZE_SMALL)
 		pb.disabled = bool(o2["off"])
 		pb.pressed.connect(_pull_gacha.bind(int(o2["count"])))
 		_gacha_reveal.add_child(pb)
+		var nm2 := _panel_label(_gacha_reveal, Vector2(bx, 652.0),
+			Type.SIZE_SMALL, Color(1.0, 0.96, 0.90), bw, 18.0)
+		nm2.text = str(o2["label"])
+		nm2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var row := HBoxContainer.new()
-		row.position = Vector2(bx + bw * 0.5 - 67.0, 687.0)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.position = Vector2(bx + bw * 0.5 - 67.0, 674.0)
 		row.size = Vector2(134.0, 20.0)
 		row.alignment = BoxContainer.ALIGNMENT_CENTER
 		row.add_theme_constant_override("separation", 2)
