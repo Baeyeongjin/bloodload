@@ -9757,6 +9757,11 @@ func _process(delta: float) -> void:
 # 앞칸으로 당겼는데(`_reflow_side`), 그건 "웨이브가 몰려온다"의 장치였다. 몹이 서 있고
 # 영웅이 찾아가는 지금은 당길 것이 없다 — 간격은 스폰 때 `FOE_GAP` 으로 정해지고
 # `_advance_world` 가 그 간격을 유지한 채 통째로 민다.
+# 처치하고 다음 표적을 잡기까지의 박자. 옛 Foe.DIE_DUR 값이다 — 사망
+# 연출을 늘려도 전투 페이스는 그대로여야 한다(수입 곡선이 여기 걸려 있다).
+const ENGAGE_PAUSE := 0.42
+
+
 func _tick_engage(foes: Array) -> void:
 	if _phase != "fight":
 		_engaged = null
@@ -9764,7 +9769,11 @@ func _tick_engage(foes: Array) -> void:
 	if is_instance_valid(_engaged) and not _engaged.dying:
 		return
 	# 사망 연출 중에는 다음을 안 부른다 — 그 박자가 "처치했다"를 읽게 한다.
-	if is_instance_valid(_engaged) and _engaged.dying:
+	# **연출 전체를 기다리지는 않는다.** Foe.DIE_DUR 를 늘린 건 그림을
+	# 부드럽게 하려는 것이지 전투를 느리게 하려는 게 아니다 — 시체가
+	# 무너지는 동안 영웅은 다음 놈에게 간다(2026-08-25).
+	if is_instance_valid(_engaged) and _engaged.dying \
+			and _engaged.dying_t < ENGAGE_PAUSE:
 		return
 	_engaged = null
 	var best := INF

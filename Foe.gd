@@ -59,11 +59,14 @@ var pit_fall := false
 # `take_damage` 는 출처를 모른다.
 var exec_fall := false
 # 죽는 연출. 0.26 은 스쿼시만 할 때 값이라 날아가는 걸 보기엔 짧다.
-const DIE_DUR := 0.42
+# 사망 연출 길이. **0.42 는 너무 짧아 툭 끊겼다**(사장님 2026-08-25:
+# "사망했을때 액션 좀더 자연스럽고 부드럽게"). 끝에서 사라지는 구간까지
+# 눈이 따라갈 시간을 준다.
+const DIE_DUR := 0.62
 const DIE_FLY := 46.0     # 맞은 쪽 반대로 밀리는 거리
 const DIE_HOP := 22.0     # 떠오르는 높이 (포물선)
 const DIE_DROP := 14.0    # 마지막에 가라앉는 깊이
-const DIE_SPIN := 62.0    # 기우는 각도
+const DIE_SPIN := 78.0    # 기우는 각도 — 끝에서 거의 눕는다(2026-08-25)
 const ATTACK_DUR := 0.42
 # 보스는 스윙 그림이 잡몹의 1.7배 느리게 돈다(사장님: "공격 모션이 너무
 # 빠름"). 몸집 1.4배가 0.42초에 휘두르면 팔랑거린다. **주기(쿨다운)는 그대로**
@@ -84,7 +87,7 @@ const IMPACT_RATIO := 3.0 / 7.0   # 원래 기준: 7프레임 중 네 번째
 const HIT_REACT_DUR := 0.14
 # 맞고 뒤로 밀리는 거리. **절반으로 줄였다**(사장님 2026-08-25: 7 -> 3.5).
 # 스쿼시는 그대로 두고 이쪽만 — 거슬리던 건 형태가 아니라 자리가 튀는 쪽이었다.
-const HIT_KNOCKBACK := 3.5
+const HIT_KNOCKBACK := 2.0
 const FIRST_SWING := 0.35   # 칸에 도착하고 첫 공격까지. 주기와 별개다
 
 
@@ -546,12 +549,8 @@ func _draw() -> void:
 	var wsc := 1.0
 	var hsc := 1.0
 	var alpha := 1.0
-	var hit_f := clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
-	# 보스·중간보스는 일그러짐 절반 — 플래시와 같은 이유(사장님).
-	if is_boss or is_midboss:
-		hit_f *= 0.5
-	wsc *= 1.0 + 0.12 * hit_f
-	hsc *= 1.0 - 0.10 * hit_f
+	# **피격에는 형태 변형이 없다**(사장님 2026-08-25). 도트는 배율이 정수가
+	# 아니면 늘린 만큼 픽셀이 깨진다 — 맞은 티는 밀림(2px)과 흰 점멸이 낸다.
 	# 왼쪽에서 나온 몹은 오른쪽을 보므로 통째로 뒤집는다. 그림을 따로 뽑지 않고
 	# 좌우 반전으로 끝낸다 — 도트라 반전해도 어색한 곳이 없다.
 	draw_set_transform(Vector2(hit_offset(), 0.0), 0.0, Vector2(float(-face), 1.0))
@@ -561,8 +560,14 @@ func _draw() -> void:
 		#
 		# 종류를 둘로 가른다: 단단한 놈(hp_mult 큰 쪽)은 뒤로 **날아가고**, 무른 놈은
 		# 제자리에서 **녹아내린다**. 같은 연출로 다 죽으면 몹이 다 같아 보인다.
-		var f := dying_t / DIE_DUR
-		var ease_out := 1.0 - (1.0 - f) * (1.0 - f)
+		var f := clampf(dying_t / DIE_DUR, 0.0, 1.0)
+		# **3차 이징**(1-(1-f)^3). 2차는 초반이 급해서 "튕겨 나갔다"로
+		# 보였다 — 3차는 처음에 확 밀렸다가 끝에서 길게 눕는다.
+		var inv := 1.0 - f
+		var ease_out := 1.0 - inv * inv * inv
+		# 사라짐은 **뒤에서** 시작한다. 처음부터 옅어지면 무너지는 동작이
+		# 안 보인 채 사라진다 — 60% 지점까지는 또렷하게 둔다.
+		var fade := clampf((f - 0.6) / 0.4, 0.0, 1.0)
 		if pit_fall:
 			# 갈라진 대지에 삼켜진다 — 제자리에서 **밑으로 꺼진다.** 날아가면
 			# "떨어졌다"가 안 읽히므로 x 는 안 민다. 지면 클리핑은 없지만 페이드가
@@ -586,19 +591,23 @@ func _draw() -> void:
 			wsc = 1.0 - 0.10 * f
 			hsc = 1.0 - 0.35 * f
 		elif hp_mult >= 1.5:
-			# 날아감: 온 길 반대로 밀리며 살짝 떠올랐다 떨어지고, 기울어진다.
+			# 날아감: 온 길 반대로 밀리며 떠올랐다 떨어지고, **끝까지 돌아 눕는다.**
+			# 회전을 ease_out 에 묶으면 초반에 다 돌아 버려 뒤가 뻣뻣했다 —
+			# 각도는 f 를 그대로 따라가 마지막 프레임에서 완전히 눕는다.
 			draw_set_transform(
 				Vector2(float(-face) * DIE_FLY * ease_out,
 					-DIE_HOP * sin(f * PI) + DIE_DROP * f * f),
-				deg_to_rad(float(-face) * DIE_SPIN * ease_out),
+				deg_to_rad(float(-face) * DIE_SPIN * f),
 				Vector2(float(-face), 1.0))
 			wsc = 1.0 + 0.10 * f
 			hsc = 1.0 - 0.15 * f
 		else:
 			# 녹아내림: 아래로 흘러 퍼진다. 발밑은 그대로 두고 세로만 무너뜨린다.
-			wsc = 1.0 + 0.55 * f
-			hsc = 1.0 - 0.80 * f
-		alpha = 1.0 - ease_out
+			# **가속해서 무너진다**(f^2) — 선형은 일정 속도라 미끄러지듯 보였다.
+			var melt := f * f
+			wsc = 1.0 + 0.55 * melt
+			hsc = 1.0 - 0.80 * melt
+		alpha = 1.0 - fade * fade
 	var tex: Texture2D = _sprite
 	if not dying and _airborne and not _special_frames.is_empty():
 		# 점프 중 — 웅크린 채 난다. 프레임 1(도약 직후)이 그 그림이다.
