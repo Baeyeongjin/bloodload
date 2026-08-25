@@ -92,6 +92,13 @@ func _init() -> void:
 	scene.fuse_pity["gear:" + fuse_key] = 1
 	scene._refresh_bulk()
 	assert(scene._bulk_pity_bar.size.x > w0, "확정 바가 누적을 안 탄다")
+	# **재료를 안 넣어도** 확정 정보가 떠야 한다(사장님 2026-08-25).
+	scene._bulk_selected = {}
+	scene._refresh_bulk()
+	assert(scene._bulk_pity_bar.size.x > 0.0,
+		"고르기 전에는 확정 진행도가 안 보인다")
+	assert(scene._bulk_pity_lbl.text.contains("확정"),
+		"확정 라벨이 비었다: %s" % scene._bulk_pity_lbl.text)
 	# 조합 실행 — 확인창이 **조합 창보다 위**에 떠야 한다. 아래에 깔리면
 	# 눌러도 아무 일이 없는 것처럼 보인다(2026-08-25 실제 버그: 확인창 z=60,
 	# 조합 창 z=64 라 확인창이 뒤에 숨었다).

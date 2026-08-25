@@ -3685,6 +3685,17 @@ func _refresh_bulk() -> void:
 			else:
 				_bulk_selected[key] = true
 			_refresh_bulk())
+		# **재료를 넣기 전부터** 확정까지 몇 번 남았는지 보인다(사장님
+		# 2026-08-25). 이게 없으면 어느 걸 골라야 이득인지 알 수 없다.
+		var it3: Dictionary = gear_inventory[key]
+		var cap3 := GearDefs.fuse_pity(it3)
+		var tr3 := int(fuse_pity.get("gear:" + key, 0))
+		var pl3 := _panel_label(card, Vector2(6.0, 116.0), Type.SIZE_SMALL,
+			Color(0.98, 0.86, 0.52) if tr3 + 1 >= cap3 else Color(0.70, 0.68, 0.76),
+			104.0, 18.0)
+		pl3.text = "확정까지 %d회" % maxi(1, cap3 - tr3)
+		pl3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		pl3.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		# 안 고른 칸은 어둡게. 테두리를 덧그리는 대신 밝기로 가르면 등급 색이 안 죽는다.
 		card.modulate = Color(1, 1, 1) if _bulk_selected.has(key) else Color(0.42, 0.42, 0.46)
 		_bulk_grid.add_child(card)
@@ -3772,6 +3783,15 @@ func _refresh_bulk_pity() -> void:
 		picked += 1
 		if only == "":
 			only = str(key)
+	# 아무것도 안 골랐어도 **의미 있는 값**을 보여 준다 — 그 탭에서 확정에
+	# 가장 가까운 종이 기준이다(사장님: "재료 넣기 전부터 보여야").
+	if only == "":
+		var best := -1
+		for key in _bulk_candidates():
+			var t2 := int(fuse_pity.get("gear:" + key, 0))
+			if t2 > best:
+				best = t2
+				only = str(key)
 	var rar_key := _bulk_tab if _bulk_tab != "all" else "common"
 	var tries := 0
 	if only != "" and gear_inventory.has(only):
@@ -3781,7 +3801,7 @@ func _refresh_bulk_pity() -> void:
 	var next_name := str(GachaDefs.RARITIES[mini(
 		GachaDefs.rarity_index(rar_key) + 1,
 		GachaDefs.RARITIES.size() - 1)]["name"])
-	_bulk_pity_lbl.text = ("%s 확정" % next_name) if picked <= 1 \
+	_bulk_pity_lbl.text = ("%s 확정까지 %d회" % [next_name, maxi(1, cap - tries)]) if picked <= 1 \
 		else "%s 확정 (선택 %d종 중 하나)" % [next_name, picked]
 	_bulk_pity_num.text = "%d / %d" % [tries, cap]
 	_bulk_pity_bar.size.x = 300.0 * clampf(float(tries) / float(maxi(cap, 1)),
