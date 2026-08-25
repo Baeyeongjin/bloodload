@@ -148,6 +148,17 @@ static func power(item: Dictionary) -> float:
 	return float(item.get("base", 0.0)) * (1.0 + 0.25 * float(item.get("lv", 0)))
 
 
+# 레벨업 비용 — 연마석. 등급이 높을수록 비싸다(안 그러면 흔한 걸 무한히
+# 올리는 게 최적이 된다). 레벨당 1.45 배라 던전 한 판이 초반엔 몇 레벨,
+# 뒤로 갈수록 한 레벨이 된다 — 던전 단계를 밀 이유가 거기서 생긴다.
+static func upgrade_cost(item: Dictionary) -> float:
+	var mult := 1.0
+	for r in RARITY:
+		if r["key"] == item.get("rarity", ""):
+			mult = float(r["power"])
+	return ceilf(25.0 * mult * pow(1.45, float(item.get("lv", 0))))
+
+
 # 조합 (사장님 2026-08-25): 조각 FUSE_SHARDS 개로 1회 **시도**, 등급별 성공
 # 확률(FUSE_RATE)과 등급별 천장(FUSE_PITY — 그 회차째 시도는 확정). 실패해도
 # 조각은 소모된다 — 천장이 받친다. 표는 등급 인덱스 순서다.
@@ -170,8 +181,9 @@ static func fuse_pity(item: Dictionary) -> int:
 
 
 # 수집(보유) 효과는 장착과 무관하다. 최고 등급 한 벌만 남기므로 중복 수에는 곱하지 않는다.
-# lv 는 과거 강화 시절의 유산이다 — 새로 오르지 않지만, 이미 올린 장비의
-# 값을 깎지 않으려고 식에는 남긴다(2026-08-25 강화 삭제).
+# **레벨을 올리면 보유 효과도 같이 오른다.** 안 그러면 "장착 안 할 장비는
+# 올릴 이유가 없다"가 된다. 장착(레벨당 +25%)보다 완만한 +10% 로 둬서
+# 장착이 여전히 주력이게 한다.
 const COLLECTION_LV_RATE := 0.10
 
 

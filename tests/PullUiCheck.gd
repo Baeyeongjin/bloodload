@@ -35,9 +35,10 @@ func _init() -> void:
 	scene.tickets["weapon"] = 6
 	scene.gem = GachaDefs.COST * 10.0
 	scene._pull_gacha(10)
-	assert(int(scene.tickets["weapon"]) == 0, "권을 두고 보석이 나갔다")
+	# **보석 소모로 잰다.** 잔량으로 재면 천장 상자(_mile_add)가 중간에 권을
+	# 돌려줘서 0 이 안 된다 — 권 6 장이었으니 보석은 넷만 나가야 한다.
 	assert(is_equal_approx(scene.gem, GachaDefs.COST * 6.0),
-		"섞인 값 계산이 틀렸다: %f" % scene.gem)
+		"권을 두고 보석이 더 나갔다: 남은 보석 %f" % scene.gem)
 
 	# ── 2) 펫 소환 — 30연·권 털기 ──────────────────────────────────────────
 	# **굴린 횟수로 잰다.** 잔량으로 재면 천장 상자가 중간에 권을 돌려줘서
@@ -88,10 +89,14 @@ func _init() -> void:
 	# 확정 바 — 누적이 늘면 막대도 길어진다.
 	scene._bulk_selected = {fuse_key: true}
 	scene._refresh_bulk()
-	var w0: float = scene._bulk_pity_bar.size.x
-	scene.fuse_pity["gear:" + fuse_key] = 1
+	scene.fuse_pity["gear:" + fuse_key] = 0
 	scene._refresh_bulk()
-	assert(scene._bulk_pity_bar.size.x > w0, "확정 바가 누적을 안 탄다")
+	var w0: float = scene._bulk_pity_bar.size.x
+	scene.fuse_pity["gear:" + fuse_key] = 		GearDefs.fuse_pity(scene.gear_inventory[fuse_key]) - 1
+	scene._refresh_bulk()
+	assert(scene._bulk_pity_bar.size.x > w0,
+		"확정 바가 누적을 안 탄다: %f -> %f (%s)"
+		% [w0, scene._bulk_pity_bar.size.x, scene._bulk_pity_num.text])
 	# **재료를 안 넣어도** 확정 정보가 떠야 한다(사장님 2026-08-25).
 	scene._bulk_selected = {}
 	scene._refresh_bulk()
@@ -145,6 +150,28 @@ func _init() -> void:
 		"실패 보상 등급이 다르다: %s" % str(scene._fuse_gain["rarity"]))
 	assert(str(scene._fuse_gain["slot"]) == fail_slot,
 		"실패 보상 슬롯이 다르다: %s" % str(scene._fuse_gain["slot"]))
+
+	# ── 6) 연마석 — 제련의 성소가 주고, 장비 레벨업이 그걸 쓴다 ────────────
+	assert(str(RaidDefs.RAIDS["forge"]["currency"]) == "연마석",
+		"성소가 연마석을 안 준다")
+	var w_before: float = scene.whet
+	# 소탕은 **최고 기록이 있어야** 돈다(n<=0 이면 그냥 나간다).
+	scene.raid_best["forge"] = 1
+	scene.raid_date = Time.get_date_string_from_system()
+	scene.raid_left["forge"] = 3
+	scene.raid_on = ""
+	scene.dungeon_on = false
+	scene._raid_sweep("forge")
+	assert(scene.whet > w_before, "성소 소탕이 연마석을 안 준다")
+	# 레벨업 — 연마석을 내고 한 칸 오른다.
+	var up_key := str(scene.gear_inventory.keys()[0])
+	scene._gear_selected_key = up_key
+	var lv0 := int(scene.gear_inventory[up_key].get("lv", 0))
+	scene.whet = GearDefs.upgrade_cost(scene.gear_inventory[up_key])
+	scene._level_up_selected()
+	assert(int(scene.gear_inventory[up_key]["lv"]) == lv0 + 1,
+		"레벨업이 안 됐다")
+	assert(is_zero_approx(scene.whet), "레벨업이 연마석을 안 썼다")
 
 	print("PullUiCheck OK")
 	quit(0)

@@ -384,6 +384,7 @@ var pet_lv := {}             # id -> 먹이 레벨(1~lv_cap(별))
 var pet_gear_got := {}       # 장비 id -> 별
 var pet_gear_worn := {}      # 펫 id -> 장비 id (펫당 1슬롯)
 var feed := 0.0              # 먹이 — 펫 전용 재화. 야수 우리가 준다
+var whet := 0.0              # 연마석 — 장비 레벨업. 제련의 성소가 준다
 var pet_bank := {}           # id -> 쌓인 양
 var pet_worn := ""           # 지금 데리고 다니는 하나
 var pet_at := 0.0
@@ -4081,6 +4082,7 @@ func _refresh_gear_detail() -> void:
 	var shards := int(gacha_shards.get(owned_key, 0))
 	var highest := GachaDefs.rarity_index(str(item["rarity"])) >= GachaDefs.RARITIES.size() - 1
 	var pity_left := maxi(1, GearDefs.fuse_pity(item) - int(fuse_pity.get(owned_key, 0)))
+	var up_cost0 := GearDefs.upgrade_cost(item)
 	var resource_values := [
 		["조각 %d/%d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
 		["-" if highest else "성공 %d%%" % int(GearDefs.fuse_rate(item) * 100.0),
@@ -4088,7 +4090,8 @@ func _refresh_gear_detail() -> void:
 		["-" if highest else "확정까지 %d회" % pity_left, Color(0.82, 0.80, 0.86)],
 		["최고 등급" if highest else "조합 가능" if shards >= GearDefs.FUSE_SHARDS \
 			else "조합 대기", Color(rarity["col"])],
-		["보유 %d개" % int(item.get("copies", 1)), Color(0.72, 0.72, 0.78)],
+		["연마석 %s / %s" % [_n(whet), _n(up_cost0, true)],
+			Color(0.68, 0.86, 0.72) if whet >= up_cost0 else Color(0.86, 0.62, 0.58)],
 	]
 	for i in resource_values.size():
 		var row := i / 2
@@ -4109,13 +4112,13 @@ func _refresh_gear_detail() -> void:
 	equip_button.disabled = equipped_now
 	equip_button.pressed.connect(func() -> void: _equip_inventory_item(_gear_selected_key))
 	_gear_detail.add_child(equip_button)
-	var synth_button := Ui.button("최고" if highest else "조합",
+	# 조합은 **전체 화면 조합 창**에서만 한다(사장님 2026-08-25) — 자리가
+	# 둘이면 어느 쪽이 진짜인지 흐려진다. 여기는 레벨업이다.
+	var synth_button := Ui.button("레벨업",
 		Vector2(130.0, 264.0), Vector2(100.0, 44.0), Type.SIZE_SMALL)
-	if not highest:
-		synth_button.text = "조합 %d" % GearDefs.FUSE_SHARDS
-		Ui.cost_icon(synth_button, GearDefs.icon_path(item), 16)
-	synth_button.disabled = shards < GearDefs.FUSE_SHARDS or highest
-	synth_button.pressed.connect(_synthesize_selected)
+	Ui.cost_icon(synth_button, "res://assets/items/gem.png", 16)
+	synth_button.disabled = whet < up_cost0
+	synth_button.pressed.connect(_level_up_selected)
 	_gear_detail.add_child(synth_button)
 	var close := Ui.button("닫기", Vector2(454.0, 264.0),
 		Vector2(100.0, 44.0), Type.SIZE_SMALL)
@@ -4129,6 +4132,30 @@ func _is_equipped_key(key: String) -> bool:
 		if str(item.get("inventory_key", "")) == key:
 			return true
 	return false
+
+
+# 레벨업 — 연마석을 내고 한 칸. 장착 중이면 장착본도 같이 올린다.
+func _level_up_selected() -> void:
+	var item: Dictionary = gear_inventory.get(_gear_selected_key, {})
+	if item.is_empty():
+		return
+	var cost := GearDefs.upgrade_cost(item)
+	if whet < cost:
+		return
+	var old_max := max_hp()
+	whet -= cost
+	item["lv"] = int(item.get("lv", 0)) + 1
+	var slot := str(item["slot"])
+	if str(equipped.get(slot, {}).get("inventory_key", "")) == _gear_selected_key:
+		var eq := item.duplicate(true)
+		eq["inventory_key"] = _gear_selected_key
+		equipped[slot] = eq
+	_apply_hp_growth(old_max)
+	_refresh_gear_slots()
+	_refresh_gear_inventory()
+	_refresh_gear_detail()
+	_refresh_hud()
+	_save_game()
 
 
 func _synthesize_selected() -> void:
@@ -4232,7 +4259,8 @@ func _refresh_gear_slots() -> void:
 		# 레벨은 강화 버튼을 누르면 오르는 수치로 이미 읽힌다.
 		nodes["label"].text = str(item["name"])
 		nodes["label"].add_theme_color_override("font_color", Color(item["col"]))
-		nodes["stat"].text = _gear_gain_line(item)
+		nodes["stat"].text = "Lv.%d · %s" % [int(item.get("lv", 0)),
+			_gear_gain_line(item)]
 
 
 # 이 장비 하나가 실제로 올려 주는 값. **슬롯마다 단위가 다르다** — 무기는
@@ -7133,7 +7161,7 @@ func _raid_sweep(kind: String) -> void:
 		"blood": gold += amount
 		"pact": sigil += amount
 		"hunt": feed += amount
-		"forge": tickets["weapon"] = int(tickets.get("weapon", 0)) + int(amount)
+		"forge": whet += amount
 	_quest_bump("raid")   # 손으로 깬 것과 같은 값이므로 임무도 같이 센다
 	_show_reward("%s 소탕" % str(RaidDefs.RAIDS[kind]["name"]),
 		[{"icon": str(RaidDefs.RAIDS[kind]["icon"]),
@@ -7304,6 +7332,7 @@ func _grant_reward(kind: String, amount: float) -> void:
 		"sigil": sigil += amount
 		"gold": gold += amount
 		"feed": feed += amount
+		"whet": whet += amount
 		"oath_card": oath_cards += int(amount)     # 보관 상한을 넘겨 받는다
 		"oath_gold": oath_gold += int(amount)
 		_:
@@ -7319,6 +7348,7 @@ static func _reward_name(kind: String) -> String:
 		"sigil": return "인장"
 		"gold": return "혈액"
 		"feed": return "먹이"
+		"whet": return "연마석"
 		"oath_card": return "계약 카드"
 		"oath_gold": return "황금 계약서"
 	var tk := TicketDefs.kind_of(kind)
@@ -8051,6 +8081,7 @@ func _shop_kind_icon(kind: String) -> String:
 		"crystal": return "res://assets/ui/res_crystal.png"
 		"sigil": return "res://assets/ui/res_sigil.png"
 		"gold": return "res://assets/ui/res_blood.png"
+		"whet": return "res://assets/items/gem.png"
 		"oath_card", "oath_gold": return "res://assets/ui/side_oath.png"
 	return "res://assets/ui/res_gem.png"
 
@@ -13766,7 +13797,7 @@ func _advance_stage() -> void:
 			"blood": gold += amount
 			"pact": sigil += amount
 			"hunt": feed += amount
-			"forge": tickets["weapon"] = int(tickets.get("weapon", 0)) + int(amount)
+			"forge": whet += amount
 		_offline_banner.text = "%s 격파 — %s +%s" \
 			% [RaidDefs.label(kind, n), str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)]
 		_offline_banner.add_theme_color_override("font_color",
@@ -14587,6 +14618,7 @@ func _save_game() -> void:
 	cfg.set_value("wallet", "gem", gem)
 	cfg.set_value("wallet", "crystal", crystal)
 	cfg.set_value("wallet", "sigil", sigil)
+	cfg.set_value("wallet", "whet", whet)
 	cfg.set_value("wallet", "tickets", tickets)
 	cfg.set_value("run", "relics", relics)
 	cfg.set_value("run", "title_ms", title_ms_got)
@@ -14709,6 +14741,7 @@ func _load_game() -> void:
 	gem = maxf(0.0, float(cfg.get_value("wallet", "gem", 0.0)))
 	crystal = maxf(0.0, float(cfg.get_value("wallet", "crystal", 0.0)))
 	sigil = maxf(0.0, float(cfg.get_value("wallet", "sigil", 0.0)))
+	whet = maxf(0.0, float(cfg.get_value("wallet", "whet", 0.0)))
 	tickets = cfg.get_value("wallet", "tickets", {})
 	relics = cfg.get_value("run", "relics", {})
 	title_ms_got = cfg.get_value("run", "title_ms", {})
@@ -15069,6 +15102,7 @@ func _dev_god(want: int) -> void:
 	_dev_unlock(want)
 	stage = best_stage
 	gold = 1e12
+	whet = 1e9
 	gem = 1e6
 	crystal = 1e9
 	sigil = 1e9

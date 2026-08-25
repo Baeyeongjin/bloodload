@@ -38,10 +38,9 @@ const RAIDS := {
 	"blood": {"name": "혈액의 동굴", "currency": "혈액", "goal": "swarm",
 		"goal_text": "제한 시간 안에 %d마리",
 		"icon": "res://assets/ui/raid_blood.png"},
-	# 제련의 성소 — 옛 정수의 성소 자리(2026-08-25 정수 삭제). 단일 강적 판은
-	# 여기 하나뿐이라 규칙(slay)이 죽지 않게 남긴다. 보상은 무기 소환권 —
-	# 장비는 이제 조각(소환)으로만 자라므로 이 판이 그 수도꼭지다.
-	"forge": {"name": "제련의 성소", "currency": "무기 소환권", "goal": "slay",
+	# 제련의 성소 — 단일 강적 판(slay)은 여기 하나뿐이다. 보상은 **연마석**:
+	# 장비 레벨업 재화의 수도꼭지가 이 판이다(사장님 2026-08-25).
+	"forge": {"name": "제련의 성소", "currency": "연마석", "goal": "slay",
 		"goal_text": "수호자 %d마리 격파",
 		"icon": "res://assets/ui/raid_essence.png"},
 	"pact": {"name": "계약의 제단", "currency": "인장", "goal": "endure",
@@ -165,9 +164,10 @@ static func reward(kind: String, n: int, best := 0) -> float:
 	# 몇 레벨씩 오르고 뒤로 갈수록 던전 단계를 밀어야 따라간다.
 	if kind == "hunt":
 		return 80.0 + 20.0 * float(n - 1)
-	# 무기 소환권 — 장수라 작게 센다. 1단계 2장, 세 단계마다 +1.
+	# 연마석 — 선형. 레벨업 비용이 지수(25 x 1.45^lv)라, 하루치(3판)로
+	# 초반은 몇 레벨씩 오르고 뒤로 갈수록 단계를 밀어야 따라간다.
 	if kind == "forge":
-		return 2.0 + floorf(float(n - 1) / 3.0)
+		return 40.0 + 20.0 * float(n - 1)
 	return 0.0
 
 

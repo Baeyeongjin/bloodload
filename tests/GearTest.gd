@@ -182,6 +182,15 @@ func _init() -> void:
 		assert(GearDefs.FUSE_PITY[i] <= GearDefs.FUSE_PITY[i - 1],
 			"높은 등급 천장이 더 멀다")
 	assert(GearDefs.FUSE_SHARDS > 0 and GearDefs.fuse_pity(it) > 0)
+	# 레벨업(연마석) — 레벨이 오를수록, 등급이 높을수록 비싸야 한다.
+	var lvl_it := GearDefs.make("weapon", 5, GachaDefs.rarity("rare"))
+	var c_lv0 := GearDefs.upgrade_cost(lvl_it)
+	lvl_it["lv"] = 3
+	assert(GearDefs.upgrade_cost(lvl_it) > c_lv0, "레벨업 비용이 안 오른다")
+	var hi_it := GearDefs.make("weapon", 5, GachaDefs.rarity("epic"))
+	assert(GearDefs.upgrade_cost(hi_it)
+		> GearDefs.upgrade_cost(GearDefs.make("weapon", 5,
+		GachaDefs.rarity("common"))), "등급이 높은데 레벨업이 더 싸다")
 	assert(GearDefs.fuse_rate(it) > 0.0 and GearDefs.fuse_rate(it) <= 1.0)
 	var keep0 := GearDefs.collection_rate(GearDefs.make("weapon", 5,
 		GachaDefs.rarity("rare")))
