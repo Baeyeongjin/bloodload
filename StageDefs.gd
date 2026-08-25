@@ -287,11 +287,6 @@ static func gold_per_kill(stage: int) -> float:
 		* Balance.BLOOD_UNIT * KILL_WORTH
 
 
-# 첫 보스가 일반 장비 첫 강화 1회를 열고, 이후 큰 단계마다 5씩 오른다.
-static func boss_essence(stage: int) -> float:
-	return 25.0 + float(major_stage(stage) - 1) * 5.0
-
-
 # 이 단계를 넘는 데 필요한 처치 수. 보스 단계는 보스 1마리.
 static func kills_needed(stage: int) -> int:
 	return 1 if is_boss_stage(stage) or is_midboss_stage(stage) else KILLS_PER_STAGE

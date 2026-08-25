@@ -38,7 +38,10 @@ const RAIDS := {
 	"blood": {"name": "혈액의 동굴", "currency": "혈액", "goal": "swarm",
 		"goal_text": "제한 시간 안에 %d마리",
 		"icon": "res://assets/ui/raid_blood.png"},
-	"essence": {"name": "정수의 성소", "currency": "정수", "goal": "slay",
+	# 제련의 성소 — 옛 정수의 성소 자리(2026-08-25 정수 삭제). 단일 강적 판은
+	# 여기 하나뿐이라 규칙(slay)이 죽지 않게 남긴다. 보상은 무기 소환권 —
+	# 장비는 이제 조각(소환)으로만 자라므로 이 판이 그 수도꼭지다.
+	"forge": {"name": "제련의 성소", "currency": "무기 소환권", "goal": "slay",
 		"goal_text": "수호자 %d마리 격파",
 		"icon": "res://assets/ui/raid_essence.png"},
 	"pact": {"name": "계약의 제단", "currency": "인장", "goal": "endure",
@@ -131,7 +134,7 @@ static func goal_line(kind: String) -> String:
 static func open_stage(kind: String) -> int:
 	match kind:
 		"hunt": return 30       # 펫(10구간)이 자라기 시작할 때 먹이가 필요해진다
-		"essence": return 50    # 장비 강화가 필요해지는 자리
+		"forge": return 50      # 장비를 본격적으로 굴리기 시작하는 자리
 		"pact": return 80       # 혈맹은 장기 축이라 제일 뒤
 	return OPEN_STAGE
 # 등가 구간은 **그 던전이 열리는 구간**에서 출발한다 — 제단(40)이 동굴(20)과
@@ -146,7 +149,7 @@ static func eq_stage(n: int, kind := "blood", best := 0) -> int:
 	return mini(base + (n - 1) * STEP_PER_STAGE, StageDefs.total_stages())
 
 
-# 혈액 = 등가 구간 시세 400킬 분량. 정수 = 등가 구간 보스 3마리 분량.
+# 혈액 = 등가 구간 시세 400킬 분량.
 # 인장 = 도전 단계 선형(60 + 15/단계) — 혈맹 비용도 선형이라 나란히 간다.
 # 킬 수가 아니라 뭉치로 주는 이유: 판이 45초라 킬 시세로는 티가 안 난다.
 static func reward(kind: String, n: int, best := 0) -> float:
@@ -162,7 +165,10 @@ static func reward(kind: String, n: int, best := 0) -> float:
 	# 몇 레벨씩 오르고 뒤로 갈수록 던전 단계를 밀어야 따라간다.
 	if kind == "hunt":
 		return 80.0 + 20.0 * float(n - 1)
-	return StageDefs.boss_essence(eq_stage(n, kind, best)) * 3.0
+	# 무기 소환권 — 장수라 작게 센다. 1단계 2장, 세 단계마다 +1.
+	if kind == "forge":
+		return 2.0 + floorf(float(n - 1) / 3.0)
+	return 0.0
 
 
 static func label(kind: String, n: int) -> String:

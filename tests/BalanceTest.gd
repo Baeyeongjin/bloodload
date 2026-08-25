@@ -352,7 +352,6 @@ func _init() -> void:
 	#     없는 점과 같다. 쓸 게 없으면 반드시 꺼져야 점에 뜻이 생긴다.
 	var m = main.new()
 	m.gold = 0.0
-	m.essence = 0.0
 	m.free_pull_date = Time.get_date_string_from_system()   # 오늘 공짜 뽑기를 이미 썼다
 	assert(not m._tab_todo("growth"), "혈액이 0인데 성장 점이 켜졌다")
 	assert(not m._tab_todo("gear"), "장비를 안 꼈는데 장비 점이 켜졌다")

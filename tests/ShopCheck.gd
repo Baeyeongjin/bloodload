@@ -24,12 +24,11 @@ func _init() -> void:
 	# 해금 계단은 던전 표를 읽어야 한다 — 여기 숫자를 박으면 계단을 옮길 때마다
 	# 상점만 딴 소리를 한다(던전 표가 그 실수로 두 번 깨졌다).
 	assert(ShopDefs.open_stage("crystal") == DungeonDefs.OPEN_STAGE)
-	assert(ShopDefs.open_stage("essence") == RaidDefs.open_stage("essence"))
 	assert(ShopDefs.open_stage("sigil") == RaidDefs.open_stage("pact"))
 	assert(ShopDefs.open_stage("blood") == 1, "혈액은 늘 열려 있어야 한다")
 
 	# ── 2) 값 ──────────────────────────────────────────────────────────────
-	for id in ["blood", "essence"]:
+	for id in ["blood"]:
 		var prev := 0.0
 		for st in range(1, 400, 20):
 			var a := ShopDefs.amount(id, st, 20)
@@ -41,9 +40,6 @@ func _init() -> void:
 	var eq_b := RaidDefs.eq_stage(1, "blood")
 	assert(ShopDefs.amount("blood", eq_b, 20) < RaidDefs.reward("blood", 1),
 		"상점 혈액이 동굴 한 판보다 많다")
-	var eq_e := RaidDefs.eq_stage(1, "essence")
-	assert(ShopDefs.amount("essence", eq_e, 20) < RaidDefs.reward("essence", 1),
-		"상점 정수가 성소 한 판보다 많다")
 	# 미궁이 열렸는데 아직 안 돈 사람(기록 0)에게도 빈 물건을 팔면 안 된다.
 	assert(ShopDefs.amount("crystal", 50, 0) > 0.0, "혈정 수량이 0 인 판이 뜬다")
 

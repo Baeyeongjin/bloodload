@@ -44,7 +44,7 @@ const QUESTS := [
 		"reward": "ticket_pet", "amount": 2, "icon": "raid_hunt"},
 	{"id": "stage", "name": "구간 5회 돌파", "need": 5,
 		"reward": "ticket_trinket", "amount": 2, "icon": "stat_damage"},
-	{"id": "gear", "name": "장비 강화 10회", "need": 10,
+	{"id": "gear", "name": "장비 조합 1회", "need": 1,
 		"reward": "gem", "amount": 40, "icon": "raid_essence"},
 	{"id": "oath", "name": "핏빛 계약 1회", "need": 1,
 		"reward": "oath_card", "amount": 1, "icon": "oath_card"},
@@ -79,7 +79,7 @@ const WEEKLY := [
 		"reward": "ticket_petgear", "amount": 3, "icon": "raid_hunt"},
 	{"id": "wstage", "kind": "stage", "name": "구간 100회 돌파", "need": 100,
 		"reward": "ticket_pet", "amount": 3, "icon": "stat_damage"},
-	{"id": "wgear", "kind": "gear", "name": "장비 강화 150회", "need": 150,
+	{"id": "wgear", "kind": "gear", "name": "장비 조합 10회", "need": 10,
 		"reward": "gem", "amount": 100, "icon": "raid_essence"},
 ]
 

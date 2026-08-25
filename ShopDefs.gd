@@ -28,8 +28,6 @@ const ITEMS := [
 		"icon": "res://assets/ui/res_blood.png"},
 	{"id": "crystal", "name": "혈정 원석", "sub": "혈정", "cost": 45, "per_day": 2,
 		"icon": "res://assets/ui/res_crystal.png"},
-	{"id": "essence", "name": "정수 결정", "sub": "정수", "cost": 45, "per_day": 2,
-		"icon": "res://assets/items/gem.png"},
 	{"id": "sigil", "name": "봉인 인장", "sub": "인장", "cost": 45, "per_day": 2,
 		"icon": "res://assets/ui/res_sigil.png"},
 	{"id": "ticket", "name": "던전 입장권", "sub": "재화 던전 3종 +1판", "cost": 60,
@@ -74,7 +72,6 @@ static func of(id: String) -> Dictionary:
 static func open_stage(id: String) -> int:
 	match id:
 		"crystal": return DungeonDefs.OPEN_STAGE          # 혈맥 = 미궁이 연다
-		"essence": return RaidDefs.open_stage("essence")
 		"sigil": return RaidDefs.open_stage("pact")
 		"ticket": return RaidDefs.OPEN_STAGE
 		# 광고는 처음부터 보인다 — 초반이 가장 재화가 마른 구간이다.
@@ -98,7 +95,6 @@ static func amount(id: String, stage: int, dungeon_floor: int) -> float:
 			# 4시간분이면 20층에서 16 이 뜬다 — 노드 한 레벨이 180 인데 45보석짜리
 			# 물건이 그 1/11 이면 살 이유가 없다(화면 실측). 하루 2회 = 소탕 2/3일치.
 			return DungeonDefs.sweep_per_hour(maxi(dungeon_floor, 5)) * 8.0
-		"essence": return StageDefs.boss_essence(stage) * 2.0    # 성소 1판 = 3
 		"sigil": return 40.0                                     # 제단 1판 = 60+
 		"ad_ticket": return 2.0
 		"ad_gem": return 50.0

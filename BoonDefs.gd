@@ -22,8 +22,6 @@ const BOONS := [
 		"text": "재화 던전 보상 2배"},
 	{"id": "star", "name": "소환의 별", "kind": "ticket", "value": 3.0,
 		"text": "매일 소환권 +3"},
-	{"id": "rite", "name": "피의 의식", "kind": "essence", "value": 1.0,
-		"text": "보스 정수 2배"},
 ]
 
 

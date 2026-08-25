@@ -119,7 +119,8 @@ const PARALLAX := 0.5
 var stage := 1
 var kills := 0
 var gold := 0.0
-var essence := 0.0
+# 조합 천장 — "gear:<보관키>" -> 실패 누적. 성공하면 지운다(사장님 2026-08-25).
+var fuse_pity := {}
 var gem := 0.0
 # 혈정 — 미궁 전용 재화(EXPANSION 6장). 획득은 미궁(첫 돌파 + 소탕)뿐이고
 # 쓰는 곳은 3단계의 혈맥뿐이다. 혈액과 상호 교환 불가 — 인플레 격리.
@@ -358,7 +359,6 @@ var _hud: CanvasLayer
 var _hud_root: Control   # 테마가 걸린 실제 부모
 var _lbl_stage: Label
 var _lbl_gold: Label
-var _lbl_essence: Label   # 장비 탭의 정수 잔액 — 상단바에서 내려왔다(레퍼런스 방식)
 var _lbl_gem: Label
 var _lbl_prog: Label
 var _lbl_power: Label
@@ -918,7 +918,7 @@ func _ready() -> void:
 			_set_gacha_kind(arg.trim_prefix("--gacha="))
 		# [개발 도구] --shop : 상점을 연 채로 캡처한다(해금 계단이 다 보이게).
 		if arg == "--shop" or arg.begins_with("--shop="):
-			best_stage = maxi(best_stage, RaidDefs.open_stage("essence"))
+			best_stage = maxi(best_stage, 50)
 			dungeon_best = maxi(dungeon_best, 20)
 			gem = maxf(gem, 500.0)
 			shop_used = {}          # 캡처는 오늘 아무것도 안 산 상태로
@@ -1050,7 +1050,7 @@ func _ready() -> void:
 			_raid_set_mode("trial")
 			if arg.ends_with("=in"):
 				_trial_enter()
-		# [개발 도구] --raid=blood|essence : 재화 던전에 들어간 채로 캡처한다.
+		# [개발 도구] --raid=blood|pact|hunt : 재화 던전에 들어간 채로 캡처한다.
 		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
 			var rk := arg.trim_prefix("--raid=")
@@ -1120,7 +1120,7 @@ func _ready() -> void:
 			_select_tab("shop")
 			_shop_set_mode("pass")
 			_refresh_pass()
-		# [개발 도구] --detail=essence : 던전 상세 판을 연 채로 캡처한다.
+		# [개발 도구] --detail=blood : 던전 상세 판을 연 채로 캡처한다.
 		if arg.begins_with("--detail="):
 			_select_tab("raid")
 			_raid_set_mode("raid")
@@ -1225,17 +1225,17 @@ func _ready() -> void:
 		# [개발 도구] --dialog=confirm|reward : 확인창/보상창을 연 채 캡처한다.
 		if arg.begins_with("--dialog="):
 			if arg.ends_with("confirm"):
-				_ask("선택한 장비 12개를 분해합니다.\n정수 3.4k 을 얻습니다.\n\n되돌릴 수 없습니다.",
+				_ask("선택한 장비 12종을 조합합니다.\n각각 조각 3개를 씁니다.\n\n실패해도 조각은 소모됩니다.",
 					func() -> void: pass)
 			else:
-				_show_reward("분해 완료", [{"icon": "res://assets/items/gem.png",
-					"label": "정수 +3.4k"}])
+				_show_reward("합성 완료", [{"icon": "res://assets/items/gem.png",
+					"label": "장비 1종 승급"}])
 		# [개발 도구] --rates : 소환 레벨별 확률표를 연 채 캡처한다.
 		if arg == "--rates":
 			_select_tab("summon")
 			_rates_view.visible = true
 			_refresh_rates_table()
-		# [개발 도구] --bulk=salvage|fuse[:all] : 분해/조합 창을 연 채 캡처한다.
+		# [개발 도구] --bulk=fuse[:all] : 조합 창을 연 채 캡처한다.
 		if arg.begins_with("--bulk="):
 			var bulk_args := arg.trim_prefix("--bulk=").split(":")
 			_select_tab("gear")
@@ -3449,34 +3449,9 @@ func _build_gear(root: Control) -> void:
 			Vector2(at.x + SLOT_BOX * 0.5 - SLOT_GAP * 0.5,
 			154.0), Type.SIZE_SMALL, Color(0.75, 0.75, 0.8), SLOT_GAP, 20.0)
 		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		# 이 폰트는 한글 글자 폭이 크기보다 넓다 — 칸이 좁으면 크기부터 내린다.
-		# 160px: 여백 24 + 아이콘 20 + 간격 4 를 빼면 112px, "정수 999.9t"(108)가 들어간다.
-		# 강화 버튼도 대장간 철판. 값은 라벨·아이콘이 적는다(그림 버튼이라).
-		var bx := Vector2(at.x + SLOT_BOX * 0.5 - 80.0, 186.0)
-		var btex := _shop_tex(_gear_equipped_view,
-			"res://assets/ui/sets/forge_button.png", bx, Vector2(160.0, 48.0))
-		var bic := Ui.icon("res://assets/items/gem.png", bx + Vector2(18.0, 14.0), 20.0)
-		bic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_gear_equipped_view.add_child(bic)
-		var blb := _panel_label(_gear_equipped_view, bx + Vector2(44.0, 14.0),
-			Type.SIZE_SMALL, Color(1.0, 0.95, 0.90), 108.0, 20.0)
-		_shop_outline(blb, 6)
-		var b := _shop_ghost(_gear_equipped_view, Vector2(160.0, 48.0), btex)
-		b.position = bx
-		b.pressed.connect(func() -> void: _enhance(slot))
-		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl,
-			"btn": b, "btn_tex": btex, "btn_lbl": blb, "btn_icon": bic}
-	# 정수 잔액 — 정수를 쓰는 화면이 여기다(강화). 상단바에서 내려왔다: 상단은
-	# 핵심 2개(혈액·보석)만 남기고, 재화는 쓰는 곳에 둔다(레퍼런스 방식).
-	var ep := Ui.pill(Vector2(PAD + CONTENT_W * 0.5 - 70.0, 252.0),
-		Vector2(140.0, PILL_H))
-	_gear_equipped_view.add_child(ep)
-	ep.add_child(Ui.icon("res://assets/items/gem.png",
-		Vector2(-PILL_ICON_OUT, (PILL_H - PILL_ICON) * 0.5), PILL_ICON))
-	var ex := PILL_ICON - PILL_ICON_OUT + 4.0
-	_lbl_essence = _panel_label(ep, Vector2(ex, 0.0), Type.SIZE_SMALL,
-		Color(0.74, 0.84, 1.0), 140.0 - ex - 10.0, PILL_H)
-	_lbl_essence.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		# 강화(정수 레벨업)는 삭제됐다(사장님 2026-08-25) — 슬롯은 그림과
+		# 이름만 남는다. 성장은 보관함의 조합이 맡는다.
+		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl}
 	_gear_inventory_view = Control.new()
 	_gear_inventory_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_inventory_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3503,15 +3478,11 @@ func _build_gear(root: Control) -> void:
 	var scroll := Ui.scroll(Vector2(PAD, list_top),
 		Vector2(CONTENT_W, CONTENT_BOTTOM - 50.0 - list_top))
 	_gear_inventory_view.add_child(scroll)
-	var bulk_w := (CONTENT_W - 12.0) * 0.5
-	for i in 2:
-		var mode: String = "salvage" if i == 0 else "fuse"
-		var b := Ui.button("분해" if i == 0 else "조합",
-			Vector2(PAD + float(i) * (bulk_w + 12.0), CONTENT_BOTTOM - 38.0),
-			Vector2(bulk_w, 38.0),
-			Type.SIZE_SMALL)
-		b.pressed.connect(func() -> void: _open_bulk(mode))
-		_gear_inventory_view.add_child(b)
+	# 분해는 삭제됐다(사장님 2026-08-25) — 남는 건 조합 하나다.
+	var b := Ui.button("조합", Vector2(PAD, CONTENT_BOTTOM - 38.0),
+		Vector2(CONTENT_W, 38.0), Type.SIZE_SMALL)
+	b.pressed.connect(func() -> void: _open_bulk("fuse"))
+	_gear_inventory_view.add_child(b)
 	_gear_inventory_grid = GridContainer.new()
 	_gear_inventory_grid.columns = 4
 	_gear_inventory_grid.custom_minimum_size.x = CONTENT_W - Ui.SCROLL_W
@@ -3587,18 +3558,13 @@ func _open_bulk(mode: String) -> void:
 # 조합 대상: 조각 5개 이상이면서 신화가 아닌 것.
 func _bulk_candidates() -> Array[String]:
 	var out: Array[String] = []
-	var salvaging := _bulk_mode == "salvage"
 	for key in gear_inventory:
 		var item: Dictionary = gear_inventory[key]
-		if salvaging:
-			if _is_equipped_key(str(key)):
-				continue
-		else:
-			if GachaDefs.rarity_index(str(item.get("rarity", "common"))) \
-					>= GachaDefs.RARITIES.size() - 1:
-				continue
-			if int(gacha_shards.get("gear:" + str(key), 0)) < 5:
-				continue
+		if GachaDefs.rarity_index(str(item.get("rarity", "common"))) \
+				>= GachaDefs.RARITIES.size() - 1:
+			continue
+		if int(gacha_shards.get("gear:" + str(key), 0)) < GearDefs.FUSE_SHARDS:
+			continue
 		out.append(str(key))
 	out.sort_custom(func(a: Variant, b: Variant) -> bool:
 		return GachaDefs.rarity_index(str(gear_inventory[a].get("rarity", "common"))) \
@@ -3617,21 +3583,14 @@ func _bulk_select_all(on: bool) -> void:
 func _refresh_bulk() -> void:
 	if not _bulk_view or not _bulk_view.visible:
 		return
-	var salvaging := _bulk_mode == "salvage"
-	_bulk_title.text = "분해" if salvaging else "조합"
+	_bulk_title.text = "조합"
 	var keys := _bulk_candidates()
 	for child in _bulk_grid.get_children():
 		child.queue_free()
 	var chosen := 0
-	var total := 0.0
-	var precious := 0
 	for key in keys:
 		if _bulk_selected.has(key):
 			chosen += 1
-			total += GearDefs.salvage_value(gear_inventory[key])
-			if GachaDefs.rarity_index(str(gear_inventory[key].get("rarity", "common"))) \
-					>= GachaDefs.RARITIES.size() - 2:
-				precious += 1
 		var card := _gear_card(key, func() -> void:
 			if _bulk_selected.has(key):
 				_bulk_selected.erase(key)
@@ -3642,64 +3601,52 @@ func _refresh_bulk() -> void:
 		card.modulate = Color(1, 1, 1) if _bulk_selected.has(key) else Color(0.42, 0.42, 0.46)
 		_bulk_grid.add_child(card)
 	if keys.is_empty():
-		_bulk_body.text = "녹일 장비가 없습니다." if salvaging \
-			else "조각이 5개 모인 장비가 없습니다."
-	elif salvaging:
-		_bulk_body.text = "선택 %d / %d개  ·  정수 +%s%s" % [chosen, keys.size(), _n(total),
-			"    레전더리 이상 %d개 포함" % precious if precious > 0 else ""]
+		_bulk_body.text = "조각이 %d개 모인 장비가 없습니다." % GearDefs.FUSE_SHARDS
 	else:
-		_bulk_body.text = "선택 %d / %d종  ·  각각 다음 등급으로 한 단계" % [chosen, keys.size()]
-	# 되돌릴 수 없으니 귀한 등급이 끼면 글자색으로 한 번 더 말한다.
-	_bulk_body.add_theme_color_override("font_color",
-		Color(1.0, 0.52, 0.45) if precious > 0 else Color(0.90, 0.88, 0.92))
+		_bulk_body.text = "선택 %d / %d종  ·  조각 %d개씩 · 등급별 확률, 실패해도 소모" \
+			% [chosen, keys.size(), GearDefs.FUSE_SHARDS]
+	_bulk_body.add_theme_color_override("font_color", Color(0.90, 0.88, 0.92))
 	_bulk_run.disabled = chosen == 0
 
 
 # 실행 버튼은 **묻기만 한다.** 되돌릴 수 없는 작업이라 손이 미끄러지면 끝이다.
 func _run_bulk() -> void:
 	var chosen := 0
-	var total := 0.0
 	for key in _bulk_candidates():
-		if not _bulk_selected.has(key):
-			continue
-		chosen += 1
-		total += GearDefs.salvage_value(gear_inventory[key])
+		if _bulk_selected.has(key):
+			chosen += 1
 	if chosen == 0:
 		return
-	if _bulk_mode == "salvage":
-		_ask("선택한 장비 %d개를 분해합니다.\n정수 %s 을 얻습니다.\n\n되돌릴 수 없습니다."
-			% [chosen, _n(total)], _do_bulk)
-	else:
-		_ask("선택한 장비 %d종을 다음 등급으로 올립니다.\n각각 조각 5개를 씁니다."
-			% chosen, _do_bulk)
+	_ask("선택한 장비 %d종을 조합합니다.\n각각 조각 %d개를 쓰며, 등급별 확률로 성공합니다.\n실패해도 조각은 소모됩니다(천장 있음)."
+		% [chosen, GearDefs.FUSE_SHARDS], _do_bulk)
 
 
 func _do_bulk() -> void:
 	var old_max := max_hp()
 	var got: Array = []
-	var earned := 0.0
+	var fails := 0
 	# 후보 목록을 기준으로 돈다 — 선택 사전에는 그새 사라진 키가 남아 있을 수 있다.
 	for key in _bulk_candidates():
 		if not _bulk_selected.has(key):
 			continue
-		if _bulk_mode == "salvage":
-			earned += _salvage(key)
-		else:
-			var new_key := _synthesize(key)
-			if not new_key.is_empty() and gear_inventory.has(new_key):
-				var it: Dictionary = gear_inventory[new_key]
-				# 등급 틀+등급명 — 스킬 합성 팝업과 같은 문법(사장님).
-				got.append({"icon": GearDefs.icon_path(it),
-					"label": str(it["name"]), "col": it["col"],
-					"sub": str(GachaDefs.rarity(str(it["rarity"]))["name"])})
+		var new_key := _synthesize(key)
+		if not new_key.is_empty() and gear_inventory.has(new_key):
+			var it: Dictionary = gear_inventory[new_key]
+			# 등급 틀+등급명 — 스킬 합성 팝업과 같은 문법(사장님).
+			got.append({"icon": GearDefs.icon_path(it),
+				"label": str(it["name"]), "col": it["col"],
+				"sub": str(GachaDefs.rarity(str(it["rarity"]))["name"])})
+		elif _fuse_failed:
+			fails += 1
 	_apply_hp_growth(old_max)
 	_bulk_selected.clear()
-	if _bulk_mode == "salvage":
-		_show_reward("분해 완료", [{"icon": "res://assets/items/gem.png",
-			"label": "정수 +%s" % _n(earned)}])
-	elif not got.is_empty():
+	if fails > 0:
+		# 실패도 결과다 — 조각이 어디로 갔는지 말해야 도박이 아니라 천장이 된다.
+		got.append({"icon": "res://assets/ui/res_gem.png",
+			"label": "실패 %d회" % fails, "sub": "조각은 천장에 쌓였다"})
+	if not got.is_empty():
 		# 6개까지만 보여 준다 — 그 이상은 한 줄에 안 들어가고, 어차피 보관함에 다 있다.
-		_show_reward("합성 완료", got.slice(0, mini(got.size(), 5)))
+		_show_reward("조합 결과", got.slice(0, mini(got.size(), 5)))
 	# 지운 칸을 보고 있었을 수 있다.
 	if not gear_inventory.has(_gear_selected_key):
 		_gear_selected_key = ""
@@ -3936,16 +3883,15 @@ func _refresh_gear_detail() -> void:
 		GearDefs.collection_rate(item) * 100.0]
 	var owned_key := "gear:" + _gear_selected_key
 	var shards := int(gacha_shards.get(owned_key, 0))
-	var level_cost := GearDefs.upgrade_cost(item)
-	var salvage := GearDefs.salvage_value(item)
 	var highest := GachaDefs.rarity_index(str(item["rarity"])) >= GachaDefs.RARITIES.size() - 1
+	var pity_left := maxi(1, GearDefs.fuse_pity(item) - int(fuse_pity.get(owned_key, 0)))
 	var resource_values := [
-		["정수 %s" % _n(essence), Color(0.68, 0.82, 1.0)],
-		["레벨업 %s" % _n(level_cost, true), Color(0.82, 0.80, 0.86)],
-		["분해 +%s" % _n(salvage), Color(0.82, 0.80, 0.86)],
-		["조각 %d/5" % shards, Color(0.72, 0.72, 0.78)],
-		["최고 등급" if highest else "합성 가능" if shards >= 5 \
-			else "합성 대기", Color(rarity["col"])],
+		["조각 %d/%d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
+		["-" if highest else "성공 %d%%" % int(GearDefs.fuse_rate(item) * 100.0),
+			Color(0.68, 0.82, 1.0)],
+		["-" if highest else "확정까지 %d회" % pity_left, Color(0.82, 0.80, 0.86)],
+		["최고 등급" if highest else "조합 가능" if shards >= GearDefs.FUSE_SHARDS \
+			else "조합 대기", Color(rarity["col"])],
 		["보유 %d개" % int(item.get("copies", 1)), Color(0.72, 0.72, 0.78)],
 	]
 	for i in resource_values.size():
@@ -3967,90 +3913,18 @@ func _refresh_gear_detail() -> void:
 	equip_button.disabled = equipped_now
 	equip_button.pressed.connect(func() -> void: _equip_inventory_item(_gear_selected_key))
 	_gear_detail.add_child(equip_button)
-	# 비용을 버튼에 안 적는 이유: 100px 칸에 "레벨업 999.9t"(132px)는 절대 안 들어가고,
-	# 바로 위 재화 줄에 이미 "레벨업 N"이 적혀 있다. 같은 값을 두 번 적을 자리가 없다.
-	var level_button := Ui.button("레벨업", Vector2(130.0, 264.0),
-		Vector2(100.0, 44.0), Type.SIZE_SMALL)
-	level_button.disabled = essence < level_cost
-	level_button.pressed.connect(_level_up_selected)
-	_gear_detail.add_child(level_button)
-	var synth_button := Ui.button("최고" if highest else "합성",
-		Vector2(238.0, 264.0), Vector2(100.0, 44.0), Type.SIZE_SMALL)
+	var synth_button := Ui.button("최고" if highest else "조합",
+		Vector2(130.0, 264.0), Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	if not highest:
-		synth_button.text = "합성 5"
+		synth_button.text = "조합 %d" % GearDefs.FUSE_SHARDS
 		Ui.cost_icon(synth_button, GearDefs.icon_path(item), 16)
-	synth_button.disabled = shards < 5 or highest
+	synth_button.disabled = shards < GearDefs.FUSE_SHARDS or highest
 	synth_button.pressed.connect(_synthesize_selected)
 	_gear_detail.add_child(synth_button)
-	var dismantle := Ui.button("분해", Vector2(346.0, 264.0),
-		Vector2(100.0, 44.0), Type.SIZE_SMALL)
-	dismantle.disabled = equipped_now
-	dismantle.pressed.connect(_dismantle_selected)
-	_gear_detail.add_child(dismantle)
 	var close := Ui.button("닫기", Vector2(454.0, 264.0),
 		Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _gear_detail.visible = false)
 	_gear_detail.add_child(close)
-
-
-func _level_up_selected() -> void:
-	var item: Dictionary = gear_inventory.get(_gear_selected_key, {})
-	if item.is_empty():
-		return
-	var cost := GearDefs.upgrade_cost(item)
-	if essence < cost:
-		return
-	var old_max := max_hp()
-	essence -= cost
-	item["lv"] = int(item.get("lv", 0)) + 1
-	_quest_bump("gear")   # 강화 자리가 둘이다(보관함 상세 · 장착 슬롯)
-	var slot := str(item["slot"])
-	if str(equipped.get(slot, {}).get("inventory_key", "")) == _gear_selected_key:
-		var equipped_item := item.duplicate(true)
-		equipped_item["inventory_key"] = _gear_selected_key
-		equipped[slot] = equipped_item
-	_apply_hp_growth(old_max)
-	_refresh_gear_slots()
-	_refresh_gear_inventory()
-	_refresh_gear_detail()
-	_save_game()
-
-
-# 낱개 분해도 **일괄과 같은 확인창**을 쓴다. 예전엔 버튼 글자가 "분해"→"확인"으로
-# 바뀌는 두 번 누르기였는데, 같은 화면에서 두 가지 확인 방식이 돌아가면 어느 쪽이
-# 진짜 실행인지 헷갈린다.
-func _dismantle_selected() -> void:
-	var key := _gear_selected_key
-	var item: Dictionary = gear_inventory.get(key, {})
-	if item.is_empty() or _is_equipped_key(key):
-		return
-	_ask("%s 을(를) 분해합니다.\n정수 %s 을 얻습니다.\n\n되돌릴 수 없습니다."
-		% [str(item["name"]), _n(GearDefs.salvage_value(item))],
-		func() -> void:
-			var old_max := max_hp()
-			var earned := _salvage(key)
-			_apply_hp_growth(old_max)
-			_gear_selected_key = ""
-			_gear_detail.visible = false
-			_refresh_gear_slots()
-			_refresh_gear_inventory()
-			_save_game()
-			_show_reward("분해 완료", [{"icon": "res://assets/items/gem.png",
-				"label": "정수 +%s" % _n(earned)}]))
-
-
-# 한 칸 분해. 낱개 분해와 일괄 분해가 같은 코드를 지나야 한쪽만 조각을 남기거나
-# 지갑을 다르게 채우는 일이 안 생긴다. 얻은 정수를 돌려준다.
-# 조각(gacha_shards)은 일부러 남긴다 — 조각은 장비가 아니라 뽑기 이력이다.
-func _salvage(key: String) -> float:
-	var item: Dictionary = gear_inventory.get(key, {})
-	if item.is_empty():
-		return 0.0
-	var got := GearDefs.salvage_value(item)
-	essence += got
-	gear_inventory.erase(key)
-	gacha_owned.erase("gear:" + key)
-	return got
 
 
 # 장착 중인 장비는 분해하지 않는다 — 지금 입고 있는 걸 녹이면 전투력이 말없이 떨어진다.
@@ -4062,8 +3936,18 @@ func _is_equipped_key(key: String) -> bool:
 
 
 func _synthesize_selected() -> void:
-	var new_key := _synthesize(_gear_selected_key)
+	var key_now := _gear_selected_key
+	var new_key := _synthesize(key_now)
 	if new_key.is_empty():
+		if _fuse_failed and gear_inventory.has(key_now):
+			var it: Dictionary = gear_inventory[key_now]
+			_show_reward("조합 실패", [{"icon": GearDefs.icon_path(it),
+				"label": "조각 -%d" % GearDefs.FUSE_SHARDS,
+				"sub": "확정까지 %d회" % maxi(1, GearDefs.fuse_pity(it)
+					- int(fuse_pity.get("gear:" + key_now, 0)))}])
+			_refresh_gear_inventory()
+			_refresh_gear_detail()
+			_save_game()
 		return
 	_gear_selected_key = new_key
 	_refresh_gear_slots()
@@ -4072,12 +3956,24 @@ func _synthesize_selected() -> void:
 	_save_game()
 
 
-# 한 칸 승급. 성공하면 승급 후 키, 못 하면 "".
+# 한 칸 승급 **시도**. 성공하면 승급 후 키, 실패·불가면 "" — 실패 여부는
+# _fuse_failed 로 가른다. 시도마다 조각을 소모하고, 등급별 확률로 성공하며,
+# 실패가 등급별 천장에 닿으면 그 시도는 확정이다(사장님 2026-08-25).
+var _fuse_failed := false
 func _synthesize(old_key: String) -> String:
+	_fuse_failed = false
 	var item: Dictionary = gear_inventory.get(old_key, {})
 	var owned_key := "gear:" + old_key
-	if item.is_empty() or int(gacha_shards.get(owned_key, 0)) < 5:
+	if item.is_empty() or int(gacha_shards.get(owned_key, 0)) < GearDefs.FUSE_SHARDS:
 		return ""
+	_quest_bump("gear")   # 임무 "장비 조합"은 시도를 센다 — 실패도 조합이다
+	var tries := int(fuse_pity.get(owned_key, 0)) + 1
+	if tries < GearDefs.fuse_pity(item) and randf() >= GearDefs.fuse_rate(item):
+		gacha_shards[owned_key] = int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
+		fuse_pity[owned_key] = tries
+		_fuse_failed = true
+		return ""
+	fuse_pity.erase(owned_key)
 	var old_max := max_hp()
 	var slot := str(item["slot"])
 	var was_equipped := str(equipped.get(slot, {}).get("inventory_key", "")) == old_key
@@ -4085,7 +3981,7 @@ func _synthesize(old_key: String) -> String:
 	if not GearDefs.promote(item):
 		return ""
 	var result_key := old_key
-	var remaining_shards := int(gacha_shards[owned_key]) - 5
+	var remaining_shards := int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
 	var new_key := str(item["icon"])
 	if new_key != old_key:
 		# **하위 종을 지우지 않는다**(사장님: 처음 뽑은 건 하나는 무조건).
@@ -4116,23 +4012,15 @@ func _synthesize(old_key: String) -> String:
 
 
 func _refresh_gear_slots() -> void:
-	if _lbl_essence:
-		# 아이콘이 바로 옆이라 이름은 중복이다(상단바와 같은 규칙).
-		_lbl_essence.text = _n(essence)
 	for slot in _gear_slots.keys():
 		var item: Dictionary = equipped.get(slot, {})
 		var nodes: Dictionary = _gear_slots[slot]
-		var btn: Button = nodes["btn"]
 		if item.is_empty():
 			nodes["icon"].texture = null
 			nodes["frame"].texture = Assets.tex("res://assets/ui/slot_common.png")
 			nodes["frame"].modulate = Color(0.45, 0.45, 0.5)
 			nodes["label"].text = GearDefs.SLOT_NAME[slot]
 			nodes["label"].add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
-			nodes["btn_lbl"].text = "비었음"
-			nodes["btn_icon"].visible = false
-			btn.disabled = true
-			_gate_btn_dim(nodes["btn_tex"], nodes["btn_lbl"], true)
 			continue
 		nodes["icon"].texture = Assets.tex(GearDefs.icon_path(item))
 		nodes["frame"].texture = Assets.tex(GearDefs.slot_frame(item))
@@ -4141,31 +4029,6 @@ func _refresh_gear_slots() -> void:
 		# 레벨은 강화 버튼을 누르면 오르는 수치로 이미 읽힌다.
 		nodes["label"].text = "%s +%s" % [str(item["name"]), _n(GearDefs.power(item))]
 		nodes["label"].add_theme_color_override("font_color", Color(item["col"]))
-		var cost := GearDefs.upgrade_cost(item)
-		nodes["btn_icon"].visible = true
-		# 한 줄로 둔다 — 두 줄이면 아랫줄이 버튼 테두리를 넘는다.
-		nodes["btn_lbl"].text = "정수 %s" % _n(cost, true)
-		btn.disabled = essence < cost
-		_gate_btn_dim(nodes["btn_tex"], nodes["btn_lbl"], btn.disabled)
-
-
-func _enhance(slot: String) -> void:
-	var item: Dictionary = equipped.get(slot, {})
-	if item.is_empty():
-		return
-	var cost := GearDefs.upgrade_cost(item)
-	if essence < cost:
-		return
-	var old_max := max_hp()
-	essence -= cost
-	item["lv"] = int(item.get("lv", 0)) + 1
-	_quest_bump("gear")
-	var inventory_key := str(item.get("inventory_key", ""))
-	if gear_inventory.has(inventory_key):
-		gear_inventory[inventory_key]["lv"] = item["lv"]
-	_apply_hp_growth(old_max)
-	_refresh_gear_slots()
-	_save_game()
 
 
 func _build_gacha(root: Control) -> void:
@@ -7053,7 +6916,7 @@ func _raid_sweep(kind: String) -> void:
 		"blood": gold += amount
 		"pact": sigil += amount
 		"hunt": feed += amount
-		_: essence += amount
+		"forge": tickets["weapon"] = int(tickets.get("weapon", 0)) + int(amount)
 	_quest_bump("raid")   # 손으로 깬 것과 같은 값이므로 임무도 같이 센다
 	_show_reward("%s 소탕" % str(RaidDefs.RAIDS[kind]["name"]),
 		[{"icon": str(RaidDefs.RAIDS[kind]["icon"]),
@@ -7222,7 +7085,6 @@ func _grant_reward(kind: String, amount: float) -> void:
 		"gem": gem += amount
 		"crystal": crystal += amount
 		"sigil": sigil += amount
-		"essence": essence += amount
 		"gold": gold += amount
 		"feed": feed += amount
 		"oath_card": oath_cards += int(amount)     # 보관 상한을 넘겨 받는다
@@ -7238,7 +7100,6 @@ static func _reward_name(kind: String) -> String:
 	match kind:
 		"crystal": return "혈정"
 		"sigil": return "인장"
-		"essence": return "정수"
 		"gold": return "혈액"
 		"feed": return "먹이"
 		"oath_card": return "계약 카드"
@@ -7262,7 +7123,7 @@ func _build_raid_list(root: Control) -> void:
 	# 연속 도전 토글은 **입장 팝업의 버튼**으로 옮겼다(사장님 2026-08-18).
 	# 던전 전용 세트(사장님: 탭마다 다르게) — 사슬 감긴 돌벽 카드 + 철창 입장 버튼.
 	# 입장 버튼이 그림이라 글자·잠금 표시는 라벨과 modulate 가 맡는다.
-	var kinds := ["blood", "essence", "pact", "hunt"]
+	var kinds := ["blood", "forge", "pact", "hunt"]
 	# **스크롤에 넣는다.** 4줄 x 154 = 616 인데 이 루트는 화면 214 에서 시작하고
 	# 판 아래는 774 다 — 쓸 수 있는 높이가 468 뿐이라 네 번째(야수 우리)가 하단
 	# 네비에 깔렸다(사장님 캡처 2회. 처음엔 루트 오프셋을 안 재고 682 로 잡아
@@ -7971,7 +7832,6 @@ func _shop_kind_icon(kind: String) -> String:
 		return TicketDefs.icon_of(t)
 	match kind:
 		"crystal": return "res://assets/ui/res_crystal.png"
-		"essence": return "res://assets/items/gem.png"
 		"sigil": return "res://assets/ui/res_sigil.png"
 		"gold": return "res://assets/ui/res_blood.png"
 		"oath_card", "oath_gold": return "res://assets/ui/side_oath.png"
@@ -8731,7 +8591,6 @@ func _shop_buy(id: String) -> void:
 	match id:
 		"blood": gold += amt
 		"crystal": crystal += amt
-		"essence": essence += amt
 		"sigil": sigil += amt
 		"ticket":
 			# 오늘 표를 **하루 상한 위로** 올린다 — 산 판은 덤이지 상한 안이 아니다.
@@ -9271,9 +9130,12 @@ func _tab_todo(tab: String) -> bool:
 						and gold >= _buy_cost(key, _step_for(key)):
 					return true
 		"gear":
-			for item in equipped.values():
-				if not (item as Dictionary).is_empty() \
-						and essence >= GearDefs.upgrade_cost(item):
+			for key in gear_inventory:
+				var it2: Dictionary = gear_inventory[key]
+				if GachaDefs.rarity_index(str(it2.get("rarity", "common"))) \
+						< GachaDefs.RARITIES.size() - 1 \
+						and int(gacha_shards.get("gear:" + str(key), 0)) \
+						>= GearDefs.FUSE_SHARDS:
 					return true
 		"raid":
 			# 오늘 표가 남아 있다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
@@ -11397,8 +11259,8 @@ func _c_midboss_prefix() -> String:
 
 
 # ── 재화 던전 (RaidDefs) — 입장·이탈·하루 표 ────────────────────────────────
-var raid_on := ""                              # "" | "blood" | "essence" | "pact"
-var raid_best := {"blood": 0, "essence": 0, "pact": 0, "hunt": 0}   # 최고 클리어 단계
+var raid_on := ""                              # "" | "blood" | "pact" | "hunt"
+var raid_best := {"blood": 0, "forge": 0, "pact": 0, "hunt": 0}   # 최고 클리어 단계
 var raid_date := ""
 # kind -> 오늘 남은 판. **클리어할 때만 깎인다**(사장님) — 못 깨고 나온 판은
 # 세지 않으므로, 실패가 손해가 아니라서 "될까?" 싶을 때 눌러 볼 수 있다.
@@ -13598,10 +13460,6 @@ func _shake_combat(amount: float) -> void:
 func on_foe_killed(f: Foe) -> void:
 	gold += f.gold
 	_income_acc += f.gold   # 분당 수입 표시(사냥 수입만 — 임무·던전 뭉치는 안 센다)
-	# 미궁 보스는 정수를 안 준다 — 정수는 장비 축의 재화이고 수도꼭지는 본편 보스
-	# 하나다(EXPANSION 6장의 재화 격리). 미궁의 보상은 2단계의 혈정이다.
-	if f.is_boss and not dungeon_on:
-		essence += StageDefs.boss_essence(stage) * (1.0 + _boon("essence"))
 	kills += 1
 	_quest_bump("kills")
 	var prev_kills := int(codex.get(f.key, 0))
@@ -13691,7 +13549,7 @@ func _advance_stage() -> void:
 			"blood": gold += amount
 			"pact": sigil += amount
 			"hunt": feed += amount
-			_: essence += amount
+			"forge": tickets["weapon"] = int(tickets.get("weapon", 0)) + int(amount)
 		_offline_banner.text = "%s 격파 — %s +%s" \
 			% [RaidDefs.label(kind, n), str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)]
 		_offline_banner.add_theme_color_override("font_color",
@@ -14509,7 +14367,6 @@ func _save_game() -> void:
 	cfg.set_value("run", "stage", stage)
 	cfg.set_value("run", "kills", kills)
 	cfg.set_value("run", "gold", gold)
-	cfg.set_value("wallet", "essence", essence)
 	cfg.set_value("wallet", "gem", gem)
 	cfg.set_value("wallet", "crystal", crystal)
 	cfg.set_value("wallet", "sigil", sigil)
@@ -14572,6 +14429,7 @@ func _save_game() -> void:
 	cfg.set_value("gacha", "pulls", gacha_pulls)
 	cfg.set_value("gacha", "owned", gacha_owned)
 	cfg.set_value("gacha", "shards", gacha_shards)
+	cfg.set_value("gacha", "fuse_pity", fuse_pity)
 	cfg.set_value("gacha", "free_date", free_pull_date)
 	cfg.set_value("pet", "got", pets_got)
 	cfg.set_value("pet", "lv", pet_lv)
@@ -14631,7 +14489,6 @@ func _load_game() -> void:
 	var blood15: bool = cfg.has_section_key("run", "blood15")
 	if not blood15:
 		gold *= Balance.BLOOD_UNIT
-	essence = maxf(0.0, float(cfg.get_value("wallet", "essence", 0.0)))
 	gem = maxf(0.0, float(cfg.get_value("wallet", "gem", 0.0)))
 	crystal = maxf(0.0, float(cfg.get_value("wallet", "crystal", 0.0)))
 	sigil = maxf(0.0, float(cfg.get_value("wallet", "sigil", 0.0)))
@@ -14760,6 +14617,7 @@ func _load_game() -> void:
 	gacha_pulls.erase("gear")
 	gacha_owned = cfg.get_value("gacha", "owned", {})
 	gacha_shards = cfg.get_value("gacha", "shards", {})
+	fuse_pity = cfg.get_value("gacha", "fuse_pity", {})
 	for old_key in gear_key_map:
 		var new_key: String = str(gear_key_map[old_key])
 		if new_key == old_key:
@@ -14803,7 +14661,7 @@ func _load_game() -> void:
 	quest_wgot = cfg.get_value("quest", "wgot", {})
 	# 어제 저장본이면 여기서 새 날(그리고 새 주)이 열린다 (접속 임무가 찬다).
 	_quest_roll_day()
-	raid_best = cfg.get_value("raid", "best", {"blood": 0, "essence": 0})
+	raid_best = cfg.get_value("raid", "best", {"blood": 0})
 	raid_date = str(cfg.get_value("raid", "date", ""))
 	raid_left = cfg.get_value("raid", "left", {})
 	_raid_roll_day()
@@ -14994,7 +14852,6 @@ func _dev_god(want: int) -> void:
 	_dev_unlock(want)
 	stage = best_stage
 	gold = 1e12
-	essence = 1e9
 	gem = 1e6
 	crystal = 1e9
 	sigil = 1e9

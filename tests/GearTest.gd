@@ -168,17 +168,20 @@ func _init() -> void:
 		names[r["name"]] = true
 	assert(names.size() == GearDefs.RARITY.size(), "등급 이름이 겹친다")
 
-	# 강화는 수치를 올리고 비용은 매번 비싸져야 한다 — 아니면 무한 강화가 최적이 된다.
+	# 강화·분해는 2026-08-25 에 삭제됐다(사장님). lv 는 옛 저장본의 유산이라
+	# 식에는 남아 있고, 새로 오르지는 않는다.
 	var it := GearDefs.roll("weapon", 5)
 	var p0 := GearDefs.power(it)
-	var c0 := GearDefs.upgrade_cost(it)
-	var salvage0 := GearDefs.salvage_value(it)
 	it["lv"] = 1
-	assert(GearDefs.power(it) > p0, "강화가 수치를 안 올린다")
-	assert(GearDefs.upgrade_cost(it) > c0, "강화 비용이 안 오른다")
-	assert(GearDefs.salvage_value(it) > salvage0, "강한 장비의 분해 정수가 늘지 않는다")
-	# 레벨을 올리면 **보유 효과도** 올라야 한다. 안 그러면 장착 안 할 장비는 올릴 이유가
-	# 없어지고 보관함에 쌓인 나머지가 전부 분해 대상이 된다.
+	assert(GearDefs.power(it) > p0, "레벨이 수치를 안 올린다")
+	# 조합 — 등급이 높을수록 어렵고, 천장은 더 멀어야 한다.
+	for i in range(1, GearDefs.FUSE_RATE.size()):
+		assert(GearDefs.FUSE_RATE[i] < GearDefs.FUSE_RATE[i - 1],
+			"높은 등급 조합이 더 쉽다")
+		assert(GearDefs.FUSE_PITY[i] >= GearDefs.FUSE_PITY[i - 1],
+			"높은 등급 천장이 더 가깝다")
+	assert(GearDefs.FUSE_SHARDS > 0 and GearDefs.fuse_pity(it) > 0)
+	assert(GearDefs.fuse_rate(it) > 0.0 and GearDefs.fuse_rate(it) <= 1.0)
 	var keep0 := GearDefs.collection_rate(GearDefs.make("weapon", 5,
 		GachaDefs.rarity("rare")))
 	var keep_lv := GearDefs.make("weapon", 5, GachaDefs.rarity("rare"))

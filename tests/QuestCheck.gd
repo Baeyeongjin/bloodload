@@ -15,7 +15,7 @@ extends SceneTree
 # 줄은 뜨는데 눌러도 아무것도 안 들어온다 — 오타 한 글자가 그렇게 된다.
 # oath_card/oath_gold/feed 는 2026-08-20 에 임무 보상으로 쓰기 시작했다.
 static func known_rewards() -> Array:
-	var out: Array = ["gem", "crystal", "sigil", "essence", "gold", "feed",
+	var out: Array = ["gem", "crystal", "sigil", "gold", "feed",
 		"oath_card", "oath_gold"]
 	for k in TicketDefs.KINDS + TicketDefs.PET_KINDS:
 		out.append(TicketDefs.reward_of(k))

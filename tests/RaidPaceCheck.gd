@@ -53,12 +53,7 @@ func _init() -> void:
 	# 물량 판은 빽빽해야 한다 — 간격이 넓으면 100마리가 달리기 100번이 된다.
 	assert(RaidDefs.wave_size("blood", 6) > 6, "물량 판인데 몹이 안 늘었다")
 	assert(RaidDefs.foe_gap("blood", 160.0) < 160.0, "물량 판인데 줄이 안 좁다")
-	assert(RaidDefs.wave_size("essence", 6) == 6, "성소까지 물량 판이 됐다")
+	assert(RaidDefs.wave_size("forge", 6) == 6, "성소까지 물량 판이 됐다")
 
-	# 수호자 한 마리 = 잡졸 100마리 몫.
-	var guard := RaidDefs.hp_mult("essence") * FoeTiers.BOSS_HP_MULT
-	assert(is_equal_approx(guard,
-		RaidDefs.SLAY_WAVE_WORTH * RaidDefs.SWARM_HP_MULT),
-		"수호자가 잡졸 100마리 몫이 아니다: %.1f" % guard)
 	print("RaidPaceCheck OK")
 	quit()

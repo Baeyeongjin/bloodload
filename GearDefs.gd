@@ -148,25 +148,27 @@ static func power(item: Dictionary) -> float:
 	return float(item.get("base", 0.0)) * (1.0 + 0.25 * float(item.get("lv", 0)))
 
 
-# 강화 비용. 등급이 높을수록 비싸다 — 안 그러면 흔한 걸 무한 강화하는 게 최적이 된다.
-static func upgrade_cost(item: Dictionary) -> float:
-	var mult := 1.0
-	for r in RARITY:
-		if r["key"] == item.get("rarity", ""):
-			mult = float(r["power"])
-	return 25.0 * mult * pow(1.45, float(item.get("lv", 0)))
+# 조합 (사장님 2026-08-25): 조각 FUSE_SHARDS 개로 1회 **시도**, 등급별 성공
+# 확률(FUSE_RATE)과 등급별 천장(FUSE_PITY — 그 회차째 시도는 확정). 실패해도
+# 조각은 소모된다 — 천장이 받친다. 표는 등급 인덱스 순서다.
+const FUSE_SHARDS := 3
+const FUSE_RATE := [0.8, 0.6, 0.45, 0.3, 0.2, 0.15]
+const FUSE_PITY := [2, 3, 4, 5, 6, 7]
 
 
-# 자동 장착에서 밀린 장비는 버리지 않고 전투력의 두 배만큼 정수로 바꾼다.
-static func salvage_value(item: Dictionary) -> float:
-	return maxf(1.0, ceilf(power(item) * 2.0))
+static func fuse_rate(item: Dictionary) -> float:
+	var i := GachaDefs.rarity_index(str(item.get("rarity", "common")))
+	return float(FUSE_RATE[clampi(i, 0, FUSE_RATE.size() - 1)])
+
+
+static func fuse_pity(item: Dictionary) -> int:
+	var i := GachaDefs.rarity_index(str(item.get("rarity", "common")))
+	return int(FUSE_PITY[clampi(i, 0, FUSE_PITY.size() - 1)])
 
 
 # 수집(보유) 효과는 장착과 무관하다. 최고 등급 한 벌만 남기므로 중복 수에는 곱하지 않는다.
-#
-# **레벨을 올리면 보유 효과도 같이 오른다.** 안 그러면 "장착 안 할 장비는 올릴 이유가
-# 없다"가 되고, 그 순간 보관함에 쌓인 나머지는 전부 분해 대상일 뿐이다.
-# 장착(레벨당 +25%)보다 완만한 +10%로 둬서 장착이 여전히 주력이게 한다.
+# lv 는 과거 강화 시절의 유산이다 — 새로 오르지 않지만, 이미 올린 장비의
+# 값을 깎지 않으려고 식에는 남긴다(2026-08-25 강화 삭제).
 const COLLECTION_LV_RATE := 0.10
 
 

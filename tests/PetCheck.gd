@@ -25,7 +25,7 @@ func _init() -> void:
 		assert(not ids.has(p["id"]), "id 충돌: %s" % p["id"])
 		ids[p["id"]] = true
 		# **방치 상자(혈액)와 겹치면 안 된다** — 같은 걸 주면 상자의 값이 깎인다.
-		assert(str(p["gain"]) in ["crystal", "essence", "sigil", "feed"],
+		assert(str(p["gain"]) in ["crystal", "sigil", "feed"],
 			"%s 가 모르는 재화를 준다: %s" % [p["id"], p["gain"]])
 		assert(float(p["per_hour"]) > 0.0 and float(p["value"]) > 0.0,
 			"%s 표값이 비었다" % p["id"])
@@ -182,7 +182,7 @@ func _init() -> void:
 	var c0: float = scene.crystal
 	scene._pet_collect_all()
 	assert(float(scene.pet_bank.get(got, 0.0)) < 1.0 		and float(scene.pet_bank.get(other, 0.0)) < 1.0, "그릇이 안 비었다")
-	assert(scene.crystal > c0 or scene.essence > 0.0 or scene.sigil > 0.0 		or scene.feed > 0.0, "모두 받기가 지갑에 안 들어왔다")
+	assert(scene.crystal > c0 or scene.sigil > 0.0 		or scene.feed > 0.0, "모두 받기가 지갑에 안 들어왔다")
 
 	# ── 먹이 지급 경로 ─────────────────────────────────────────────────────
 	var f0: float = scene.feed

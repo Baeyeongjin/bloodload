@@ -35,8 +35,6 @@ func _init() -> void:
 	assert(StageDefs.major_stage(last - StageDefs.STEPS_PER_STAGE + 1)
 		== StageDefs.MAJOR_STAGE_COUNT and StageDefs.step_in_act(last) == 10)
 	assert(StageDefs.is_midboss_stage(last - 5) and StageDefs.is_boss_stage(last))
-	assert(is_equal_approx(StageDefs.boss_essence(10), 25.0))
-	assert(StageDefs.boss_essence(last) > StageDefs.boss_essence(10))
 	assert(StageDefs.act_of(1) == StageDefs.act_of(51), "5개 테마가 순환하지 않는다")
 	assert(StageDefs.enemy_power(last) > StageDefs.enemy_power(last - 1))
 
@@ -596,9 +594,8 @@ func _init() -> void:
 	game._phase = "fight"
 	game._boss_time = 60.0
 	assert(not game._tick_boss_timer(1.0) and is_equal_approx(game._boss_time, 59.0))
-	# 분해 확인창(_ask)과 보상창(_show_reward)은 _hud_root 아래 대화상자 노드를 쓴다.
-	# 씬을 통째로 띄우지 않으므로 부모만 만들어 주고 대화상자만 짓는다 —
-	# 이게 없으면 _confirm_body 가 nil 이라 "분해 확인" 검사 자체를 못 한다.
+	# 조합 확인창(_ask)과 보상창(_show_reward)은 _hud_root 아래 대화상자 노드를 쓴다.
+	# 씬을 통째로 띄우지 않으므로 부모만 만들어 주고 대화상자만 짓는다.
 	game._hud_root = Control.new()
 	game.add_child(game._hud_root)
 	game._build_dialogs()
@@ -652,14 +649,14 @@ func _init() -> void:
 			break
 	assert(not synth_key.is_empty(), "합성할 비신화 장비가 없다")
 	game._gear_selected_key = synth_key
-	var level_before := int(game.gear_inventory[synth_key].get("lv", 0))
-	var level_cost := GearDefs.upgrade_cost(game.gear_inventory[synth_key])
-	game.essence = level_cost
-	game._level_up_selected()
-	assert(int(game.gear_inventory[synth_key]["lv"]) == level_before + 1 \
-		and is_zero_approx(game.essence), "보관 장비 레벨업이 정수를 소모하지 않는다")
 	var synth_owned_key := "gear:" + synth_key
-	game.gacha_shards[synth_owned_key] = 5
+	# 조합 확률·천장 (2026-08-25): 조각이 모자라면 시도 자체가 안 된다.
+	game.gacha_shards[synth_owned_key] = GearDefs.FUSE_SHARDS - 1
+	assert(game._synthesize(synth_key).is_empty() and not game._fuse_failed,
+		"조각이 모자란데 조합이 굴렀다")
+	# 천장 직전으로 맞추면 이번 시도는 **확정**이라 굴림 없이 검사가 결정적이다.
+	game.gacha_shards[synth_owned_key] = GearDefs.FUSE_SHARDS
+	game.fuse_pity[synth_owned_key] = GearDefs.fuse_pity(game.gear_inventory[synth_key]) - 1
 	var shards_before := int(game.gacha_shards[synth_owned_key])
 	var rarity_before := GachaDefs.rarity_index(str(game.gear_inventory[synth_key]["rarity"]))
 	game._synthesize_selected()
@@ -672,40 +669,10 @@ func _init() -> void:
 	# 통과 여부가 갈린다(실제로 5 -> 3 으로 나와 이 검사가 한 번 틀렸다).
 	assert(int(game.gacha_shards.get(synth_owned_key, 0)) < shards_before,
 		"합성이 재료 조각을 소모하지 않는다")
-	var dismantle_item := GearDefs.make("trinket", 1, GachaDefs.rarity("common"))
-	var dismantle_key := ""
-	for icon in GearDefs.icon_pool("trinket"):
-		if not game.gear_inventory.has(str(icon)):
-			dismantle_key = str(icon)
-			break
-	assert(not dismantle_key.is_empty(), "분해 검사에 쓸 고유 장비가 없다")
-	dismantle_item["icon"] = dismantle_key
-	game.gear_inventory[dismantle_key] = dismantle_item
-	game._gear_selected_key = dismantle_key
-	var essence_before_dismantle: float = game.essence
-	var salvage := GearDefs.salvage_value(dismantle_item)
-	# 낱개 분해도 **확인창을 지난다**(2026-08-04). 예전 "버튼을 두 번 누르기"는
-	# 없어졌으므로 한 번 더 불러도 창만 다시 뜨지 실행되지 않는다 — 확인을 눌러야 한다.
-	game._dismantle_selected()
-	assert(game.gear_inventory.has(dismantle_key), "확인 없이 장비가 사라졌다")
-	assert(game._confirm_view.visible and game._confirm_action.is_valid(),
-		"되돌릴 수 없는 분해가 확인창 없이 실행된다")
-	game._confirm_action.call()
-	assert(not game.gear_inventory.has(dismantle_key) \
-		and is_equal_approx(game.essence, essence_before_dismantle + salvage),
-		"확인을 눌러도 분해가 장비를 지우고 정수를 지급하지 않는다")
+	assert(not game.fuse_pity.has(synth_owned_key), "성공했는데 천장 누적이 안 지워졌다")
 	var gems_before: float = game.gem
 	game._grant_test_gems()
 	assert(is_equal_approx(game.gem, gems_before + 3000.0), "테스트 보석 충전이 작동하지 않는다")
-	var gear := GearDefs.roll("weapon", 1)
-	game.equipped["weapon"] = gear
-	var enhance_cost := GearDefs.upgrade_cost(gear)
-	var blood_before: float = game.gold
-	game.essence = enhance_cost
-	game._enhance("weapon")
-	assert(int(gear["lv"]) == 1 and is_zero_approx(game.essence),
-		"장비 강화가 정수를 소모하지 않는다")
-	assert(is_equal_approx(game.gold, blood_before), "장비 강화가 피를 소모한다")
 	target.free()
 	far_target.free()
 	gacha_ui.free()
