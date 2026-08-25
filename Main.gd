@@ -431,6 +431,7 @@ var _bulk_title: Label
 var _bulk_body: Label
 var _bulk_run: Button
 var _bulk_mode := "salvage"
+var _bulk_kind := "gear"        # 무엇을 조합하는가 — "gear" | "skill"
 var _bulk_tab := "all"          # 등급 탭 — "all" 이면 전 등급
 var _bulk_tabs := {}
 var _bulk_preview: Control
@@ -2985,7 +2986,7 @@ func _build_skill_view(root: Control) -> void:
 	_skill_view.add_child(_skill_bulk_btn)
 	_skill_synth_btn = Ui.button("일괄 조합", Vector2(PAD + (bw + 12.0) * 2.0, by),
 		Vector2(bw, 38.0), Type.SIZE_SMALL)
-	_skill_synth_btn.pressed.connect(_ask_skill_synth)
+	_skill_synth_btn.pressed.connect(func() -> void: _open_bulk("fuse", "skill"))
 	_skill_view.add_child(_skill_synth_btn)
 	# 전체 해제 — 여섯 칸을 하나씩 빼는 건 방치형에서 할 짓이 아니다(2026-08-10 사장님).
 	# **자동 장착도 같이 끈다**: 안 끄면 다음 레벨업·조합 때 그대로 다시 껴서
@@ -3179,7 +3180,7 @@ func _refresh_skills(rebuild_info := true) -> void:
 			else:
 				_skill_grid.add_child(_skill_unknown_card(rarity))
 	_skill_bulk_btn.disabled = _skill_levelable().is_empty()
-	_skill_synth_btn.disabled = _skill_synthesizable().is_empty()
+	_skill_synth_btn.disabled = false
 	_skill_auto_btn.set_pressed_no_signal(skill_auto_equip)
 	_skill_auto_btn.text = "자동 장착 켬" if skill_auto_equip else "자동 장착"
 	if rebuild_info:
@@ -3626,8 +3627,10 @@ func _build_bulk(_root: Control) -> void:
 	_bulk_view.add_child(all_btn)
 
 
-func _open_bulk(mode: String) -> void:
+func _open_bulk(mode: String, kind := "gear") -> void:
 	_bulk_mode = mode
+	_bulk_kind = kind
+	_bulk_tab = "all"
 	_bulk_selected.clear()
 	_bulk_view.visible = true
 	_refresh_bulk()
@@ -3637,6 +3640,8 @@ func _open_bulk(mode: String) -> void:
 # 무엇을 남길지는 칸을 보고 고르는 게 확실하다.
 # 조합 대상: 조각 5개 이상이면서 신화가 아닌 것.
 func _bulk_candidates() -> Array[String]:
+	if _bulk_kind == "skill":
+		return _bulk_skill_candidates()
 	var out: Array[String] = []
 	for key in gear_inventory:
 		var item: Dictionary = gear_inventory[key]
@@ -3654,6 +3659,31 @@ func _bulk_candidates() -> Array[String]:
 	return out
 
 
+# 스킬 후보 — 조각이 찼고 더 오를 등급이 남은 것.
+func _bulk_skill_candidates() -> Array[String]:
+	var out: Array[String] = []
+	for key in skill_owned:
+		var k := str(key)
+		if SkillDefs.promote_key(k).is_empty():
+			continue
+		if int(gacha_shards.get("skill:" + k, 0)) < GearDefs.FUSE_SHARDS:
+			continue
+		if _bulk_tab != "all" and str(SkillDefs.split(k)[1]) != _bulk_tab:
+			continue
+		out.append(k)
+	out.sort_custom(func(a: Variant, b: Variant) -> bool:
+		return GachaDefs.rarity_index(str(SkillDefs.split(str(a))[1])) \
+			< GachaDefs.rarity_index(str(SkillDefs.split(str(b))[1])))
+	return out
+
+
+# 조합 대상의 등급 키 — 장비와 스킬이 같은 확률·천장 표를 쓴다.
+func _bulk_rarity_of(key: String) -> String:
+	if _bulk_kind == "skill":
+		return str(SkillDefs.split(key)[1])
+	return str(gear_inventory.get(key, {}).get("rarity", "common"))
+
+
 func _bulk_select_all(on: bool) -> void:
 	_bulk_selected.clear()
 	if on:
@@ -3665,7 +3695,7 @@ func _bulk_select_all(on: bool) -> void:
 func _refresh_bulk() -> void:
 	if not _bulk_view or not _bulk_view.visible:
 		return
-	_bulk_title.text = "장비 조합"
+	_bulk_title.text = "스킬 조합" if _bulk_kind == "skill" else "장비 조합"
 	# 탭 — 고른 것은 밝게. 조합할 게 있는 등급에는 점을 찍는다(레퍼런스 문법).
 	for key in _bulk_tabs:
 		var on: bool = key == _bulk_tab
@@ -3680,17 +3710,18 @@ func _refresh_bulk() -> void:
 	for key in keys:
 		if _bulk_selected.has(key):
 			chosen += 1
-		var card := _gear_card(key, func() -> void:
+		var pick := func() -> void:
 			if _bulk_selected.has(key):
 				_bulk_selected.erase(key)
 			else:
 				_bulk_selected[key] = true
-			_refresh_bulk())
+			_refresh_bulk()
+		var card := _bulk_card(key, pick)
 		# **재료를 넣기 전부터** 확정까지 몇 번 남았는지 보인다(사장님
 		# 2026-08-25). 이게 없으면 어느 걸 골라야 이득인지 알 수 없다.
-		var it3: Dictionary = gear_inventory[key]
-		var cap3 := GearDefs.fuse_pity(it3)
-		var tr3 := int(fuse_pity.get("gear:" + key, 0))
+		var probe3 := {"rarity": _bulk_rarity_of(key)}
+		var cap3 := GearDefs.fuse_pity(probe3)
+		var tr3 := int(fuse_pity.get(_bulk_owned_key(key), 0))
 		var pl3 := _panel_label(card, Vector2(6.0, 116.0), Type.SIZE_SMALL,
 			Color(0.98, 0.86, 0.52) if tr3 + 1 >= cap3 else Color(0.70, 0.68, 0.76),
 			104.0, 18.0)
@@ -3722,13 +3753,54 @@ func _refresh_bulk() -> void:
 # 재료 자리 — 고른 것을 앞에서부터 넷까지, 그 뒤에 결과 자리(?).
 # 레퍼런스는 재료 슬롯이 셋이지만 우리 조합은 **종마다 조각 3개**를 쓰므로
 # 자리에 놓이는 것은 "고른 종"이다 — 몇 종을 한꺼번에 굴리는지가 여기 선다.
+# 조각 곳간 키 — 장비는 "gear:", 스킬은 "skill:".
+func _bulk_owned_key(key: String) -> String:
+	return ("skill:" if _bulk_kind == "skill" else "gear:") + key
+
+
+# 격자 한 칸. 스킬은 제 카드가 상세를 여는 물건이라 여기서는 **고르는 칸**으로
+# 새로 짓는다 — 같은 창에서 누르는 뜻이 둘이면 안 된다.
+func _bulk_card(key: String, on_press: Callable) -> Control:
+	if _bulk_kind != "skill":
+		return _gear_card(key, on_press)
+	var rar := SkillDefs.rarity_of(key)
+	var cell := Control.new()
+	cell.custom_minimum_size = Vector2(116.0, 136.0)
+	var hit := Button.new()
+	hit.flat = true
+	hit.size = cell.custom_minimum_size
+	hit.focus_mode = Control.FOCUS_NONE
+	hit.pressed.connect(on_press)
+	cell.add_child(hit)
+	var body := Control.new()
+	body.size = cell.custom_minimum_size
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cell.add_child(body)
+	var frame := Ui.image("res://assets/ui/gear_card.png", Vector2(2.0, 0.0),
+		Vector2(112.0, 128.0))
+	frame.modulate = Color(rar["col"])
+	body.add_child(frame)
+	body.add_child(Ui.icon(SkillDefs.icon_path(key), Vector2(34.0, 30.0), 48.0))
+	var nm := _panel_label(body, Vector2(6.0, 84.0), Type.SIZE_SMALL,
+		Color(rar["col"]), 104.0, 18.0)
+	nm.text = SkillDefs.name_of(key)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var dt := _panel_label(body, Vector2(6.0, 100.0), Type.SIZE_SMALL,
+		Color(0.82, 0.80, 0.86), 104.0, 18.0)
+	dt.text = "%s · %d" % [rar["name"],
+		int(gacha_shards.get("skill:" + key, 0))]
+	dt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return cell
+
+
 func _refresh_bulk_preview(keys: Array[String], chosen: int) -> void:
 	for c in _bulk_preview.get_children():
 		c.queue_free()
 	_bulk_hint.visible = chosen == 0
 	if chosen == 0:
-		_bulk_hint.text = "조합할 장비를 고르세요" if not keys.is_empty() \
-			else "조각이 %d개 모인 장비가 없습니다" % GearDefs.FUSE_SHARDS
+		var what := "스킬" if _bulk_kind == "skill" else "장비"
+		_bulk_hint.text = ("조합할 %s를 고르세요" % what) if not keys.is_empty() \
+			else "조각이 %d개 모인 %s가 없습니다" % [GearDefs.FUSE_SHARDS, what]
 		return
 	var shown := 0
 	for key in keys:
@@ -3736,14 +3808,15 @@ func _refresh_bulk_preview(keys: Array[String], chosen: int) -> void:
 			continue
 		if shown >= 4:
 			break
-		var it: Dictionary = gear_inventory[key]
-		var rar := GachaDefs.rarity(str(it.get("rarity", "common")))
+		var rar := GachaDefs.rarity(_bulk_rarity_of(key))
 		var at := Vector2(float(shown) * 96.0, 8.0)
 		var fr := Ui.image("res://assets/ui/gear_card_small.png", at,
 			Vector2(80.0, 96.0))
 		fr.modulate = Color(rar["col"])
 		_bulk_preview.add_child(fr)
-		_bulk_preview.add_child(Ui.icon(GearDefs.icon_path(it),
+		_bulk_preview.add_child(Ui.icon(SkillDefs.icon_path(key) \
+			if _bulk_kind == "skill" \
+			else GearDefs.icon_path(gear_inventory[key]),
 			at + Vector2(16.0, 18.0), 48.0))
 		var sh := _panel_label(_bulk_preview, at + Vector2(0.0, 98.0),
 			Type.SIZE_SMALL, Color(0.82, 0.80, 0.86), 80.0, 18.0)
@@ -3789,15 +3862,15 @@ func _refresh_bulk_pity() -> void:
 	if only == "":
 		var best := -1
 		for key in _bulk_candidates():
-			var t2 := int(fuse_pity.get("gear:" + key, 0))
+			var t2 := int(fuse_pity.get(_bulk_owned_key(key), 0))
 			if t2 > best:
 				best = t2
 				only = str(key)
 	var rar_key := _bulk_tab if _bulk_tab != "all" else "common"
 	var tries := 0
-	if only != "" and gear_inventory.has(only):
-		rar_key = str(gear_inventory[only].get("rarity", "common"))
-		tries = int(fuse_pity.get("gear:" + only, 0))
+	if only != "":
+		rar_key = _bulk_rarity_of(only)
+		tries = int(fuse_pity.get(_bulk_owned_key(only), 0))
 	var cap := GearDefs.fuse_pity({"rarity": rar_key})
 	var next_name := str(GachaDefs.RARITIES[mini(
 		GachaDefs.rarity_index(rar_key) + 1,
@@ -3817,8 +3890,9 @@ func _run_bulk() -> void:
 			chosen += 1
 	if chosen == 0:
 		return
-	_ask("선택한 장비 %d종을 조합합니다.\n각각 조각 %d개를 쓰며, 등급별 확률로 성공합니다.\n실패해도 조각은 소모됩니다(천장 있음)."
-		% [chosen, GearDefs.FUSE_SHARDS], _do_bulk)
+	_ask("선택한 %s %d종을 조합합니다.\n각각 조각 %d개를 쓰며, 등급별 확률로 성공합니다.\n실패해도 조각은 소모됩니다(천장 있음)."
+		% ["스킬" if _bulk_kind == "skill" else "장비", chosen,
+		GearDefs.FUSE_SHARDS], _do_bulk)
 
 
 func _do_bulk() -> void:
@@ -3828,7 +3902,17 @@ func _do_bulk() -> void:
 	for key in _bulk_candidates():
 		if not _bulk_selected.has(key):
 			continue
-		var new_key := _synthesize(key)
+		var new_key := _synthesize_skill(key) if _bulk_kind == "skill" \
+			else _synthesize(key)
+		if _bulk_kind == "skill":
+			if not new_key.is_empty():
+				var r5 := SkillDefs.rarity_of(new_key)
+				got.append({"icon": SkillDefs.icon_path(new_key),
+					"label": SkillDefs.name_of(new_key),
+					"sub": str(r5["name"]), "col": r5["col"]})
+			elif _fuse_failed and not _fuse_gain.is_empty():
+				got.append(_fuse_gain.duplicate())
+			continue
 		if not new_key.is_empty() and gear_inventory.has(new_key):
 			var it: Dictionary = gear_inventory[new_key]
 			# 등급 틀+등급명 — 스킬 합성 팝업과 같은 문법(사장님).
@@ -3841,6 +3925,10 @@ func _do_bulk() -> void:
 				"sub": str(GachaDefs.rarity(str(_fuse_gain["rarity"]))["name"])})
 	_apply_hp_growth(old_max)
 	_bulk_selected.clear()
+	if _bulk_kind == "skill":
+		if skill_auto_equip:
+			_auto_equip_skills()
+		_refresh_skills()
 	if not got.is_empty():
 		# 6개까지만 보여 준다 — 그 이상은 한 줄에 안 들어가고, 어차피 보관함에 다 있다.
 		_show_reward("조합 결과", got.slice(0, mini(got.size(), 5)))
@@ -5228,14 +5316,33 @@ func _level_up_skill(key: String) -> bool:
 #
 # **레벨은 승계하지 않는다.** 등급이 오르면 위력이 통째로 뛰는데 레벨까지 넘기면
 # 한 번에 두 배가 된다. 성공하면 새 키, 아니면 "".
+# 장비 조합과 **같은 규칙**이다(사장님 2026-08-25): 조각 FUSE_SHARDS 개로
+# 1회 시도, 등급별 확률·천장, 실패해도 같은 등급 하나를 준다.
 func _synthesize_skill(key: String) -> String:
+	_fuse_failed = false
+	_fuse_gain = {}
 	var next := SkillDefs.promote_key(key)
 	var owned_key := "skill:" + key
 	if next.is_empty() or not skill_owned.has(key):
 		return ""
-	if int(gacha_shards.get(owned_key, 0)) < SkillDefs.SYNTH_SHARDS:
+	if int(gacha_shards.get(owned_key, 0)) < GearDefs.FUSE_SHARDS:
 		return ""
-	gacha_shards[owned_key] = int(gacha_shards[owned_key]) - SkillDefs.SYNTH_SHARDS
+	var probe := {"rarity": str(SkillDefs.split(key)[1])}
+	var tries := int(fuse_pity.get(owned_key, 0)) + 1
+	if tries < GearDefs.fuse_pity(probe) and randf() >= GearDefs.fuse_rate(probe):
+		gacha_shards[owned_key] = int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
+		fuse_pity[owned_key] = tries
+		_fuse_failed = true
+		# 빈손으로 안 보낸다 — 같은 등급 스킬 하나(장비와 같은 규칙).
+		var got_row := _receive_gacha_skill(str(probe["rarity"]))
+		if not got_row.is_empty():
+			var rr := SkillDefs.rarity_of(str(got_row["key"]))
+			_fuse_gain = {"icon": str(got_row["icon"]),
+				"label": str(got_row["name"]),
+				"sub": str(rr["name"]), "col": rr["col"]}
+		return ""
+	fuse_pity.erase(owned_key)
+	gacha_shards[owned_key] = int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
 	# 원본은 남는다(사장님: 보유 보상이 있으니 한 벌은 무조건) — 장착도 그대로.
 	if skill_owned.has(next):
 		# 이미 있으면 조각으로 들어간다(장비 합성과 같은 규칙).

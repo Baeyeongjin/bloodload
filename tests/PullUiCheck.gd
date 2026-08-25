@@ -173,5 +173,32 @@ func _init() -> void:
 		"레벨업이 안 됐다")
 	assert(is_zero_approx(scene.whet), "레벨업이 연마석을 안 썼다")
 
+	# ── 7) 스킬 조합 — **장비와 같은 규칙·같은 창** ────────────────────────
+	# (사장님 2026-08-25: "스킬도 무기처럼 조합 똑같이 가줘")
+	var sk_key := ""
+	for shape in SkillDefs.SHAPE_ORDER:
+		var k4 := SkillDefs.key_of(str(shape), "common")
+		if not SkillDefs.promote_key(k4).is_empty():
+			sk_key = k4
+			break
+	assert(not sk_key.is_empty(), "승급할 스킬 키가 없다")
+	scene.skill_owned[sk_key] = 1
+	scene.gacha_shards["skill:" + sk_key] = GearDefs.FUSE_SHARDS
+	scene.fuse_pity.erase("skill:" + sk_key)
+	scene._open_bulk("fuse", "skill")
+	assert(scene._bulk_view.visible, "스킬 조합 창이 안 열렸다")
+	assert(scene._bulk_candidates().has(sk_key),
+		"조각이 찬 스킬이 후보에 없다")
+	# 천장 직전으로 두면 이번 시도는 확정이라 검사가 결정적이다.
+	scene.fuse_pity["skill:" + sk_key] = 		GearDefs.fuse_pity({"rarity": "common"}) - 1
+	var next_key := SkillDefs.promote_key(sk_key)
+	scene._synthesize_skill(sk_key)
+	assert(scene.skill_owned.has(next_key), "확정인데 승급이 안 됐다")
+	assert(int(scene.gacha_shards["skill:" + sk_key]) == 0,
+		"스킬 조합이 조각 %d개를 안 썼다" % GearDefs.FUSE_SHARDS)
+	assert(not scene.fuse_pity.has("skill:" + sk_key),
+		"성공했는데 스킬 천장이 안 지워졌다")
+	scene._bulk_view.visible = false
+
 	print("PullUiCheck OK")
 	quit(0)
