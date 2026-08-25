@@ -241,6 +241,11 @@ def main(argv):
     no_flip = "--no-flip" in argv
     if no_flip:
         argv = [a for a in argv if a != "--no-flip"]
+    # --trim-floor: f0 발 밑단(+2 여유)보다 아래 잉크를 전 프레임에서 지운다.
+    # 베기 잔상이 바닥을 뚫고 내려가면 발 검사가 오검하고 그림도 이상하다.
+    trim_floor = "--trim-floor" in argv
+    if trim_floor:
+        argv = [a for a in argv if a != "--trim-floor"]
     check_only = argv[0] == "--check"
     if check_only:
         argv = argv[1:]
@@ -274,6 +279,20 @@ def main(argv):
         # 전 프레임에 적용한다. 2026-08-24 실측: edit_image 로 만든 64 시드가
         # 몸을 위 절반에 놓아 스킨 4종이 공격 때 16px 위로 순간이동했다.
         from PIL import Image as _Im
+        if trim_floor:
+            _floor = ink_box(_Im.open(paths[0]).convert("RGBA"))[3] + 2
+            _cut = 0
+            for _p in paths[1:]:
+                _im = _Im.open(_p).convert("RGBA")
+                _pix = _im.load()
+                for _y in range(_floor + 1, _im.height):
+                    for _x in range(_im.width):
+                        if _pix[_x, _y][3] > 0:
+                            _pix[_x, _y] = (0, 0, 0, 0)
+                            _cut += 1
+                _im.save(_p)
+            if _cut:
+                print("%-8s 바닥 밑 잔상 %d px 제거" % (motion, _cut))
         _f0 = _Im.open(paths[0]).convert("RGBA")
         _target = 48 if _f0.height == 64 else 32
         _bb = ink_box(_f0)
