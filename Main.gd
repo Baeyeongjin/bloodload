@@ -430,6 +430,13 @@ var _bulk_title: Label
 var _bulk_body: Label
 var _bulk_run: Button
 var _bulk_mode := "salvage"
+var _bulk_tab := "all"          # 등급 탭 — "all" 이면 전 등급
+var _bulk_tabs := {}
+var _bulk_preview: Control
+var _bulk_hint: Label
+var _bulk_pity_lbl: Label
+var _bulk_pity_bar: ColorRect
+var _bulk_pity_num: Label
 var _bulk_grid: GridContainer
 var _bulk_selected := {}
 var _panels := {}           # 탭 이름 -> 창 (한 번에 하나만 보인다)
@@ -3449,9 +3456,15 @@ func _build_gear(root: Control) -> void:
 			Vector2(at.x + SLOT_BOX * 0.5 - SLOT_GAP * 0.5,
 			154.0), Type.SIZE_SMALL, Color(0.75, 0.75, 0.8), SLOT_GAP, 20.0)
 		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		# 강화(정수 레벨업)는 삭제됐다(사장님 2026-08-25) — 슬롯은 그림과
-		# 이름만 남는다. 성장은 보관함의 조합이 맡는다.
-		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl}
+		# 강화(정수 레벨업)는 삭제됐다(사장님 2026-08-25). 대신 **이 장비가
+		# 스탯을 얼마나 올리는지**를 적는다 — 전투력 원값("+8")은 그 자체로는
+		# 큰지 작은지 읽히지 않는다(같은 날 캡처).
+		var stat_lbl := _panel_label(_gear_equipped_view,
+			Vector2(at.x + SLOT_BOX * 0.5 - SLOT_GAP * 0.5, 178.0),
+			Type.SIZE_SMALL, Color(0.68, 0.86, 0.72), SLOT_GAP, 20.0)
+		stat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl,
+			"stat": stat_lbl}
 	_gear_inventory_view = Control.new()
 	_gear_inventory_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_inventory_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3499,44 +3512,61 @@ func _build_gear(root: Control) -> void:
 	_set_gear_mode("equipped")
 
 
-# ── 분해 창 / 조합 창 ──────────────────────────────────────────────────────
-# 칸을 눌러 고르고, "전체 선택"이 곧 일괄이다. 일괄을 따로 만들지 않는 이유:
-# 일괄 버튼이 밖에 있으면 무엇이 녹는지 모른 채 누르게 되고, 되돌릴 수 없다.
-# 여기서는 고른 게 밝게 보이고 합계가 같이 뜬 다음에야 실행이 눌린다.
-func _build_bulk(root: Control) -> void:
-	_bulk_view = Control.new()
-	_bulk_view.size = Vector2(PANEL_W, PANEL_H)
-	_bulk_view.visible = false
-	_bulk_view.z_index = 5
-	root.add_child(_bulk_view)
+# ── 조합 창 (전체 화면) ────────────────────────────────────────────────────
+# 레퍼런스(소울무기 합성)의 뼈대를 그대로 쓴다(사장님 2026-08-25):
+#   재료 미리보기 → 등급 탭 → 격자 → 확률 줄 → 초기화/조합 → 확정 바 + 모두.
+# 등급 탭이 있는 이유: 조합은 **같은 등급끼리** 확률과 천장이 갈리므로, 탭을
+# 고르면 그 등급의 확률·천장이 한눈에 선다. 전체 탭은 등급이 섞여서 확률을
+# 한 줄로 못 적는다 — 레퍼런스도 거기서는 "등급별로 다름"이라고만 적는다.
+const FUSE_TABS := ["all", "common", "uncommon", "rare", "epic", "legend"]
+
+
+func _build_bulk(_root: Control) -> void:
+	# **화면 전체를 덮는다** — 장비 탭 루트는 반판이라 거기 지으면 아래가
+	# 잘린다. 오버레이는 _hud_root 에 붙어 네비 위까지 다 쓴다.
+	_bulk_view = _overlay(64)
 	var back := ColorRect.new()
-	back.color = Color(0.055, 0.05, 0.065)
-	back.position = Vector2(PAD * 0.5, PAD * 0.5)
-	back.size = Vector2(PANEL_W - PAD, PANEL_H - PAD)
+	back.color = Color(0.045, 0.04, 0.055, 0.98)
+	back.position = Vector2(0.0, 24.0)
+	back.size = Vector2(PANEL_W, PANEL_FULL_H - 24.0)
+	back.mouse_filter = Control.MOUSE_FILTER_STOP
 	_bulk_view.add_child(back)
-	_bulk_title = _panel_label(_bulk_view, Vector2(PAD, PAD - 4.0), Type.SIZE_BODY,
-		Color(0.96, 0.90, 0.86), 200.0, 30.0)
-	var close := Ui.button("닫기", Vector2(CONTENT_W + PAD - 100.0, PAD - 6.0),
-		Vector2(100.0, 36.0), Type.SIZE_SMALL)
+	_bulk_title = _panel_label(_bulk_view, Vector2(PAD, 16.0), Type.SIZE_BODY,
+		Color(0.96, 0.90, 0.86), CONTENT_W, 30.0)
+	_bulk_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var close := Ui.button("닫기", Vector2(CONTENT_W + PAD - 92.0, 14.0),
+		Vector2(92.0, 34.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _bulk_view.visible = false)
 	_bulk_view.add_child(close)
-	var all_btn := Ui.button("전체 선택", Vector2(PAD, PAD + 36.0), Vector2(120.0, 34.0),
-		Type.SIZE_SMALL)
-	all_btn.pressed.connect(func() -> void: _bulk_select_all(true))
-	_bulk_view.add_child(all_btn)
-	var none_btn := Ui.button("전체 해제", Vector2(PAD + 128.0, PAD + 36.0),
-		Vector2(120.0, 34.0), Type.SIZE_SMALL)
-	none_btn.pressed.connect(func() -> void: _bulk_select_all(false))
-	_bulk_view.add_child(none_btn)
-	_bulk_run = Ui.button("실행", Vector2(CONTENT_W + PAD - 160.0, PAD + 36.0),
-		Vector2(160.0, 34.0), Type.SIZE_SMALL)
-	_bulk_run.pressed.connect(_run_bulk)
-	_bulk_view.add_child(_bulk_run)
-	_bulk_body = _panel_label(_bulk_view, Vector2(PAD, PAD + 74.0), Type.SIZE_SMALL,
-		Color(0.90, 0.88, 0.92), CONTENT_W, 22.0)
-	_bulk_body.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var sc := Ui.scroll(Vector2(PAD, PAD + 100.0),
-		Vector2(CONTENT_W, CONTENT_BOTTOM - PAD - 100.0))
+	# 재료 미리보기 — 고른 것 셋(재료 조각 수만큼)과 결과 자리.
+	_bulk_view.add_child(Ui.panel(Vector2(PAD, 58.0), Vector2(CONTENT_W, 188.0)))
+	_bulk_hint = _panel_label(_bulk_view, Vector2(PAD, 138.0), Type.SIZE_SMALL,
+		Color(0.58, 0.56, 0.62), CONTENT_W, 24.0)
+	_bulk_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bulk_preview = Control.new()
+	_bulk_preview.position = Vector2(PAD + 16.0, 76.0)
+	_bulk_preview.size = Vector2(CONTENT_W - 32.0, 150.0)
+	_bulk_preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bulk_view.add_child(_bulk_preview)
+	# 등급 탭.
+	var tw := (CONTENT_W - 6.0 * 5.0) / 6.0
+	for i in FUSE_TABS.size():
+		var key: String = FUSE_TABS[i]
+		var tx := PAD + float(i) * (tw + 6.0)
+		var tb := Ui.button("", Vector2(tx, 256.0), Vector2(tw, 40.0),
+			Type.SIZE_SMALL)
+		tb.pressed.connect(func() -> void:
+			_bulk_tab = key
+			_bulk_selected.clear()
+			_refresh_bulk())
+		_bulk_view.add_child(tb)
+		var tl := _panel_label(_bulk_view, Vector2(tx, 266.0), Type.SIZE_SMALL,
+			Color(0.92, 0.88, 0.86), tw, 20.0)
+		tl.text = "전체" if key == "all" \
+			else str(GachaDefs.rarity(key)["name"])
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_bulk_tabs[key] = {"btn": tb, "lbl": tl}
+	var sc := Ui.scroll(Vector2(PAD, 306.0), Vector2(CONTENT_W, 292.0))
 	_bulk_view.add_child(sc)
 	_bulk_grid = GridContainer.new()
 	_bulk_grid.columns = 4
@@ -3544,6 +3574,45 @@ func _build_bulk(root: Control) -> void:
 	_bulk_grid.add_theme_constant_override("h_separation", 6)
 	_bulk_grid.add_theme_constant_override("v_separation", 8)
 	sc.add_child(_bulk_grid)
+	# 확률 줄.
+	_bulk_body = _panel_label(_bulk_view, Vector2(PAD, 608.0), Type.SIZE_SMALL,
+		Color(0.90, 0.88, 0.92), CONTENT_W, 24.0)
+	_bulk_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 초기화 · 조합.
+	var reset := Ui.button("초기화", Vector2(PAD + 20.0, 640.0),
+		Vector2(240.0, 46.0), Type.SIZE_SMALL)
+	reset.pressed.connect(func() -> void: _bulk_select_all(false))
+	_bulk_view.add_child(reset)
+	_bulk_run = Ui.button("조합", Vector2(PAD + CONTENT_W - 260.0, 640.0),
+		Vector2(240.0, 46.0), Type.SIZE_SMALL)
+	_bulk_run.pressed.connect(_run_bulk)
+	_bulk_view.add_child(_bulk_run)
+	# 확정(천장) 바 + 모두 조합.
+	_bulk_pity_lbl = _panel_label(_bulk_view, Vector2(PAD + 20.0, 700.0),
+		Type.SIZE_SMALL, Color(0.96, 0.90, 0.70), 300.0, 22.0)
+	_bulk_pity_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bar_bg := ColorRect.new()
+	bar_bg.color = Color(0.16, 0.14, 0.19)
+	bar_bg.position = Vector2(PAD + 20.0, 728.0)
+	bar_bg.size = Vector2(300.0, 20.0)
+	bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bulk_view.add_child(bar_bg)
+	_bulk_pity_bar = ColorRect.new()
+	_bulk_pity_bar.color = Color(0.55, 0.45, 0.95)
+	_bulk_pity_bar.position = Vector2(PAD + 20.0, 728.0)
+	_bulk_pity_bar.size = Vector2(0.0, 20.0)
+	_bulk_pity_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bulk_view.add_child(_bulk_pity_bar)
+	_bulk_pity_num = _panel_label(_bulk_view, Vector2(PAD + 20.0, 728.0),
+		Type.SIZE_SMALL, Color(1, 1, 1), 300.0, 20.0)
+	_bulk_pity_num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bulk_pity_num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var all_btn := Ui.button("모두 조합", Vector2(PAD + CONTENT_W - 200.0, 706.0),
+		Vector2(180.0, 44.0), Type.SIZE_SMALL)
+	all_btn.pressed.connect(func() -> void:
+		_bulk_select_all(true)
+		_run_bulk())
+	_bulk_view.add_child(all_btn)
 
 
 func _open_bulk(mode: String) -> void:
@@ -3565,6 +3634,8 @@ func _bulk_candidates() -> Array[String]:
 			continue
 		if int(gacha_shards.get("gear:" + str(key), 0)) < GearDefs.FUSE_SHARDS:
 			continue
+		if _bulk_tab != "all" and str(item.get("rarity", "common")) != _bulk_tab:
+			continue
 		out.append(str(key))
 	out.sort_custom(func(a: Variant, b: Variant) -> bool:
 		return GachaDefs.rarity_index(str(gear_inventory[a].get("rarity", "common"))) \
@@ -3583,7 +3654,14 @@ func _bulk_select_all(on: bool) -> void:
 func _refresh_bulk() -> void:
 	if not _bulk_view or not _bulk_view.visible:
 		return
-	_bulk_title.text = "조합"
+	_bulk_title.text = "장비 조합"
+	# 탭 — 고른 것은 밝게. 조합할 게 있는 등급에는 점을 찍는다(레퍼런스 문법).
+	for key in _bulk_tabs:
+		var on: bool = key == _bulk_tab
+		var t: Dictionary = _bulk_tabs[key]
+		t["lbl"].add_theme_color_override("font_color",
+			Color(1.0, 0.92, 0.62) if on else Color(0.72, 0.70, 0.74))
+		t["btn"].modulate = Color(1, 1, 1) if on else Color(0.68, 0.66, 0.72)
 	var keys := _bulk_candidates()
 	for child in _bulk_grid.get_children():
 		child.queue_free()
@@ -3600,13 +3678,97 @@ func _refresh_bulk() -> void:
 		# 안 고른 칸은 어둡게. 테두리를 덧그리는 대신 밝기로 가르면 등급 색이 안 죽는다.
 		card.modulate = Color(1, 1, 1) if _bulk_selected.has(key) else Color(0.42, 0.42, 0.46)
 		_bulk_grid.add_child(card)
-	if keys.is_empty():
-		_bulk_body.text = "조각이 %d개 모인 장비가 없습니다." % GearDefs.FUSE_SHARDS
+	# 확률 줄 — 탭이 한 등급이면 그 등급의 실제 확률, 전체면 "등급별로 다름".
+	if _bulk_tab == "all":
+		_bulk_body.text = "조합 확률: 등급별로 다름  ·  조각 %d개" % GearDefs.FUSE_SHARDS
 	else:
-		_bulk_body.text = "선택 %d / %d종  ·  조각 %d개씩 · 등급별 확률, 실패해도 소모" \
-			% [chosen, keys.size(), GearDefs.FUSE_SHARDS]
-	_bulk_body.add_theme_color_override("font_color", Color(0.90, 0.88, 0.92))
+		var probe := {"rarity": _bulk_tab}
+		var up := int(GearDefs.fuse_rate(probe) * 100.0)
+		var next_name := str(GachaDefs.RARITIES[mini(
+			GachaDefs.rarity_index(_bulk_tab) + 1,
+			GachaDefs.RARITIES.size() - 1)]["name"])
+		_bulk_body.text = "조합 확률: %s(%d%%) / %s(%d%%)  ·  조각 %d개" \
+			% [next_name, up, str(GachaDefs.rarity(_bulk_tab)["name"]),
+			100 - up, GearDefs.FUSE_SHARDS]
+	# 재료 미리보기 — 고른 것 앞 넷과 결과 자리.
+	_refresh_bulk_preview(keys, chosen)
+	# 확정 바 — 고른 게 하나면 그 장비의 천장, 아니면 탭 등급의 규격을 보여 준다.
+	_refresh_bulk_pity()
 	_bulk_run.disabled = chosen == 0
+
+
+# 재료 자리 — 고른 것을 앞에서부터 넷까지, 그 뒤에 결과 자리(?).
+# 레퍼런스는 재료 슬롯이 셋이지만 우리 조합은 **종마다 조각 3개**를 쓰므로
+# 자리에 놓이는 것은 "고른 종"이다 — 몇 종을 한꺼번에 굴리는지가 여기 선다.
+func _refresh_bulk_preview(keys: Array[String], chosen: int) -> void:
+	for c in _bulk_preview.get_children():
+		c.queue_free()
+	_bulk_hint.visible = chosen == 0
+	if chosen == 0:
+		_bulk_hint.text = "조합할 장비를 고르세요" if not keys.is_empty() \
+			else "조각이 %d개 모인 장비가 없습니다" % GearDefs.FUSE_SHARDS
+		return
+	var shown := 0
+	for key in keys:
+		if not _bulk_selected.has(key):
+			continue
+		if shown >= 4:
+			break
+		var it: Dictionary = gear_inventory[key]
+		var rar := GachaDefs.rarity(str(it.get("rarity", "common")))
+		var at := Vector2(float(shown) * 96.0, 8.0)
+		var fr := Ui.image("res://assets/ui/gear_card_small.png", at,
+			Vector2(80.0, 96.0))
+		fr.modulate = Color(rar["col"])
+		_bulk_preview.add_child(fr)
+		_bulk_preview.add_child(Ui.icon(GearDefs.icon_path(it),
+			at + Vector2(16.0, 18.0), 48.0))
+		var sh := _panel_label(_bulk_preview, at + Vector2(0.0, 98.0),
+			Type.SIZE_SMALL, Color(0.82, 0.80, 0.86), 80.0, 18.0)
+		sh.text = "조각 %d" % GearDefs.FUSE_SHARDS
+		sh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		shown += 1
+	if chosen > shown:
+		var more := _panel_label(_bulk_preview, Vector2(float(shown) * 96.0, 44.0),
+			Type.SIZE_SMALL, Color(0.86, 0.84, 0.90), 80.0, 20.0)
+		more.text = "+%d종" % (chosen - shown)
+		more.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var arrow := _panel_label(_bulk_preview, Vector2(400.0, 44.0), Type.SIZE_BODY,
+		Color(0.72, 0.70, 0.76), 40.0, 24.0)
+	arrow.text = "»"
+	arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var qbox := Ui.image("res://assets/ui/gear_card_small.png",
+		Vector2(444.0, 8.0), Vector2(80.0, 96.0))
+	qbox.modulate = Color(0.62, 0.60, 0.68)
+	_bulk_preview.add_child(qbox)
+	var q := _panel_label(_bulk_preview, Vector2(444.0, 40.0), Type.SIZE_BODY,
+		Color(0.92, 0.90, 0.94), 80.0, 30.0)
+	q.text = "?"
+	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+
+# 확정까지 남은 횟수. 한 종만 골랐으면 그 종의 누적을, 아니면 탭 등급의
+# 규격(0 부터)을 보여 준다 — 여러 종은 각자 천장이라 하나로 못 합친다.
+func _refresh_bulk_pity() -> void:
+	var only := ""
+	for key in _bulk_selected:
+		if only != "":
+			only = ""
+			break
+		only = str(key)
+	var rar_key := _bulk_tab if _bulk_tab != "all" else "common"
+	var tries := 0
+	if only != "" and gear_inventory.has(only):
+		rar_key = str(gear_inventory[only].get("rarity", "common"))
+		tries = int(fuse_pity.get("gear:" + only, 0))
+	var cap := GearDefs.fuse_pity({"rarity": rar_key})
+	var next_name := str(GachaDefs.RARITIES[mini(
+		GachaDefs.rarity_index(rar_key) + 1,
+		GachaDefs.RARITIES.size() - 1)]["name"])
+	_bulk_pity_lbl.text = "%s 확정" % next_name
+	_bulk_pity_num.text = "%d / %d" % [tries, cap]
+	_bulk_pity_bar.size.x = 300.0 * clampf(float(tries) / float(maxi(cap, 1)),
+		0.0, 1.0)
 
 
 # 실행 버튼은 **묻기만 한다.** 되돌릴 수 없는 작업이라 손이 미끄러지면 끝이다.
@@ -4021,14 +4183,27 @@ func _refresh_gear_slots() -> void:
 			nodes["frame"].modulate = Color(0.45, 0.45, 0.5)
 			nodes["label"].text = GearDefs.SLOT_NAME[slot]
 			nodes["label"].add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+			nodes["stat"].text = "비었음"
 			continue
 		nodes["icon"].texture = Assets.tex(GearDefs.icon_path(item))
 		nodes["frame"].texture = Assets.tex(GearDefs.slot_frame(item))
 		nodes["frame"].modulate = Color(1, 1, 1)
 		# 칸 폭이 168px뿐이라 강화 레벨까지 넣으면 옆 칸 글자와 겹친다.
 		# 레벨은 강화 버튼을 누르면 오르는 수치로 이미 읽힌다.
-		nodes["label"].text = "%s +%s" % [str(item["name"]), _n(GearDefs.power(item))]
+		nodes["label"].text = str(item["name"])
 		nodes["label"].add_theme_color_override("font_color", Color(item["col"]))
+		nodes["stat"].text = _gear_gain_line(item)
+
+
+# 이 장비 하나가 실제로 올려 주는 값. **슬롯마다 단위가 다르다** — 무기는
+# 피해 식에 절대값으로 더해지고(Balance.hero_damage), 방어구는 최대 체력의
+# 12%/점, 장신구는 혈액의 2%/점이다. 화면에 같은 단위로 적으면 거짓말이 된다.
+func _gear_gain_line(item: Dictionary) -> String:
+	var p := GearDefs.power(item)
+	match str(item.get("stat", "")):
+		"tough": return "체력 +%d%%" % int(p * 12.0)
+		"gold": return "혈액 +%d%%" % int(p * 2.0)
+	return "공격 +%s" % _n(p)
 
 
 func _build_gacha(root: Control) -> void:

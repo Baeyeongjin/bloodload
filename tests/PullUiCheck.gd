@@ -65,5 +65,34 @@ func _init() -> void:
 	assert(is_equal_approx(scene.gem, pg_gem), "펫장비에서 보석이 새어 나갔다")
 	assert(scene._pet_reveal.visible, "펫장비 결과 창이 안 열렸다")
 
+	# ── 4) 조합 창(전체 화면) — 열리고, 탭이 갈리고, 확정 바가 도는가 ────────
+	# 조각을 채워 후보를 만든다 — 없으면 격자가 비어 검사가 헛돈다.
+	var fuse_key := ""
+	for k in scene.gear_inventory:
+		if GachaDefs.rarity_index(str(scene.gear_inventory[k]["rarity"])) 				< GachaDefs.RARITIES.size() - 1:
+			fuse_key = str(k)
+			break
+	assert(not fuse_key.is_empty(), "조합할 비신화 장비가 없다")
+	scene.gacha_shards["gear:" + fuse_key] = GearDefs.FUSE_SHARDS
+	scene._set_gear_mode("inventory")
+	scene._open_bulk("fuse")
+	assert(scene._bulk_view.visible, "조합 창이 안 열렸다")
+	assert(scene._bulk_candidates().has(fuse_key), "조각이 찬 장비가 후보에 없다")
+	# 등급 탭 — 다른 등급을 고르면 그 등급만 남는다.
+	var rar := str(scene.gear_inventory[fuse_key]["rarity"])
+	scene._bulk_tab = rar
+	scene._refresh_bulk()
+	for k2 in scene._bulk_candidates():
+		assert(str(scene.gear_inventory[k2]["rarity"]) == rar,
+			"등급 탭이 다른 등급을 걸렀다")
+	# 확정 바 — 누적이 늘면 막대도 길어진다.
+	scene._bulk_selected = {fuse_key: true}
+	scene._refresh_bulk()
+	var w0: float = scene._bulk_pity_bar.size.x
+	scene.fuse_pity["gear:" + fuse_key] = 1
+	scene._refresh_bulk()
+	assert(scene._bulk_pity_bar.size.x > w0, "확정 바가 누적을 안 탄다")
+	scene._bulk_view.visible = false
+
 	print("PullUiCheck OK")
 	quit(0)
