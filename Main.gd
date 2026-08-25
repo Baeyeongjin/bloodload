@@ -4293,18 +4293,18 @@ func _build_gacha(root: Control) -> void:
 	# 아랫줄 — 남은 권 털기 (사장님 2026-08-25: "소환권이 6개 애매하게 남았을 때
 	# 6개 뽑기"). 2~9장일 때만 보인다 — 1장은 1회 버튼이, 10장부터는 10연이
 	# 이미 그 값이다. 30연·50연은 소환 결과 창에서만 판다(같은 날 캡처 피드백).
-	for pair2 in [["left", 203.0, 0]]:
+	for pair2 in [["left", 159.0, 0]]:
 		var key2: String = pair2[0]
 		var bpos2 := Vector2(pair2[1], 694.0)
 		var count2: int = pair2[2]
 		_gacha_btn_tex[key2] = _shop_tex(root,
-			"res://assets/ui/sets/forge_button.png", bpos2, Vector2(170.0, 48.0))
-		var blb2 := _panel_label(root, bpos2 + Vector2(0.0, 13.0), Type.SIZE_SMALL,
-			Color(1.0, 0.96, 0.90), 170.0, 24.0)
+			"res://assets/ui/sets/forge_button.png", bpos2, Vector2(258.0, 58.0))
+		var blb2 := _panel_label(root, bpos2 + Vector2(0.0, 17.0), Type.SIZE_MID,
+			Color(1.0, 0.96, 0.90), 258.0, 24.0)
 		blb2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(blb2, 8)
 		_gacha_btn_lbl[key2] = blb2
-		var gb2 := _shop_ghost(root, Vector2(170.0, 48.0), _gacha_btn_tex[key2])
+		var gb2 := _shop_ghost(root, Vector2(258.0, 58.0), _gacha_btn_tex[key2])
 		gb2.position = bpos2
 		if count2 > 0:
 			gb2.pressed.connect(func() -> void: _pull_gacha(count2))
@@ -5194,7 +5194,7 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	if items.size() > 1:
 		var scroll2 := ScrollContainer.new()
 		scroll2.position = Vector2(0.0, 48.0)
-		scroll2.size = Vector2(PANEL_W, 580.0)
+		scroll2.size = Vector2(PANEL_W, 560.0)
 		scroll2.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		_gacha_reveal.add_child(scroll2)
 		grid2 = Control.new()
@@ -5262,17 +5262,35 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	# 30·50연은 여기서만 판다. 보유 재화 한 줄 + 버튼마다 값을 같이 적는다
 	# (같은 날 캡처 피드백: "보유 재화랑 필요한 재화량도 보여주면 좋겠고").
 	var have2 := int(tickets.get(_gacha_kind, 0))
-	var held := _panel_label(_gacha_reveal, Vector2(PAD, 628.0), Type.SIZE_SMALL,
-		Color(0.86, 0.82, 0.86), CONTENT_W, 18.0)
-	held.text = "보유   권 %d  ·  보석 %s" % [have2, _n(gem)]
-	held.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 보유 줄 — 메인 판과 같은 문법(알약 + 아이콘 + 숫자, 사장님 캡처).
+	# 소환권 4종 전부 + 보석. 세트 결도 종류를 따른다(대장간/점성소).
+	var setn2 := "forge" if _gacha_kind in GearDefs.SLOTS else "astro"
+	var px2 := 16.0
+	for i4 in TicketDefs.KINDS.size():
+		var tkk: String = TicketDefs.KINDS[i4]
+		_gacha_reveal.add_child(Ui.image(
+			"res://assets/ui/sets/%s_pill.png" % setn2,
+			Vector2(px2, 612.0), Vector2(90.0, 30.0)))
+		_gacha_reveal.add_child(Ui.icon(TicketDefs.icon_of(tkk),
+			Vector2(px2 + 12.0, 617.0), 20.0))
+		var tl := _panel_label(_gacha_reveal, Vector2(px2 + 36.0, 613.0),
+			Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 48.0, 28.0)
+		tl.text = str(int(tickets.get(tkk, 0)))
+		px2 += 98.0
+	_gacha_reveal.add_child(Ui.image(
+		"res://assets/ui/sets/%s_pill.png" % setn2,
+		Vector2(px2, 612.0), Vector2(152.0, 30.0)))
+	_gacha_reveal.add_child(Ui.icon("res://assets/ui/res_gem.png",
+		Vector2(px2 + 12.0, 617.0), 20.0))
+	var gl2 := _panel_label(_gacha_reveal, Vector2(px2 + 36.0, 613.0),
+		Type.SIZE_SMALL, Color(0.92, 0.86, 0.86), 108.0, 28.0)
+	gl2.text = _n(gem)
 	var free2 := free_pull_date != Time.get_date_string_from_system()
-	for i3 in 4:
-		var cnt4: int = [1, 10, 30, 50][i3]
-		var bx := 30.0 + float(i3) * 135.0
-		var pb := Ui.button(str(["1회", "10연", "30연", "50연"][i3]),
-			Vector2(bx, 650.0), Vector2(126.0, 38.0), Type.SIZE_SMALL)
-		var tk4 := mini(have2, cnt4)
+	# 30·50연은 **낼 수 있을 때만 버튼이 보인다** — 잠긴 큰 버튼은 자리만
+	# 차지한다(사장님). 권이 2~9장 애매하게 남으면 "권 N장" 털기도 여기 낀다.
+	var opts: Array = []
+	for cnt4 in [1, 10, 30, 50]:
+		var tk4: int = mini(have2, cnt4)
 		var gm4 := GachaDefs.COST * float(cnt4 - tk4)
 		var price := ""
 		if cnt4 == 1 and free2:
@@ -5284,12 +5302,32 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 			price = "권%d+보석%d" % [tk4, int(gm4)]
 		else:
 			price = "보석%d" % int(gm4)
-		pb.disabled = gem < gm4
-		pb.pressed.connect(_pull_gacha.bind(cnt4))
+		if cnt4 >= 30 and gem < gm4:
+			continue
+		opts.append({"label": ("%d연" % cnt4) if cnt4 > 1 else "1회",
+			"count": cnt4, "price": price, "off": gem < gm4})
+		if cnt4 == 10 and have2 >= 2 and have2 <= 9:
+			opts.append({"label": "권 %d장" % have2, "count": have2,
+				"price": "권%d" % have2, "off": false})
+	if opts.size() >= 5:
+		# 다섯이면 값 글자가 이웃과 겹친다 — 섞인 값의 "보석"만 줄인다.
+		for o in opts:
+			o["price"] = str(o["price"]).replace("+보석", "+")
+	var bw := minf(126.0, (516.0 - float(opts.size() - 1) * 9.0) / float(opts.size()))
+	var bx0 := (PANEL_W - (bw * float(opts.size())
+		+ 9.0 * float(opts.size() - 1))) * 0.5
+	for i3 in opts.size():
+		var o2: Dictionary = opts[i3]
+		var bx := bx0 + float(i3) * (bw + 9.0)
+		var pb := Ui.button(str(o2["label"]), Vector2(bx, 650.0),
+			Vector2(bw, 38.0), Type.SIZE_SMALL)
+		pb.disabled = bool(o2["off"])
+		pb.pressed.connect(_pull_gacha.bind(int(o2["count"])))
 		_gacha_reveal.add_child(pb)
-		var pl := _panel_label(_gacha_reveal, Vector2(bx - 18.0, 690.0),
+		var pl := _panel_label(_gacha_reveal,
+			Vector2(bx + bw * 0.5 - 81.0, 690.0),
 			Type.SIZE_SMALL, Color(0.98, 0.88, 0.62), 162.0, 16.0)
-		pl.text = price
+		pl.text = str(o2["price"])
 		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var kind_now := _gacha_kind
 	var ok := Ui.button("확인", Vector2(30.0, FULL_BOTTOM - 60.0),
