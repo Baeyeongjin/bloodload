@@ -4290,10 +4290,10 @@ func _build_gacha(root: Control) -> void:
 		gb.position = bpos
 		gb.pressed.connect(func() -> void: _pull_gacha(count))
 		_gacha_buttons[key] = gb
-	# 아랫줄 — 30연·50연 + 남은 권 털기 (사장님 2026-08-25: "소환권이 6개
-	# 애매하게 남았을 때 6개 뽑기"). 권 잔량 버튼은 2~9장일 때만 보인다 —
-	# 1장은 1회 버튼이, 10장부터는 10연이 이미 그 값이다.
-	for pair2 in [["thirty", 24.0, 30], ["fifty", 203.0, 50], ["left", 382.0, 0]]:
+	# 아랫줄 — 남은 권 털기 (사장님 2026-08-25: "소환권이 6개 애매하게 남았을 때
+	# 6개 뽑기"). 2~9장일 때만 보인다 — 1장은 1회 버튼이, 10장부터는 10연이
+	# 이미 그 값이다. 30연·50연은 소환 결과 창에서만 판다(같은 날 캡처 피드백).
+	for pair2 in [["left", 203.0, 0]]:
 		var key2: String = pair2[0]
 		var bpos2 := Vector2(pair2[1], 694.0)
 		var count2: int = pair2[2]
@@ -5194,7 +5194,7 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	if items.size() > 1:
 		var scroll2 := ScrollContainer.new()
 		scroll2.position = Vector2(0.0, 48.0)
-		scroll2.size = Vector2(PANEL_W, 600.0)
+		scroll2.size = Vector2(PANEL_W, 580.0)
 		scroll2.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		_gacha_reveal.add_child(scroll2)
 		grid2 = Control.new()
@@ -5259,13 +5259,38 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	# 연달아 뽑으려면 보관함에 들렀다가 되돌아와야 했다. 창을 닫기만 하는 "확인"과
 	# 그 자리로 데려가는 "보러 가기"를 나눈다 — 뽑은 것마다 갈 곳이 다르다.
 	# 결과 창에서 바로 이어 뽑기 (사장님 2026-08-25) — 1·10·30·50연.
+	# 30·50연은 여기서만 판다. 보유 재화 한 줄 + 버튼마다 값을 같이 적는다
+	# (같은 날 캡처 피드백: "보유 재화랑 필요한 재화량도 보여주면 좋겠고").
+	var have2 := int(tickets.get(_gacha_kind, 0))
+	var held := _panel_label(_gacha_reveal, Vector2(PAD, 628.0), Type.SIZE_SMALL,
+		Color(0.86, 0.82, 0.86), CONTENT_W, 18.0)
+	held.text = "보유   권 %d  ·  보석 %s" % [have2, _n(gem)]
+	held.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var free2 := free_pull_date != Time.get_date_string_from_system()
 	for i3 in 4:
 		var cnt4: int = [1, 10, 30, 50][i3]
+		var bx := 30.0 + float(i3) * 135.0
 		var pb := Ui.button(str(["1회", "10연", "30연", "50연"][i3]),
-			Vector2(30.0 + float(i3) * 135.0, FULL_BOTTOM - 118.0),
-			Vector2(126.0, 46.0), Type.SIZE_SMALL)
+			Vector2(bx, 650.0), Vector2(126.0, 38.0), Type.SIZE_SMALL)
+		var tk4 := mini(have2, cnt4)
+		var gm4 := GachaDefs.COST * float(cnt4 - tk4)
+		var price := ""
+		if cnt4 == 1 and free2:
+			price = "무료"
+			gm4 = 0.0
+		elif tk4 >= cnt4:
+			price = "권%d" % cnt4
+		elif tk4 > 0:
+			price = "권%d+보석%d" % [tk4, int(gm4)]
+		else:
+			price = "보석%d" % int(gm4)
+		pb.disabled = gem < gm4
 		pb.pressed.connect(_pull_gacha.bind(cnt4))
 		_gacha_reveal.add_child(pb)
+		var pl := _panel_label(_gacha_reveal, Vector2(bx - 18.0, 690.0),
+			Type.SIZE_SMALL, Color(0.98, 0.88, 0.62), 162.0, 16.0)
+		pl.text = price
+		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var kind_now := _gacha_kind
 	var ok := Ui.button("확인", Vector2(30.0, FULL_BOTTOM - 60.0),
 		Vector2(250.0, 50.0), Type.SIZE_SMALL)
@@ -5404,19 +5429,6 @@ func _refresh_gacha() -> void:
 		else "res://assets/ui/res_gem.png")
 	_gacha_buttons["one"].disabled = not free and not one_ticket and gem < GachaDefs.COST
 	_gacha_buttons["ten"].disabled = gem < ten_gem
-	# 아랫줄 — 30연·50연은 10연과 같은 셈(권을 있는 만큼 먼저, 모자란 몫만 보석).
-	for pr in [["thirty", 30], ["fifty", 50]]:
-		var key3: String = pr[0]
-		var cnt3: int = pr[1]
-		var tk3 := mini(have, cnt3)
-		var gm3 := GachaDefs.COST * float(cnt3 - tk3)
-		if tk3 >= cnt3:
-			_gacha_btn_lbl[key3].text = "%d연  권%d" % [cnt3, cnt3]
-		elif tk3 > 0:
-			_gacha_btn_lbl[key3].text = "%d연 권%d+%d" % [cnt3, tk3, int(gm3)]
-		else:
-			_gacha_btn_lbl[key3].text = "%d연  %d" % [cnt3, int(gm3)]
-		_gacha_buttons[key3].disabled = gem < gm3
 	var odd := have >= 2 and have <= 9
 	_gacha_btn_tex["left"].visible = odd
 	_gacha_btn_lbl["left"].visible = odd
@@ -5434,7 +5446,7 @@ func _refresh_gacha() -> void:
 		_gacha_btn_icon[key].position.x = lbl2.position.x \
 			+ (258.0 - fw) * 0.5 - 34.0
 	# 그림 버튼·알약의 세트 전환 + 잠김 표시(어두워진다).
-	for key in ["one", "ten", "thirty", "fifty", "left"]:
+	for key in ["one", "ten", "left"]:
 		_gacha_btn_tex[key].texture = Assets.tex(
 			"res://assets/ui/sets/%s_button.png" % set_name)
 		var dim: bool = _gacha_buttons[key].disabled
