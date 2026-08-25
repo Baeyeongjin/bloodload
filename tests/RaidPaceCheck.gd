@@ -53,7 +53,8 @@ func _init() -> void:
 	# 물량 판은 빽빽해야 한다 — 간격이 넓으면 100마리가 달리기 100번이 된다.
 	assert(RaidDefs.wave_size("blood", 6) > 6, "물량 판인데 몹이 안 늘었다")
 	assert(RaidDefs.foe_gap("blood", 160.0) < 160.0, "물량 판인데 줄이 안 좁다")
-	assert(RaidDefs.wave_size("forge", 6) == 6, "성소까지 물량 판이 됐다")
+	# 단일 강적은 **한 마리**다 — 여섯이 서면 각자 보스 체력이라 판이 안 끝난다.
+	assert(RaidDefs.wave_size("forge", 6) == 1, "성소에 수호자가 여럿 선다")
 
 	print("RaidPaceCheck OK")
 	quit()

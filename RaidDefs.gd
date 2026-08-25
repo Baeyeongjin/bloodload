@@ -113,6 +113,12 @@ static func hp_mult(kind: String) -> float:
 
 # 이 던전에서 화면에 서는 몹 수. 물량·버티기는 빽빽하게 밀려온다.
 static func wave_size(kind: String, base: int) -> int:
+	# **단일 강적은 한 마리다.** slay 인데 base(MAX_FOES)를 그대로 돌려주면
+	# 수호자가 여섯 서고, 그 여섯이 각자 보스 체력을 지녀 판이 안 끝난다
+	# (사장님 2026-08-25 "공격을 멈추는 버그"의 정체 — _c_is_boss 로 보스
+	# 판정만 고치고 **스폰 수**는 안 고쳤던 자리다).
+	if goal(kind) == "slay":
+		return SLAY_KILLS
 	return SWARM_FOES if goal(kind) in ["swarm", "endure"] else base
 
 
