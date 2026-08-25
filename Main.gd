@@ -15488,18 +15488,22 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 		ten["btn"].pressed.connect(func() -> void: _petgear_roll_many(10))
 		left["btn"].pressed.connect(func() -> void:
 			_petgear_roll_many(int(tickets.get("petgear", 0))))
-	# 보석 결제일 때 값 옆에 뜨는 재화 아이콘(사장님) — 글자만 있으면 무슨
-	# 재화인지 한 번 더 읽어야 한다.
+	# 값 옆에 뜨는 재화 아이콘(사장님) — 글자만 있으면 무슨 재화인지 한 번 더
+	# 읽어야 한다. 자리는 _refresh_pet_roll 이 **글자 폭을 재서** 잡는다.
 	var g1 := Ui.icon("res://assets/ui/res_gem.png",
-		Vector2(PAD + 24.0 + 42.0, PET_GRID_Y + 372.0 + 15.0), 22.0)
+		Vector2(PAD + 24.0, PET_GRID_Y + 372.0 + 15.0), 22.0)
 	g1.visible = false
 	root.add_child(g1)
 	var g2 := Ui.icon("res://assets/ui/res_gem.png",
-		Vector2(PAD + CONTENT_W - 244.0 + 42.0, PET_GRID_Y + 372.0 + 15.0), 22.0)
+		Vector2(PAD + CONTENT_W - 244.0, PET_GRID_Y + 372.0 + 15.0), 22.0)
 	g2.visible = false
 	root.add_child(g2)
+	var g3 := Ui.icon(TicketDefs.icon_of(kind),
+		Vector2(PAD + (CONTENT_W - 220.0) * 0.5, PET_GRID_Y + 432.0 + 15.0), 22.0)
+	g3.visible = false
+	root.add_child(g3)
 	_pet_roll_ui[kind] = {"cnt": cnt, "one": one, "ten": ten,
-		"one_gem": g1, "ten_gem": g2, "left": left}
+		"one_gem": g1, "ten_gem": g2, "left": left, "left_icon": g3}
 	# 승급 문구가 있던 자리 — 문구는 뺐다(사장님 2026-08-18).
 	_mile_strip(root, Vector2(PAD + (CONTENT_W - 300.0) * 0.5,
 		PET_GRID_Y + 210.0), 300.0)
@@ -15666,17 +15670,37 @@ func _refresh_pet_roll() -> void:
 			ui["ten"]["lbl"].text = "10연 권%d+보석%d" % [ten_tk, int(ten_gem)]
 		else:
 			ui["ten"]["lbl"].text = "10연 · %d" % int(ten_gem)
-		ui["one_gem"].visible = by_gem
-		ui["ten_gem"].visible = ten_gem > 0.0
+		# 1회는 권이 있으면 권, 없으면 보석 — 무엇이 나가는지가 아이콘으로 읽힌다.
+		ui["one_gem"].visible = open
+		ui["one_gem"].texture = Assets.tex(
+			"res://assets/ui/res_gem.png" if by_gem else TicketDefs.icon_of(kind))
+		ui["ten_gem"].visible = open
+		ui["ten_gem"].texture = Assets.tex(
+			TicketDefs.icon_of(kind) if ten_tk > 0 else "res://assets/ui/res_gem.png")
 		_pet_btn_enable(ui["one"], open and _pet_can_pay(kind))
 		_pet_btn_enable(ui["ten"], open and gem >= ten_gem)
 		var odd := open and have >= 2 and have <= 9
 		ui["left"]["art"].visible = odd
 		ui["left"]["lbl"].visible = odd
 		ui["left"]["btn"].visible = odd
+		ui["left_icon"].visible = odd
 		if odd:
 			ui["left"]["lbl"].text = "권 %d장 뽑기" % have
+			ui["left_icon"].texture = Assets.tex(TicketDefs.icon_of(kind))
 			_pet_btn_enable(ui["left"], true)
+		# **아이콘을 글자 바로 왼쪽에 붙인다.** 고정 x 면 값이 길어질 때 글자를
+		# 파고든다(사장님 캡처: "10연 권5+보석150"에 아이콘이 겹쳤다).
+		for pair in [[ui["one"], ui["one_gem"], 220.0],
+				[ui["ten"], ui["ten_gem"], 220.0],
+				[ui["left"], ui["left_icon"], 220.0]]:
+			var b: Dictionary = pair[0]
+			var ic: TextureRect = pair[1]
+			var bwid: float = pair[2]
+			var lb: Label = b["lbl"]
+			var fw := lb.get_theme_font("font").get_string_size(lb.text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1,
+				lb.get_theme_font_size("font_size")).x
+			ic.position.x = lb.position.x + (bwid - fw) * 0.5 - 28.0
 
 
 # ── 펫 로직 (PetDefs) ──────────────────────────────────────────────────────
