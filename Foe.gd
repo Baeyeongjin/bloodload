@@ -82,7 +82,9 @@ func attack_dur() -> float:
 # 비율로 두면 7·8·9프레임 어디에 붙여도 그린 자세와 타격이 계속 맞는다.
 const IMPACT_RATIO := 3.0 / 7.0   # 원래 기준: 7프레임 중 네 번째
 const HIT_REACT_DUR := 0.14
-const HIT_KNOCKBACK := 7.0
+# 맞고 뒤로 밀리는 거리. **절반으로 줄였다**(사장님 2026-08-25: 7 -> 3.5).
+# 스쿼시는 그대로 두고 이쪽만 — 거슬리던 건 형태가 아니라 자리가 튀는 쪽이었다.
+const HIT_KNOCKBACK := 3.5
 const FIRST_SWING := 0.35   # 칸에 도착하고 첫 공격까지. 주기와 별개다
 
 
@@ -544,9 +546,12 @@ func _draw() -> void:
 	var wsc := 1.0
 	var hsc := 1.0
 	var alpha := 1.0
-	# **피격 스쿼시는 없다**(사장님 2026-08-25: "거슬리네"). 도트는 배율이
-	# 정수가 아니면 늘린 만큼 픽셀이 깨진다 — 3% 까지 낮춰도 거슬렸다.
-	# 맞은 티는 밀림(hit_offset)과 흰 점멸이 낸다.
+	var hit_f := clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
+	# 보스·중간보스는 일그러짐 절반 — 플래시와 같은 이유(사장님).
+	if is_boss or is_midboss:
+		hit_f *= 0.5
+	wsc *= 1.0 + 0.12 * hit_f
+	hsc *= 1.0 - 0.10 * hit_f
 	# 왼쪽에서 나온 몹은 오른쪽을 보므로 통째로 뒤집는다. 그림을 따로 뽑지 않고
 	# 좌우 반전으로 끝낸다 — 도트라 반전해도 어색한 곳이 없다.
 	draw_set_transform(Vector2(hit_offset(), 0.0), 0.0, Vector2(float(-face), 1.0))
