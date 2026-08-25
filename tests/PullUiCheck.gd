@@ -110,5 +110,34 @@ func _init() -> void:
 		"확인을 눌러도 조합이 조각을 안 쓴다")
 	scene._bulk_view.visible = false
 
+	# ── 5) 조합 실패 — 빈손이 아니라 **같은 등급·같은 슬롯** 장비 하나 ──────
+	# (사장님 2026-08-25: "실패하면 보석을 주는 게 아니라 동일한 레어를
+	# 조합하면 레어등급장비 1개 랜덤지급")
+	var fail_key := ""
+	for k3 in scene.gear_inventory:
+		if GachaDefs.rarity_index(str(scene.gear_inventory[k3]["rarity"])) 				< GachaDefs.RARITIES.size() - 1:
+			fail_key = str(k3)
+			break
+	assert(not fail_key.is_empty(), "실패 검사에 쓸 장비가 없다")
+	var fail_item: Dictionary = scene.gear_inventory[fail_key]
+	var fail_rar := str(fail_item["rarity"])
+	var fail_slot := str(fail_item["slot"])
+	# 천장 직전 -1 로 두고 확률을 0 으로 눌러 **반드시 실패**하게 만든다.
+	scene.gacha_shards["gear:" + fail_key] = GearDefs.FUSE_SHARDS
+	scene.fuse_pity["gear:" + fail_key] = 0
+	var guard_n := 0
+	while guard_n < 40:
+		guard_n += 1
+		scene.gacha_shards["gear:" + fail_key] = GearDefs.FUSE_SHARDS
+		scene.fuse_pity["gear:" + fail_key] = 0
+		if scene._synthesize(fail_key).is_empty() and scene._fuse_failed:
+			break
+	assert(scene._fuse_failed, "실패를 한 번도 못 만들었다")
+	assert(not scene._fuse_gain.is_empty(), "실패했는데 빈손이다")
+	assert(str(scene._fuse_gain["rarity"]) == fail_rar,
+		"실패 보상 등급이 다르다: %s" % str(scene._fuse_gain["rarity"]))
+	assert(str(scene._fuse_gain["slot"]) == fail_slot,
+		"실패 보상 슬롯이 다르다: %s" % str(scene._fuse_gain["slot"]))
+
 	print("PullUiCheck OK")
 	quit(0)

@@ -3525,12 +3525,22 @@ func _build_bulk(_root: Control) -> void:
 	# **화면 전체를 덮는다** — 장비 탭 루트는 반판이라 거기 지으면 아래가
 	# 잘린다. 오버레이는 _hud_root 에 붙어 네비 위까지 다 쓴다.
 	_bulk_view = _overlay(64)
+	# **화면을 통째로 덮는다.** y=24 부터 깔았더니 위쪽 띠로 게임 화면이
+	# 비쳤고, 그 틈으로 뒤에 있는 판(가이드 보상)이 눌렸다(사장님 캡처).
 	var back := ColorRect.new()
-	back.color = Color(0.045, 0.04, 0.055, 0.98)
-	back.position = Vector2(0.0, 24.0)
-	back.size = Vector2(PANEL_W, PANEL_FULL_H - 24.0)
+	back.color = Color(0.045, 0.04, 0.055, 0.99)
+	back.position = Vector2.ZERO
+	back.size = Vector2(Grid.BG)
 	back.mouse_filter = Control.MOUSE_FILTER_STOP
 	_bulk_view.add_child(back)
+	# 판 밖(네비 위 등)을 눌러도 뒤로 안 넘어가게 막는 투명 버튼.
+	var guard := Button.new()
+	guard.flat = true
+	guard.position = Vector2.ZERO
+	guard.size = Vector2(Grid.BG)
+	guard.focus_mode = Control.FOCUS_NONE
+	guard.modulate = Color(1, 1, 1, 0)
+	_bulk_view.add_child(guard)
 	_bulk_title = _panel_label(_bulk_view, Vector2(PAD, 16.0), Type.SIZE_BODY,
 		Color(0.96, 0.90, 0.86), CONTENT_W, 30.0)
 	_bulk_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -3750,12 +3760,18 @@ func _refresh_bulk_preview(keys: Array[String], chosen: int) -> void:
 # 확정까지 남은 횟수. 한 종만 골랐으면 그 종의 누적을, 아니면 탭 등급의
 # 규격(0 부터)을 보여 준다 — 여러 종은 각자 천장이라 하나로 못 합친다.
 func _refresh_bulk_pity() -> void:
+	# **첫 선택 하나를 기준으로 고정한다.** 선택 개수에 따라 기준을 바꿨더니
+	# 고를 때마다 막대가 튀었다(사장님: "확정바도 왔다갔다"). 천장은 종마다
+	# 따로 쌓이므로 여럿을 하나로 합칠 수 없다 — 대표 하나를 보여 주고
+	# 나머지는 라벨에 종 수로 적는다.
 	var only := ""
-	for key in _bulk_selected:
-		if only != "":
-			only = ""
-			break
-		only = str(key)
+	var picked := 0
+	for key in _bulk_candidates():
+		if not _bulk_selected.has(key):
+			continue
+		picked += 1
+		if only == "":
+			only = str(key)
 	var rar_key := _bulk_tab if _bulk_tab != "all" else "common"
 	var tries := 0
 	if only != "" and gear_inventory.has(only):
@@ -3765,7 +3781,8 @@ func _refresh_bulk_pity() -> void:
 	var next_name := str(GachaDefs.RARITIES[mini(
 		GachaDefs.rarity_index(rar_key) + 1,
 		GachaDefs.RARITIES.size() - 1)]["name"])
-	_bulk_pity_lbl.text = "%s 확정" % next_name
+	_bulk_pity_lbl.text = ("%s 확정" % next_name) if picked <= 1 \
+		else "%s 확정 (선택 %d종 중 하나)" % [next_name, picked]
 	_bulk_pity_num.text = "%d / %d" % [tries, cap]
 	_bulk_pity_bar.size.x = 300.0 * clampf(float(tries) / float(maxi(cap, 1)),
 		0.0, 1.0)
@@ -3786,7 +3803,6 @@ func _run_bulk() -> void:
 func _do_bulk() -> void:
 	var old_max := max_hp()
 	var got: Array = []
-	var fails := 0
 	# 후보 목록을 기준으로 돈다 — 선택 사전에는 그새 사라진 키가 남아 있을 수 있다.
 	for key in _bulk_candidates():
 		if not _bulk_selected.has(key):
@@ -3798,14 +3814,12 @@ func _do_bulk() -> void:
 			got.append({"icon": GearDefs.icon_path(it),
 				"label": str(it["name"]), "col": it["col"],
 				"sub": str(GachaDefs.rarity(str(it["rarity"]))["name"])})
-		elif _fuse_failed:
-			fails += 1
+		elif _fuse_failed and not _fuse_gain.is_empty():
+			got.append({"icon": GearDefs.icon_path(_fuse_gain),
+				"label": str(_fuse_gain["name"]), "col": _fuse_gain["col"],
+				"sub": str(GachaDefs.rarity(str(_fuse_gain["rarity"]))["name"])})
 	_apply_hp_growth(old_max)
 	_bulk_selected.clear()
-	if fails > 0:
-		# 실패도 결과다 — 조각이 어디로 갔는지 말해야 도박이 아니라 천장이 된다.
-		got.append({"icon": "res://assets/ui/res_gem.png",
-			"label": "실패 %d회" % fails, "sub": "조각은 천장에 쌓였다"})
 	if not got.is_empty():
 		# 6개까지만 보여 준다 — 그 이상은 한 줄에 안 들어가고, 어차피 보관함에 다 있다.
 		_show_reward("조합 결과", got.slice(0, mini(got.size(), 5)))
@@ -4101,14 +4115,14 @@ func _synthesize_selected() -> void:
 	var key_now := _gear_selected_key
 	var new_key := _synthesize(key_now)
 	if new_key.is_empty():
-		if _fuse_failed and gear_inventory.has(key_now):
-			var it: Dictionary = gear_inventory[key_now]
-			_show_reward("조합 실패", [{"icon": GearDefs.icon_path(it),
-				"label": "조각 -%d" % GearDefs.FUSE_SHARDS,
-				"sub": "확정까지 %d회" % maxi(1, GearDefs.fuse_pity(it)
-					- int(fuse_pity.get("gear:" + key_now, 0)))}])
+		if _fuse_failed and not _fuse_gain.is_empty():
+			_show_reward("조합 결과", [{"icon": GearDefs.icon_path(_fuse_gain),
+				"label": str(_fuse_gain["name"]), "col": _fuse_gain["col"],
+				"sub": str(GachaDefs.rarity(str(_fuse_gain["rarity"]))["name"])}])
+			_refresh_gear_slots()
 			_refresh_gear_inventory()
 			_refresh_gear_detail()
+			_refresh_bulk()
 			_save_game()
 		return
 	_gear_selected_key = new_key
@@ -4122,8 +4136,10 @@ func _synthesize_selected() -> void:
 # _fuse_failed 로 가른다. 시도마다 조각을 소모하고, 등급별 확률로 성공하며,
 # 실패가 등급별 천장에 닿으면 그 시도는 확정이다(사장님 2026-08-25).
 var _fuse_failed := false
+var _fuse_gain := {}      # 실패 보상으로 준 장비
 func _synthesize(old_key: String) -> String:
 	_fuse_failed = false
+	_fuse_gain = {}
 	var item: Dictionary = gear_inventory.get(old_key, {})
 	var owned_key := "gear:" + old_key
 	if item.is_empty() or int(gacha_shards.get(owned_key, 0)) < GearDefs.FUSE_SHARDS:
@@ -4134,6 +4150,10 @@ func _synthesize(old_key: String) -> String:
 		gacha_shards[owned_key] = int(gacha_shards[owned_key]) - GearDefs.FUSE_SHARDS
 		fuse_pity[owned_key] = tries
 		_fuse_failed = true
+		# **빈손으로 돌려보내지 않는다** (사장님 2026-08-25): 조각 셋을 썼으면
+		# 같은 등급 장비 하나는 나온다. 천장은 그대로 쌓인다.
+		_fuse_gain = _receive_gacha_gear(str(item.get("rarity", "common")),
+			str(item.get("slot", "weapon")))
 		return ""
 	fuse_pity.erase(owned_key)
 	var old_max := max_hp()
@@ -4630,8 +4650,10 @@ func _pull_gacha(count: int) -> void:
 	_show_gacha_results(received_items)
 
 
-func _receive_gacha_gear(rarity_key: String) -> Dictionary:
-	var slot := _gacha_kind
+# slot_in 을 주면 그 슬롯으로 만든다 — 조합 실패 보상은 **조합한 장비와 같은
+# 슬롯**이어야 한다(소환은 지금 고른 종류를 쓴다).
+func _receive_gacha_gear(rarity_key: String, slot_in := "") -> Dictionary:
+	var slot := slot_in if slot_in != "" else _gacha_kind
 	var item := GearDefs.make(slot, StageDefs.major_stage(stage), GachaDefs.rarity(rarity_key))
 	if item.is_empty():
 		return {}
