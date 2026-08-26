@@ -80,22 +80,32 @@ func _init() -> void:
 	# 구매 경로: 조건 채우고 사면 혈정이 깎이고 노드가 남는다.
 	scene.hero_lv = 999
 	scene.dungeon_best = 99
-	scene.crystal = 10000.0
-	# 한 번 사면 **한 레벨** 오른다.
+	# 지갑이 세 레벨어치뿐이면 **세 레벨만** 산다.
+	scene.crystal = TraitDefs.cost(1) * 3.0
 	scene._buy_trait("attack_1")
-	assert(TraitDefs.level_of("attack_1", scene.traits) == 1,
-		"한 번 샀는데 1레벨이 아니다")
-	assert(is_equal_approx(scene.crystal, 10000.0 - TraitDefs.cost(1)),
+	assert(TraitDefs.level_of("attack_1", scene.traits) == 3,
+		"닿는 만큼 안 샀다: %d 레벨" % TraitDefs.level_of("attack_1", scene.traits))
+	assert(is_equal_approx(scene.crystal, 0.0),
 		"혈정이 비용만큼 안 깎였다: %.0f" % scene.crystal)
+	# 한 레벨도 못 사면 아무 일도 안 일어난다(음수 단계가 새면 혈정이 늘어난다).
+	scene.crystal = TraitDefs.cost(1) - 1.0
+	var keep: float = scene.crystal
+	scene._buy_trait("attack_1")
+	assert(TraitDefs.level_of("attack_1", scene.traits) == 3, "돈이 모자란데 샀다")
+	assert(is_equal_approx(scene.crystal, keep), "안 샀는데 혈정이 움직였다")
 	# 잠긴 것은 돈이 있어도 못 산다.
+	scene.crystal = 10000.0
 	scene._buy_trait("attack_3")
 	assert(not scene.traits.has("attack_3"), "앞 노드 없이 티어 3 이 사졌다")
-	# 만렙까지 채우면 줄기의 다음이 열린다 — 이게 이 축의 유일한 문턱이다.
+	# 넘치게 들고 사도 **만렙에서 멈춘다** — 한 번이면 채워진다.
 	scene.crystal = 1.0e6
-	for i in TraitDefs.MAX_LV:
-		scene._buy_trait("attack_1")
+	var rich: float = scene.crystal
+	scene._buy_trait("attack_1")
 	assert(TraitDefs.level_of("attack_1", scene.traits) == TraitDefs.MAX_LV,
-		"만렙까지 안 올라간다")
+		"한 번에 만렙까지 안 올라간다: %d" % TraitDefs.level_of("attack_1", scene.traits))
+	assert(is_equal_approx(scene.crystal,
+		rich - TraitDefs.cost(1) * float(TraitDefs.MAX_LV - 3)),
+		"만렙을 넘겨 값을 받았다: %.0f" % scene.crystal)
 	assert(TraitDefs.lock_reason(str(TraitDefs.order()[1]), scene.traits, 1, 0) == "",
 		"아래를 만렙으로 채웠는데 다음이 안 열린다")
 	# 효과: 만렙 공격 +8% 가 dps 에 그대로 보인다.

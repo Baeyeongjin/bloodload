@@ -1113,9 +1113,13 @@ func _ready() -> void:
 			hero_lv = maxi(hero_lv, 60)
 			dungeon_best = maxi(dungeon_best, 40)
 			crystal = maxf(crystal, 5000.0)
-			traits["attack_1"] = true
-			traits["attack_2"] = true
-			traits["life_1"] = true
+			# 정수 레벨로 심는다 — bool 은 만렙으로 읽혀서 "사는 중" 상태가
+			# 화면에 한 번도 안 잡혔다. 고른 노드는 **사는 중**인 것으로 둔다:
+			# 구매 버튼이 몇 레벨을 사는지("x7") 보이는 자리가 거기뿐이다.
+			traits["attack_1"] = TraitDefs.MAX_LV
+			traits["attack_2"] = TraitDefs.MAX_LV
+			traits["life_1"] = 3
+			_trait_sel = "life_1"
 			_select_tab("growth")
 			_set_growth_mode("trait")
 		# [개발 도구] --dungeon[=N] : 미궁 N층에 바로 들어간 채로 캡처한다.
@@ -2889,11 +2893,14 @@ func _build_trait_view(root: Control) -> void:
 	scroll.set_deferred("scroll_vertical", int(canvas_h))
 	# 고른 노드의 상세 + 사는 자리 — 스크롤 밖 고정.
 	var iy := CONTENT_BOTTOM - 38.0
+	# 버튼이 152 인 이유: 값만 적던 시절엔 124 로 됐는데 "x7 1.3K" 가 되면서
+	# 뒤의 K 가 잘렸다(캡처 실측). **잘린 가격은 거짓말이다** — 이 파일이
+	# _trait_effect_text 주석에 이미 한 번 적어 둔 실패다.
 	_trait_info = _panel_label(_trait_view, Vector2(PAD, iy), Type.SIZE_SMALL,
-		Color(0.90, 0.86, 0.88), CONTENT_W - 130.0, 34.0)
+		Color(0.90, 0.86, 0.88), CONTENT_W - 158.0, 34.0)
 	_trait_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_trait_buy = Ui.button("", Vector2(PAD + CONTENT_W - 124.0, iy),
-		Vector2(124.0, 34.0), Type.SIZE_SMALL)
+	_trait_buy = Ui.button("", Vector2(PAD + CONTENT_W - 152.0, iy),
+		Vector2(152.0, 34.0), Type.SIZE_SMALL)
 	Ui.cost_icon(_trait_buy, "res://assets/ui/res_crystal.png", 14)
 	_trait_buy.pressed.connect(func() -> void: _buy_trait(_trait_sel))
 	_trait_view.add_child(_trait_buy)
@@ -2946,8 +2953,10 @@ func _refresh_trait_info() -> void:
 		_trait_buy.text = reason
 		_trait_buy.disabled = true
 	else:
+		# 몇 레벨이 오르는지 버튼이 말한다 — 값만 적으면 한 레벨인 줄 안다.
 		var cost := TraitDefs.cost(int(n["tier"]))
-		_trait_buy.text = _n(cost, true)
+		var step := _trait_steps(_trait_sel)
+		_trait_buy.text = _n(cost, true) if step <= 1 			else "x%d %s" % [step, _n(cost * float(step), true)]
 		_trait_buy.disabled = crystal < cost
 
 
@@ -2968,15 +2977,31 @@ static func _trait_effect_text(n: Dictionary) -> String:
 	return ""
 
 
-# 노드는 **한 번에 한 레벨** 오른다(사장님: 밑을 10레벨 채우면 위가 열린다).
+# 이번에 한 번에 살 레벨 수 — 지갑이 닿는 만큼, 만렙을 넘지 않게.
+# **음수는 절대 안 돌려준다**(_step_for 의 그 주의와 같다): 음수가 흘러가면
+# 비용이 음수가 되어 혈정이 늘고 레벨이 준다.
+func _trait_steps(id: String) -> int:
+	var n := TraitDefs.node(id)
+	if n.is_empty() or TraitDefs.lock_reason(id, traits, hero_lv, dungeon_best) != "":
+		return 0
+	return clampi(int(crystal / TraitDefs.cost(int(n["tier"]))), 0,
+		TraitDefs.MAX_LV - TraitDefs.level_of(id, traits))
+
+
+# 노드는 **한 번에 닿는 데까지** 오른다. 원래는 한 레벨이었는데, 18노드 x 10레벨
+# 이라 완주에 180번을 눌러야 했다(저장 버그가 부분 레벨을 만렙으로 부활시키던
+# 동안에는 안 아팠다 — 그걸 고치면서 드러났다).
+# **x1/x10 을 고르게 하지 않는다.** 혈맥은 한 줄기 덩굴이라 앞 노드를 만렙 내야
+# 다음이 열리고, 혈정의 소모처도 여기 하나뿐이다 — 덜 사고 아낄 이유가 없으므로
+# 고를 이유 없는 선택지를 하나 더 만드는 셈이다.
+# "밑을 10레벨 채우면 위가 열린다"(사장님)는 그대로다.
 func _buy_trait(id: String) -> void:
-	if TraitDefs.lock_reason(id, traits, hero_lv, dungeon_best) != "":
+	var n := _trait_steps(id)
+	if n <= 0:
 		return
-	var c := TraitDefs.cost(int(TraitDefs.node(id)["tier"]))
-	if crystal < c:
-		return
-	crystal -= c
-	traits[id] = TraitDefs.level_of(id, traits) + 1
+	crystal = maxf(0.0, crystal
+		- TraitDefs.cost(int(TraitDefs.node(id)["tier"])) * float(n))
+	traits[id] = TraitDefs.level_of(id, traits) + n
 	_refresh_traits()
 	_save_game()
 
