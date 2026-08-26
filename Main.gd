@@ -5174,7 +5174,7 @@ func _refresh_skill_detail() -> void:
 	var rows := [
 		["조각 %d / %d" % [shards, cost], Color(0.82, 0.80, 0.86)],
 		["장착 중" if skill_equipped.has(key) else "미장착", col],
-		["조합 %d / %d" % [shards, SkillDefs.SYNTH_SHARDS], Color(0.72, 0.72, 0.78)],
+		["조합 %d / %d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
 		["최고 등급" if next.is_empty() else "→ " + SkillDefs.name_of(next), col],
 	]
 	for i in rows.size():
@@ -5209,9 +5209,13 @@ func _refresh_skill_detail() -> void:
 			_refresh_skill_detail()
 			_save_game())
 	_skill_detail.add_child(level)
-	var synth := Ui.button("최고" if next.is_empty() else "조합 %d" % SkillDefs.SYNTH_SHARDS,
+	# **비용은 GearDefs.FUSE_SHARDS 하나가 말한다.** 스킬 조합을 장비와 같은
+	# 문법으로 합치면서(2026-08-25) _synthesize_skill 은 3 을 먹게 됐는데 화면만
+	# 옛 상수(SkillDefs.SYNTH_SHARDS=5)를 들고 있었다 — 조각 3개면 조합이 되는데
+	# 버튼이 잠겨서 못 눌렀고, 줄에는 "조합 3 / 5" 라고 적혀 있었다.
+	var synth := Ui.button("최고" if next.is_empty() else "조합 %d" % GearDefs.FUSE_SHARDS,
 		Vector2(294.0, 264.0), Vector2(128.0, 44.0), Type.SIZE_SMALL)
-	synth.disabled = next.is_empty() or shards < SkillDefs.SYNTH_SHARDS
+	synth.disabled = next.is_empty() or shards < GearDefs.FUSE_SHARDS
 	synth.pressed.connect(func() -> void:
 		var made := _synthesize_skill(key)
 		if made.is_empty():

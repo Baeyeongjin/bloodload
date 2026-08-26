@@ -4,6 +4,11 @@ extends SceneTree
 
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	# 1) 항등 — 등가 레벨의 누적 비용이 옛 곡선과 같아야 한다.
 	for spec in [[10.0, 1.15], [12.0, 1.15], [20.0, 1.22], [50.0, 1.35],
 			[40.0, 1.28], [15.0, 1.22]]:
@@ -70,10 +75,15 @@ func _init() -> void:
 		assert(Balance.upgrade_cost(1, float(spec3[0]), float(spec3[1])) >= 1.0,
 			"첫 칸이 아직 1 미만이다 base %.0f" % spec3[0])
 	# 수입과 비용이 **같은 배수**여야 체감이 안 바뀐다 — 첫 구간 기준 시간비.
+	# **KILL_WORTH 를 나눈다.** 한 마리를 3배 무겁게 만들면서 한 마리 값도 3배가
+	# 됐는데(StageDefs.gd:274·284) 이 식이 안 따라와서, 기대 0.6241 대 실제
+	# 0.2080 — 정확히 3배로 어긋난 채 계속 실패하고 있었다. 상수를 읽게 두면
+	# 다음에 무게를 또 바꿔도 이 줄은 안 깨진다.
 	var pay := StageDefs.gold_per_kill(1)
 	var price := Balance.upgrade_cost(1, 10.0, 1.15)
-	assert(absf(price / pay - 10.0 * (pow(1.15, 1.0 / 15.0) - 1.0) / 0.15) < 1e-9,
-		"수입과 비용의 비가 눈금 때문에 바뀌었다")
+	var want := 10.0 * (pow(1.15, 1.0 / 15.0) - 1.0) / 0.15 / StageDefs.KILL_WORTH
+	assert(absf(price / pay - want) < 1e-6,
+		"수입과 비용의 비가 눈금 때문에 바뀌었다: %.4f 대 %.4f" % [price / pay, want])
 
 	# 6) 흡혈량은 표에서 사라졌다.
 	assert(StatDefs.of("gold").is_empty(), "흡혈량이 아직 표에 있다")

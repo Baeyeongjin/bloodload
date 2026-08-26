@@ -4,6 +4,11 @@ extends SceneTree
 
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	await process_frame
 	var scene: Node = load("res://Main.tscn").instantiate()
 	root.add_child(scene)

@@ -282,12 +282,16 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 		_trial_up(game)
 		# 5) 혈정으로 혈맥 — 곱연산이라 후반의 주력이다.
 		_buy_traits(game)
-		# 6) 정수의 성소·계약의 제단 — 장비 강화와 혈맹의 배급.
-		if game.best_stage >= RaidDefs.open_stage("essence"):
+		# 6) 제련의 성소·계약의 제단 — 장비 강화와 혈맹의 배급.
+		# **재화가 정수에서 연마석(whet)으로 바뀌었다**(2026-08-25 정수 삭제).
+		# 이 프로브가 그때 안 따라와서, 없는 키 "essence" 로 open_stage 는 기본값
+		# 25 를 reward 는 0.0 을 돌려받고 game.essence 에 쓰다 죽었다(Main 에 그
+		# 이름이 없다) — **밸런스 실측 도구가 통째로 못 돌고 있었다.**
+		if game.best_stage >= RaidDefs.open_stage("forge"):
 			for i in raids:
-				game.essence += RaidDefs.reward("essence",
-					maxi(1, game.raid_best.get("essence", 0))) * raid_mult
-			game.raid_best["essence"] = int(game.raid_best.get("essence", 0)) + 1
+				game.whet += RaidDefs.reward("forge",
+					maxi(1, game.raid_best.get("forge", 0))) * raid_mult
+			game.raid_best["forge"] = int(game.raid_best.get("forge", 0)) + 1
 		if game.best_stage >= RaidDefs.open_stage("pact"):
 			for i in raids:
 				game.sigil += RaidDefs.reward("pact",
@@ -517,7 +521,7 @@ func _equip_best(game) -> void:
 			game.equipped[slot] = eq
 
 
-# 정수로 장착 장비를 강화 — 살 수 있는 동안 계속. 전투력이 가장 많이 오르는
+# 연마석으로 장착 장비를 강화 — 살 수 있는 동안 계속. 전투력이 가장 많이 오르는
 # 곳부터가 아니라 균등하게 돈다(실제 유저도 장착품을 고르게 올린다).
 func _upgrade_gear(game) -> void:
 	var moved := true
@@ -526,9 +530,9 @@ func _upgrade_gear(game) -> void:
 		for slot in game.equipped:
 			var item: Dictionary = game.equipped[slot]
 			var c := GearDefs.upgrade_cost(item)
-			if game.essence < c:
+			if game.whet < c:
 				continue
-			game.essence -= c
+			game.whet -= c
 			item["lv"] = int(item.get("lv", 0)) + 1
 			var key := str(item.get("inventory_key", ""))
 			if game.gear_inventory.has(key):
@@ -610,7 +614,6 @@ static func _pet_day(game, day: int, raid_mult: float) -> void:
 			game._pet_star(str(id)))
 		match str(PetDefs.of(str(id))["gain"]):
 			"crystal": game.crystal += amt
-			"essence": game.essence += amt
 			"sigil": game.sigil += amt
 			"feed": game.feed += amt
 

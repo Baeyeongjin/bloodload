@@ -345,7 +345,8 @@ const LV_CD_STEPS := [5, 10]   # 이 레벨에 도달할 때마다 쿨다운 -8%
 const LV_CD_CUT := 0.08
 const CD_FLOOR := 0.45      # 쿨다운 하한 배수. 이게 없으면 후반에 스킬이 상시 발동이 된다
 const SHARD_PER_LV := 3     # N -> N+1 레벨에 조각 3N 개
-const SYNTH_SHARDS := 5     # 같은 스킬 조각 5개로 **다음 등급**으로 승급 (장비와 같은 값)
+# 조합 비용은 **GearDefs.FUSE_SHARDS** 하나가 말한다(2026-08-25 통합).
+# 여기 있던 SYNTH_SHARDS(5)는 화면만 읽고 실제 지불은 3 이라 거짓말이 됐다.
 
 
 static func key_of(shape: String, rarity: String) -> String:

@@ -3,6 +3,11 @@ extends SceneTree
 # 예전엔 전부 아니면 전무라 권 9장을 놔둔 채 보석 300 이 나갔다(사장님).
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	var scene: Node = load("res://Main.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame

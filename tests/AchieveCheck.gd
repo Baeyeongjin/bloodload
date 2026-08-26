@@ -3,6 +3,11 @@ extends SceneTree
 # 안 되는가. 셋 다 "크래시 없이 조용히 틀리는" 종류다.
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	# 1) 표 자체 — 계단은 오르고, 보상은 계단 수와 짝이 맞아야 한다.
 	for t in AchieveDefs.TRACKS:
 		var steps: Array = t["steps"]

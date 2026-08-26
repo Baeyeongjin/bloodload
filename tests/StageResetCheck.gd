@@ -68,11 +68,16 @@ func _init() -> void:
 	scene.hero_hp = scene.max_hp() * 0.2
 	scene.kills = scene._c_kills_needed()
 	scene._advance_stage()
+	# **여운(CLEAR_HOLD 1.8초)이 먼저다.** 클리어 연출이 뜨는 동안은 _fade_t 가
+	# 아직 0 이라, 예전처럼 `while _fade_t > 0` 로 기다리면 그 자리에서 바로
+	# 빠져나와 회복 전에 재게 된다(2026-08-25 여운 추가 뒤 이 검사가 계속
+	# 실패했다). 회복 자체를 기다린다 — 무엇이 몇 초 걸리든 안 흔들린다.
 	waited = 0.0
-	while scene._fade_t > 0.0 and waited < 5.0:
+	while not is_equal_approx(scene.hero_hp, scene.max_hp()) and waited < 8.0:
 		await process_frame
 		waited += scene.get_process_delta_time()
-	assert(is_equal_approx(scene.hero_hp, scene.max_hp()), "미궁 다음 층에서 체력이 안 찼다")
+	assert(is_equal_approx(scene.hero_hp, scene.max_hp()),
+		"미궁 다음 층에서 체력이 안 찼다 (%.1f초 기다림)" % waited)
 	while scene._phase != "fight" or scene._fade_t > 0.0:
 		await process_frame
 	scene._dungeon_exit("측정")
@@ -87,11 +92,13 @@ func _init() -> void:
 	scene.hero_hp = scene.max_hp() * 0.2
 	scene.kills = scene._c_kills_needed()
 	scene._advance_stage()
+	# 재화 던전도 같은 여운을 탄다 — 회복 자체를 기다린다(위 2)의 그 이유).
 	waited = 0.0
-	while scene._fade_t > 0.0 and waited < 5.0:
+	while not is_equal_approx(scene.hero_hp, scene.max_hp()) and waited < 8.0:
 		await process_frame
 		waited += scene.get_process_delta_time()
-	assert(is_equal_approx(scene.hero_hp, scene.max_hp()), "던전 복귀에서 체력이 안 찼다")
+	assert(is_equal_approx(scene.hero_hp, scene.max_hp()),
+		"던전 복귀에서 체력이 안 찼다 (%.1f초 기다림)" % waited)
 
 	# ── 보스 몸집 — 30% 작아졌는가 ────────────────────────────────────────
 	assert(is_equal_approx(Foe.BOSS_BODY, 0.7), "보스 몸집 배수가 0.7 이 아니다")

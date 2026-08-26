@@ -4,6 +4,11 @@ extends SceneTree
 
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	await process_frame
 	var scene: Node = load("res://Main.tscn").instantiate()
 	root.add_child(scene)
@@ -16,7 +21,10 @@ func _init() -> void:
 	var key := str(item["icon"])
 	scene.gear_inventory[key] = item
 	scene.gacha_owned["gear:" + key] = true
-	scene.gacha_shards["gear:" + key] = 5
+	scene.gacha_shards["gear:" + key] = GearDefs.FUSE_SHARDS
+	# 조합은 **확률**이다(2026-08-25). 그냥 부르면 커먼 80%라 다섯 번에 한 번
+	# 검사가 헛돈다 — 천장을 한 칸 앞에 세워 이번 시도를 확정으로 만든다.
+	scene.fuse_pity[str(item["rarity"])] = GearDefs.fuse_pity(item) - 1
 	var before: float = scene._collection_bonus(str(item["stat"]))
 	var new_key: String = scene._synthesize(key)
 	assert(new_key != "" and new_key != key, "승급이 안 됐다: " + new_key)
@@ -30,7 +38,9 @@ func _init() -> void:
 	# 2) 스킬 — 원본이 남고 장착도 유지된다.
 	var skey := SkillDefs.key_of("bite", "common")
 	scene.skill_owned[skey] = 1
-	scene.gacha_shards["skill:" + skey] = SkillDefs.SYNTH_SHARDS
+	scene.gacha_shards["skill:" + skey] = GearDefs.FUSE_SHARDS
+	var sprobe := {"rarity": "common"}
+	scene.fuse_pity["common"] = GearDefs.fuse_pity(sprobe) - 1
 	var snext: String = scene._synthesize_skill(skey)
 	assert(snext != "", "스킬 승급이 안 됐다")
 	assert(scene.skill_owned.has(skey), "스킬 원본이 사라졌다")

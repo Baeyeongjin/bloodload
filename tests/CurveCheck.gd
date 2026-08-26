@@ -27,6 +27,11 @@ const STOP_AFTER_WALLS := 3     # 벽이 이만큼 나오면 더 볼 것도 없�
 
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	var game = load("res://Main.gd").new()
 	var gold := 0.0
 	var exp_pool := 0.0

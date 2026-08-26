@@ -5,6 +5,11 @@ extends SceneTree
 
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	await process_frame
 	var scene: Node = load("res://Main.tscn").instantiate()
 	root.add_child(scene)
@@ -16,6 +21,9 @@ func _init() -> void:
 	scene.skill_owned = {}
 	var d0: float = scene.damage()
 	var h0: float = scene.max_hp()
+	# **혈액 배수는 이제 아무 축도 안 받는다** (2026-08-25, 사장님: "피 획득
+	# 흡혈량 증가 같은 건 없애줘"). gold_mult 는 BLOOD_MAKEUP x hero_mult 뿐이라
+	# 도감을 다 채워도 안 움직이는 게 맞다 — 움직이면 그게 회귀다.
 	var g0: float = scene.gold_mult()
 	for k in scene._lore_keys("gear"):
 		scene.gear_seen[str(k)] = true
@@ -23,7 +31,8 @@ func _init() -> void:
 		scene.skill_owned[str(k)] = 0
 	assert(scene.damage() > d0, "도감 수집이 공격에 안 붙는다")
 	assert(scene.max_hp() > h0, "도감 수집이 체력에 안 붙는다")
-	assert(scene.gold_mult() > g0, "도감 수집이 혈액에 안 붙는다")
+	assert(is_equal_approx(scene.gold_mult(), g0),
+		"혈액 배수에 도감이 다시 붙었다 — 그 축은 걷어낸 자리다")
 	var lore_dmg: float = scene.damage() / d0
 	assert(lore_dmg > 1.05, "도감 공격 몫이 너무 작다: x%.3f" % lore_dmg)
 

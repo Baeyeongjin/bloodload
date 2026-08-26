@@ -44,7 +44,12 @@ func _init() -> void:
 	assert(str(BoonDefs.next_of(wk)["id"]) == str(BoonDefs.of(nxt)["id"]),
 		"다음 주 예고가 틀렸다")
 	# 종류가 훅 이름과 맞나 — 오타 하나면 그 은총이 조용히 아무 일도 안 한다.
-	var kinds := ["gold", "sweep", "hours", "raid", "ticket", "essence"]
+	# **이 목록은 Main.gd 의 `_boon("...")` 호출부와 손으로 맞춘다.** 등록부가
+	# 없어서 자동으로 못 잰다 — 은총을 늘리면 훅과 여기 둘 다 봐야 한다.
+	# gold·essence 는 축이 사라져서 뺐고(2026-08-25 피 획득 -> 치명타 전환,
+	# 정수 삭제) critdmg 가 그 자리에 들어왔다. 그때 이 줄을 안 고쳐서
+	# "모르는 훅 종류: critdmg" 로 계속 실패하고 있었다.
+	var kinds := ["critdmg", "sweep", "hours", "raid", "ticket"]
 	for b in BoonDefs.BOONS:
 		assert(kinds.has(str(b["kind"])), "모르는 훅 종류: %s" % str(b["kind"]))
 		assert(BoonDefs.bonus(wk, str(b["kind"])) >= 0.0, "음수 보너스")

@@ -3,6 +3,11 @@ extends SceneTree
 # 자리다(사장님 "고유 패턴"). 표·평균·2연격이 서로 맞는지 본다.
 
 func _init() -> void:
+	# **가드.** 이게 없으면 assert 가 깨져도 SceneTree 가 안 죽어서 실패가
+	# "타임아웃"으로 둔갑한다 — TicketCheck 를 그렇게 몇 주 오진했다.
+	create_timer(180.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
 	# 1) 표의 값이 말이 되는가 — 예고 0.3~2초, 피해 1~5배, 타수 1~2.
 	for k in FoeTiers.SPECIAL_KIND:
 		var sp: Array = FoeTiers.SPECIAL_KIND[k]
