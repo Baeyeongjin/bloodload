@@ -136,11 +136,20 @@ static func goal_line(kind: String) -> String:
 
 # 축이 세 개 한꺼번에 열리면 새 유저가 어디에 써야 할지 못 고른다 — 계단은
 # 위 OPEN_STAGE 주석에 적어 뒀다.
+# **다 당겼다** (사장님 2026-08-26: "재화 던전은 좀 빨리 열려야 할 듯. 50구간이
+# 아니라"). 병은 "50이 멀다"가 아니라 **쓸 곳은 1구간에 열리는데 재화는 4~9일째
+# 나온다**였다: 무기 슬롯이 1구간(GearDefs), 혈맹은 잠금 자체가 없는데(Main 이
+# `sigil < cost` 만 본다) 연마석은 4.1일 · 인장은 8.7일째 나왔다.
+# 실측 페이스 환산: 15구간=0.6일 · 20=0.95일 · 40=2.8일.
+#
+# **등가 구간은 안 건드린다.** 해금 순간에는 eq = max(open, best-15) = open = best
+# 라 식에서 open 이 소거된다 — 15에 열든 50에 열든 열리는 순간의 상대 난이도가
+# 같다. 판수도 안 는다(지금도 4종 x 3판 = 12판, 시작 시점만 당겨진다).
 static func open_stage(kind: String) -> int:
 	match kind:
-		"hunt": return 30       # 펫(10구간)이 자라기 시작할 때 먹이가 필요해진다
-		"forge": return 50      # 장비를 본격적으로 굴리기 시작하는 자리
-		"pact": return 80       # 혈맹은 장기 축이라 제일 뒤
+		"forge": return 15      # 연마석. 소모처(무기 슬롯)가 1구간이고 획득처가 여기뿐이다
+		"hunt": return 20       # 먹이. 펫 소환 10구간과 열 구간 차 — 뽑은 날 안에 붙는다
+		"pact": return 40       # 인장. 혈맹은 잠금이 없어 1구간부터 화면에 있다
 	return OPEN_STAGE
 # 등가 구간은 **그 던전이 열리는 구간**에서 출발한다 — 제단(40)이 동굴(20)과
 # 같은 세기로 시작하면 늦게 열리는 던전이 공짜가 된다.
@@ -166,15 +175,31 @@ static func reward(kind: String, n: int, best := 0) -> float:
 		return StageDefs.gold_per_kill(eq_stage(n, kind, best)) * 400.0 			/ StageDefs.KILL_WORTH
 	if kind == "pact":
 		return 60.0 + 15.0 * float(n - 1)
-	# 먹이 — 선형. 펫 레벨 비용(40 x 1.18^lv)이 지수라, 하루치(3판)로 초반은
-	# 몇 레벨씩 오르고 뒤로 갈수록 던전 단계를 밀어야 따라간다.
+	# 먹이·연마석 — **선형 x 구간 지수**. 예전엔 도전 단계 n 의 선형이었는데
+	# n 은 5~7 에서 동결되고 소모처는 지수라(장비 1.45^lv · 펫 1.18^lv) 기울기가
+	# 사실상 0 이었다. 그래서 "배급을 정확히 2배로 올려도 90일차 장비가
+	# Lv12 -> Lv14" 였다(2026-08-26 실측). 양이 아니라 기울기가 문제였다.
+	# blood 만 gold_per_kill 지수를 타고 나머지 셋은 best_stage 를 아예 안 봤다 —
+	# 거기가 구조적 결손이다.
 	if kind == "hunt":
-		return 80.0 + 20.0 * float(n - 1)
-	# 연마석 — 선형. 레벨업 비용이 지수(25 x 1.45^lv)라, 하루치(3판)로
-	# 초반은 몇 레벨씩 오르고 뒤로 갈수록 단계를 밀어야 따라간다.
+		return (80.0 + 20.0 * float(n - 1)) * mat_step(n, kind, best)
 	if kind == "forge":
-		return 40.0 + 20.0 * float(n - 1)
+		# **x3.3 으로 올렸다** (사장님 2026-08-26: "배급을 올려").
+		# PaceProbe 실측이 14일차 3.9K/일이었는데 장비 만렙 일수(레전더리 15일 ·
+		# 신화 60일)는 하루 12,700 을 전제로 잡힌 값이다 — 기울기는 mat_step 이
+		# 주고, 절대량은 여기 base 가 준다. 400/200 이면 14일차 약 12.9K 다.
+		return (400.0 + 200.0 * float(n - 1)) * mat_step(n, kind, best)
 	return 0.0
+
+
+# 큰 단계(10구간)마다 재화 뭉치가 커지는 배수. 해금 직후에는 1.0 이라 값이
+# 안 변하고 뒤로만 자란다 — 앞을 안 건드리면서 기울기만 주는 자리다.
+const MAT_STEP := 1.08
+
+
+static func mat_step(n: int, kind: String, best: int) -> float:
+	return pow(MAT_STEP, float(eq_stage(n, kind, best) - open_stage(kind))
+		/ float(StageDefs.STEPS_PER_STAGE))
 
 
 static func label(kind: String, n: int) -> String:

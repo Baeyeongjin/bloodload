@@ -109,6 +109,18 @@ func _init() -> void:
 			% [i, int(d["stage"]), int(d["floor"]), int(d["cap"]), int(d["lv"]),
 			int(d.get("trial", 0)), int(d["marks"]), _n(float(d["gold"])),
 			_n(float(d["power"]))])
+	# **재화 유입.** 장비 만렙 일수(2026-08-26)가 "하루 연마석 12,700" 을
+	# 전제로 잡혔다 — 그 전제가 실제로 서는지 여기서 본다.
+	print("")
+	print("재화 유입 (하루 기준 · 무과금)")
+	print("%-8s %-12s %-12s %-12s %-12s %s"
+		% ["일차", "연마석/일", "먹이/일", "연마석 잔액", "먹이 잔액", "착용 장비렙"])
+	for i in _marks(days):
+		var d2: Dictionary = free["diag"][i - 1]
+		print("%-8d %-12s %-12s %-12s %-12s %s"
+			% [i, _n(float(d2.get("whet_day", 0.0))),
+			_n(float(d2.get("feed_day", 0.0))), _n(float(d2.get("whet", 0.0))),
+			_n(float(d2.get("feed", 0.0))), str(d2.get("gear_lv", ""))])
 	print("")
 	print("전투력 — %d일차 무과금 %s · 멤버십 %s"
 		% [days, _n(float(free["power"])), _n(float(paid["power"]))])
@@ -246,6 +258,21 @@ static func _boon_of(day: int) -> Dictionary:
 
 
 # prestige_after — 며칠 정체하면 회귀하나. 0 이면 안 누른다(견줄 기준).
+# 그날 쓴 양. 유입 = (잔액 증가) + (쓴 양) 이다 — 잔액만 보면 그날 다 태운
+# 재화가 0 으로 보인다.
+var _spent_whet := 0.0
+var _spent_feed := 0.0
+
+
+# 착용 3슬롯의 레벨 — 배급이 실제로 장비를 올리고 있나를 한 줄로 본다.
+func _worn_gear_lv(game) -> String:
+	var out := PackedStringArray()
+	for slot in ["weapon", "armor", "trinket"]:
+		var it: Dictionary = game.equipped.get(slot, {})
+		out.append("-" if it.is_empty() else str(int(it.get("lv", 0))))
+	return "/".join(out)
+
+
 func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 	# **씨앗을 심는다.** 소환이 난수라 안 심으면 실행마다 답이 달라진다 —
 	# 실측: 같은 설정에서 200일 도달이 250 과 280 으로 갈렸다. 후보를 견주는
@@ -257,7 +284,12 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 	var log: Array[int] = []
 	var peak: Array[int] = []
 	var diag: Array[Dictionary] = []
+	# 하루에 들어온 양을 재려면 그날 시작 잔액을 들고 있어야 한다.
+	var whet_day := 0.0
+	var feed_day := 0.0
 	for day in days:
+		var whet0: float = game.whet
+		var feed0: float = game.feed
 		var boon := _boon_of(day)
 		# 1) 방치 — 상한만큼 잔다. 실제로는 오프라인 절반 효율이 붙는다.
 		var idle := IDLE_HOURS + (MEMBER_IDLE_BONUS if member else 0.0) \
@@ -369,11 +401,20 @@ func _run(days: int, member: bool, prestige_after: int = 1) -> Dictionary:
 			gold = 0.0
 		# **어디서 막혔는가**를 같이 남긴다 — 구간만 보면 "느리다"까지만 알고
 		# 무엇이 병목인지는 모른다(멤버십 차이가 0 인 이유가 여기 있다).
+		# 그날 들어온 재화. 쓰고 남은 잔액이 아니라 **유입**을 봐야 배급이
+		# 목표와 맞는지 안다 — 장비 만렙 일수가 이 숫자를 전제로 잡혔다.
+		whet_day = maxf(0.0, game.whet - whet0) + _spent_whet
+		feed_day = maxf(0.0, game.feed - feed0) + _spent_feed
+		_spent_whet = 0.0
+		_spent_feed = 0.0
 		diag.append({"stage": game.stage, "floor": game.dungeon_best,
 			"trial": game.trial_stage,
 			"cap": StatDefs.train_cap(game.dungeon_best, game.best_stage),
 			"lv": int(game.stat_lv("damage")), "marks": game.prestige_marks,
 			"gold": gold, "crystal": game.crystal,
+			"whet": game.whet, "feed": game.feed,
+			"whet_day": whet_day, "feed_day": feed_day,
+			"gear_lv": _worn_gear_lv(game),
 			"power": Balance.combat_power(game.dps(), game.max_hp(),
 				game.regen_per_sec())})
 	return {"log": log, "peak": peak, "diag": diag, "axes": _axes(game),
@@ -533,6 +574,7 @@ func _upgrade_gear(game) -> void:
 			if game.whet < c:
 				continue
 			game.whet -= c
+			_spent_whet += c
 			item["lv"] = int(item.get("lv", 0)) + 1
 			var key := str(item.get("inventory_key", ""))
 			if game.gear_inventory.has(key):
