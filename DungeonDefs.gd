@@ -84,6 +84,54 @@ static func sweep_per_hour(best_floor: int) -> float:
 	return 0.2 * float(maxi(0, best_floor))
 
 
+# ── 미궁 보스 얼굴 (사장님 2026-08-26: "미궁 6층부터 얼굴이 반복된다") ────
+# 예전엔 **막(ACT) 5개를 돌렸다** — 100층이면 같은 다섯을 20바퀴다.
+# 새 아트는 한 장도 안 뽑았다: `_special`(보스 예고 동작)이 있는 몹이 이미
+# 서른 종인데 미궁이 그중 다섯만 쓰고 있었다. 나머지는 잡몹으로만 나왔다.
+# 보스로 세우면 Foe._size() 가 알아서 2배로 키운다(BOSS_BODY) — 크기 문제 없음.
+#
+# 뺀 것: 성소의 수호자(제련의 성소 전용) · 역병의 산파·뼈의 합창단·피의 여왕·
+# 잊힌 도살자(주간 보스 4종) · 유적의 파수꾼(시련). 콘텐츠마다 얼굴이 갈려야
+# "저기 가면 저 놈"이 성립한다.
+#
+# **5층마다 막 보스(boss_1~5)를 세운다.** 전용 대형 아트라 그 층이 사건으로
+# 읽힌다 — 나머지는 잡몹 승격이라 결이 한 단계 낮다.
+const MAZE_BOSSES := [
+	["slime", "삼킨 늪", "slime"],
+	["goblin", "고블린 두목", "goblin"],
+	["bat", "밤의 무리", "bat"],
+	["mushroom", "홀씨 어미", "mushroom"],
+	["wraith_knight", "망령 기사", "boss_1"],
+	["zombie", "썩지 않는 자", "zombie"],
+	["skeleton", "뼈무덤 지기", "skeleton"],
+	["ghoul", "굶주린 구울", "ghoul"],
+	["fire_imp", "잿불 임프", "fire_imp"],
+	["gargoyle", "가고일 군주", "boss_2"],
+	["lava_toad", "용암의 아가리", "lava_toad"],
+	["orc", "오크 대장", "orc"],
+	["hellhound", "지옥의 사냥개", "hellhound"],
+	["frost_spider", "서리 여왕거미", "frost_spider"],
+	["frost_golem", "프로스트 골렘", "boss_3"],
+	["ice_wisp", "얼어붙은 혼불", "ice_wisp"],
+	["demon", "데몬 장군", "demon"],
+	["cultist", "광신도 사제", "cultist"],
+	["void_wraith", "공허의 망령", "void_wraith"],
+	["eye_mass", "눈알 덩어리", "boss_4"],
+	["dark_knight", "다크 나이트", "boss_5"],
+]
+
+# **얼굴은 장식이고 세기는 층이 정한다.** 몹마다 hp_mult 가 1.0~3.8 이라
+# 그대로 쓰면 층마다 체력이 3.8배씩 널뛴다 — 슬라임 층 다음에 다크 나이트 층이
+# 오면 그건 난이도가 아니라 제비뽑기다. 값은 옛 막 보스 다섯의 평균
+# (3.4+2.6+3.2+3.0+3.8)/5 = 3.2 라 이번 변경으로 난이도가 안 움직인다.
+const MAZE_BOSS_HP := 3.2
+
+
+static func boss_of(floor: int) -> Dictionary:
+	var row: Array = MAZE_BOSSES[(maxi(1, floor) - 1) % MAZE_BOSSES.size()]
+	return {"key": str(row[0]), "name": str(row[1]), "anim": str(row[2])}
+
+
 # 깊이 색 — 깊을수록 어둡고 붉게. 몹에 씌운다(modulate). 배경을 새로 뽑지 않고
 # "깊어졌다"를 읽히는 가장 싼 수단이다. 끝(100층)도 0.78 까지만 — 더 어두우면
 # 체력 바·피해 숫자와 대비가 죽는다.

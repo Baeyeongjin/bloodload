@@ -13993,6 +13993,14 @@ func _spawn_foe() -> void:
 		# 전용 보스 — 막 보스를 빌리면 "또 저놈"이 된다(주간 보스와 같은 규칙).
 		tier = FoeTiers.get_tier("ruin_warden")
 		tier["anim_key"] = "ruin_warden"
+	elif boss and dungeon_on:
+		# 미궁은 **제 보스 표**를 쓴다(DungeonDefs.MAZE_BOSSES) — 막 보스 다섯만
+		# 돌리면 6층부터 얼굴이 반복된다. 체력 배수는 얼굴과 무관하게 고정이다.
+		var mb := DungeonDefs.boss_of(dungeon_floor)
+		tier = FoeTiers.get_tier(str(mb["key"]))
+		tier["name"] = str(mb["name"])
+		tier["anim_key"] = str(mb["anim"])
+		tier["hp_mult"] = DungeonDefs.MAZE_BOSS_HP
 	elif boss:
 		tier["name"] = str(act["boss_name"])
 		tier["anim_key"] = str(act["boss_anim"])
