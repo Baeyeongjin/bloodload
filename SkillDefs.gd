@@ -340,7 +340,11 @@ static func ticks_of(key: String) -> int:
 
 
 const SLOTS := 6            # 장착 칸
-const LV_POWER := 0.12      # 레벨당 위력 +12%
+# 스킬 만렙은 **등급 무관 50 고정**이다(사장님 2026-08-26). 장비와 달리
+# 레벨 재화가 조각이고, 조각은 같은 스킬 중복 뽑기에서만 나온다 — 소환권이
+# 이미 브레이크라 등급으로 또 조일 이유가 없다. lv50 = 조각 3,825 개다.
+const MAX_LV := 50
+const LV_POWER := 0.06      # 레벨당 위력 +6% — 만렙(50)에서 x4, 장비와 같은 예산
 const LV_CD_STEPS := [5, 10]   # 이 레벨에 도달할 때마다 쿨다운 -8%
 const LV_CD_CUT := 0.08
 const CD_FLOOR := 0.45      # 쿨다운 하한 배수. 이게 없으면 후반에 스킬이 상시 발동이 된다
@@ -551,7 +555,7 @@ static func rarity_of(key: String) -> Dictionary:
 static func power(key: String, lv: int) -> float:
 	return float(rule_of(key).get("power", shape_of(key)["power"])) \
 		* float(rarity_of(key)["power"]) \
-		* (1.0 + LV_POWER * float(maxi(0, lv)))
+		* (1.0 + LV_POWER * float(clampi(lv, 0, MAX_LV)))
 
 
 # 화면에 적는 역할(단일/광역/버프)은 **동작**을 따른다. 형태 표를 그대로 읽으면

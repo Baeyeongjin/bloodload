@@ -198,7 +198,20 @@ func _init() -> void:
 	keep_lv["lv"] = 4
 	assert(GearDefs.collection_rate(keep_lv) > keep0, "레벨을 올려도 보유 효과가 그대로다")
 	# 그래도 장착 쪽이 더 가팔라야 한다 — 안 그러면 아무것도 안 끼는 게 최적이 된다.
-	assert(GearDefs.COLLECTION_LV_RATE < 0.25, "보유 효과가 장착 성장(0.25)보다 가파르다")
+	# 상수 비교가 아니라 **만렙 배수**로 잰다(2026-08-26): 만렙이 등급마다 달라져
+	# 증가율도 등급마다 다르다. 장착 x4 · 보유 x2 가 그 예산이다.
+	for rk in GachaDefs.RARITIES:
+		var probe := GearDefs.make("weapon", 5, GachaDefs.rarity(str(rk["key"])))
+		var bare := GearDefs.power(probe)
+		var bare_keep := GearDefs.collection_rate(probe)
+		probe["lv"] = GearDefs.max_lv(probe)
+		var wear := GearDefs.power(probe) / bare
+		var keep := GearDefs.collection_rate(probe) / bare_keep
+		assert(absf(wear - 4.0) < 0.05,
+			"%s 만렙 장착 배수가 x4 가 아니다: x%.2f" % [str(rk["key"]), wear])
+		assert(absf(keep - 2.0) < 0.05,
+			"%s 만렙 보유 배수가 x2 가 아니다: x%.2f" % [str(rk["key"]), keep])
+		assert(keep < wear, "보유가 장착보다 가파르다 — 아무것도 안 끼는 게 최적이 된다")
 	var promoted := GearDefs.make("weapon", 1, GachaDefs.rarity("common"))
 	var promoted_icon := str(promoted["icon"])
 	var promoted_power := GearDefs.power(promoted)

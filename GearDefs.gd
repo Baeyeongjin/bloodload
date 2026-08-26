@@ -145,21 +145,71 @@ static func make(slot: String, stage: int, rarity: Dictionary) -> Dictionary:
 	}
 
 
+# ── 만렙 (사장님 2026-08-26) ────────────────────────────────────────────
+# **등급이 뚜껑이다** — 펫이 "별 하나당 10레벨"인 것과 같은 문법이고, 커먼을
+# 무한히 올리는 대신 조합해서 등급을 올릴 이유가 여기서 생긴다.
+# 상한이 없던 시절엔 장착 배수가 lv 에 선형(x0.25)이라 곱연산 예산(x4)을
+# 뚫는 유일한 축이었다 — EXPANSION 2장 "곱연산은 상한 필수"의 구멍이었다.
+const MAX_LV := [50, 100, 150, 200, 250, 400]
+
+# 레벨당 증가율도 **등급마다 다르다.** 만렙이 등급마다 다른데 증가율이 같으면
+# 만렙 배수가 등급마다 8배씩 벌어진다. 만렙에서 장착 x4 · 보유 x2 로 모으므로
+# 값은 3/만렙 · 1/만렙 이다 — 이 둘이 곱연산 예산의 자물쇠다.
+#
+# 비용 지수도 등급마다 다르다. 지수는 레벨마다 곱해지므로 만렙이 50 -> 400 으로
+# 8배가 되면 비용은 8배가 아니라 e^350 배다 — 하나로 두면 상위 등급 만렙이
+# 우주 나이를 넘는다(1.45 로 두면 커먼 50렙조차 150만 일이었다).
+# 목표 일수에서 역산한 값이다(하루 12,700 기준):
+#   커먼 0.5일 · 언커먼 1.5일 · 레어 4일 · 에픽 8일 · 레전더리 15일 · 신화 60일
+const LV_EXP := [1.0559, 1.0289, 1.0219, 1.0152, 1.0113, 1.0085]
+
+
+static func max_lv(item: Dictionary) -> int:
+	return MAX_LV[clampi(GachaDefs.rarity_index(
+		str(item.get("rarity", "common"))), 0, MAX_LV.size() - 1)]
+
+
+# **신화는 100렙부터 조각도 먹는다** (사장님 2026-08-26). 연마석만으로 끝까지
+# 가면 최고 등급의 끝이 그냥 시간 문제가 된다 — 뽑기에서만 나오는 조각을 섞어
+# "돈으로 못 사는 구간"을 만든다.
+# 30렙마다 한 장이라 100 -> 400 이 총 10장이다. 신화 조각은 신화 소환 중복
+# 에서만 나오고(조합 실패 보상은 최고 등급엔 없다) 그 확률이 0.1% 라, 장당
+# 무게가 커먼 조각 수백 장과 맞먹는다. 열 장도 가볍지 않다.
+const SHARD_FROM_LV := 100
+const SHARD_EVERY := 30
+
+
+# 이번 한 칸에 드는 조각. 0 이면 연마석만 낸다.
+static func upgrade_shards(item: Dictionary) -> int:
+	if GachaDefs.rarity_index(str(item.get("rarity", "common"))) < RARITY.size() - 1:
+		return 0
+	var lv := int(item.get("lv", 0))
+	if lv < SHARD_FROM_LV:
+		return 0
+	return 1 if (lv - SHARD_FROM_LV) % SHARD_EVERY == 0 else 0
+
+
+static func is_max_lv(item: Dictionary) -> bool:
+	return int(item.get("lv", 0)) >= max_lv(item)
+
+
 # 강화 반영 실효 수치. 저장본에는 base 와 lv 만 두고 여기서 계산한다 —
 # 수치를 저장해 두면 곡선을 고칠 때 이미 저장된 장비만 옛 값으로 남는다.
+# **만렙에서 x4** — 그 위로는 안 자란다(옛 저장본이 상한 위에 있어도 안전).
 static func power(item: Dictionary) -> float:
-	return float(item.get("base", 0.0)) * (1.0 + 0.25 * float(item.get("lv", 0)))
+	var cap := max_lv(item)
+	var lv := clampi(int(item.get("lv", 0)), 0, cap)
+	return float(item.get("base", 0.0)) * (1.0 + (3.0 / float(cap)) * float(lv))
 
 
-# 레벨업 비용 — 연마석. 등급이 높을수록 비싸다(안 그러면 흔한 걸 무한히
-# 올리는 게 최적이 된다). 레벨당 1.45 배라 던전 한 판이 초반엔 몇 레벨,
+# 레벨업 비용 — 연마석. 등급이 높을수록 비싸고(안 그러면 흔한 걸 올리는 게
+# 최적이 된다) 레벨마다 등급별 지수로 오른다. 던전 한 판이 초반엔 몇 레벨,
 # 뒤로 갈수록 한 레벨이 된다 — 던전 단계를 밀 이유가 거기서 생긴다.
 static func upgrade_cost(item: Dictionary) -> float:
-	var mult := 1.0
-	for r in RARITY:
-		if r["key"] == item.get("rarity", ""):
-			mult = float(r["power"])
-	return ceilf(25.0 * mult * pow(1.45, float(item.get("lv", 0))))
+	var i := clampi(GachaDefs.rarity_index(str(item.get("rarity", "common"))),
+		0, LV_EXP.size() - 1)
+	return ceilf(25.0 * float(RARITY[i]["power"])
+		* pow(LV_EXP[i], float(item.get("lv", 0))))
 
 
 # 조합 (사장님 2026-08-25): 조각 FUSE_SHARDS 개로 1회 **시도**, 등급별 성공
@@ -185,15 +235,14 @@ static func fuse_pity(item: Dictionary) -> int:
 
 # 수집(보유) 효과는 장착과 무관하다. 최고 등급 한 벌만 남기므로 중복 수에는 곱하지 않는다.
 # **레벨을 올리면 보유 효과도 같이 오른다.** 안 그러면 "장착 안 할 장비는
-# 올릴 이유가 없다"가 된다. 장착(레벨당 +25%)보다 완만한 +10% 로 둬서
-# 장착이 여전히 주력이게 한다.
-const COLLECTION_LV_RATE := 0.10
-
-
+# 올릴 이유가 없다"가 된다. **만렙에서 x2** — 장착(x4)의 절반이라 장착이
+# 여전히 주력이다. 등급마다 만렙이 다르므로 비율도 1/만렙 이다.
 static func collection_rate(item: Dictionary) -> float:
+	var cap := max_lv(item)
+	var lv := clampi(int(item.get("lv", 0)), 0, cap)
 	return [0.005, 0.01, 0.02, 0.04, 0.08, 0.16][GachaDefs.rarity_index(
 		str(item.get("rarity", "common")))] \
-		* (1.0 + COLLECTION_LV_RATE * float(item.get("lv", 0)))
+		* (1.0 + float(lv) / float(cap))
 
 
 static func promote(item: Dictionary) -> bool:

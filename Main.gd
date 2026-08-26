@@ -3341,11 +3341,14 @@ func _skill_card(key: String) -> Control:
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var owned_key := "skill:" + key
 	var shards := int(gacha_shards.get(owned_key, 0))
+	var maxed := lv >= SkillDefs.MAX_LV
 	var cost := SkillDefs.shard_cost(lv)
 	var sh := _panel_label(cell, Vector2(0.0, 72.0), Type.SIZE_SMALL,
-		Color(0.98, 0.82, 0.42) if shards >= cost else Color(0.62, 0.62, 0.68),
+		Color(0.98, 0.86, 0.56) if maxed
+		else (Color(0.98, 0.82, 0.42) if shards >= cost else Color(0.62, 0.62, 0.68)),
 		SK_CARD.x, 16.0)
-	sh.text = "조각 %d / %d" % [shards, cost]
+	sh.text = ("만렙 %d" % SkillDefs.MAX_LV) if maxed \
+		else "조각 %d / %d" % [shards, cost]
 	sh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 장착 중인 건 어둡게. 목록에서 "이미 낀 것"이 곧바로 걸러져야 한다.
 	if skill_equipped.has(key):
@@ -3443,6 +3446,8 @@ func _skill_levelable() -> Array[String]:
 	var out: Array[String] = []
 	for key in skill_owned:
 		var lv := int(skill_owned[key])
+		if lv >= SkillDefs.MAX_LV:
+			continue
 		if int(gacha_shards.get("skill:" + str(key), 0)) >= SkillDefs.shard_cost(lv):
 			out.append(str(key))
 	return out
@@ -4271,6 +4276,15 @@ func _gear_card(key: String, on_press: Callable) -> Control:
 		Color(rarity["col"]), 104.0, 20.0)
 	detail.text = "%s · %d" % [rarity["name"], int(gacha_shards.get(owned_key, 0))]
 	detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# **칸마다 붉은 점** (사장님 2026-08-26: "레벨업할 수 있는 것들은 다").
+	# 탭 점은 "이 탭에 뭔가 있다"까지만 말한다 — 스물넷을 눌러 보게 하지 않으려면
+	# 어느 칸인지도 말해야 한다. body 가 아니라 cell 에 붙인다: 장착 중이면
+	# body 를 통째로 어둡게 하는데 점까지 같이 죽으면 안 된다.
+	if _gear_can_level(key) or _gear_can_fuse(key):
+		var dot := Ui.icon("res://assets/ui/dot_alert.png",
+			Vector2(88.0, 4.0), 16.0)
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cell.add_child(dot)
 	if equipped_now:
 		# 어둡게 + 가로 띠. 글자만으로는 목록에서 훑을 때 안 걸린다.
 		body.modulate = Color(0.48, 0.48, 0.54)
@@ -4435,13 +4449,21 @@ func _is_equipped_key(key: String) -> bool:
 # 레벨업 — 연마석을 내고 한 칸. 장착 중이면 장착본도 같이 올린다.
 func _level_up_selected() -> void:
 	var item: Dictionary = gear_inventory.get(_gear_selected_key, {})
-	if item.is_empty():
+	if item.is_empty() or GearDefs.is_max_lv(item):
 		return
 	var cost := GearDefs.upgrade_cost(item)
 	if whet < cost:
 		return
+	# **신화는 100렙부터 조각도 낸다** — 연마석은 시간이 벌지만 조각은 뽑기에서만
+	# 나온다. 최고 등급의 끝을 "돈으로 못 사는 구간"으로 두는 자리다.
+	var need_sh := GearDefs.upgrade_shards(item)
+	var sh_key := "gear:" + _gear_selected_key
+	if need_sh > 0 and int(gacha_shards.get(sh_key, 0)) < need_sh:
+		return
 	var old_max := max_hp()
 	whet -= cost
+	if need_sh > 0:
+		gacha_shards[sh_key] = int(gacha_shards.get(sh_key, 0)) - need_sh
 	item["lv"] = int(item.get("lv", 0)) + 1
 	var slot := str(item["slot"])
 	if str(equipped.get(slot, {}).get("inventory_key", "")) == _gear_selected_key:
@@ -4482,12 +4504,26 @@ func _synthesize_selected() -> void:
 # 실패가 등급별 천장에 닿으면 그 시도는 확정이다(사장님 2026-08-25).
 var _fuse_failed := false
 var _fuse_gain := {}      # 실패 보상으로 준 장비
+# 이 조합이 만렙을 요구하는가 — **최고 등급 바로 아래**만 그렇다.
+# 화면(_refresh_gear_detail)과 실제 조합이 같은 자를 쓰게 함수로 둔다:
+# 둘이 갈리면 버튼은 눌리는데 아무 일도 안 일어난다.
+func _fuse_needs_max(item: Dictionary) -> bool:
+	var i := GachaDefs.rarity_index(str(item.get("rarity", "common")))
+	return i == GachaDefs.RARITIES.size() - 2 and not GearDefs.is_max_lv(item)
+
+
 func _synthesize(old_key: String) -> String:
 	_fuse_failed = false
 	_fuse_gain = {}
 	var item: Dictionary = gear_inventory.get(old_key, {})
 	var owned_key := "gear:" + old_key
 	if item.is_empty() or int(gacha_shards.get(owned_key, 0)) < GearDefs.FUSE_SHARDS:
+		return ""
+	# **최고 등급으로 가는 조합만 만렙을 요구한다** (사장님 2026-08-26:
+	# "신화 조합하려면 레전더리 다 만렙 찍어야"). 이 한 칸이 최종 사다리를
+	# 만든다 — 레전더리 만렙(15일) -> 신화 조합 -> 신화 만렙(60일).
+	# 아래 등급은 그대로다: 초반에 만렙을 강제하면 조합이 벌이 된다.
+	if _fuse_needs_max(item):
 		return ""
 	_quest_bump("gear")   # 임무 "장비 조합"은 시도를 센다 — 실패도 조합이다
 	# 천장은 **등급 통**에 쌓인다 — 같은 등급이면 무기든 스킬이든 한 줄.
@@ -5172,7 +5208,8 @@ func _refresh_skill_detail() -> void:
 	var cost := SkillDefs.shard_cost(lv)
 	var next := SkillDefs.promote_key(key)
 	var rows := [
-		["조각 %d / %d" % [shards, cost], Color(0.82, 0.80, 0.86)],
+		[("만렙 %d" % SkillDefs.MAX_LV) if lv >= SkillDefs.MAX_LV
+			else "조각 %d / %d" % [shards, cost], Color(0.82, 0.80, 0.86)],
 		["장착 중" if skill_equipped.has(key) else "미장착", col],
 		["조합 %d / %d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
 		["최고 등급" if next.is_empty() else "→ " + SkillDefs.name_of(next), col],
@@ -5522,6 +5559,8 @@ func _level_up_skill(key: String) -> bool:
 		return false
 	var owned_key := "skill:" + key
 	var lv := int(skill_owned[key])
+	if lv >= SkillDefs.MAX_LV:
+		return false
 	var cost := SkillDefs.shard_cost(lv)
 	if int(gacha_shards.get(owned_key, 0)) < cost:
 		return false
@@ -9662,23 +9701,66 @@ func _select_tab(name: String) -> void:
 #   소환      보석은 아껴 두는 재화다. "살 수 있다"로 켜면 늘 켜져 있어서 잔소리가
 #             되고, 늘 켜진 점은 없는 점과 같다. **안 쓰면 사라지는 것**만 켠다 —
 #             오늘 공짜 뽑기와, 이미 모여서 쓰기만 하면 되는 스킬 조각
+# 이 장비를 지금 올릴 수 있나 — 격자 점과 탭 점이 **같은 자**를 쓴다.
+# 만렙·연마석·신화 조각(100렙부터)을 다 본다.
+func _gear_can_level(key: String) -> bool:
+	var it: Dictionary = gear_inventory.get(key, {})
+	if it.is_empty() or GearDefs.is_max_lv(it):
+		return false
+	if whet < GearDefs.upgrade_cost(it):
+		return false
+	var need := GearDefs.upgrade_shards(it)
+	return need <= 0 or int(gacha_shards.get("gear:" + key, 0)) >= need
+
+
+# 이 장비를 지금 조합할 수 있나. 최고 등급 바로 아래는 만렙까지 채워야 한다.
+func _gear_can_fuse(key: String) -> bool:
+	var it: Dictionary = gear_inventory.get(key, {})
+	if it.is_empty():
+		return false
+	if GachaDefs.rarity_index(str(it.get("rarity", "common"))) 			>= GachaDefs.RARITIES.size() - 1:
+		return false
+	if _fuse_needs_max(it):
+		return false
+	return int(gacha_shards.get("gear:" + key, 0)) >= GearDefs.FUSE_SHARDS
+
+
+# 성장 탭의 여섯 소탭 중 지금 손댈 게 있나. 스탯만 보던 것을 전부로 넓힌다
+# (사장님 2026-08-26) — 혈맥·혈맹·유물·회귀는 각자 재화가 따로라, 하나가
+# 마르는 동안 다른 하나가 차 있는 게 이 게임의 보통 상태다.
+func _growth_todo() -> bool:
+	var major := StageDefs.major_stage(stage)
+	for st in StatDefs.STATS:
+		var k := str(st["key"])
+		if StatDefs.is_open(k, major, lv) and stat_lv(k) < _stat_cap(k) 				and gold >= _buy_cost(k, _step_for(k)):
+			return true
+	# 혈맥 — 열려 있고 혈정이 닿는 노드가 하나라도 있나.
+	for n in TraitDefs.NODES:
+		if _trait_steps(str(n["id"])) > 0:
+			return true
+	# 혈맹 — 인장으로 한 칸.
+	if _pact_steps(1) > 0 and sigil >= _pact_cost(1):
+		return true
+	# 유물 — 조각이 다 모인 것.
+	for r in RelicDefs.RELICS:
+		var rid := str(r["id"])
+		if RelicDefs.level_of(rid, relics) > 0 				and RelicDefs.level_of(rid, relics) < RelicDefs.MAX_LV 				and int(gacha_shards.get("relic:" + rid, 0)) >= RelicDefs.SHARDS_PER_LV:
+			return true
+	# 회귀 — 지금 돌면 혈흔이 나오나.
+	if best_stage >= PrestigeDefs.OPEN_STAGE 			and PrestigeDefs.marks_for(best_stage, prestige_peak) > 0:
+		return true
+	return false
+
+
 func _tab_todo(tab: String) -> bool:
 	match tab:
 		"growth":
-			var major := StageDefs.major_stage(stage)
-			for s in StatDefs.STATS:
-				var key := str(s["key"])
-				if StatDefs.is_open(key, major, lv) \
-						and stat_lv(key) < _stat_cap(key) \
-						and gold >= _buy_cost(key, _step_for(key)):
-					return true
+			return _growth_todo()
 		"gear":
+			# **레벨업도 켠다** (사장님 2026-08-26). 연마석이 생긴 뒤로 장비는
+			# 조합만이 아니라 올릴 수도 있는데 점은 조합만 보고 있었다.
 			for key in gear_inventory:
-				var it2: Dictionary = gear_inventory[key]
-				if GachaDefs.rarity_index(str(it2.get("rarity", "common"))) \
-						< GachaDefs.RARITIES.size() - 1 \
-						and int(gacha_shards.get("gear:" + str(key), 0)) \
-						>= GearDefs.FUSE_SHARDS:
+				if _gear_can_level(str(key)) or _gear_can_fuse(str(key)):
 					return true
 		"raid":
 			# 오늘 표가 남아 있다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
@@ -9698,6 +9780,11 @@ func _tab_todo(tab: String) -> bool:
 			# 열 때까지) — "받을 보상이 존재하면 알림"(사장님 2026-08-18).
 			if trial_stage < TrialDefs.max_stage() \
 					and dungeon_best >= TrialDefs.floor_need(trial_stage + 1):
+				return true
+			# 미궁 — **아직 안 뚫은 층이 열려 있다**(사장님 2026-08-26:
+			# "진행 가능한 던전"). 상한까지 다 뚫었으면 안 켠다 — 제자리를
+			# 도는 건 첫 돌파 보상이 없어서 "받을 게 있다"가 아니다.
+			if raid_on == "" and not dungeon_on 					and dungeon_best < DungeonDefs.open_floors(best_stage):
 				return true
 		"pet":
 			# 소환권·다 모인 먹이·물어온 재화 — 전부 "쓰기만 하면 되는" 것들이다.
@@ -9744,6 +9831,8 @@ func _tab_todo(tab: String) -> bool:
 			# _skill_levelable() 를 안 쓴다 — 매 프레임 도는 자리라 배열을 새로 만들
 			# 이유가 없다. 여기는 "하나라도 있나"만 알면 된다.
 			for key in skill_owned:
+				if int(skill_owned[key]) >= SkillDefs.MAX_LV:
+					continue
 				if int(gacha_shards.get("skill:" + str(key), 0)) \
 						>= SkillDefs.shard_cost(int(skill_owned[key])):
 					return true
