@@ -7955,6 +7955,29 @@ func _claim_quest(id: String) -> void:
 
 # ── 출석 (AttendDefs) ──────────────────────────────────────────────────────
 # 오늘 받았나만 본다. **어제 받았는지는 안 본다** — 연속이 아니라 누적이다.
+# 업적 — 조건을 넘겼는데 아직 안 받은 계단이 있나. _claim_achieve 가 while 로
+# 계단을 훑으므로 여기도 "한 계단이라도 넘겼나"만 본다.
+func _achieve_claimable() -> bool:
+	for t in AchieveDefs.TRACKS:
+		var kind := str(t["kind"])
+		var step: Dictionary = AchieveDefs.at(kind, int(achieve_got.get(kind, 0)))
+		if not step.is_empty() and _goal_value(kind) >= int(step["need"]):
+			return true
+	return false
+
+
+# 패스 — 열린 단계 중 안 받은 줄이 있나. 유료 줄은 구독 중일 때만 센다.
+func _pass_claimable() -> bool:
+	var step := PassDefs.step_of(pass_points)
+	var paid_on := _pass_active()
+	for i in range(1, step + 1):
+		if not pass_free_got.has(i):
+			return true
+		if paid_on and not pass_paid_got.has(i):
+			return true
+	return false
+
+
 func _attend_claimable() -> bool:
 	return attend_date != Time.get_date_string_from_system()
 
@@ -9634,10 +9657,14 @@ func _refresh_quests() -> void:
 			else ("ready" if _wquest_claimable(id) else "wait"),
 			int(q["amount"]))
 		any = any or _wquest_claimable(id)
-	# 알림점·일괄 받기는 일일이든 주간이든 "받을 게 있다"면 켠다.
+	# 일괄 받기 버튼은 **일일·주간만** 받으므로 그 둘로 판단한다.
 	_quest_claim_all.disabled = not any
+	# **점은 창 전체를 대표한다.** 창 안에 소탭이 다섯인데(일일·주간·업적·출석·
+	# 패스) 점은 앞의 둘만 보고 있었다 — 출석이 안 찍혀 있어도, 업적이 넘겨져
+	# 있어도, 패스 단계가 열려 있어도 점이 안 켜졌다(사장님 2026-08-26:
+	# "모든 컨텐츠에서 ... 보상 있으면 알림"). 다섯을 다 본다.
 	if _quest_dot:
-		_quest_dot.visible = any
+		_quest_dot.visible = any or _attend_claimable() 			or _achieve_claimable() or _pass_claimable()
 
 
 func _select_tab(name: String) -> void:

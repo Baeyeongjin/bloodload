@@ -135,6 +135,58 @@ func _init() -> void:
 	scene.trial_stage = 0
 	assert(scene._tab_todo("raid"), "시련이 열렸는데 던전 점이 안 켜진다")
 
+	# ── 5) 보상 — 임무 창 점이 다섯 축을 다 보는가 ────────────────────────
+	# 창 안에 소탭이 다섯인데(일일·주간·업적·출석·패스) 점은 앞의 둘만 봤다.
+	_broke(scene)
+	scene.quest_got = {}
+	scene.quest_wgot = {}
+	scene.quest_prog = {}
+	scene.quest_wprog = {}
+	scene.achieve_got = {}
+	scene.pass_points = 0
+	scene.pass_free_got = {}
+	scene.pass_paid_got = {}
+	scene.iap_subs = {}          # 구독을 꺼 둔다 — 유료 줄이 섞이면 무료 줄만 못 잰다
+	scene.attend_date = Time.get_date_string_from_system()   # 오늘 이미 받았다
+	assert(not scene._attend_claimable(), "오늘 받았는데 출석이 또 켜진다")
+	assert(not scene._pass_claimable(), "패스 단계가 0인데 받을 게 있다")
+
+	# 출석 — 날짜만 어제로 돌리면 켜진다.
+	scene.attend_date = ""
+	assert(scene._attend_claimable(), "출석을 안 받았는데 안 켜진다")
+	scene.attend_date = Time.get_date_string_from_system()
+
+	# 패스 — 단계가 열리면 켜진다.
+	scene.pass_points = PassDefs.POINT_QUEST * 999
+	assert(PassDefs.step_of(scene.pass_points) > 0, "준비가 틀렸다")
+	assert(scene._pass_claimable(), "패스 단계가 열렸는데 안 켜진다")
+	# 다 받으면 꺼진다(무료 줄만 — 구독이 없으면 유료 줄은 안 센다).
+	for i in range(1, PassDefs.step_of(scene.pass_points) + 1):
+		scene.pass_free_got[i] = true
+	assert(not scene._pass_claimable(),
+		"무료 줄을 다 받았는데 패스 점이 켜져 있다(구독도 없다)")
+
+	# 업적 — **받을 게 남았으면 켜지고 다 받으면 꺼진다.**
+	# 게임 시작부터 첫 계단이 달성돼 있는 트랙이 있으므로(구간 1 도달 등)
+	# "빈손이면 꺼진다"로는 못 잰다. 다 받은 상태를 만들어 놓고 재는 게 맞다.
+	scene.achieve_got = {}
+	var had: bool = scene._achieve_claimable()
+	for t in AchieveDefs.TRACKS:
+		var kd := str(t["kind"])
+		var g := 0
+		while true:
+			var st: Dictionary = AchieveDefs.at(kd, g)
+			if st.is_empty() or scene._goal_value(kd) < int(st["need"]):
+				break
+			g += 1
+		scene.achieve_got[kd] = g
+	assert(not scene._achieve_claimable(),
+		"업적을 다 받았는데 점이 켜져 있다 — 늘 켜진 점은 없는 점과 같다")
+	# 하나를 되돌리면 다시 켜진다(위에서 받을 게 하나라도 있었을 때만 잰다).
+	if had:
+		scene.achieve_got = {}
+		assert(scene._achieve_claimable(), "받을 업적이 있는데 점이 안 켜진다")
+
 	print("DotCheck OK")
 	quit(0)
 
