@@ -10,7 +10,8 @@ func _init() -> void:
 	create_timer(20.0).timeout.connect(func() -> void:
 		push_error("안 끝났다")
 		quit(1))
-	# 시작 상한은 60 — 초반 브레이크가 여기 있다(1일차 폭주를 막는 자리).
+	# 시작 상한은 CAP_BASE(200) — 1구간 몹을 한 대에 눕히는 지점이라
+	# 그 위는 효과가 0 이다(2026-08-26 실측). 초반 브레이크가 여기 있다.
 	assert(StatDefs.train_cap(0) == StatDefs.CAP_BASE, "시작 상한이 바뀌었다")
 	# **한 층만 올라도 살 게 생겨야 한다.** 이게 안 되면 교착이 돌아온다.
 	var prev := 0

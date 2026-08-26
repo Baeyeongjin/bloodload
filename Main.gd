@@ -3540,14 +3540,22 @@ func _refresh_growth() -> void:
 		if not open:
 			continue
 		if stat_lv(key) >= _stat_cap(key):
-			# 스탯 고유 만렙은 영영 끝, 승급 상한은 미궁이 연다 — 문구가 길을 알려준다.
+			# 스탯 고유 만렙은 영영 끝, 승급 상한은 **미궁과 구간 둘 다** 연다 —
+			# 문구가 길을 알려주므로 **지금 이기고 있는 축**을 가리켜야 한다.
+			# 상한을 조이기 전(CAP_BASE 900)에는 초반에 이 문구가 안 뜨는
+			# 바람에 안 드러났는데, 미궁이 35구간에나 열리므로 1구간에서
+			# "미궁 20층"을 가리키면 **못 가는 곳을 가리키는 것**이었다.
 			var nf := StatDefs.next_cap_floor(dungeon_best)
-			if StatDefs.at_cap(key, stat_lv(key)) or nf <= 0:
+			var maze_wins := StatDefs.CAP_PER_FLOOR * maxi(0, dungeon_best) 					> int(StatDefs.CAP_PER_STAGE * float(maxi(0, best_stage - 1)))
+			if StatDefs.at_cap(key, stat_lv(key)):
 				row["btn"].text = "만렙"
 				row["btn"].icon = null
-			else:
+			elif maze_wins and nf > 0:
 				# 승급 배지(사장님 선택 A) — 잠긴 게 아니라 "열 수 있는 문"이라는 표시.
 				row["btn"].text = "미궁 %d층" % nf
+			else:
+				row["btn"].text = "다음 구간"
+				row["btn"].icon = null
 				Ui.cost_icon(row["btn"], "res://assets/ui/badge_promo.png")
 			row["btn"].disabled = true
 			continue

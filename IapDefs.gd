@@ -12,9 +12,13 @@ const FLASH_HOURS := 24
 const FLASH := [
 	{"id": "flash_25", "at": 25, "name": "동굴 개방 기념", "price": 1100,
 		"orig": 3300, "reward": {"gem": 300.0, "ticket_weapon": 5.0}},
-	{"id": "flash_50", "at": 50, "name": "성소 개방 기념", "price": 3300,
+	# 성소는 15구간으로 옮겼다(2026-08-26). 50구간에 남은 사건은 군림 I 이라
+	# 이름을 그리로 옮긴다 — 없는 사건을 기념하면 문구가 거짓말이 된다.
+	{"id": "flash_50", "at": 50, "name": "군림 개방 기념", "price": 3300,
 		"orig": 11000, "reward": {"gem": 600.0, "ticket_skill": 10.0}},
-	{"id": "flash_80", "at": 80, "name": "제단 개방 기념", "price": 5500,
+	# 제단도 40구간으로 옮겼다. 80구간에 남은 해금이 없어 100(유물 + 군림 II)
+	# 으로 민다 — "벽 직전에 상품을 둔다"(MONETIZATION 6-2)가 유지된다.
+	{"id": "flash_80", "at": 100, "name": "유물 개방 기념", "price": 5500,
 		"orig": 16500, "reward": {"gem": 900.0, "oath_card": 10.0}},
 	{"id": "flash_120", "at": 120, "name": "심연 돌파 기념", "price": 11000,
 		"orig": 33000, "reward": {"gem": 1500.0, "ticket_trinket": 15.0,
