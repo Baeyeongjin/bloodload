@@ -45,19 +45,32 @@ const NODES := [
 		"value": 0.10, "name": "재생 II"},
 	{"id": "life_6", "branch": "life", "tier": 6, "kind": "guard",
 		"value": 0.06, "name": "불사의 살갗"},
-	# ── 탐욕 (재화, 미궁 60층) ──────────────────────────────────────────────
-	{"id": "wealth_1", "branch": "wealth", "tier": 1, "kind": "critdmg",
-		"value": 0.10, "name": "잔혹 I"},
-	{"id": "wealth_2", "branch": "wealth", "tier": 2, "kind": "critdmg",
-		"value": 0.10, "name": "잔혹 II"},
-	{"id": "wealth_3", "branch": "wealth", "tier": 3, "kind": "critdmg",
-		"value": 0.10, "name": "잔혹 III"},
-	{"id": "wealth_4", "branch": "wealth", "tier": 4, "kind": "hours",
-		"value": 2.0, "name": "긴 잠 I"},
-	{"id": "wealth_5", "branch": "wealth", "tier": 5, "kind": "hours",
-		"value": 2.0, "name": "긴 잠 II"},
-	{"id": "wealth_6", "branch": "wealth", "tier": 6, "kind": "sweep",
+	# ── 탐욕 (재화) ────────────────────────────────────────────────────────
+	# **순서를 뒤집었다** (2026-08-26). 값은 하나도 안 바꿨다 — 어느 효과가 몇
+	# 티어에 앉느냐만 바꿨으므로 총액(222,930)도 완주 배수도 그대로다.
+	# 고친 것 둘:
+	#   1. 혈정 감식(소탕 +12%)이 **마지막 노드**였다. 줄기가 한 줄이라 마지막은
+	#      18번째 — 혈정을 더 벌게 해 주는 유일한 노드가 **혈정을 다 쓴 뒤에**
+	#      켜졌다. 이제 첫 노드다: 나머지 열일곱 노드의 값을 이 노드가 번다.
+	#   2. 긴 잠 I·II(방치 +4시간)는 **300구간을 넘으면 죽는다.**
+	#      _offline_cap_hours = min(16, 8 + 혈맥4 + 군림IV 4 + …) 인데 군림 IV 가
+	#      300구간에 열리므로 8+4+4 가 정확히 상한 16 이다(유물·혈세는 그 위로).
+	#      죽을 노드를 비싼 티어(1,050·1,890)에 두면 값만 받고 아무것도 안 준다 —
+	#      살아 있는 동안 값이 싼 2·3티어(324·585)로 내렸다.
+	#   3. 잔혹(치명 피해)은 상한이 없다(Balance.crit_mult 는 안 끊는다). 끝까지
+	#      값하는 유일한 갈래라 비싼 뒤 티어를 준다.
+	{"id": "wealth_1", "branch": "wealth", "tier": 1, "kind": "sweep",
 		"value": 0.12, "name": "혈정 감식"},
+	{"id": "wealth_2", "branch": "wealth", "tier": 2, "kind": "hours",
+		"value": 2.0, "name": "긴 잠 I"},
+	{"id": "wealth_3", "branch": "wealth", "tier": 3, "kind": "hours",
+		"value": 2.0, "name": "긴 잠 II"},
+	{"id": "wealth_4", "branch": "wealth", "tier": 4, "kind": "critdmg",
+		"value": 0.10, "name": "잔혹 I"},
+	{"id": "wealth_5", "branch": "wealth", "tier": 5, "kind": "critdmg",
+		"value": 0.10, "name": "잔혹 II"},
+	{"id": "wealth_6", "branch": "wealth", "tier": 6, "kind": "critdmg",
+		"value": 0.10, "name": "잔혹 III"},
 ]
 
 const BRANCHES := ["attack", "life", "wealth"]

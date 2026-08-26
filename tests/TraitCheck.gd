@@ -115,16 +115,26 @@ func _init() -> void:
 		"살육 I(만렙 +8%%)이 dps 에 안 보인다: x%.3f" % (dps1 / dps0))
 	# 체력·혈액 가지도 배선돼 있는가 — 표를 직접 심어 재확인(만렙으로).
 	scene.traits["life_1"] = TraitDefs.MAX_LV
-	scene.traits["wealth_1"] = TraitDefs.MAX_LV
+	scene.traits["wealth_4"] = TraitDefs.MAX_LV
 	assert(scene.max_hp() > hp0 * 1.095 and scene.max_hp() < hp0 * 1.105,
 		"굳은 피 I(+10%%)이 체력에 안 보인다")
 	# 갈증(혈액)은 없어졌다 — 탐욕 1~3 티어는 치명 피해로 옮겼다(2026-08-25).
 	assert(is_equal_approx(scene._trait_add("critdmg"), 0.10),
 		"잔혹 I(+10%%)이 치명 피해에 안 보인다: %f" % scene._trait_add("critdmg"))
-	# 방치 상한: 긴 잠 2개 = +4시간.
-	scene.traits["wealth_4"] = TraitDefs.MAX_LV
-	scene.traits["wealth_5"] = TraitDefs.MAX_LV
+	# 방치 상한: 긴 잠 2개 = +4시간. 2·3티어로 내려왔다(2026-08-26).
+	scene.traits["wealth_2"] = TraitDefs.MAX_LV
+	scene.traits["wealth_3"] = TraitDefs.MAX_LV
 	assert(is_equal_approx(scene._trait_add("hours"), 4.0), "긴 잠 합산이 4가 아니다")
+	# 소탕(혈정 감식)은 **첫 노드**다 — 혈정을 버는 노드가 혈정을 다 쓴 뒤에
+	# 열리면 안 된다. 줄기의 맨 앞인지 id 로 못 박는다.
+	assert(str(TraitDefs.order()[2]) == "wealth_1", "탐욕 첫 노드 자리가 바뀌었다")
+	assert(str(TraitDefs.node("wealth_1")["kind"]) == "sweep",
+		"혈정 감식이 탐욕 첫 노드가 아니다")
+	assert(str(TraitDefs.node(str(TraitDefs.order().back()))["kind"]) != "sweep",
+		"소탕이 다시 마지막 노드가 됐다")
+	scene.traits["wealth_1"] = TraitDefs.MAX_LV
+	assert(is_equal_approx(scene._trait_mult("sweep"), 1.12),
+		"혈정 감식(소탕 +12%%)이 안 붙는다: x%.3f" % scene._trait_mult("sweep"))
 
 	# ── 저장·복원이 **레벨**을 실어 나르는가 ────────────────────────────────
 	# 로드가 값을 true 로 뭉개면 level_of 가 그걸 만렙으로 읽는다 — 1레벨만 사고
