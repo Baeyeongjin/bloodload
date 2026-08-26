@@ -162,6 +162,9 @@ var _info_body: Control
 var _info_power: Label
 var _info_note: Label
 var _outfit_view: Control
+var _name_view: Control
+var _name_edit: LineEdit
+var _name_note: Label
 var _outfit_cells: Array[Dictionary] = []
 var _outfit_note: Label
 var best_stage := 1
@@ -320,6 +323,11 @@ var _hero_anim := 0.0
 var skin := "valentino_1"
 # 산 스킨들 (id -> true). 기본 의상은 늘 보유다 — 표에 안 적는다.
 var skins_owned := {}
+# 군주의 이름. **빈 문자열이 기본값이다** — 저장본에 "핏빛 군주"를 박아 두면
+# 나중에 기본값을 바꿔도 옛 저장본이 안 따라온다.
+var hero_name := ""
+const NAME_MAX := 8
+const NAME_DEFAULT := "핏빛 군주"
 var _motion := ""
 var _motion_hold := 0.0   # 이 시간이 남아 있는 동안은 idle 로 안 돌아간다
 var hero_hp := 100.0
@@ -892,6 +900,13 @@ func _ready() -> void:
 		# [개발 도구] --tab=gear 처럼 특정 창을 띄운 채로 캡처하려고 둔다.
 		if arg.begins_with("--tab="):
 			_select_tab(arg.trim_prefix("--tab="))
+		# [개발 도구] --name : 이름 변경 판을 연 채로 캡처한다.
+		if arg == "--name":
+			hero_name = "어둠의공작"
+			_show_info()
+			_name_edit.text = _hero_name()
+			_name_note.text = "%d글자까지" % NAME_MAX
+			_name_view.visible = true
 		# [개발 도구] --titles : 도감 탭의 칭호 목록을 연 채로 캡처한다.
 		# [개발 도구] --codex=gear|skill|act : 도감 소탭을 연 채로 캡처한다.
 		if arg.begins_with("--codex="):
@@ -1886,6 +1901,16 @@ func _build_portrait() -> void:
 	_lbl_power.size = Vector2(96.0, 24.0)
 	_lbl_power.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_lbl_power.clip_text = true
+	# 이름판 — 레퍼런스가 전투력 아래에 두는 그 자리다(_build_topbar 주석의
+	# "그 아래 칭호·닉네임 판"). plate_name 과 Ui.name_plate 는 진작 만들어
+	# 두고 쓰는 데가 없었다. 초상화 묶음 안이라 레이드에서 같이 숨는다.
+	_hud_root.add_child(Ui.name_plate(Vector2(pw_x, 26.0), Vector2(124.0, 22.0)))
+	_lbl_name = _mk_label(Vector2(pw_x, 26.0), Type.SIZE_SMALL,
+		Color(0.94, 0.90, 0.96))
+	_lbl_name.size = Vector2(124.0, 22.0)
+	_lbl_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_lbl_name.clip_text = true
 	# 초상·전투력을 누르면 군주의 기록(참고작 캐릭터 정보) — 투명 판정 버튼.
 	var info_btn := Button.new()
 	info_btn.flat = true
@@ -1894,6 +1919,20 @@ func _build_portrait() -> void:
 	info_btn.focus_mode = Control.FOCUS_NONE
 	info_btn.pressed.connect(_show_info)
 	_hud_root.add_child(info_btn)
+
+
+# 이름을 확정한다. 못 쓰는 이름이면 **판을 안 닫고** 이유를 적는다 — 닫고 나서
+# 안 바뀐 걸 발견하면 무엇이 잘못됐는지 알 길이 없다.
+func _name_apply() -> void:
+	var want := _clean_name(_name_edit.text)
+	if want == "":
+		_name_note.text = "이름을 적어 주세요"
+		return
+	hero_name = want
+	_name_edit.text = want          # 다듬은 결과를 보여 준다
+	_name_view.visible = false
+	_refresh_hud()
+	_save_game()
 
 
 # 군주의 기록 (참고작 캐릭터 정보 판) — 전투력 + 능력치 + 배수의 출처 + 기록.
@@ -2055,8 +2094,7 @@ func _build_dialogs() -> void:
 		Color(1.0, 0.88, 0.55), 528.0, 32.0)
 	ititle.text = "군주의 기록"
 	ititle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 버튼 셋 — 이름·외형은 **자리만** 먼저 잡는다(사장님: 나중 추가 대비).
-	# 칭호 설정은 이미 있는 도감 칭호 판으로 이어진다.
+	# 버튼 셋 — 이름·외형·칭호. 셋 다 실제로 연다.
 	var bw2 := (528.0 - 36.0 * 2.0 - 12.0 * 2.0) / 3.0
 	for b2 in [["이름 변경", 0], ["외형 변경", 1], ["칭호 설정", 2]]:
 		var idx: int = b2[1]
@@ -2074,11 +2112,13 @@ func _build_dialogs() -> void:
 				_refresh_outfit()
 				_outfit_view.visible = true
 			else:
-				_info_note.text = "다음 업데이트에서 열린다"
-				_info_note.modulate.a = 1.0
-				var tw2 := create_tween()
-				tw2.tween_property(_info_note, "modulate:a", 0.0, 1.6) \
-					.set_delay(0.8))
+				# 이름 변경 — 지금 이름을 넣어 둔다. 빈 칸에서 시작하면
+				# 무엇을 바꾸는지가 안 보인다.
+				_name_edit.text = _hero_name()
+				_name_note.text = "%d글자까지" % NAME_MAX
+				_name_view.visible = true
+				_name_edit.grab_focus()
+				_name_edit.select_all())
 		_info_view.add_child(bb)
 	_info_power = _dlg_label(_info_view, Vector2(24.0, 206.0), Type.SIZE_BODY,
 		Color(1.0, 1.0, 1.0), 528.0, 34.0)
@@ -2096,6 +2136,36 @@ func _build_dialogs() -> void:
 		Color(0.68, 0.66, 0.72), 528.0, 20.0)
 	ihint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ihint.text = "빈 곳을 눌러 닫기"
+
+	# ── 이름 변경 판 ──────────────────────────────────────────────────────
+	# 군주의 기록(62) 위에 뜬다. 이 게임의 **첫 글자 입력**이라 LineEdit 은
+	# 여기 하나뿐이다 — 검사는 _clean_name 한 곳이 다 한다.
+	_name_view = _overlay(64)
+	var ntap := Button.new()
+	ntap.flat = true
+	ntap.size = Vector2(Grid.BG)
+	ntap.focus_mode = Control.FOCUS_NONE
+	ntap.pressed.connect(func() -> void: _name_view.visible = false)
+	_name_view.add_child(ntap)
+	_name_view.add_child(Ui.panel(Vector2(64.0, 300.0), Vector2(448.0, 260.0)))
+	var ntitle := _dlg_label(_name_view, Vector2(64.0, 320.0), Type.SIZE_BODY,
+		Color(1.0, 0.88, 0.55), 448.0, 32.0)
+	ntitle.text = "이름 변경"
+	_name_edit = LineEdit.new()
+	_name_edit.position = Vector2(112.0, 376.0)
+	_name_edit.size = Vector2(352.0, 44.0)
+	_name_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 여기서 막아도 붙여넣기·IME 는 새어 들어온다 — 진짜 검사는 확정할 때 한다.
+	_name_edit.max_length = NAME_MAX
+	_name_edit.add_theme_font_size_override("font_size", Type.SIZE_BODY)
+	_name_edit.text_submitted.connect(func(_t: String) -> void: _name_apply())
+	_name_view.add_child(_name_edit)
+	_name_note = _dlg_label(_name_view, Vector2(64.0, 428.0), Type.SIZE_SMALL,
+		Color(0.90, 0.66, 0.62), 448.0, 20.0)
+	var nok := Ui.button("확인", Vector2(176.0, 470.0), Vector2(224.0, 44.0),
+		Type.SIZE_MID)
+	nok.pressed.connect(_name_apply)
+	_name_view.add_child(nok)
 
 	# ── 외형 변경 판 — 산 스킨을 그 자리에서 갈아입는다 ───────────────────
 	# 상점 의상실은 구매 전용이다(사장님 2026-08-24). 군주의 기록(62) 위에
@@ -2178,6 +2248,25 @@ func _overlay(z: int) -> Control:
 	_hud_root.add_child(c)
 	Ui.pop_in(c)   # 공장에서 건다 — 늦게 만드는 판도 빠지지 않는다
 	return c
+
+
+# 사람이 친 글자다 — **믿지 않는다.** 라벨이 Label(RichTextLabel 이 아니다)이라
+# 태그 주입은 없지만, 줄바꿈 하나면 판이 밀리고 공백만 친 이름은 화면에서
+# 사라진 것처럼 보인다. 제어문자를 걷고 앞뒤 공백을 자르고 길이를 끊는다.
+static func _clean_name(raw: String) -> String:
+	var out := ""
+	for ch in raw:
+		var c := ch.unicode_at(0)
+		if c < 32 or c == 127:
+			continue
+		out += ch
+	# 자르고 나서 한 번 더 다듬는다 — 여덟 글자째가 공백이면 꼬리가 남는다.
+	return out.strip_edges().substr(0, NAME_MAX).strip_edges()
+
+
+# 화면에 쓸 이름. 빈 값이면 기본값 — 판이 비어 있으면 고장으로 읽힌다.
+func _hero_name() -> String:
+	return hero_name if hero_name != "" else NAME_DEFAULT
 
 
 func _dlg_label(parent: Control, pos: Vector2, size: int, col: Color,
@@ -6100,6 +6189,7 @@ func _tick_income() -> void:
 # ── 칭호 목록 (도감 탭 오버레이) ───────────────────────────────────────────
 var title_worn := ""        # 장착 칭호 id — 겉멋이다. 효과는 딴 것 전부에서 온다
 var _lbl_worn: Label
+var _lbl_name: Label
 var _title_ms: Label
 var _title_names: Array[Label] = []
 var _title_conds: Array[Label] = []
@@ -14851,6 +14941,8 @@ func _refresh_hud() -> void:
 	_notify_power(power)
 	# **HP 숫자는 안 띄운다.** 영웅 발밑 체력 바로 이미 보이고, 전투 화면 위에
 	# 숫자가 하나 더 떠 있으면 그만큼 화면이 가려진다. 쓰러졌을 때만 남는다.
+	if _lbl_name != null:
+		_lbl_name.text = _hero_name()
 	_lbl_life.visible = _hero_dead
 	if _hero_dead:
 		_lbl_life.text = "부활 %.1f초" % maxf(0.0, _revive_t)
@@ -14943,6 +15035,7 @@ func _save_game() -> void:
 	cfg.set_value("run", "traits", traits)
 	cfg.set_value("run", "skin", skin)
 	cfg.set_value("run", "skins", skins_owned)
+	cfg.set_value("run", "name", hero_name)
 	cfg.set_value("run", "titles", titles_got)
 	cfg.set_value("run", "titles_new", titles_new)
 	cfg.set_value("run", "title_worn", title_worn)
@@ -15087,6 +15180,8 @@ func _load_game() -> void:
 			titles_got[str(id)] = true
 	titles_new = cfg.get_value("run", "titles_new", {})
 	skins_owned = cfg.get_value("run", "skins", {})
+	# 저장본도 사람이 고칠 수 있는 파일이다 — 읽을 때도 같은 자로 잰다.
+	hero_name = _clean_name(str(cfg.get_value("run", "name", "")))
 	skin = str(cfg.get_value("run", "skin", "valentino_1"))
 	if SkinDefs.of(skin).is_empty():
 		skin = "valentino_1"      # 표에서 빠진 스킨을 입고 있으면 평상복으로
