@@ -397,6 +397,10 @@ var whet := 0.0              # 연마석 — 장비 레벨업. 제련의 성소�
 var pet_bank := {}           # id -> 쌓인 양
 var pet_worn := ""           # 지금 데리고 다니는 하나
 var pet_at := 0.0
+# 원정 — 펫id -> [완료 유닉스 시각, 파 올 조각 키]. 조각 키를 **보낼 때 박아
+# 둔다**: 나간 사이에 그 펫이 승급하면 파 올 물건이 바뀌는데, 돌아올 때 다시
+# 계산하면 보낼 때 약속한 것과 달라진다.
+var pet_trip := {}
 var _codex_view: Control
 var _codex_gain: Label
 var _codex_roots := {}
@@ -907,7 +911,25 @@ func _ready() -> void:
 				_pet_roll_many(n)
 			else:
 				_pet_roll()
-		# [개발 도구] --petmode=own|gear|feed|roll|rollgear : 펫 소탭 캡처.
+		# [개발 도구] --trip : 펫 열둘을 쥐여 주고 둘을 내보낸 채로 원정 판을 연다.
+		# 원정은 시간이 지나야 그림이 생기므로 하나는 도착시켜 둔다 — 안 그러면
+		# 캡처가 늘 "보내기" 한 가지 상태밖에 못 잡는다.
+		if arg == "--trip":
+			best_stage = maxi(best_stage, PetDefs.TRIP_OPEN)
+			tickets["pet"] = 99
+			tickets["petgear"] = 99
+			for _i in 12:
+				_pet_roll(false)
+			var ids: Array = pets_got.keys()
+			if ids.size() >= 2:
+				_trip_send(str(ids[0]))
+				_trip_send(str(ids[1]))
+				if pet_trip.has(str(ids[0])):
+					pet_trip[str(ids[0])][0] = 0.0
+				_trip_sel = str(ids[1])
+			_select_tab("pet")
+			_pet_set_mode("trip")
+		# [개발 도구] --petmode=own|gear|feed|trip|roll|rollgear : 펫 소탭 캡처.
 		if arg.begins_with("--petmode="):
 			_select_tab("pet")
 			_pet_set_mode(arg.trim_prefix("--petmode="))
@@ -9574,6 +9596,8 @@ func _tab_todo(tab: String) -> bool:
 				if plv < PetDefs.lv_cap(_pet_star(str(id))) \
 						and feed >= PetDefs.feed_cost(plv):
 					return true
+				if is_equal_approx(_trip_left(str(id)), 0.0):
+					return true
 				if PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)), pet_h,
 						plv, _pet_star(str(id)),
 						_pet_gear_value(str(id), "gather")) >= 1.0:
@@ -14924,6 +14948,7 @@ func _save_game() -> void:
 	cfg.set_value("pet", "bank", pet_bank)
 	cfg.set_value("pet", "worn", pet_worn)
 	cfg.set_value("pet", "at", pet_at)
+	cfg.set_value("pet", "trip", pet_trip)
 	cfg.set_value("codex", "gear_seen", gear_seen)
 	cfg.set_value("attend", "got", attend_got)
 	cfg.set_value("attend", "date", attend_date)
@@ -15133,6 +15158,12 @@ func _load_game() -> void:
 	pet_gear_got = cfg.get_value("pet", "gear", {})
 	pet_gear_worn = cfg.get_value("pet", "gearworn", {})
 	feed = maxf(0.0, float(cfg.get_value("pet", "feed", 0.0)))
+	# **읽기를 초기화보다 먼저 한다.** pet_bank 를 아래 루프 뒤에 읽던 탓에
+	# 초기화가 도로 덮였다 — 사라진 펫의 곳간이 살아남던 구멍이다.
+	pet_bank = cfg.get_value("pet", "bank", {})
+	pet_worn = str(cfg.get_value("pet", "worn", ""))
+	pet_at = float(cfg.get_value("pet", "at", 0.0))
+	pet_trip = cfg.get_value("pet", "trip", {})
 	# v1 이전 — 몹 재활용 6종의 저장본은 새 로스터와 id 가 안 맞는다. 출시 전이라
 	# 통째로 초기화한다(펫에 쓴 재화가 없던 시절이라 환급할 것도 없다).
 	for k in pets_got.keys():
@@ -15142,10 +15173,12 @@ func _load_game() -> void:
 			pet_bank = {}
 			pet_worn = ""
 			pet_gear_worn = {}
+			pet_trip = {}
 			break
-	pet_bank = cfg.get_value("pet", "bank", {})
-	pet_worn = str(cfg.get_value("pet", "worn", ""))
-	pet_at = float(cfg.get_value("pet", "at", 0.0))
+	# 표에서 사라진 펫의 원정은 버린다 — 안 그러면 없는 id 의 유령 조각이 쌓인다.
+	for k in pet_trip.keys():
+		if not pets_got.has(str(k)):
+			pet_trip.erase(k)
 	gear_seen = cfg.get_value("codex", "gear_seen", {})
 	attend_got = maxi(0, int(cfg.get_value("attend", "got", 0)))
 	attend_date = str(cfg.get_value("attend", "date", ""))
@@ -15596,7 +15629,7 @@ func _codex_set_mode(mode: String) -> void:
 # 전용이다: 둥지 헤더(head_pet) + 둥지 세트(nest_*, 2026-08-18 아트 배치).
 # 연출(소환 애니·강화 이펙트)은 5단계다. 여기는 다섯 판이 실제로 도는 것까지.
 const PET_TABS := [["own", "보유"], ["gear", "장비"], ["feed", "강화"],
-	["roll", "펫 소환"], ["rollgear", "장비 소환"]]
+	["trip", "원정"], ["roll", "펫 소환"], ["rollgear", "장비 소환"]]
 const PET_CELL := 96.0
 const PET_GAP := 6.0
 const PET_GRID_Y := 284.0
@@ -15609,6 +15642,9 @@ var _pet_roots := {}
 var _pet_tab_btns := {}
 var _pet_cells: Array[Dictionary] = []
 var _petgear_cells: Array[Dictionary] = []
+var _trip_cells: Array[Dictionary] = []
+var _trip_ui := {}
+var _trip_sel := ""
 var _pet_detail := {}
 var _petgear_detail := {}
 var _pet_feed_ui := {}
@@ -15696,7 +15732,9 @@ func _build_pet(root: Control) -> void:
 	bub.text = "먹이면 자라고, 데리고 다니면 힘이 된다"
 	_shop_outline(bub, 4)
 	# 소탭 다섯 — 자리표시(가죽책). 전용 세트는 아트 배치에서.
-	var tw := (CONTENT_W - 8.0 * 4.0) / 5.0
+	# 칸 수를 PET_TABS 에서 센다 — 5 를 박아 두면 소탭을 늘릴 때 라벨이 잘린다.
+	var tn := float(PET_TABS.size())
+	var tw := (CONTENT_W - 8.0 * (tn - 1.0)) / tn
 	for i in PET_TABS.size():
 		var mode := str(PET_TABS[i][0])
 		var tp := Vector2(PAD + float(i) * (tw + 8.0), 232.0)
@@ -15723,6 +15761,7 @@ func _build_pet(root: Control) -> void:
 	_pet_build_own(_pet_roots["own"])
 	_pet_build_gear(_pet_roots["gear"])
 	_pet_build_feed(_pet_roots["feed"])
+	_pet_build_trip(_pet_roots["trip"])
 	_pet_build_roll(_pet_roots["roll"], "pet")
 	_pet_build_roll(_pet_roots["rollgear"], "petgear")
 	_pet_reveal = Control.new()
@@ -15854,6 +15893,90 @@ func _pet_build_own(root: Control) -> void:
 		PET_DETAIL_Y + 114.0), Vector2(120.0, 36.0), "모두 받기")
 	take_all["btn"].pressed.connect(_pet_collect_all)
 	_pet_detail["all"] = take_all
+
+
+# 원정 판 — 보유 판과 같은 격자를 쓴다. 칸 표식이 남은 시간이고, 아래 상세가
+# 무엇을 파 오는지와 보내기/받기를 맡는다.
+func _pet_build_trip(root: Control) -> void:
+	_pet_build_grid(root, PetDefs.PETS.size(), _trip_cells,
+		func(i: int) -> void:
+			_trip_sel = str(PetDefs.PETS[i]["id"])
+			_refresh_pet(),
+		_pet_trip_art)
+	root.add_child(Ui.set_card(NEST, Vector2(PAD, PET_DETAIL_Y),
+		Vector2(CONTENT_W, 156.0)))
+	_trip_ui["name"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 14.0),
+		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W - 240.0, 22.0)
+	_trip_ui["prize"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 44.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), CONTENT_W - 240.0, 16.0)
+	_trip_ui["state"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 68.0),
+		Type.SIZE_SMALL, Color(0.78, 0.74, 0.72), CONTENT_W - 240.0, 16.0)
+	_trip_ui["slots"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 92.0),
+		Type.SIZE_SMALL, Color(0.72, 0.70, 0.74), CONTENT_W - 240.0, 16.0)
+	_trip_ui["hint"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 114.0),
+		Type.SIZE_SMALL, Color(0.66, 0.64, 0.68), CONTENT_W - 60.0, 16.0)
+	var go := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 30.0),
+		Vector2(120.0, 40.0), "보내기")
+	go["btn"].pressed.connect(func() -> void: _trip_send(_trip_sel))
+	_trip_ui["go"] = go
+	var take := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 80.0),
+		Vector2(120.0, 40.0), "받기")
+	take["btn"].pressed.connect(func() -> void: _trip_claim(_trip_sel))
+	_trip_ui["take"] = take
+
+
+func _pet_trip_art(i: int) -> Control:
+	return _pet_art(i)
+
+
+func _refresh_pet_trip() -> void:
+	if _trip_ui.is_empty():
+		return
+	if _trip_sel == "" or not pets_got.has(_trip_sel):
+		_trip_sel = str(pets_got.keys()[0]) if not pets_got.is_empty() \
+			else str(PetDefs.PETS[0]["id"])
+	for i in _trip_cells.size():
+		var id := str(PetDefs.PETS[i]["id"])
+		var got := pets_got.has(id)
+		if _trip_cells[i]["art"] != null:
+			_trip_cells[i]["art"].modulate = Color(1, 1, 1, 1) if got \
+				else Color(0.10, 0.09, 0.11, 0.9)
+		var left := _trip_left(id)
+		_trip_cells[i]["mark"].visible = left >= 0.0
+		_trip_cells[i]["mark"].text = _trip_tag(left)
+		_trip_cells[i]["mark"].add_theme_color_override("font_color",
+			Color(0.55, 0.95, 0.62) if left <= 0.0 else Color(0.88, 0.82, 0.60))
+		# 못 보내는 칸(5성인데 장비가 없거나 장비도 5성)은 별 자리에 이유를 쓴다.
+		_trip_cells[i]["star"].text = "" if not got \
+			else ("" if left >= 0.0 or not _trip_prize(id).is_empty() else "보낼 곳 없음")
+	var sel := _trip_sel
+	var p := PetDefs.of(sel)
+	var left_sel := _trip_left(sel)
+	var prize := _trip_prize(sel)
+	_trip_ui["name"].text = str(p.get("name", sel))
+	if not pets_got.has(sel):
+		_trip_ui["prize"].text = "아직 못 만난 동행이다"
+		_trip_ui["state"].text = ""
+	elif left_sel >= 0.0:
+		var row: Array = pet_trip.get(sel, [])
+		var gid := str(row[1]).split(":")[1]
+		var d: Dictionary = PetDefs.of(gid) if str(row[1]).begins_with("pet:") \
+			else PetDefs.gear_of(gid)
+		_trip_ui["prize"].text = "%s 조각 1개를 파는 중" % str(d.get("name", gid))
+		_trip_ui["state"].text = "돌아오기까지 %s" % _trip_text(left_sel)
+	elif prize.is_empty():
+		_trip_ui["prize"].text = "보낼 곳이 없다"
+		_trip_ui["state"].text = "5성이 된 동행은 제 장비의 조각을 판다 — 장비를 채워 주면 다시 나간다"
+	else:
+		_trip_ui["prize"].text = "%s 조각 1개" % str(prize["name"])
+		_trip_ui["state"].text = "%.0f시간 걸린다" \
+			% PetDefs.trip_hours(str(prize["rarity"]))
+	var slots := PetDefs.trip_slots(pets_got.size())
+	_trip_ui["slots"].text = "파견 %d / %d칸" % [pet_trip.size(), slots]
+	_trip_ui["hint"].text = "원정 중인 동행은 둥지에서 안 긁는다"
+	var can_go := pets_got.has(sel) and left_sel < 0.0 and not prize.is_empty() 		and pet_trip.size() < slots and best_stage >= PetDefs.TRIP_OPEN
+	_pet_btn_enable(_trip_ui["go"], can_go)
+	_pet_btn_enable(_trip_ui["take"], is_equal_approx(left_sel, 0.0))
 
 
 func _pet_build_gear(root: Control) -> void:
@@ -16011,6 +16134,7 @@ func _refresh_pet() -> void:
 	if _pet_roots.is_empty():
 		return
 	_pet_tick()
+	_refresh_pet_trip()
 	if _pet_sel == "":
 		_pet_sel = pet_worn if pet_worn != "" else str(PetDefs.PETS[0]["id"])
 	if _petgear_sel == "":
@@ -16242,6 +16366,9 @@ func _pet_tick() -> void:
 	# **가진 펫 전부가 모은다.** 장착은 버프를 고르는 것이지 일을 시키는 게
 	# 아니다 — 하나만 모으면 나머지를 데려올 이유가 없어진다.
 	for id in pets_got:
+		# 원정 나간 펫은 둥지에서 못 긁는다 — 내보내는 값이 그 시간이다.
+		if pet_trip.has(id):
+			continue
 		pet_bank[id] = PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)),
 			hours, _pet_lv(str(id)), _pet_star(str(id)),
 			_pet_gear_value(str(id), "gather"))
@@ -16406,6 +16533,92 @@ func _petgear_roll(show := true) -> Dictionary:
 
 
 # 먹이 강화 — 레벨 하나. 상한은 승급(별)이 연다.
+# 조각 하나를 넣고 결과 문구를 돌려준다. 별이 차면 승급까지 한다.
+# 펫 소환·장비 소환·원정 셋이 같은 문법이라 한 곳에 둔다 — 세 벌로 두면
+# 승급 규칙을 고칠 때 한 곳을 빠뜨린다.
+func _shard_add(key: String) -> String:
+	var id := key.split(":")[1]
+	var box: Dictionary = pets_got if key.begins_with("pet:") else pet_gear_got
+	var star := clampi(int(box.get(id, 0)), 0, PetDefs.MAX_STAR)
+	if star >= PetDefs.MAX_STAR:
+		return "이미 끝까지 컸다"
+	var sh := int(gacha_shards.get(key, 0)) + 1
+	if sh >= PetDefs.SHARDS_PER_STAR:
+		box[id] = star + 1
+		sh -= PetDefs.SHARDS_PER_STAR
+		gacha_shards[key] = sh
+		return "%d성이 되었다" % (star + 1)
+	gacha_shards[key] = sh
+	return "조각 %d / %d" % [sh, PetDefs.SHARDS_PER_STAR]
+
+
+# 이 펫이 파 올 조각. 5성이 되면 **제 장비**를 판다 — 5성 뒤에도 내보낼 데가
+# 있어야 다 키운 펫이 놀지 않는다. 못 보내면 빈 딕셔너리.
+func _trip_prize(id: String) -> Dictionary:
+	if not pets_got.has(id):
+		return {}
+	if _pet_star(id) < PetDefs.MAX_STAR:
+		var p := PetDefs.of(id)
+		return {"key": "pet:" + id, "name": str(p.get("name", id)),
+			"rarity": str(p.get("rarity", "common"))}
+	var gid := str(pet_gear_worn.get(id, ""))
+	if gid == "" or int(pet_gear_got.get(gid, 0)) >= PetDefs.MAX_STAR:
+		return {}
+	var g := PetDefs.gear_of(gid)
+	return {"key": "petgear:" + gid, "name": str(g.get("name", gid)),
+		"rarity": str(g.get("rarity", "common"))}
+
+
+# 남은 초. 안 나가 있으면 -1.
+func _trip_left(id: String) -> float:
+	var row: Array = pet_trip.get(id, [])
+	if row.size() < 2:
+		return -1.0
+	return maxf(0.0, float(row[0]) - Time.get_unix_time_from_system())
+
+
+# 칸 표식용 — 96px 칸에 "15시간 59분"은 안 들어간다. 정확한 값은 상세가 맡는다.
+func _trip_tag(sec: float) -> String:
+	if sec <= 0.0:
+		return "도착"
+	return "%d시간" % int(ceil(sec / 3600.0)) if sec >= 3600.0 		else "%d분" % maxi(1, int(ceil(sec / 60.0)))
+
+
+func _trip_text(sec: float) -> String:
+	if sec <= 0.0:
+		return "도착"
+	if sec < 3600.0:
+		return "%d분" % maxi(1, int(ceil(sec / 60.0)))
+	return "%d시간 %d분" % [int(sec / 3600.0), int(fmod(sec, 3600.0) / 60.0)]
+
+
+func _trip_send(id: String) -> void:
+	var prize := _trip_prize(id)
+	if prize.is_empty() or pet_trip.has(id) or best_stage < PetDefs.TRIP_OPEN 			or pet_trip.size() >= PetDefs.trip_slots(pets_got.size()):
+		return
+	pet_trip[id] = [Time.get_unix_time_from_system()
+		+ PetDefs.trip_hours(str(prize["rarity"])) * 3600.0, str(prize["key"])]
+	_save_game()
+	_refresh_pet()
+
+
+func _trip_claim(id: String) -> void:
+	var row: Array = pet_trip.get(id, [])
+	if row.size() < 2 or _trip_left(id) > 0.0:
+		return
+	pet_trip.erase(id)
+	var key := str(row[1])
+	var sub := _shard_add(key)
+	var gid := key.split(":")[1]
+	var d: Dictionary = PetDefs.of(gid) if key.begins_with("pet:") \
+		else PetDefs.gear_of(gid)
+	_show_reward("원정에서 돌아왔다",
+		[{"icon": "res://assets/ui/quest_summon.png",
+		"label": "%s 조각 +1" % str(d.get("name", gid)), "sub": sub}])
+	_save_game()
+	_refresh_pet()
+
+
 func _pet_feed(id: String) -> bool:
 	var star := _pet_star(id)
 	if star <= 0:

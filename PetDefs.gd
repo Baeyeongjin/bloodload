@@ -27,6 +27,30 @@ const FEED_BASE := 40.0
 const FEED_EXP := 1.18
 
 
+# ── 원정 ────────────────────────────────────────────────────────────────
+# 펫을 내보내 **조각**을 받아 온다. 재화가 아니라 조각인 이유: 재화는 던전 넷과
+# 둥지가 이미 다 나눠 갖고 있어서 뭘 줘도 중복이고, 조각만 유일하게 소환 중복
+# 에서만 나온다. 특정 전설을 5성으로 올리려면 같은 펫 17장이 필요한데 확률이
+# 0.18% 라 기대 9,434연 — 승급 축이 사실상 잠겨 있었다. 원정이 그 자물쇠다.
+#
+# 시간은 **나올 조각의 등급**이 정한다(보낸 펫이 아니다). 5성 펫은 제가 낀
+# 장비의 조각을 파므로, 커먼 펫을 4시간에 보내 전설 장비 조각을 캐는 구멍이
+# 여기서 막힌다. 눈금은 기존 상수에서 빌린다 — 6=CAP_HOURS, 8=방치 기본,
+# 16=IDLE_CAP_MAX. 새 시계를 하나 더 배우게 하지 않는다.
+const TRIP_OPEN := 30
+const TRIP_HOURS := {"common": 4.0, "uncommon": 6.0, "rare": 8.0,
+	"epic": 12.0, "legend": 16.0}
+
+
+static func trip_hours(rarity: String) -> float:
+	return float(TRIP_HOURS.get(rarity, 4.0))
+
+
+# 동시 파견 칸 — 보유 5종 2칸, 13종 3칸, 21종 4칸. 표도 저장키도 필요 없다.
+static func trip_slots(owned: int) -> int:
+	return clampi(2 + (owned - 5) / 8, 2, 4)
+
+
 static func lv_cap(star: int) -> int:
 	return 10 * clampi(star, 1, MAX_STAR)
 
