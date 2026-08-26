@@ -67,7 +67,7 @@ func _init() -> void:
 	assert(is_equal_approx(scene._c_time_limit(), EventDefs.TIME_LIMIT))
 
 	# 누적 — 피해가 그 주 기록에 쌓인다.
-	var snap: float = scene._boss_dps_snap
+	var snap: float = scene.boss_dps
 	assert(snap > 0.0, "화력 스냅이 0이다")
 	var need0 := EventDefs.milestone_damage(0, snap)
 	scene.on_foe_hit(null, need0 * 0.5)

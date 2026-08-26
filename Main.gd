@@ -957,14 +957,14 @@ func _ready() -> void:
 			boss_tries = EventDefs.TRIES_PER_DAY
 			_select_tab("raid")
 			_raid_set_mode("boss")
-			_boss_dps_snap = dps()
-			boss_dmg = _boss_dps_snap * 120.0
+			boss_dps = dps()
+			boss_dmg = boss_dps * 120.0
 			_refresh_dungeon()
 		elif arg == "--boss" or arg == "--boss=in":
 			_select_tab("raid")
 			_raid_set_mode("boss")
-			_boss_dps_snap = dps()
-			boss_dmg = _boss_dps_snap * 120.0
+			boss_dps = dps()
+			boss_dmg = boss_dps * 120.0
 			if arg.ends_with("in"):
 				_boss_enter()
 			_refresh_dungeon()
@@ -7419,11 +7419,8 @@ func _refresh_boss() -> void:
 		_boss_btn_lbl.text = "도전" if boss_tries > 0 else "내일"
 		_boss_btn.disabled = boss_tries <= 0 or dungeon_on or raid_on != ""
 	_gate_btn_dim(_boss_btn_tex, _boss_btn_lbl, _boss_btn.disabled)
-	# 이정표 기준은 **도전 시점의 화력**이다. 밖에서는 지금 화력으로 미리 보여 준다 —
-	# 안 그러면 도전 전에는 칸이 텅 비어서 얼마나 남았는지 감이 안 온다.
-	var base := _boss_dps_snap if raid_on == "boss" else dps()
 	for i in EventDefs.MILESTONES.size():
-		var need := EventDefs.milestone_damage(i, base, boss_tier)
+		var need := _boss_need(i)
 		var row: Dictionary = _boss_rows[i]
 		row["prog"].text = "%s / %s" % [_n(minf(boss_dmg, need)), _n(need)]
 		row["fill"].size.x = BOSS_BAR_W * clampf(boss_dmg / maxf(1.0, need), 0.0, 1.0)
@@ -9549,7 +9546,7 @@ func _tab_todo(tab: String) -> bool:
 			# 켜져 있으면 잔소리가 되고, 늘 켜진 점은 없는 점과 같다).
 			for i in EventDefs.MILESTONES.size():
 				if not boss_got.has(i) \
-						and boss_dmg >= EventDefs.milestone_damage(i, _boss_dps_snap, boss_tier):
+						and boss_dmg >= _boss_need(i):
 					return true
 			# 시련 — 열린 단계가 남아 있으면 켠다. 격파하면 꺼진다(미궁이 다시
 			# 열 때까지) — "받을 보상이 존재하면 알림"(사장님 2026-08-18).
@@ -9561,12 +9558,20 @@ func _tab_todo(tab: String) -> bool:
 			if int(tickets.get("pet", 0)) > 0 \
 					or int(tickets.get("petgear", 0)) > 0:
 				return true
+			# pet_bank 는 **펫 탭을 열 때만** 갱신된다(_pet_tick 의 호출처가 셋뿐이고
+			# 전부 펫 화면이다). 그래서 한 번 걷고 나면 저장된 값이 0 에 머물러
+			# 점이 다시는 안 켜졌다. accrue 는 순수 함수라 여기서는 값을 쓰지 않고
+			# 지금 쌓였을 양만 재 본다.
+			var pet_h := 0.0 if pet_at <= 0.0 \
+				else maxf(0.0, (Time.get_unix_time_from_system() - pet_at) / 3600.0)
 			for id in pets_got:
 				var plv := _pet_lv(str(id))
 				if plv < PetDefs.lv_cap(_pet_star(str(id))) \
 						and feed >= PetDefs.feed_cost(plv):
 					return true
-				if float(pet_bank.get(id, 0.0)) >= 1.0:
+				if PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)), pet_h,
+						plv, _pet_star(str(id)),
+						_pet_gear_value(str(id), "gather")) >= 1.0:
 					return true
 		"shop":
 			# 계약의 서 — 받을 칸이 남아 있다.
@@ -11690,7 +11695,13 @@ var boss_tries := 0        # 오늘 남은 도전(날마다 리셋)
 var boss_dmg := 0.0        # 이번 주 누적 피해
 var boss_got := {}         # 받은 마일스톤 (i -> true)
 var boss_date := ""
-var _boss_dps_snap := 0.0  # 도전 시작 시 화력 — 이정표 기준을 판마다 안 흔들리게
+# 이번 누적을 쌓을 때 쓴 화력의 **최고치**. 이정표 요구치의 분모다.
+# 저장한다 — 안 하면 재시작 때 0 이 되고, milestone_damage 의 maxf(1.0, dps)
+# 때문에 요구치가 30 까지 내려앉아 알림점이 영영 켜져 있었다.
+# 내려가지 않는 이유는 회귀다: _prestige_do 가 lv 를 비우면 화력이 바닥나는데
+# 누적 피해는 그대로라, 분모가 같이 내려가면 이정표 넷이 통째로 공짜가 된다.
+# 누적(boss_dmg)이 0 이 되는 자리(주 바뀜·단계 상승)에서 같이 0 이 된다.
+var boss_dps := 0.0
 # 주간 보스 단계. 이정표 넷을 다 받으면 오르고 누적이 0 에서 다시 시작한다 —
 # 주가 바뀌어도 남는다(재화 던전의 도전 단계와 같은 사다리다).
 var boss_tier := 1
@@ -11715,11 +11726,20 @@ func _boss_roll() -> void:
 	if boss_week != quest_week:
 		boss_week = quest_week
 		boss_dmg = 0.0
+		boss_dps = 0.0
 		boss_got = {}
 	var today := Time.get_date_string_from_system()
 	if boss_date != today:
 		boss_date = today
 		boss_tries = EventDefs.TRIES_PER_DAY
+
+
+# 이정표 요구치. 세 곳(판 화면·알림점·수령)이 각자 계산하다 서로 어긋났다.
+# 판 밖에서는 지금 화력으로 미리 보여 준다 — 안 그러면 도전 전에 칸이 텅 비어서
+# 얼마나 남았는지 감이 안 온다. 다만 **이미 쌓은 화력 아래로는 안 내려간다**.
+func _boss_need(i: int) -> float:
+	var base := boss_dps if raid_on == "boss" else maxf(boss_dps, dps())
+	return EventDefs.milestone_damage(i, base, boss_tier)
 
 
 func _boss_enter() -> void:
@@ -11729,7 +11749,7 @@ func _boss_enter() -> void:
 	if boss_tries <= 0:
 		return
 	boss_tries -= 1
-	_boss_dps_snap = dps()
+	boss_dps = maxf(boss_dps, dps())
 	raid_on = "boss"
 	_restart_stage("주간 보스 도전", true)
 	_enter_battle_view()
@@ -13388,7 +13408,7 @@ func _trial_exit(reason: String) -> void:
 
 func _claim_milestone(i: int) -> void:
 	_boss_roll()
-	if boss_got.has(i) 			or boss_dmg < EventDefs.milestone_damage(i, _boss_dps_snap, boss_tier):
+	if boss_got.has(i) or boss_dmg < _boss_need(i):
 		return
 	boss_got[i] = true
 	var m: Dictionary = EventDefs.MILESTONES[i]
@@ -13400,6 +13420,7 @@ func _claim_milestone(i: int) -> void:
 		boss_tier += 1
 		boss_got = {}
 		boss_dmg = 0.0
+		boss_dps = 0.0
 		_offline_banner.text = "주간 보스 %d단계 진입" % boss_tier
 		_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
 		_offline_banner.visible = true
@@ -13717,7 +13738,7 @@ func _spawn_foe() -> void:
 	f.setup(tier, _c_enemy_power(), 0.0, boss)
 	if raid_on == "boss":
 		# 체력만 갈아 끼운다 — 40초에 못 눕히는 게 정상이고, 성과는 누적 피해다.
-		f.max_hp = EventDefs.boss_hp(_boss_dps_snap, boss_tier)
+		f.max_hp = EventDefs.boss_hp(boss_dps, boss_tier)
 		f.hp = f.max_hp
 	elif raid_on != "" and raid_on != "trial":
 		# 성소의 **수호자 한 마리**는 웨이브 몫을 혼자 짊어진다(hp_mult).
@@ -13792,7 +13813,6 @@ func _build_boss_cut() -> void:
 		Color(0.28, 0.0, 0.04))
 	_boss_cut_name.z_index = 61
 	_boss_cut_name.modulate.a = 0.0
-	_hud_root.add_child(_boss_cut_name)
 
 
 # 컷신을 **즉시 걷는다**. 연출 도중 판이 끝나거나 탭을 옮기면 트윈이 멈춰
@@ -14921,6 +14941,7 @@ func _save_game() -> void:
 	cfg.set_value("boss", "dmg", boss_dmg)
 	cfg.set_value("boss", "got", boss_got)
 	cfg.set_value("boss", "tier", boss_tier)
+	cfg.set_value("boss", "dps", boss_dps)
 	cfg.set_value("skill", "owned", skill_owned)
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
@@ -15142,6 +15163,7 @@ func _load_game() -> void:
 	boss_dmg = maxf(0.0, float(cfg.get_value("boss", "dmg", 0.0)))
 	boss_got = cfg.get_value("boss", "got", {})
 	boss_tier = maxi(1, int(cfg.get_value("boss", "tier", 1)))
+	boss_dps = maxf(0.0, float(cfg.get_value("boss", "dps", 0.0)))
 	_boss_roll()
 	# 옛 저장본(스킬 6종·역할 3칸)에는 owned 가 없다. 그때는 기본 스킬만 주고
 	# 새로 시작한다 — 없어진 키를 억지로 옮기면 표에 없는 스킬이 장착된다.

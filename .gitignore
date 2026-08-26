@@ -20,3 +20,10 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .codex/
+
+# 내보내기 산출물 — 100MB 를 넘어 GitHub 이 받지 않는다. 사장님은 이 exe 로
+# 플레이하지만 저장소에 둘 물건은 아니다(빌드는 소스에서 다시 나온다).
+Bloodlord.exe
+Bloodlord.console.exe
+Bloodlord.zip
+Bloodlord.pck
