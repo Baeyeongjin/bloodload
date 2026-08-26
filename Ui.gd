@@ -114,9 +114,14 @@ static func hover_pop(c: Control) -> void:
 
 
 static func _pop_to(c: Control, to: float) -> void:
-	var old: Variant = c.get_meta("hover_tw", null)
-	if old is Tween and (old as Tween).is_valid():
-		(old as Tween).kill()
+	# **has_meta 로 먼저 묻는다.** get_meta 의 기본값이 null 이면 Godot 은 그걸
+	# "기본값 없음"으로 읽고 그 자리에서 오류를 낸다(object.cpp 의 ERR_FAIL_V_MSG).
+	# 그래서 호버가 처음 벗어나는 순간마다 콘솔에 빨간 줄이 찍혔다 — 화면은
+	# 멀쩡해서 캡처를 뜨기 전에는 안 보였다.
+	if c.has_meta("hover_tw"):
+		var old: Variant = c.get_meta("hover_tw")
+		if old is Tween and (old as Tween).is_valid():
+			(old as Tween).kill()
 	var tw := c.create_tween()
 	c.set_meta("hover_tw", tw)
 	tw.tween_property(c, "scale", Vector2(to, to), HOVER_TIME) \

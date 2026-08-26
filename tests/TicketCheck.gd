@@ -53,12 +53,16 @@ func _init() -> void:
 	assert(int(scene.tickets["weapon"]) == w0, "다른 종류의 권이 나갔다")
 	assert(scene.gem < gem0, "스킬권이 없는데 보석이 안 나갔다")
 
-	# 10연은 권이 모자라면 보석으로 간다(부분 지불 없음).
+	# 10연에 권이 모자라면 **있는 만큼 쓰고 나머지를 보석으로** 낸다
+	# (d6cf82c, 사장님). 소환권은 소환 말고 쓸 데가 없어 아껴 둘 이유가 없다.
+	# 이 검사는 옛 규칙("전부 아니면 전무")을 붙들고 있다가 d6cf82c 뒤로
+	# 계속 실패하고 있었다 — 값 계산 자체는 tests/PullCostCheck.gd 가 잰다.
 	scene._gacha_kind = "weapon"
 	var gem1: float = scene.gem
 	scene._pull_gacha(10)
-	assert(int(scene.tickets["weapon"]) == w0, "모자란 권이 부분 지불됐다")
-	assert(scene.gem < gem1, "10연에 보석이 안 나갔다")
+	assert(int(scene.tickets["weapon"]) == 0,
+		"있는 권을 안 썼다: %d 장 남음" % int(scene.tickets["weapon"]))
+	assert(scene.gem < gem1, "모자란 몫에 보석이 안 나갔다")
 
 	# ── 3) 발행 ────────────────────────────────────────────────────────────
 	# 임무가 **종류를 흩어서** 주는가 — 한 종류만 주면 나머지 천장이 안 찬다.
