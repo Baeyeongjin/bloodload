@@ -116,8 +116,22 @@ func _init() -> void:
 	scene.traits["wealth_5"] = TraitDefs.MAX_LV
 	assert(is_equal_approx(scene._trait_add("hours"), 4.0), "긴 잠 합산이 4가 아니다")
 
+	# ── 저장·복원이 **레벨**을 실어 나르는가 ────────────────────────────────
+	# 로드가 값을 true 로 뭉개면 level_of 가 그걸 만렙으로 읽는다 — 1레벨만 사고
+	# 껐다 켜면 만렙으로 부활해서 10레벨제가 통째로 무효가 된다.
+	scene.traits = {"attack_1": 3}
+	scene._save_game()
+	scene.traits = {}
+	scene._load_game()
+	assert(TraitDefs.level_of("attack_1", scene.traits) == 3,
+		"저장·복원이 혈맥 레벨을 잃었다: %d 레벨" %
+		TraitDefs.level_of("attack_1", scene.traits))
+	# 옛 저장본(bool)은 여전히 만렙으로 읽혀야 한다 — 쓰던 배수가 사라지면 안 된다.
+	assert(TraitDefs.level_of("x", {"x": true}) == TraitDefs.MAX_LV,
+		"옛 bool 저장본 하위호환이 깨졌다")
+
 	print("")
-	print("표 18노드 · 노드 10레벨 · 잠금(앞 노드 만렙/비용) · 배선 OK")
+	print("표 18노드 · 노드 10레벨 · 잠금(앞 노드 만렙/비용) · 배선 · 저장 OK")
 	print("")
 	print("TraitCheck OK")
 	quit()

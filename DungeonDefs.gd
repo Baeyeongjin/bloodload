@@ -57,7 +57,10 @@ static func time_limit(_floor: int) -> float:
 
 
 # 본편 최고 기록이 미궁을 몇 층까지 여는가 (EXPANSION 7장의 교차 잠금).
-# 30구간에 5층, 이후 본편 10구간마다 5층씩. 220구간이면 100층 전부.
+# OPEN_STAGE(35)에 5층, 이후 본편 10구간마다 5층씩. **225구간**이면 100층 전부
+# (220 은 95층이다 — 옛 주석이 OPEN_STAGE 30 시절 값을 들고 있었다).
+# 다만 층이 열리는 것과 뚫는 것은 다르다: 100층의 등가 구간은 본편 끝(500)이고
+# 보스 체력이 일반몹의 8.75배라, 실제 게이트는 개방이 아니라 화력이다.
 static func open_floors(best_stage: int) -> int:
 	if best_stage < OPEN_STAGE:
 		return 0

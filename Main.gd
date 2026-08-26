@@ -126,8 +126,13 @@ var gold := 0.0
 # 키는 등급 키("common"·"uncommon"…). 조각 곳간(gacha_shards)은 아이템별 그대로.
 var fuse_pity := {}
 var gem := 0.0
-# 혈정 — 미궁 전용 재화(EXPANSION 6장). 획득은 미궁(첫 돌파 + 소탕)뿐이고
-# 쓰는 곳은 3단계의 혈맥뿐이다. 혈액과 상호 교환 불가 — 인플레 격리.
+# 혈정 — 쓰는 곳은 혈맥뿐이다(Main.gd 의 `crystal -=` 는 _buy_trait 한 줄).
+# **획득은 미궁뿐이 아니다.** 설계 초안(EXPANSION 6장)은 그렇게 적었지만 실제
+# 공급처는 여덟이다: 미궁 첫 돌파·소탕 · 펫 둥지 · 상점(보석 45/회, 하루 2회) ·
+# 임무 · 출석 · 패스 · 업적 · 주간 보스 이정표.
+# **그중 펫 둥지가 나머지를 다 합친 것의 8~10배다**(중반 기준 3,123/일 대 327/일).
+# 즉 "미궁을 올라야 혈맥이 큰다"는 교차 잠금은 실제로는 "펫을 뽑아야 큰다"다.
+# 수급을 다시 잴 일이 있으면 이 여덟을 다 세라 — 미궁만 보면 5~100배 과소평가한다.
 var crystal := 0.0
 # 인장 — 혈맹 전용 재화(PactDefs). 획득은 계약의 제단(재화 던전 3호)뿐이고
 # 쓰는 곳은 혈맹 레벨업뿐이다. 혈정과 같은 격리 규칙.
@@ -15015,11 +15020,15 @@ func _load_game() -> void:
 	dungeon_best = clampi(int(cfg.get_value("run", "dungeon_best", 0)), 0,
 		DungeonDefs.FLOOR_CAP)
 	# 없는 노드 id 는 버린다 — 표가 바뀐 옛 저장본이 유령 배수를 들고 오면 안 된다.
+	# **값을 그대로 실어 나른다.** true 로 뭉개면 level_of 가 그걸 만렙으로 읽어서
+	# (TraitDefs.level_of) 1레벨만 산 노드가 껐다 켜면 10레벨로 부활했다 — 혈맥
+	# 완주 비용이 222,930 이 아니라 그 1/10 이 되던 구멍이다.
+	# 옛 bool 저장본은 level_of 가 이미 만렙으로 읽어 준다.
 	traits = {}
 	var saved_traits: Dictionary = cfg.get_value("run", "traits", {})
 	for id in saved_traits:
 		if not TraitDefs.node(str(id)).is_empty():
-			traits[str(id)] = true
+			traits[str(id)] = saved_traits[id]
 	titles_got = {}
 	title_worn = str(cfg.get_value("run", "title_worn", ""))
 	var saved_titles: Dictionary = cfg.get_value("run", "titles", {})
