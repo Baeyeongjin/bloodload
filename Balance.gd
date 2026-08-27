@@ -275,7 +275,18 @@ static func push_seconds(kills_needed: int, foe_hp: float, hero_dps: float,
 # 거리를 제한) -> 0.57(찾아가는 모델) -> 0.47(전진 중에도 공격 쿨다운이 돌게).
 # 짐작으로 못 맞춘다.
 # ponytail: `Main.FOE_GAP` · `Main.TRAVEL_SPEED` · `Foe.DIE_DUR` 를 바꾸면
-# tests/EngageCheck.gd 로 다시 재야 한다.
+# tests/EngageCheck.gd 로 다시 재야 한다. **그 검사가 이제 역산값을 바로 찍는다** —
+# "접근 고정비 역산" 줄을 읽으면 된다.
+#
+# 2026-08-27 재측정: 맨몸에서 **0.51초** (35마리/60초, 실측 1.71 - 모델 1.20).
+# 0.47 과 오차 안이라 **안 바꿨다.** 걸린 상수도 안 움직였다:
+# FOE_GAP·TRAVEL_SPEED 는 0.47 을 잰 커밋(393f921) 바로 앞(88ca98c)이 마지막이고,
+# DIE_DUR 은 0.42 -> 0.62 로 늘었지만 같은 커밋(d1970c7)이 `Main.ENGAGE_PAUSE`
+# 를 옛 0.42 로 새로 둬서 **전투 페이스를 일부러 고정**했다.
+#
+# 진행이 붙은 세이브에서는 역산이 0.20 으로 나오는데 그건 이 값이 변한 게 아니다 —
+# `push_seconds` 가 스윙 단위로 끊어서 dps 28 과 35 에 똑같이 1.20 을 주는 구간이라,
+# 남는 실제 화력(치명·스킬)이 전부 잔차로 흘러든다. **맨몸에서만 비교한다.**
 const APPROACH_SECONDS := 0.47
 
 

@@ -128,6 +128,18 @@ func _init() -> void:
 		Balance.stage_seconds(need, scene._offline_profile(1)["hp"], scene.dps(),
 			scene.attack_interval()),
 		StageDefs.PACE_NORMAL])
+	# **APPROACH_SECONDS 역산.** Balance.gd 의 그 상수는 "실측 초/마리에서 모델
+	# 처치시간을 뺀 나머지"로 정해졌다(전진 + 사망 대기 + 첫 스윙까지의 지연).
+	# 같은 자리의 `ponytail:` 주석이 FOE_GAP · TRAVEL_SPEED · DIE_DUR 를 바꾸면
+	# 여기로 다시 재라고 가리킨다 — 그래서 그 수를 여기서 바로 찍는다.
+	# 짐작으로 못 맞추는 값이라(0.55 -> 0.89 -> 0.76 -> 0.83 -> 0.57 -> 0.47) 눈으로 본다.
+	var per_kill := SECONDS / maxf(1.0, float(killed))
+	var model_kill: float = Balance.push_seconds(need,
+		scene._offline_profile(1)["hp"], scene.dps(), scene.attack_interval()) 		/ float(maxi(1, need))
+	print("접근 고정비 역산      실측 %.2f초/마리 - 모델 처치 %.2f초 = %.2f초  (지금 상수 %.2f)"
+		% [per_kill, model_kill, per_kill - model_kill, Balance.APPROACH_SECONDS])
+	print("  (참고: dps %.0f · 주기 %.2f초 · 몹 hp %.0f)"
+		% [scene.dps(), scene.attack_interval(), scene._offline_profile(1)["hp"]])
 	print("")
 	# **움직이는 것은 세상이다.** 찾아가는 모델에서 영웅은 앵커를 지키고 배경·몹이
 	# 왼쪽으로 흐른다 — "영웅이 50px 넘게 움직여야 한다"는 웨이브 모델의 규칙이라
