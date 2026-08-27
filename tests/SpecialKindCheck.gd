@@ -64,6 +64,26 @@ func _init() -> void:
 	#    몸만 옮기면 대시가 도는 내내 영웅의 평타도 격도 광역도 통째로 사라진다.
 	#    점프에서 같은 증상을 한 번 고쳤는데(2026-08-25 사장님: "보스가
 	#    점프공격하고나서 캐릭터 공격을 멈춤") **대시 형제가 남아 있었다.**
+	#
+	#    **여기는 root 밑이라 `main.hero_x` 가 없어 `position.x` 로 폴백한다** —
+	#    실전과 이동 거리가 다르다. 그래서 이 검사는 거리가 아니라 **표식이
+	#    몸을 따라오는가**만 본다. 거리는 위 산수 검사가 지킨다.
+	# **목표점이 제자리라는 것부터 못 박는다.** 영웅은 `Main._strike_spot` 이
+	# 겨누는 간격(body_half + BODY_HALF)으로 붙어 서는데, 돌진 목표점은
+	# `body_half + 26` 이다 — 몸반폭이 상쇄돼 **차이가 늘 4px** 이다.
+	# 뒷걸음(LUNGE_BACK)이 없으면 돌진 다섯이 제자리에서 잔상만 겹쳐 뜬다
+	# (2026-08-27 실측 4.0px, 사장님 2026-08-25 "대시가 안 읽힌다"의 원인).
+	var probe := Foe.new()
+	probe.setup(FoeTiers.get_tier("wraith_knight"), 1.0, 0.0, true)
+	var stand_gap: float = probe.body_half() + 30.0     # Main.BODY_HALF
+	var lunge_to: float = probe.body_half() + 26.0
+	assert(absf(lunge_to - stand_gap) < 10.0,
+		"목표점이 서는 자리와 %.1fpx 나 떨어졌다 — 이 검사의 전제가 바뀌었다"
+		% (lunge_to - stand_gap))
+	assert(Foe.LUNGE_BACK > 40.0,
+		"뒷걸음이 %.0fpx 뿐이다 — 목표점이 제자리라 돌진이 안 움직인다" % Foe.LUNGE_BACK)
+	probe.free()
+
 	var d := Foe.new()
 	d.setup(FoeTiers.get_tier("wraith_knight"), 1.0, 0.0, true)
 	root.add_child(d)

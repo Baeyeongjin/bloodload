@@ -191,7 +191,20 @@ func set_visual_frozen(frozen: bool) -> void:
 
 func _die() -> void:
 	dying = true
+	# **이동 트윈을 같이 끊는다.** 안 끊으면 시체가 복귀 트윈을 마저 타고 원래
+	# 칸으로 스르륵 돌아가고, 공중에서 죽으면 뜬 채로 사라진다. 돌진이 4px 이던
+	# 동안은 둘 다 안 보였다 — 거리를 준 지금부터 보인다.
+	if _move_tw and _move_tw.is_valid():
+		_move_tw.kill()
+	if _airborne:
+		position.y = _ground_y
+		_airborne = false
 	remove_from_group("foes")
+	# **시체는 세상에 실려야 한다.** "foes" 에서 빼는 건 표적 선정이 시체를
+	# 고르면 안 되기 때문인데, 그 바람에 `Main._advance_world` 도 시체를 못 밀어서
+	# 세상만 흐르고 시체는 지면 위를 앞으로 미끄러졌다(실측: 흐른 거리 0.0px,
+	# 그동안 배경은 200px/s). 미는 일에만 다시 끼워 준다.
+	add_to_group("corpses")
 	var main := get_parent()
 	if main and main.has_method("on_foe_killed"):
 		main.on_foe_killed(self)
@@ -233,6 +246,11 @@ func _process(delta: float) -> void:
 # 전투가 안 보인다. 예고는 "지금 피해야 한다"를 말하는 것이고, 그게 매 순간이면
 # 아무 말도 아니다.
 const SPECIAL_EVERY := 3       # 세 번째 스윙마다
+# 돌진을 **보이게** 하는 뒷걸음. 영웅은 이미 보스 몸통 바로 바깥에 붙어 서
+# 있어서(Main._strike_spot 이 겨누는 간격 = body_half + BODY_HALF), 뒤로 빼지
+# 않으면 갈 곳이 4px 뿐이다 — 산수로도 실측으로도 4.0px 이었다(2026-08-27).
+# 그 동안 돌진 다섯은 제자리에서 잔상만 겹쳐 떴다.
+const LUNGE_BACK := 96.0
 # 예고·피해·사거리·타수는 **보스마다 다르다**(FoeTiers.SPECIAL_KIND,
 # 2026-08-20 사장님 "고유 패턴"). 아래 상수는 기본형(내려찍기)의 값이자
 # 검사·문서가 참조하는 기준점이다.
@@ -243,6 +261,7 @@ var _sp: Array = FoeTiers.SPECIAL_DEFAULT   # 이 몹의 기전 [예고,피해,�
 var _echo_hit_t := -1.0        # 2연격의 두 번째 타까지 남은 시간
 var _home_x := INF             # 대시 전에 서 있던 자리 — 스윙이 끝나면 돌아간다
 var _airborne := false         # 점프 중 — 걷기 대신 웅크림 프레임을 그린다
+var _ground_y := 0.0           # 뛰기 전 발 높이 — 공중에서 죽으면 여기로 되돌린다
 var _move_tw: Tween            # 움직임 트윈 — 죽을 때 같이 멎어야 한다
 # [개발 도구] `--tell` 이 켠다. 매 스윙을 특수로 만들어 **예고판을 화면에 고정**한다.
 # 왜 필요한가: 예고는 0.85초고 주기는 세 스윙마다라, 캡처 시각을 맞추는 것이 사실상
@@ -380,6 +399,11 @@ func _special_move(mv: String) -> void:
 	var hx: float = main.hero_x if main and "hero_x" in main else position.x
 	# 몸 반폭만큼 떨어져 선다 — 겹치면 스윙이 몸 안에서 나간다.
 	var at := hx + body_half() + 26.0
+	# **뒤로 뺐다가 들어간다.** 목표점(at)은 영웅 몸통 바로 바깥인데 영웅이 이미
+	# 거기 붙어 서 있다 — `at - position.x` 가 -4.0 이고 몸반폭이 상쇄되므로
+	# 몹 크기·스킨과 무관하게 늘 4px 이다(실측 확인). 2026-08-25 사장님의
+	# "대시가 안 읽힌다"는 잔상이 모자란 게 아니라 이것이었다.
+	var back := position.x + LUNGE_BACK
 	if mv == "dash":
 		if _home_x == INF:
 			_home_x = position.x
@@ -387,6 +411,11 @@ func _special_move(mv: String) -> void:
 		# 순간이동으로 보인다(사장님: 대시가 안 읽힌다).
 		if main and main.has_method("_dash_ghost"):
 			main._dash_ghost(self)
+		# 예고처럼 반 박자 물러선 뒤 들어간다 — 물러섬이 있어야 돌진이 읽힌다.
+		_move_tw.tween_property(self, "position:x", back, 0.12) \
+			.set_trans(Tween.TRANS_SINE)
+		_move_tw.parallel().tween_property(self, "stop_x", back, 0.12) \
+			.set_trans(Tween.TRANS_SINE)
 		_move_tw.tween_property(self, "position:x", at, 0.14) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		# **표식도 몸과 같이 옮긴다.** `Main._foe_arrived` 는 position.x 와 stop_x 가
@@ -416,11 +445,17 @@ func _special_move(mv: String) -> void:
 		# 공중에서는 걷기 대신 웅크림 프레임(_draw 의 _airborne 분기) — 걷는
 		# 그림으로 떠다니면 점프가 아니라 미끄럼이다(사장님: "점프 어색").
 		_airborne = true
+		_ground_y = position.y      # 공중에서 죽으면 여기로 되돌린다(_die)
+		# **떠오르며 뒤로, 내려오며 앞으로.** 대시와 같은 이유다 — 내려찍을 거리가
+		# 있어야 "영웅 자리에 떨어진다"가 그림이 된다. 예전엔 가로로 4px 갔다.
 		_move_tw.tween_property(self, "position:y", position.y - 120.0, 0.20) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_move_tw.parallel().tween_property(self, "position:x", at, 0.32)
+		_move_tw.parallel().tween_property(self, "position:x", back, 0.20) \
+			.set_trans(Tween.TRANS_SINE)
 		_move_tw.tween_property(self, "position:y", position.y, 0.12) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_move_tw.parallel().tween_property(self, "position:x", at, 0.12) \
+			.set_trans(Tween.TRANS_SINE)
 		_move_tw.tween_callback(func() -> void:
 			_airborne = false
 			_attack_anim = 0.0

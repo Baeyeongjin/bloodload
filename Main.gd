@@ -10434,7 +10434,13 @@ func _stand_ok(foe: Foe, x: float) -> bool:
 func _advance_world(dx: float) -> void:
 	if not is_inside_tree() or is_zero_approx(dx):
 		return
-	for f in get_tree().get_nodes_in_group("foes"):
+	# **시체도 민다**(Foe._die 가 "corpses" 에 넣어 준다). 시체를 "foes" 에서
+	# 빼는 건 표적 선정 때문이지 세상에서 빼려는 게 아니었다 — 아래 장판 주석이
+	# 말하는 그 문제가 시체에도 그대로 났다. 실측(2026-08-27): 시체 10구 전부
+	# 죽은 뒤 흐른 거리 0.0px, 그동안 배경은 200px/s 로 흘렀다.
+	# `notify_pushed` 는 시체에 무해하다 — 걷기 분기가 `not dying` 을 요구한다.
+	for f in get_tree().get_nodes_in_group("foes") \
+			+ get_tree().get_nodes_in_group("corpses"):
 		if not is_instance_valid(f):
 			continue
 		f.position.x -= dx
@@ -11661,7 +11667,7 @@ func _slam_wave(at_x: float, r: float, key: String, dir := 1.0) -> void:
 const REACH_TRAIL := {"lash": 1.0}
 const LASH_TRAIL_SPAN := 0.60   # 사거리의 몇 할까지 늘어놓나
 const LASH_TRAIL_MAX := 150.0   # ponytail: 화면을 못 덮게 박은 천장. 사거리가
-                                # 더 늘면 칸을 늘리는 게 아니라 이 값을 다시 잰다.
+								# 더 늘면 칸을 늘리는 게 아니라 이 값을 다시 잰다.
 
 
 func _reach_trail(at_x: float, r: float, key: String, dir: float) -> void:
