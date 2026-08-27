@@ -11674,13 +11674,18 @@ func _reach_trail(at_x: float, r: float, key: String, dir: float) -> void:
 	if recipe.is_empty():
 		return
 	var span: float = minf(r * LASH_TRAIL_SPAN, LASH_TRAIL_MAX)
-	var edge: Color = theme[2]
 	var head: Array = recipe[0]
 	# **하나만 세운다**(2026-08-27 사장님: "덩굴 하나로 줄여줘"). 둘이면 바닥이
 	# 너무 찬다 — 사거리를 말하는 데는 하나로 족하고, 적을수록 안 가린다.
-	# 끝점에 놓는다: 작고 어둡고 반 박자 늦어서 "저 끝까지"가 읽힌다.
+	# 끝점에 놓는다: 작고 반 박자 늦어서 "저 끝까지"가 읽힌다.
+	#
+	# **틴트는 안 건다**(null = 원본 색). 처음엔 테두리 색을 곱해 어둡게 했는데,
+	# 촉수 그림은 이미 거의 새까맣다(밝기 중앙 3 · 최대 61, 실측) — 거기에
+	# 0.22 를 곱하면 안이 안 보이는 검은 실루엣이 된다. 그림이 이미 두 톤을
+	# 갖고 있으므로 곱하는 순간 그 부피가 사라진다(ATTACK_FX_RECIPE 4장).
+	# 뒤엣것이라는 건 크기와 박자로 말한다.
 	var e := [head[0], float(head[1]) + dir * span, head[2],
-		float(head[3]) * 0.72, head[4], Color(edge.r, edge.g, edge.b, 1.0), 0.0]
+		float(head[3]) * 0.72, head[4], null, 0.0]
 	var t := create_tween()
 	t.tween_interval(0.045)
 	t.tween_callback(_slam_fx_one.bind(at_x, e))
@@ -11700,69 +11705,6 @@ func _slam_fx_one(at_x: float, e: Array) -> void:
 		+ Assets.bottom_pad("res://assets/anim/%s" % str(e[0])))
 	if e[5] != null:
 		n.modulate = e[5]
-
-
-# 수호자 전용 — 퍼지는 전선 + 크리스탈 가시(코드 도트, 사장님 픽 유지).
-func _crystal_wave(at_x: float, r: float) -> void:
-	var core := Color(0.62, 0.88, 1.0)
-	var edge := Color(0.30, 0.55, 0.95)
-	var wave := Node2D.new()
-	wave.position = Vector2(at_x, ground_y)
-	wave.z_index = 4
-	add_child(wave)
-	var st := {"p": 0.0}
-	var DOT := 4.0
-	wave.draw.connect(func() -> void:
-		var p: float = st["p"]
-		var fade: float = 1.0 - p * p
-		var ec := Color(edge.r, edge.g, edge.b, 0.9 * fade)
-		var cc := Color(core.r, core.g, core.b, 0.95 * fade)
-		var front: float = r * minf(1.0, p * 1.15)
-		var fx_: float = floorf(front / DOT) * DOT
-		for side in [-1.0, 1.0]:
-			var ex: float = fx_ * side
-			cv_rect(wave, Rect2(ex - DOT, -DOT * 3.0, DOT * 2.0, DOT * 3.0),
-				Color(core.r, core.g, core.b, 0.35 * fade))
-			cv_rect(wave, Rect2(ex - DOT * 0.5, -DOT * 2.0, DOT, DOT * 2.0), cc)
-			cv_rect(wave, Rect2(ex - DOT * 0.5, -DOT * 3.0, DOT, DOT),
-				Color(1, 1, 1, 0.8 * fade))
-			var n: int = int(fx_ / (DOT * 2.0))
-			for k in range(1, n + 1):
-				cv_rect(wave, Rect2(float(k) * DOT * 2.0 * side - DOT * 0.5,
-					-DOT, DOT, DOT),
-					Color(edge.r, edge.g, edge.b,
-						(0.6 - 0.3 * float(k) / maxf(1.0, float(n))) * fade))
-			for i2 in 4:
-				var sx: float = r * (0.25 + 0.25 * float(i2))
-				if front < sx:
-					continue
-				var grow: float = clampf((front - sx) / (r * 0.2), 0.0, 1.0)
-				var steps: int = int(round((8.0 - float(i2)) * grow))
-				var bx: float = floorf(sx * side / DOT) * DOT
-				if steps > 2:
-					cv_rect(wave, Rect2(bx - DOT * 1.5, -DOT * float(steps),
-						DOT * 3.0, DOT * float(steps)),
-						Color(core.r, core.g, core.b, 0.22 * fade))
-				for st2 in steps:
-					var w2: float = DOT * maxf(1.0, 4.0 - float(st2) * 0.6)
-					cv_rect(wave, Rect2(bx - w2 * 0.5, -DOT * float(st2 + 1),
-						w2, DOT), ec)
-				if steps > 1:
-					cv_rect(wave, Rect2(bx - DOT * 0.5, -DOT * float(steps),
-						DOT, DOT * float(steps - 1)), cc)
-					cv_rect(wave, Rect2(bx - DOT * 0.5, -DOT * float(steps),
-						DOT, DOT), Color(1, 1, 1, 0.85 * fade)))
-	var tw := wave.create_tween()
-	tw.tween_method(func(v: float) -> void:
-		st["p"] = v
-		wave.queue_redraw(), 0.0, 1.0, 0.45) \
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_callback(wave.queue_free)
-
-
-# draw 람다 안에서 이름이 짧아야 읽힌다 — Node2D.draw_rect 의 얇은 별칭.
-static func cv_rect(cv: Node2D, rect: Rect2, col: Color) -> void:
-	cv.draw_rect(rect, col)
 
 
 func _kill_hero() -> void:
