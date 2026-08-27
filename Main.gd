@@ -552,7 +552,6 @@ var _timer_bar: ColorRect
 var _timer_frame: NinePatchRect
 var _timer_bar_width := 0.0
 var _lbl_time: Label
-var _offline_banner: Label
 var _power_toast: Label
 var _confirm_view: Control
 var _confirm_body: Label
@@ -562,7 +561,6 @@ var _reward_title: Label
 var _reward_row: Control
 var _reward_panel: NinePatchRect
 var _reward_hint: Label
-var _offline_t := 0.0
 var _visual_hitstop_t := 0.0
 var _combat_shake: Tween
 var _boss_pan_t := 0.0   # 보스 등장 연출이 도는 동안은 흔들림을 막는다
@@ -1446,9 +1444,6 @@ func _build_scene() -> void:
 	_build_frame()
 	_build_topbar()
 	_build_boss_cut()
-	_offline_banner = _mk_label(Vector2(TOP_PAD, VIEW_TOP + 12.0), Type.SIZE_SMALL,
-		Color(0.95, 0.55, 0.55))
-	_offline_banner.visible = false
 	# 전투력 알림은 **전용 줄**이다. 오프라인·장비 알림과 같은 줄을 쓰면 그쪽이 떠 있는
 	# 동안 상승이 통째로 안 보인다 — 전투력은 오를 때마다 무조건 보여야 한다.
 	_build_power_band()
@@ -2299,9 +2294,11 @@ func _dlg_label(parent: Control, pos: Vector2, size: int, col: Color,
 
 
 # ── 클리어 연출 ────────────────────────────────────────────────────────────
-# 던전이 끝나면 상단 띠(_offline_banner)만 떴는데, 그건 판이 끝났다는 신호로
+# 던전이 끝나면 전투 띠 왼쪽 위 알림 한 줄만 떴는데, 그건 판이 끝났다는 신호로
 # 너무 약했다 — 화면이 뜬금없이 넘어가는 것으로 읽혔다(사장님 2026-08-25:
 # "걍 모든 던전들 클리어하면 클리어했다 나와야할듯"). 가운데에 크게 띄운다.
+# 그 알림 줄은 2026-08-27 에 통째로 걷어냈다(사장님: "저 위치에 뜨는 텍스트 싹 다").
+# 이제 판이 끝났다는 것을 말하는 건 이 클리어 연출 하나다.
 var _clear_view: Control
 var _clear_title: Label
 var _clear_sub: Label
@@ -4979,12 +4976,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _dev_toggle_weak() -> void:
 	_dev_weak = DEV_WEAK_MULT if is_equal_approx(_dev_weak, 1.0) else 1.0
 	var on := not is_equal_approx(_dev_weak, 1.0)
-	if _offline_banner != null:
-		_offline_banner.text = "약체 %s — 몹이 버티는 동안 모션을 본다" % ("켬" if on else "끔")
-		_offline_banner.add_theme_color_override("font_color",
-			Color(0.6, 0.85, 1.0) if on else Color(0.8, 0.8, 0.8))
-		_offline_banner.visible = true
-		_offline_t = 2.2
 	_refresh_hud()
 
 
@@ -4998,11 +4989,6 @@ func _dev_toggle_weak() -> void:
 # (`_skill_impact_sent`), 화면에는 "스킬이 씹혔다"로 보인다.
 func _dev_reset_skill_cd() -> void:
 	_skill_cd.clear()
-	if _offline_banner != null:
-		_offline_banner.text = "스킬 쿨다운 초기화 (%d칸)" % skill_equipped.size()
-		_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.8, 0.45))
-		_offline_banner.visible = true
-		_offline_t = 1.6
 
 
 func _dev_jump_stage() -> void:
@@ -9975,10 +9961,6 @@ func _process(delta: float) -> void:
 	_shake_cd = maxf(0.0, _shake_cd - delta)
 	_tick_motion(0.0 if visual_frozen else delta)
 	queue_redraw()   # 그림자는 몹이 움직일 때마다 다시 그려야 한다
-	if _offline_t > 0.0:
-		_offline_t -= delta
-		if _offline_t <= 0.0:
-			_offline_banner.visible = false
 	_boss_pan_t = maxf(0.0, _boss_pan_t - delta)
 	# 연속 도전 — 암전이 걷히고 판이 비었을 때 다시 들어간다.
 	if _raid_again != "" and _fade_t <= 0.0 and raid_on == "" and not dungeon_on:
@@ -12090,10 +12072,6 @@ func _boss_exit(reason: String) -> void:
 	if raid_on != "boss" or _fade_t > 0.0:
 		return
 	raid_on = ""
-	_offline_banner.text = "%s — 이번 주 누적 피해 %s" % [reason, _n(boss_dmg)]
-	_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
-	_offline_banner.visible = true
-	_offline_t = 4.0
 	_show_clear("도전 종료", "이번 주 누적 피해 %s" % _n(boss_dmg))
 	var go_boss := func() -> void:
 		_restart_stage(reason, true)
@@ -13712,10 +13690,6 @@ func _trial_exit(reason: String) -> void:
 	if raid_on != "trial" or _fade_t > 0.0:
 		return
 	raid_on = ""
-	_offline_banner.text = reason
-	_offline_banner.add_theme_color_override("font_color", Color(0.62, 0.95, 0.68))
-	_offline_banner.visible = true
-	_offline_t = 4.0
 	_show_clear("클리어!", reason)
 	# **여운** — 재화 던전·미궁과 같은 규칙(사장님 2026-08-25:
 	# "유적도 클리어시 너무 빨리 화면을 돌아옴"). 쓰러지는 그림과
@@ -13747,10 +13721,6 @@ func _claim_milestone(i: int) -> void:
 		boss_got = {}
 		boss_dmg = 0.0
 		boss_dps = 0.0
-		_offline_banner.text = "주간 보스 %d단계 진입" % boss_tier
-		_offline_banner.add_theme_color_override("font_color", Color(0.98, 0.72, 0.45))
-		_offline_banner.visible = true
-		_offline_t = 4.0
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_dungeon()
@@ -14123,10 +14093,6 @@ func _spawn_foe() -> void:
 
 func _announce_elite(name: String) -> void:
 	# 중간보스는 배너 한 줄로 족하다 — 이름을 크게 띄우는 건 보스 몫이다.
-	_offline_banner.text = name
-	_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.55, 0.4))
-	_offline_banner.visible = true
-	_offline_t = 1.2
 	_shake_combat(4.0)
 
 
@@ -14271,13 +14237,6 @@ func on_foe_killed(f: Foe) -> void:
 		codex_knowledge += gained
 		# 숙련 단계 상승 — 순간을 알린다(칭호 배너와 같은 줄). 알리지 않으면
 		# 있는 기능이 없는 기능이 된다.
-		_offline_banner.text = "숙련 — %s %d단계 · 상대 피해 +%d%%" \
-			% [str(FoeTiers.get_tier(f.key)["name"]),
-			FoeTiers.codex_level(prev_kills + 1),
-			int(FoeTiers.codex_kill_bonus(prev_kills + 1) * 100.0)]
-		_offline_banner.add_theme_color_override("font_color", Color(0.82, 0.88, 0.72))
-		_offline_banner.visible = true
-		_offline_t = 3.0
 		_claim_codex_reward()
 	_gain_exp(Balance.exp_per_kill(StageDefs.major_stage(stage)))
 	# 가이드 버튼의 "받을 개수"는 여기서만 갱신한다. _refresh_hud 는 매 프레임이라
@@ -14305,11 +14264,6 @@ func _claim_codex_reward() -> void:
 	var extra := FoeTiers.codex_extra(r)
 	if not extra.is_empty():
 		_grant_reward(str(extra["kind"]), float(extra["amount"]))
-	_offline_banner.text = "지식 합 %d · %s +%d%%" % [codex_knowledge,
-		FoeTiers.codex_stat_name(str(r["stat"])), int(float(r["rate"]) * 100.0)]
-	_offline_banner.add_theme_color_override("font_color", Color(0.72, 0.92, 1.0))
-	_offline_banner.visible = true
-	_offline_t = 3.0
 
 
 func _gain_exp(amount: float) -> void:
@@ -14349,13 +14303,6 @@ func _advance_stage() -> void:
 			"pact": sigil += amount
 			"hunt": feed += amount
 			"forge": whet += amount
-		_offline_banner.text = "%s 격파 — %s +%s" \
-			% [RaidDefs.label(kind, n), str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)]
-		_offline_banner.add_theme_color_override("font_color",
-			Color(1.0, 0.55, 0.62) if kind == "blood" \
-			else (Color(0.92, 0.82, 0.62) if kind == "pact" else Color(0.74, 0.84, 1.0)))
-		_offline_banner.visible = true
-		_offline_t = 4.0
 		_show_clear("클리어!", "%s  ·  %s +%s"
 			% [RaidDefs.label(kind, n),
 			str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)])
@@ -14410,12 +14357,6 @@ func _advance_stage() -> void:
 			if dungeon_floor > dungeon_best:
 				var reward := DungeonDefs.first_clear_reward(dungeon_floor)
 				crystal += reward
-				_offline_banner.text = "%s 첫 돌파 — 혈정 +%d" \
-					% [DungeonDefs.label(dungeon_floor), int(reward)]
-				_offline_banner.add_theme_color_override("font_color",
-					Color(1.0, 0.55, 0.62))
-				_offline_banner.visible = true
-				_offline_t = 3.0
 			dungeon_best = maxi(dungeon_best, dungeon_floor)
 		# (연출은 암전 **전에** 이미 떴다 — 아래 _show_clear 참고)
 			_claim_promo_reward()
@@ -14456,11 +14397,6 @@ func _advance_stage() -> void:
 			best_stage = next_stage
 			if MasteryDefs.unlocked_count(best_stage) > mastery0:
 				var r: Dictionary = MasteryDefs.RANKS[mastery0]
-				_offline_banner.text = "%s 해금 — %s" % [str(r["name"]), str(r["desc"])]
-				_offline_banner.add_theme_color_override("font_color",
-					Color(1.0, 0.78, 0.45))
-				_offline_banner.visible = true
-				_offline_t = 5.0
 		stage = next_stage
 		_quest_bump("stage")
 		_boss_time = StageDefs.time_limit(stage)
@@ -14524,10 +14460,6 @@ func _restart_stage(reason: String, full := false) -> void:
 		# 같은 구간 재시작이면 같은 그림이 다시 깔릴 뿐이지만, 미궁 입장·이탈은
 		# 이 길로 배경이 바뀐다 — 여기서 안 갈면 미궁에 본편 배경이 남는다.
 		_apply_stage_bg(), _fade_full_rect if full else _fade_rect)
-	_offline_banner.text = "%s — %s 다시" % [reason, _c_label()]
-	_offline_banner.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
-	_offline_banner.visible = true
-	_offline_t = 2.2
 
 
 func _clear_foes() -> void:
@@ -15676,11 +15608,6 @@ func _grant_offline(left_at: float) -> void:
 		crystal += (away / 3600.0) * _sweep_per_hour() * 0.5
 	hero_hp = max_hp()
 	_refresh_chest()
-	if climbed > 0:
-		_offline_banner.text = "관에서 %d분 · %d단계 전진" % [int(away / 60.0), climbed]
-		_offline_banner.visible = true
-		_offline_t = 6.0
-
 
 
 # [개발 도구] 검수 상태로 한 방에 — 명령줄 --god 과 게임 안 F8 이 같이 쓴다.
