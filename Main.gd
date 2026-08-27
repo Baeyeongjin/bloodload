@@ -11676,16 +11676,14 @@ func _reach_trail(at_x: float, r: float, key: String, dir: float) -> void:
 	var span: float = minf(r * LASH_TRAIL_SPAN, LASH_TRAIL_MAX)
 	var edge: Color = theme[2]
 	var head: Array = recipe[0]
-	for i in 2:
-		# 1/2 · 2/2 지점에 하나씩. 뒤엣것일수록 작고 어둡고 늦다.
-		var f := float(i + 1) / 2.0
-		var e := [head[0], float(head[1]) + dir * span * f, head[2],
-			float(head[3]) * (1.0 - 0.28 * f), head[4],
-			Color(edge.r, edge.g, edge.b, 1.0).lerp(Color.WHITE, 0.45 * (1.0 - f)),
-			0.0]
-		var t := create_tween()
-		t.tween_interval(0.045 * f)
-		t.tween_callback(_slam_fx_one.bind(at_x, e))
+	# **하나만 세운다**(2026-08-27 사장님: "덩굴 하나로 줄여줘"). 둘이면 바닥이
+	# 너무 찬다 — 사거리를 말하는 데는 하나로 족하고, 적을수록 안 가린다.
+	# 끝점에 놓는다: 작고 어둡고 반 박자 늦어서 "저 끝까지"가 읽힌다.
+	var e := [head[0], float(head[1]) + dir * span, head[2],
+		float(head[3]) * 0.72, head[4], Color(edge.r, edge.g, edge.b, 1.0), 0.0]
+	var t := create_tween()
+	t.tween_interval(0.045)
+	t.tween_callback(_slam_fx_one.bind(at_x, e))
 
 
 func _slam_fx_one(at_x: float, e: Array) -> void:
