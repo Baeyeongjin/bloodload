@@ -9960,8 +9960,11 @@ func _process(delta: float) -> void:
 	if _slam_demo != "":
 		_slam_demo_t -= delta
 		if _slam_demo_t <= 0.0:
-			_slam_demo_t = 1.0
-			_slam_wave(hero_x + 170.0, 190.0, _slam_demo)
+			_slam_demo_t = 0.55   # 임팩트가 0.45초 - 주기를 붙여야 캡처가 운이 아니다
+			# 사거리는 **실측값**을 준다 — 190 을 쓰던 동안 데모가 실전보다 좁아서
+			# 캡처가 실제보다 얌전해 보였다. 특수 사거리 실측(2026-08-27):
+			# 촉수 412 · 음파 464 · 처형 243 · 유령 231 px.
+			_slam_wave(hero_x + 170.0, 412.0, _slam_demo)
 	_tick_hero_state(delta)
 	var visual_frozen := _visual_hitstop_t > 0.0
 	_visual_hitstop_t = maxf(0.0, _visual_hitstop_t - delta)
@@ -11504,7 +11507,7 @@ func _foe_slam_fx(f: Foe) -> void:
 	var at_x := f.position.x
 	if style in ["lash", "spray", "cross", "arc"]:
 		at_x = hero_x + (f.position.x - hero_x) * 0.25
-	_slam_wave(at_x, f.reach(), f.key)
+	_slam_wave(at_x, f.reach(), f.key, signf(f.position.x - hero_x))
 
 
 # 대시 잔상 — 지나온 자리에 반투명 몸이 남았다 사라진다. 텍스처는 걷기 첫
@@ -11604,7 +11607,9 @@ const SLAM_FX_DEFAULT := [
 	["fx_rocks", 0.0, -8.0, 1.1, 12.0, null, 0.06]]
 
 
-func _slam_wave(at_x: float, r: float, key: String) -> void:
+# `dir` 은 보스가 있는 쪽(+1 = 오른쪽). 기본 +1 은 보스가 대개 오른쪽이라
+# 그렇고, --slam 데모도 그 자리에서 쏜다.
+func _slam_wave(at_x: float, r: float, key: String, dir := 1.0) -> void:
 	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
 	for e in recipe:
 		var delay: float = float(e[6])
@@ -11615,7 +11620,49 @@ func _slam_wave(at_x: float, r: float, key: String) -> void:
 			var t := create_tween()
 			t.tween_interval(delay)
 			t.tween_callback(_slam_fx_one.bind(at_x, e))
+	_lash_trail(at_x, r, key, dir)
 	_shake_combat(4.0)
+
+
+# **사거리를 그림이 말하게 한다** — 촉수(lash)만.
+#
+# `SPECIAL_KIND` 의 사거리 배수는 보스마다 1.7~3.2 로 갈리는데 착지 그림은
+# 전부 같은 크기였다(이 함수 전까지 `_slam_wave` 의 `r` 은 서명에만 있고 본문에서
+# 안 쓰는 죽은 인자였다). 촉수는 2.8 배라 그림보다 훨씬 멀리까지 때린다 —
+# 플레이어는 얼마나 위험한지 볼 방법이 없었다.
+#
+# **덩치로 말하면 안 된다.** 2.8 배로 키우면 전투 화면을 덮는다(우리 원칙).
+# 사거리는 **가로로 뻗어서** 읽혀야 한다 — 같은 크기의 덩굴을 보스 쪽으로
+# 몇 개 더 세운다. "저 사이가 전부 위험하다"가 곧 사거리다.
+# (docs/ATTACK_FX_RECIPE.md 1장 — 그림이 히트박스를 덮는다)
+#
+# 뒤로 갈수록 작고 어둡고 늦다: 등급 색표의 테두리 색(`SLAM_THEME` 셋째)을
+# 써서 심-테두리 두 톤을 만든다. 한 색이면 그냥 복사본으로 보인다(같은 문서 4장).
+const LASH_TRAIL_SPAN := 0.60   # 사거리의 몇 할까지 늘어놓나
+const LASH_TRAIL_MAX := 150.0   # ponytail: 화면을 못 덮게 박은 천장. 사거리가
+                                # 더 늘면 칸을 늘리는 게 아니라 이 값을 다시 잰다.
+
+
+func _lash_trail(at_x: float, r: float, key: String, dir: float) -> void:
+	var theme: Array = FoeTiers.slam_theme(key)
+	if str(theme[0]) != "lash":
+		return
+	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
+	if recipe.is_empty():
+		return
+	var span: float = minf(r * LASH_TRAIL_SPAN, LASH_TRAIL_MAX)
+	var edge: Color = theme[2]
+	var head: Array = recipe[0]
+	for i in 2:
+		# 1/2 · 2/2 지점에 하나씩. 뒤엣것일수록 작고 어둡고 늦다.
+		var f := float(i + 1) / 2.0
+		var e := [head[0], float(head[1]) + dir * span * f, head[2],
+			float(head[3]) * (1.0 - 0.28 * f), head[4],
+			Color(edge.r, edge.g, edge.b, 1.0).lerp(Color.WHITE, 0.45 * (1.0 - f)),
+			0.0]
+		var t := create_tween()
+		t.tween_interval(0.045 * f)
+		t.tween_callback(_slam_fx_one.bind(at_x, e))
 
 
 func _slam_fx_one(at_x: float, e: Array) -> void:
