@@ -30,7 +30,10 @@ const ITEMS := [
 		"icon": "res://assets/ui/res_crystal.png"},
 	{"id": "sigil", "name": "봉인 인장", "sub": "인장", "cost": 45, "per_day": 2,
 		"icon": "res://assets/ui/res_sigil.png"},
-	{"id": "ticket", "name": "던전 입장권", "sub": "재화 던전 3종 +1판", "cost": 60,
+	# **숫자를 안 박는다.** 야수 우리가 2026-08-18 에 늘면서 "3종" 이 거짓이
+	# 됐다(실제 지급은 `for k in RaidDefs.RAIDS` 라 늘 전부다). 위 open_stage
+	# 주석이 세운 규칙("숫자를 여기 박지 않는다")이 이 줄만 예외였다.
+	{"id": "ticket", "name": "던전 입장권", "sub": "재화 던전 전부 +1판", "cost": 60,
 		"per_day": 1, "icon": "res://assets/ui/tab_raid.png"},
 	# 시간 왜곡 — "상점은 시간을 판다"의 정중앙. 방치 2시간을 즉시 상자에
 	# 담는다(요율은 방치 적립과 같은 식 — Main 이 같은 함수를 태운다).

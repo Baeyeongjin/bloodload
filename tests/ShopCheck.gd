@@ -100,5 +100,21 @@ func _init() -> void:
 	scene._shop_roll_day()
 	assert(scene._shop_left("blood") == 3, "새 날에 한도가 안 찼다")
 
+	# **광고 줄은 SDK 가 붙기 전까지 못 눌러야 한다.** 안 그러면 값 0 으로
+	# 눌리고 하루 한도만 깎인 뒤 "보석 50 획득" 창이 뜬다 — 지갑은 그대로다
+	# (2026-08-27 실측: is_ad 호출부가 Main 에 0건이었고 _shop_buy 의 match 에
+	# ad_* 갈래가 없었다).
+	for id in ["ad_ticket", "ad_gem", "ad_chest"]:
+		assert(ShopDefs.is_ad(id), "%s 가 광고 줄이 아니다" % id)
+		scene.best_stage = 999
+		scene.gem = 9999.0
+		scene.shop_used = {}
+		var g0: float = scene.gem
+		var used0: int = int(scene.shop_used.get(id, 0))
+		scene._shop_buy(id)
+		assert(int(scene.shop_used.get(id, 0)) == used0,
+			"%s 를 눌렀더니 오늘 한도가 깎였다 — SDK 도 없는데 팔렸다" % id)
+		assert(is_equal_approx(scene.gem, g0), "%s 가 보석을 먹었다" % id)
+
 	print("ShopCheck OK")
 	quit()

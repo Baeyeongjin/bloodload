@@ -2824,7 +2824,10 @@ func _build_pact_view(root: Control) -> void:
 		_pact_btns[n] = b
 	var note := _panel_label(_pact_view, Vector2(PAD, top + 256.0), Type.SIZE_SMALL,
 		Color(0.62, 0.60, 0.68), CONTENT_W, 16.0)
-	note.text = "인장은 계약의 제단(던전)에서만 나온다"
+	# "에서만" 이 거짓이었다 — 인장은 제단 말고도 상점(교환 탭)·성장팩·펫 원정
+	# 에서 나온다(2026-08-27 전수). 상점에서 인장을 사고 이 줄을 읽으면 둘 중
+	# 하나가 거짓말이다. 어디가 주력인지만 말한다.
+	note.text = "인장은 계약의 제단(던전)에서 가장 많이 나온다"
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 
@@ -9202,6 +9205,13 @@ func _shop_buy(id: String) -> void:
 	var it := ShopDefs.of(id)
 	if it.is_empty() or best_stage < ShopDefs.open_stage(id):
 		return
+	# **광고 줄은 아직 못 산다.** 붙일 SDK 가 없다. 이 가드가 없던 동안
+	# `match id:` 에 ad_* 갈래가 없어서 값(0)만 치르고 하루 한도가 깎인 뒤
+	# **"보석 50 획득" 창까지 떴다** — 지갑은 그대로였다(2026-08-27 실측).
+	# ShopDefs 주석과 HANDOFF 가 "잠금은 Main 이 건다"고 약속해 둔 것을
+	# 실제로 거는 줄이다. SDK 가 붙는 날 이 줄과 아래 화면 잠금을 같이 푼다.
+	if ShopDefs.is_ad(id):
+		return
 	_shop_roll_day()
 	if _shop_left(id) <= 0 or gem < float(it["cost"]):
 		return
@@ -9253,11 +9263,16 @@ func _refresh_shop() -> void:
 			else _n(ShopDefs.amount(id, stage, dungeon_best)))
 		card["left"].text = "%d구간부터" % need if locked \
 			else "오늘 %d / %d" % [left, int(it["per_day"])]
-		card["price"].text = "잠김" if locked else "보석 %d" % int(it["cost"])
-		card["btn"].disabled = locked or left <= 0 or gem < float(it["cost"])
+		# 광고 줄은 값이 0 이라 "보석 0" 으로 떴고 `gem < 0` 이 늘 거짓이라
+		# 버튼이 살아 있었다. 붙일 SDK 가 없으니 눌리면 안 된다.
+		var ad := ShopDefs.is_ad(id)
+		card["price"].text = "준비 중" if ad \
+			else ("잠김" if locked else "보석 %d" % int(it["cost"]))
+		card["btn"].disabled = ad or locked or left <= 0 \
+			or gem < float(it["cost"])
 		card["lock"].visible = locked
 		card["stamp"].visible = not locked and left <= 0
-		card["root"].modulate = Color(1, 1, 1) if not locked and left > 0 \
+		card["root"].modulate = Color(1, 1, 1) if not ad and not locked and left > 0 \
 			else Color(0.62, 0.58, 0.62)
 
 
