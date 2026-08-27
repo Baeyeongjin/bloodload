@@ -90,5 +90,21 @@ func _init() -> void:
 	assert(scene.pass_points == pts and scene.pass_free_got.has(1),
 		"패스 진행이 복원 안 됐다")
 
+	# **시즌 예산이 만렙 요구와 맞는가.** 열흘이면 트랙이 다 차고 남은 18일은
+	# 16,000원짜리 구독이 아무것도 안 주던 자리다(2026-08-27). 예산은 임무 표에서
+	# 세므로 표가 늘면 여기서 먼저 걸린다 — 주석에 박힌 숫자는 이미 한 번 낡았다.
+	var daily_kinds := QuestDefs.QUESTS.size()
+	var weekly_kinds := QuestDefs.WEEKLY.size()
+	var budget := daily_kinds * PassDefs.POINT_QUEST * PassDefs.SEASON_DAYS 		+ weekly_kinds * PassDefs.POINT_WEEKLY * (PassDefs.SEASON_DAYS / 7) 		+ PassDefs.SEASON_DAYS * PassDefs.POINT_QUEST
+	var need := PassDefs.STEPS * PassDefs.STEP_POINT
+	var days := float(need) / (float(budget) / float(PassDefs.SEASON_DAYS))
+	print("   패스: 시즌 예산 %d점 · 만렙 %d점 · 도달 %.1f일 (여유 %.2f배)"
+		% [budget, need, days, float(budget) / float(need)])
+	# 너무 빠르면 남은 시즌이 빈다. 너무 느리면 다 해도 못 채운다.
+	assert(days >= PassDefs.SEASON_DAYS * 0.7,
+		"만렙이 %.1f일이면 시즌 %d일 중 나머지가 빈손이다" % [days, PassDefs.SEASON_DAYS])
+	assert(days <= PassDefs.SEASON_DAYS,
+		"만렙이 %.1f일이면 시즌 안에 못 채운다" % days)
+
 	print("PassCheck OK")
 	quit()
