@@ -108,11 +108,17 @@ static func reach_peak_frame(dir_path: String, flipped := false) -> int:
 	var n := frames(dir_path).size()
 	var low := 0
 	var low_r := INF
+	# f0 을 뺀 전체 극단도 같이 들고 있는다 — 아래 되감기 가드가 쓴다.
+	var peak := 0
+	var peak_r := -1.0
 	for f in n:
 		var r := frame_reach(dir_path, f, 1.0, flipped)
 		if r < low_r:
 			low_r = r
 			low = f
+		if f > 0 and r > peak_r:
+			peak_r = r
+			peak = f
 	var best := low
 	var best_r := -1.0
 	for f in range(low, n):
@@ -120,6 +126,18 @@ static func reach_peak_frame(dir_path: String, flipped := false) -> int:
 		if r > best_r:
 			best_r = r
 			best = f
+	# **되감는 꼬리에 갇혔으면 되돌린다.** 위 "최소 이후" 규칙은 앞머리에 물려받은
+	# 자세(f0)를 건너뛰려고 있는 것인데, 뒤쪽에 더 깊은 골짜기가 있는 모션이면
+	# 창이 그 꼬리에 갇혀서 **칼이 이미 되감긴 프레임**이 임팩트가 된다.
+	# 실측(2026-08-27): hawaii_attack3·cast = [12,13,13,21,24,23,17,11,12] -> f8(12),
+	# 진짜 극단은 f4(24) 다. 사거리가 반토막 나고(48 -> 24) 임팩트가 시전 창
+	# 끝(0.94 x 길이)에 붙어서, 그 사이 표적이 죽으면 스킬이 통째로 사라졌다.
+	#
+	# **고른 값이 극단의 70% 에 못 미칠 때만** 되돌린다 — 규칙을 통째로 바꾸면
+	# 평평한 수열(가호 6종 [15,15,...])과 봉우리가 둘인 모션이 같이 흔들린다.
+	# 전수 확인: 영웅 모션 120종 중 이 조건에 걸리는 것은 그 둘뿐이다.
+	if peak_r > 0.0 and best_r < peak_r * 0.70:
+		best = peak
 	_reach_cache[key] = best
 	return best
 

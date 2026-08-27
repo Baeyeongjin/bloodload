@@ -183,6 +183,14 @@ func set_combat_active(active: bool) -> void:
 		# 전원이 동시에 첫 프레임부터 치는 현상을 막는다.
 		_attack_anim = -1.0
 		_impact_sent = false
+		# **예고와 2연격 예약도 같이 끈다.** `_tick_attack` 이 맨 위에서
+		# `if not combat_active: return` 으로 빠져나가 이 둘은 줄지 않는데,
+		# `_draw_attack_tell` 은 `combat_active` 를 안 본다 — 그래서 영웅이 누워
+		# 있는 `Main.REVIVE_TIME`(1.2초) 내내 발밑 띠가 **반쯤 찬 채로 얼어붙고**,
+		# 부활하자마자 남은 몫(0.1초 같은 것)만 지나 특수가 꽂힌다. 피할 창이 없다.
+		# 쿨다운(`_attack_cd`)은 위 주석대로 그대로 둔다 — 그건 보존이 맞다.
+		_tell_t = -1.0
+		_echo_hit_t = -1.0
 
 
 func set_visual_frozen(frozen: bool) -> void:

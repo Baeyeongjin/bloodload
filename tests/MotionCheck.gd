@@ -103,5 +103,25 @@ func _init() -> void:
 	assert(faced_back == 0, "왼쪽에서 들어오는데 왼쪽을 본다: %d 프레임" % faced_back)
 	assert(not fought_early, "영웅이 들어오는 중에 전투가 열렸다")
 	assert(not scene._boss_entry, "12초가 지나도 앵커에 못 들어왔다")
+	# **임팩트 프레임이 되감는 꼬리에 안 걸리는가.**
+	# `Assets.reach_peak_frame` 은 "전체 최소 이후의 최대"인데, 뒤쪽에 더 깊은
+	# 골짜기가 있으면 창이 꼬리에 갇혀 칼이 이미 되감긴 프레임을 고른다.
+	# hawaii 가 실제로 그랬다(f8, 사거리 12 — 진짜 극단은 f4 의 24).
+	# 사거리가 반토막 나고 임팩트가 시전 창 끝에 붙어, 그 사이 표적이 죽으면
+	# 스킬이 통째로 사라진다(2026-08-27 실측).
+	for m in ["attack3", "cast"]:
+		var dir := "res://assets/anim/hawaii_%s" % m
+		if Assets.frames(dir).is_empty():
+			continue
+		var pk: int = Assets.reach_peak_frame(dir, true)
+		var r_pk: float = Assets.frame_reach(dir, pk, 1.0, true)
+		# 고른 프레임의 사거리가 전체 극단의 70% 는 넘어야 한다.
+		var top := 0.0
+		for f in Assets.frames(dir).size():
+			top = maxf(top, Assets.frame_reach(dir, f, 1.0, true))
+		assert(r_pk >= top * 0.70,
+			"hawaii_%s 임팩트가 f%d(사거리 %.0f)인데 극단은 %.0f 다 — 되감는 꼬리에 걸렸다"
+			% [m, pk, r_pk, top])
+
 	print("MotionCheck OK")
 	quit()
