@@ -893,6 +893,12 @@ func _ready() -> void:
 	# 그때 센 칸 수는 항상 0이고, 그 뒤로는 소환·분해 때만 갱신돼서
 	# 불러오기 직후에는 탭 숫자와 목록이 빈 저장본 기준으로 남아 있었다.
 	_refresh_gear_inventory()
+	# 배수 버튼도 같은 이유로 여기서 다시 맞춘다. _build_growth() 는 _load_game()
+	# **앞**이라 그때는 buy_step 이 늘 기본값 1 이다 — 저장본에 100 이 들어 있으면
+	# 화면은 x1 을 누른 채인데 실제로는 100 씩 올라갔다(사장님 2026-08-27).
+	# _set_step 은 빌드 때 한 번과 버튼 누를 때만 돌아서 스스로 못 고친다
+	# (_refresh_skills 안의 자동장착 토글은 탭 열 때마다 다시 맞춰져서 무사했다).
+	_set_step(buy_step)
 	_refresh_goal_widget()
 	_refresh_chest()
 	_refresh_hud()

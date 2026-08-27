@@ -124,6 +124,7 @@ JOBS=2 LIMIT=300 bash tools/run_checks.sh
 | `TripCheck` | 펫 원정 — 시간이 **나올 조각의 등급**을 따르는가 |
 | `NameCheck` | 이름 입력 — 사람이 친 글자도 저장본도 안 믿는다 |
 | `DotCheck` | 알림 점 — 켜지는 조건과 **꺼지는 조건을 같이** |
+| `BuyStepCheck` | 배수 버튼 — **화면에 눌린 것과 실제로 사는 양이 같은가** |
 
 ### PaceProbe 는 사장님이 직접 돌린다
 
