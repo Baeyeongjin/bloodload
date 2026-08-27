@@ -54,7 +54,11 @@ static func flash_of(id: String) -> Dictionary:
 const SUBS := [
 	{"id": "blood_tax", "name": "혈세", "days": 30, "price": 11000, "value": 600,
 		"art": "gem_chest",
-		"desc": "매일 보석 100 · 소환권 3\n방치 +4시간 · 던전 +1판 · 광고 제거",
+		# "광고 제거" 를 뺐다(2026-08-27): 읽는 코드가 Main 에 0건이었고, 제거할
+		# 강제 광고 자체가 게임에 없다(있는 건 손님이 **받는** 보상형 3줄뿐).
+		# 대신 실제로 주면서 안 적던 계약 혜택 셋을 적는다 — _oath_member() 가
+		# 여는 것들이다(카드 상한 +2 · 자연 충전 40 -> 30분 · 주간 황금 3장).
+		"desc": "매일 보석 100 · 소환권 3\n방치 +4시간 · 던전 +1판\n계약 카드 +2칸 · 충전 30분 · 주간 황금 3장",
 		"instant": {"gem": 1000.0},
 		"daily": {"gem": 100.0, "ticket_weapon": 1.0, "ticket_armor": 1.0,
 			"ticket_skill": 1.0}},
@@ -85,10 +89,17 @@ const PACKS := [
 	{"id": "first_step", "name": "첫 걸음", "open": 1, "price": 3300, "value": 180,
 		"reward": {"gem": 300.0, "ticket_weapon": 5.0, "ticket_armor": 5.0}},
 	{"id": "cave", "name": "동굴 개방", "open": 25, "price": 3300, "value": 180,
-		"reward": {"gold": 0.0, "gem": 300.0, "ticket_trinket": 10.0}},
+		# `"gold": 0.0` 을 지웠다 — 지급(<=0 continue)도 진열(<=0 continue)도
+		# 건너뛰어 아무 데도 안 나타나던 죽은 키다. 혈액을 실제로 주려면
+		# 값을 넣어야 한다(설계서 5장은 "혈액 뭉치" 를 약속했었다).
+		"reward": {"gem": 300.0, "ticket_trinket": 10.0}},
 	{"id": "maze", "name": "미궁 개방", "open": 35, "price": 11000, "value": 200,
 		"reward": {"crystal": 2000.0, "ticket_skill": 20.0}},
-	{"id": "altar", "name": "제단 개방", "open": 80, "price": 33000, "value": 220,
+	# **제단은 40구간에 열린다**(RaidDefs.open_stage("pact")). 80 이던 동안
+	# 팩이 풀리는 순간 이름이 기념하는 사건은 40구간 전에 끝나 있었다 —
+	# 이 표가 스스로 세운 "벽 직전에 열린다" 가 이 줄에서만 안 지켜졌다.
+	# 2026-08-26 에 제단을 40 으로 옮길 때 FLASH 표만 고치고 여기를 놓쳤다.
+	{"id": "altar", "name": "제단 개방", "open": 40, "price": 33000, "value": 220,
 		"reward": {"sigil": 1200.0, "ticket_armor": 20.0, "ticket_trinket": 20.0}},
 	# 핏빛 계약 팩 3종 (2026-08-18) — 파는 것은 **운을 굴릴 기회**다.
 	{"id": "oath_s", "name": "계약 입문", "open": 10, "price": 3300, "value": 180,
@@ -202,10 +213,6 @@ static func idle_bonus_hours(subs: Dictionary) -> float:
 
 static func raid_bonus_tries(subs: Dictionary) -> int:
 	return 1 if sub_active(subs, "blood_tax") else 0
-
-
-static func ads_removed(subs: Dictionary) -> bool:
-	return sub_active(subs, "blood_tax")
 
 
 static func price_text(won: int) -> String:

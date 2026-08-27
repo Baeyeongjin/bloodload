@@ -86,7 +86,6 @@ func _init() -> void:
 	assert(scene._offline_cap_hours() > cap0, "혈세가 방치 상한을 안 올렸다")
 	assert(scene._offline_cap_hours() <= scene.IDLE_CAP_MAX, "상한 16을 넘었다")
 	assert(IapDefs.raid_bonus_tries(scene.iap_subs) == 1, "던전 표가 안 늘었다")
-	assert(IapDefs.ads_removed(scene.iap_subs), "광고 제거가 안 붙었다")
 	# 표는 **하루가 바뀔 때** 다시 나뉜다 — 그날부터 한 판 더다.
 	scene.raid_date = ""
 	scene._raid_roll_day()
@@ -114,6 +113,46 @@ func _init() -> void:
 	assert(scene.iap_subs == subs_before and scene.iap_bought == bought_before,
 		"구매 이력이 복원 안 됐다")
 	assert(scene.iap_first_buy, "첫 구매 표식이 복원 안 됐다")
+
+	# ── 감사에서 나온 것들(2026-08-27) ────────────────────────────────────
+	# **오늘의 특가는 눌리는가.** 카드·값·설명을 다 그리고 버튼도 켜 두면서
+	# pressed 를 아무 데도 안 이어 놨었다 — 3,300원짜리 다섯 장이 눌러도
+	# 아무 일도 안 났다. limited_of 호출부가 저장소에 0건이었다.
+	for ltd in IapDefs.LIMITED:
+		var lid := str(ltd["id"])
+		assert(not IapDefs.limited_of(lid).is_empty(),
+			"%s 를 limited_of 가 못 찾는다" % lid)
+		scene.iap_bought = {}
+		var g0: float = scene.gem
+		assert(scene._iap_buy(lid), "%s 를 못 산다 — _iap_buy 가 모르는 id 다" % lid)
+		assert(scene.gem > g0 or not ltd["reward"].has("gem"),
+			"%s 를 샀는데 보상이 안 들어왔다" % lid)
+
+	# **첫 구매 2배 라벨은 한 번 쓰면 사라져야 한다.** 지을 때 한 번 박히고
+	# 영영 안 바뀌던 동안, 33,000원 카드가 "첫 구매 7,000" 이라 적고 3,500 만
+	# 줬다 — 결제 SDK 가 붙는 날 그대로 나가면 환불 사유다.
+	scene.iap_first_buy = false
+	scene._refresh_subs()
+	var lbl_before := str(scene._sub_gem_cards[0][0]["left"].text)
+	assert(lbl_before.contains("첫 구매"), "첫 구매 라벨이 아예 없다: %s" % lbl_before)
+	scene.iap_first_buy = true
+	scene._refresh_subs()
+	var lbl_after := str(scene._sub_gem_cards[0][0]["left"].text)
+	assert(not lbl_after.contains("첫 구매"),
+		"첫 구매를 이미 썼는데 아직 2배를 광고한다: %s" % lbl_after)
+
+	# **팩이 여는 문과 같은 구간을 봐야 한다.**
+	assert(int(IapDefs.pack_of("altar")["open"]) == RaidDefs.open_stage("pact"),
+		"제단 개방 팩이 제단과 다른 구간에서 열린다")
+	assert(int(IapDefs.pack_of("cave")["open"]) == RaidDefs.OPEN_STAGE,
+		"동굴 개방 팩이 동굴과 다른 구간에서 열린다")
+
+	# **보상표에 죽은 키(0)를 두지 않는다** — 지급도 진열도 건너뛰어 표만
+	# 보면 주는 줄 안다.
+	for pk in IapDefs.PACKS:
+		for k in pk["reward"]:
+			assert(float(pk["reward"][k]) > 0.0,
+				"%s 의 보상 '%s' 가 0 이다 — 아무 데도 안 나타난다" % [pk["id"], k])
 
 	print("IapCheck OK")
 	quit()

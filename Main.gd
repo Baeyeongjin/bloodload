@@ -8271,6 +8271,10 @@ var _sub_view: Control
 var _shop_mode_btns := {}
 var _pack_rows: Array[Dictionary] = []
 var _shop_cards: Array[Dictionary] = []   # 교환 카드(vcard) 5장
+# 정기 탭 카드 — 탭을 열 때마다 다시 그린다(_refresh_subs). 지을 때 한 번
+# 그리고 끝이던 동안 첫 구매 2배 라벨과 시즌 남은 날이 얼어 있었다.
+var _sub_cards := {}
+var _sub_gem_cards: Array = []
 var _shop_line: Label                      # 상인 대사 — 소탭마다 바뀐다
 # 전면 재설계(사장님 2026-08-13: "상점은 제일 꽃이야") — 레퍼런스 9장의 문법:
 # **카드 한 장에 배지·그림·구성·한도·가격이 다 들어간다.** 줄 나열이 아니라
@@ -8637,8 +8641,12 @@ func _build_shop_packs(view: Control) -> void:
 				ficon = _shop_kind_icon(str(k))
 			if fpills.size() < 3:
 				fpills.append([_shop_kind_icon(str(k)), _n(float(fr[k]))])
+		# 배지 칸은 **가치%** 다 — _shop_badge 가 그 숫자 밑에 "가치" 를 적는다.
+		# 할인율을 넣던 동안 정가 1/3 짜리 세일이 "67% 가치" 로 떠서,
+		# 180~600% 를 단 옆 카드들 사이에서 제일 손해로 읽혔다. 할인율은
+		# 밑줄이 이미 말한다("n시간 남음 · 정가 …").
 		var fc := _shop_wcard(view, ftop, str(f["name"]),
-			ficon, int(round(100.0 * (1.0 - float(f["price"]) / float(f["orig"])))))
+			ficon, int(round(100.0 * float(f["orig"]) / float(f["price"]))))
 		for j in fpills.size():
 			_shop_pill(fc["root"], Vector2(150.0 + float(j) * 114.0, 60.0),
 				str(fpills[j][0]), str(fpills[j][1]))
@@ -8672,6 +8680,10 @@ func _build_shop_packs(view: Control) -> void:
 		lc["sub"].text = str(ltd["desc"])
 		lc["price"].text = IapDefs.price_text(int(ltd["price"]))
 		lc["btn"].disabled = not IapDefs.DEV_FREE
+		# **이 줄이 없었다**(2026-08-27). 카드·값·설명을 다 그리고 버튼도
+		# 켜 두면서 pressed 를 아무 데도 안 이었다 — 3,300원짜리 다섯 장이
+		# 눌러도 아무 일도 안 났다. 형제 카드는 전부 이어져 있다.
+		lc["btn"].pressed.connect(_iap_buy.bind(str(ltd["id"])))
 		top += SHOP_WCARD_H + 10.0
 	_shop_ribbon(view, top + 4.0, "성장 패키지 — 계정당 1회")
 	top += 67.0
@@ -8714,6 +8726,7 @@ func _build_shop_subs(view: Control) -> void:
 			int(it["days"])], SHOP_DIR + str(it.get("art", "badge_star")) + ".png",
 			int(it["value"]))
 		card["sub"].text = str(it["desc"])
+		_sub_cards[str(it["id"])] = card
 		if str(it["id"]) == "season_pass":
 			# 시즌제 — "언제까지"가 안 보이면 지금 살 이유가 없다.
 			card["sub"].text += "\n이번 시즌 %d일 남음" \
@@ -8735,11 +8748,45 @@ func _build_shop_subs(view: Control) -> void:
 		card["title"].text = "보석 %s" % _n(float(g["gem"]))
 		card["icon"].texture = Assets.tex(SHOP_DIR + gem_art[i] + ".png")
 		card["amount"].text = _n(float(g["gem"]))
-		card["left"].text = "첫 구매 %s" % _n(float(g["gem"]) * IapDefs.FIRST_BUY_MULT)
+		_sub_gem_cards.append([card, g])
 		card["price"].text = IapDefs.price_text(int(g["price"]))
 		card["btn"].disabled = not IapDefs.DEV_FREE
 		card["btn"].pressed.connect(_iap_buy.bind(str(g["id"])))
 	view.custom_minimum_size.y = y + 2.0 * (SHOP_VCARD_H + 10.0)
+	_refresh_subs()
+
+
+# 정기 탭은 **지을 때 한 번** 그려지고 끝이었다(2026-08-27). 그래서
+# 첫 구매 2배 라벨이 이미 쓴 뒤에도 두 배 수량을 계속 광고했고 —
+# 33,000원 카드가 "첫 구매 7,000" 이라 적고 3,500 만 줬다 — 시즌 남은
+# 날도 앱 켠 순간 숫자로 얼어 있었다. 결제 SDK 가 붙는 날 그대로 나가면
+# 표기 오류가 아니라 환불 사유다. 아래는 `_refresh_packs` 와 같은 일이다.
+func _refresh_subs() -> void:
+	for pair in _sub_gem_cards:
+		var card: Dictionary = pair[0]
+		var g: Dictionary = pair[1]
+		# 첫 구매를 이미 썼으면 2배를 약속하지 않는다.
+		card["left"].text = "첫 구매 %s" % _n(float(g["gem"])
+			* IapDefs.FIRST_BUY_MULT) if not iap_first_buy else ""
+	var today := Time.get_date_string_from_system()
+	for id in _sub_cards:
+		var card: Dictionary = _sub_cards[id]
+		var it := IapDefs.sub_of(str(id))
+		if it.is_empty():
+			continue
+		# 산 구독은 남은 날을 값 자리에 띄운다 — 안 그러면 산 사람과
+		# 안 산 사람의 화면이 한 글자도 다르지 않다.
+		if IapDefs.sub_active(iap_subs, str(id)):
+			var end := Time.get_unix_time_from_datetime_string(
+				str(iap_subs.get(id, "")))
+			var now := Time.get_unix_time_from_datetime_string(today)
+			card["price"].text = "%d일 남음" % maxi(0,
+				int(round((end - now) / 86400.0)))
+		else:
+			card["price"].text = IapDefs.price_text(int(it["price"]))
+		if str(id) == "season_pass":
+			card["sub"].text = "%s\n이번 시즌 %d일 남음" % [str(it["desc"]),
+				PassDefs.season_days_left(today)]
 
 
 # 패스: 30단계 트랙. 한 줄이 한 단계고 **무료·유료 두 칸**이 나란히 선다 —
@@ -9072,7 +9119,9 @@ func _shop_set_mode(mode: String) -> void:
 		_refresh_book()
 	match mode:
 		"pack": _shop_line.text = "귀한 손님이군요… 좋은 것만 꺼내 왔어요."
-		"sub": _shop_line.text = "매일 들러 주시는 분께는 값을 맞춰 드려요."
+		"sub":
+			_shop_line.text = "매일 들러 주시는 분께는 값을 맞춰 드려요."
+			_refresh_subs()
 		"pass": _shop_line.text = "부지런한 분께는 매일 몫이 쌓이지요."
 		"book": _shop_line.text = "운을 굴리는 분께는… 이 서(書)가 어울리죠."
 		"trade": _shop_line.text = "보석이라면 무엇이든 바꿔 드리죠."
@@ -9112,6 +9161,16 @@ func _refresh_packs() -> void:
 # 되고, 그중 하나를 빠뜨리면 돈은 받고 물건은 안 주는 사고가 된다.
 # 반환값은 "실제로 팔렸나" — 이미 산 1회성 팩은 false 다.
 func _iap_buy(id: String) -> bool:
+	# 오늘의 특가 — pack/sub/GEMS 셋 중 어디에도 안 걸려서 여기까지 오면
+	# 그대로 false 로 떨어지던 자리다(limited_of 호출부가 0건이었다).
+	var ltd := IapDefs.limited_of(id)
+	if not ltd.is_empty():
+		if iap_bought.has(id):
+			return false
+		iap_bought[id] = true
+		_iap_grant(ltd["reward"], str(ltd["name"]))
+		_iap_after()
+		return true
 	var pack := IapDefs.pack_of(id)
 	if not pack.is_empty():
 		if iap_bought.has(id) or best_stage < int(pack["open"]):
@@ -12372,7 +12431,11 @@ func _build_oath_view() -> void:
 	_oath_ui["roll"].pressed.connect(func() -> void: _oath_play(false))
 	_oath_ui["groll"].pressed.connect(func() -> void: _oath_play(true))
 	_oath_ui["buy"].pressed.connect(func() -> void:
-		if gem >= OathDefs.RECHARGE_GEM and oath_cards < OathDefs.CARD_CAP:
+		# **공용 함수를 본다.** raw CARD_CAP(3)을 보던 동안 화면은 "3 / 5장"
+		# 이라 적어 놓고 3장에서 충전 버튼이 꺼졌다 — 혈세가 사 준 4·5번째
+		# 칸은 자연 충전으로만 찼다(2026-08-27).
+		if gem >= OathDefs.RECHARGE_GEM \
+			and oath_cards < OathDefs.card_cap(_oath_member()):
 			gem -= OathDefs.RECHARGE_GEM
 			oath_cards += 1
 			_save_game()
@@ -12539,7 +12602,8 @@ func _refresh_oath() -> void:
 	_oath_ui["buy_lbl"].text = "즉시 충전 · 보석 %d" % int(OathDefs.RECHARGE_GEM)
 	_oath_ui["gbuy_lbl"].text = "황금 구매 · 보석 %d" % int(OathDefs.GOLD_GEM)
 	for pair in [["roll", oath_cards > 0], ["groll", oath_gold > 0],
-			["buy", gem >= OathDefs.RECHARGE_GEM and oath_cards < OathDefs.CARD_CAP],
+			["buy", gem >= OathDefs.RECHARGE_GEM
+				and oath_cards < OathDefs.card_cap(_oath_member())],
 			["gbuy", gem >= OathDefs.GOLD_GEM]]:
 		_oath_dim(str(pair[0]), bool(pair[1]))
 	_refresh_oath_codex()
