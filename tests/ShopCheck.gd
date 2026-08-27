@@ -25,23 +25,29 @@ func _init() -> void:
 	# 상점만 딴 소리를 한다(던전 표가 그 실수로 두 번 깨졌다).
 	assert(ShopDefs.open_stage("crystal") == DungeonDefs.OPEN_STAGE)
 	assert(ShopDefs.open_stage("sigil") == RaidDefs.open_stage("pact"))
-	assert(ShopDefs.open_stage("blood") == 1, "혈액은 늘 열려 있어야 한다")
+	# 핏빛 주머니(혈액)는 2026-08-27 에 지웠다 — 시간 왜곡이 같은 물건을
+	# 정직한 요율로 팔고 있어서 30보석짜리 뭉치가 방치 10~20초치였다.
+	assert(ShopDefs.of("blood").is_empty(), "지운 핏빛 주머니가 살아 있다")
 
 	# ── 2) 값 ──────────────────────────────────────────────────────────────
-	for id in ["blood"]:
+	# **수량은 진행을 따라가야 한다.** 상수로 박아 두면 살 수 있게 될 무렵에는
+	# 이미 쓸모없어진다 — 인장이 40 고정이라 제단 한 판의 27% 까지 녹았었다.
+	for id in ["crystal", "sigil"]:
 		var prev := 0.0
-		for st in range(1, 400, 20):
-			var a := ShopDefs.amount(id, st, 20)
-			assert(a > 0.0 and a >= prev, "%s %d구간 수량이 줄었다" % [id, st])
+		for n2 in range(1, 8):
+			var a := ShopDefs.amount(id, 50 + n2 * 20, n2 * 15, n2)
+			assert(a > 0.0 and a >= prev, "%s 가 진행해도 안 는다 (%.0f)" % [id, a])
 			prev = a
-	# 던전 한 판보다 후하면 던전을 안 돌게 된다. **같은 구간에서 견준다** —
-	# 상점은 지금 서 있는 구간 시세고 던전 1단계는 그 던전이 열리는 구간 시세라,
-	# 서로 다른 자리를 비교하면 수입 곡선이 지수가 되는 순간 뜻 없이 깨진다.
-	var eq_b := RaidDefs.eq_stage(1, "blood")
-	assert(ShopDefs.amount("blood", eq_b, 20) < RaidDefs.reward("blood", 1),
-		"상점 혈액이 동굴 한 판보다 많다")
-	# 미궁이 열렸는데 아직 안 돈 사람(기록 0)에게도 빈 물건을 팔면 안 된다.
-	assert(ShopDefs.amount("crystal", 50, 0) > 0.0, "혈정 수량이 0 인 판이 뜬다")
+		assert(prev > ShopDefs.amount(id, 50, 0, 0),
+			"%s 가 끝에서도 시작과 같다 — 상수로 박혔다" % id)
+	# 던전 한 판보다 후하면 던전을 안 돌게 된다.
+	for n3 in [1, 4, 7]:
+		assert(ShopDefs.amount("sigil", 50, 0, n3) < RaidDefs.reward("pact", n3),
+			"상점 인장이 제단 %d단계 한 판보다 많다" % n3)
+	# 미궁이 열렸는데 아직 안 돈 사람(기록 0)에게 **빈 물건**을 팔면 안 된다.
+	# 0 이 아니라 "혈맥 노드 한 레벨의 1/4" 이 바닥이다(TraitDefs.COST[0] = 180).
+	assert(ShopDefs.amount("crystal", 50, 0) >= TraitDefs.COST[0] * 0.25,
+		"미궁 기록 0 일 때 혈정 수량이 노드 1/4 에 못 미친다")
 
 	# ── 3~4) 씬 ────────────────────────────────────────────────────────────
 	var scene: Node = load("res://Main.tscn").instantiate()
@@ -56,12 +62,15 @@ func _init() -> void:
 	scene.shop_used = {}
 	scene._shop_roll_day()
 
-	var gold0: float = scene.gold
+	# 혈정으로 산다 — 핏빛 주머니가 지워진 뒤 지갑에 바로 꽂히는 물건은 이것과
+	# 인장 둘이다(입장권·시간 왜곡은 판 수·상자라 아래에서 따로 본다).
+	scene.dungeon_best = 20
+	var cry0: float = scene.crystal
 	var gem0: float = scene.gem
-	scene._shop_buy("blood")
-	assert(is_equal_approx(scene.gem, gem0 - 30.0), "보석이 안 빠졌다: %f" % scene.gem)
-	assert(scene.gold > gold0, "혈액이 안 들어왔다")
-	assert(scene._shop_left("blood") == 2, "오늘 한도가 안 깎였다")
+	scene._shop_buy("crystal")
+	assert(is_equal_approx(scene.gem, gem0 - 45.0), "보석이 안 빠졌다: %f" % scene.gem)
+	assert(scene.crystal > cry0, "혈정이 안 들어왔다")
+	assert(scene._shop_left("crystal") == 1, "오늘 한도가 안 깎였다")
 
 	# 입장권은 하루 상한 **위로** 얹는다 — 산 판은 덤이다.
 	scene._raid_roll_day()
@@ -98,7 +107,7 @@ func _init() -> void:
 	# 날이 바뀌면 한도가 돌아온다.
 	scene.shop_date = "2000-01-01"
 	scene._shop_roll_day()
-	assert(scene._shop_left("blood") == 3, "새 날에 한도가 안 찼다")
+	assert(scene._shop_left("crystal") == 2, "새 날에 한도가 안 찼다")
 
 	# **광고 줄은 SDK 가 붙기 전까지 못 눌러야 한다.** 안 그러면 값 0 으로
 	# 눌리고 하루 한도만 깎인 뒤 "보석 50 획득" 창이 뜬다 — 지갑은 그대로다

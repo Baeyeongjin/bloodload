@@ -24,8 +24,13 @@ class_name ShopDefs
 const WARP_HOURS := 2.0
 
 const ITEMS := [
-	{"id": "blood", "name": "핏빛 주머니", "sub": "혈액", "cost": 30, "per_day": 3,
-		"icon": "res://assets/ui/res_blood.png"},
+	# **핏빛 주머니(혈액 30보석)는 지웠다**(2026-08-27 사장님). 시간 왜곡이 같은
+	# 물건을 정직한 요율로 이미 팔고 있어서 살 이유가 없었다 — 30보석짜리 뭉치가
+	# 가만히 **10~20초** 방치하면 들어오는 양이었다(구간과 무관한 상수 배율:
+	# 상점 혈액은 `gold_per_kill x 200 / KILL_WORTH` 로 킬 수를 세고, 방치는
+	# `gold_per_kill x gold_mult / 처치시간` 이라 gold_per_kill 이 소거된다).
+	# 보석당으로는 시간 왜곡에 160배 밀렸다. 혈액을 다시 팔려면 **킬 수가 아니라
+	# 방치 시간**을 단위로 잡아야 한다.
 	{"id": "crystal", "name": "혈정 원석", "sub": "혈정", "cost": 45, "per_day": 2,
 		"icon": "res://assets/ui/res_crystal.png"},
 	{"id": "sigil", "name": "봉인 인장", "sub": "인장", "cost": 45, "per_day": 2,
@@ -83,22 +88,30 @@ static func open_stage(id: String) -> int:
 
 
 # 한 번 살 때 들어오는 양. 던전 한 판의 절반~2/3 — 상점이 던전보다 후하면
-# 던전을 안 돌게 된다. 입장권은 수량이 아니라 판 수라 여기서 0 이다.
+# 던전을 안 돌게 된다. 입장권·시간 왜곡은 수량이 아니라 판 수·시간이라 0 이다.
 #
-# 입장권·시간 왜곡은 수량이 아니라 판 수·시간이라 여기서 0 이다.
-# 혈정만 미궁 층을 본다(소탕 시급이 그 층에서 나오므로). **최소 5층으로 받친다** —
-# 미궁이 열렸는데 아직 안 돈 사람에게 0 을 파는 판이 뜬다(실측: 화면에 "혈정 0").
-# 소탕 배율(혈맥 탐욕·군림)은 일부러 안 태운다: 상점은 배급이지 소탕이 아니다.
-static func amount(id: String, stage: int, dungeon_floor: int) -> float:
+# **자는 시간 왜곡이다.** 그 상품만 방치 적립과 글자 그대로 같은 식을 타므로
+# (Main._shop_buy 의 warp 갈래), 새 상품의 값을 정할 때는 "방치 몇 초치인가"를
+# 그 식으로 먼저 재 본다. 핏빛 주머니가 그 자로 재서 10~20초로 나와 지워졌다.
+# `pact_best` 는 계약의 제단 최고 도전 단계다 — 인장 수량이 그 보상을 따라간다.
+static func amount(id: String, stage: int, dungeon_floor: int,
+		pact_best := 0) -> float:
 	match id:
-		# KILL_WORTH 로 되나눈다 — RaidDefs.reward 와 같은 이유(뭉치라 나눌
-		# 처치시간이 없다). 안 나누면 몹 체력을 올릴 때마다 상점이 3배로 후해진다.
-		"blood": return StageDefs.gold_per_kill(stage) * 200.0 			/ StageDefs.KILL_WORTH   # 동굴 1판 = 400
-		"crystal":                                               # 소탕 8시간분
-			# 4시간분이면 20층에서 16 이 뜬다 — 노드 한 레벨이 180 인데 45보석짜리
-			# 물건이 그 1/11 이면 살 이유가 없다(화면 실측). 하루 2회 = 소탕 2/3일치.
-			return DungeonDefs.sweep_per_hour(maxi(dungeon_floor, 5)) * 8.0
-		"sigil": return 40.0                                     # 제단 1판 = 60+
+		"crystal":
+			# 소탕 8시간분 + **바닥 45**. 바닥이 없으면 미궁이 막 열린 사람에게
+			# 45보석짜리 물건이 혈정 8 을 판다(sweep_per_hour = 0.2 x 층이라
+			# 바닥 5층이면 시간당 1.0 이다). 혈맥 1티어 노드가 180 이니
+			# **노드 0.04레벨**이다 — "살 수 있을 때는 이미 쓸모없다" 그 병이다.
+			# 45 = 노드 한 레벨의 1/4. 층이 오르면 소탕분이 곧 바닥을 넘어선다
+			# (28층부터). 소탕 배율(혈맥 탐욕·군림)은 일부러 안 태운다 —
+			# 상점은 배급이지 소탕이 아니다.
+			return maxf(45.0, DungeonDefs.sweep_per_hour(dungeon_floor) * 8.0)
+		"sigil":
+			# **제단 한 판의 절반.** 40 고정이던 동안 8종 중 유일하게 아무것도
+			# 안 보는 상수였고, 제단 보상은 `60 + 15 x (단계-1)` 로 자라서 후반엔
+			# 한 판의 27% 까지 녹았다. 혈맹 한 레벨이 100렙에서 220 이라 40 으로는
+			# 한 레벨도 못 샀다. 이제 도전 단계를 따라간다(1단계 30 -> 7단계 75).
+			return RaidDefs.reward("pact", maxi(1, pact_best)) * 0.5
 		"ad_ticket": return 2.0
 		"ad_gem": return 50.0
 	return 0.0

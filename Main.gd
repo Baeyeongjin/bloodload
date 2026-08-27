@@ -9217,9 +9217,9 @@ func _shop_buy(id: String) -> void:
 		return
 	gem -= float(it["cost"])
 	shop_used[id] = int(shop_used.get(id, 0)) + 1
-	var amt := ShopDefs.amount(id, stage, dungeon_best)
+	var amt := ShopDefs.amount(id, stage, dungeon_best,
+		int(raid_best.get("pact", 0)))
 	match id:
-		"blood": gold += amt
 		"crystal": crystal += amt
 		"sigil": sigil += amt
 		"ticket":
@@ -9260,7 +9260,8 @@ func _refresh_shop() -> void:
 		# 그림 위 숫자는 수량만 — "1회 6"이 값으로 읽힌 사고의 재발 방지.
 		card["amount"].text = "+1판" if id == "ticket" \
 			else ("+%d시간" % int(ShopDefs.WARP_HOURS) if id == "warp" \
-			else _n(ShopDefs.amount(id, stage, dungeon_best)))
+			else _n(ShopDefs.amount(id, stage, dungeon_best,
+				int(raid_best.get("pact", 0)))))
 		card["left"].text = "%d구간부터" % need if locked \
 			else "오늘 %d / %d" % [left, int(it["per_day"])]
 		# 광고 줄은 값이 0 이라 "보석 0" 으로 떴고 `gem < 0` 이 늘 거짓이라
