@@ -926,6 +926,10 @@ func _ready() -> void:
 				_pet_roll_many(n)
 			else:
 				_pet_roll()
+		# [개발 도구] --dying=N : 몹을 죽는 도중 N(0~1) 지점에 얼려 디졸브를 캡처한다.
+		# 사망이 0.62초라 그냥 찍으면 원하는 순간이 안 걸린다.
+		if arg.begins_with("--dying="):
+			_dev_dying = clampf(float(arg.trim_prefix("--dying=")), 0.0, 1.0)
 		# [개발 도구] --flash : 화면의 몹을 전부 피격 상태로 고정해 번쩍임을 캡처한다.
 		# 번쩍임은 0.1초라 그냥 찍으면 절대 안 잡힌다 — 값을 눈으로 고르려면 고정이 필요하다.
 		if arg.begins_with("--flash"):
@@ -1405,7 +1409,7 @@ func _build_scene() -> void:
 	# 피격 번쩍임 — self_modulate(곱셈)로는 어두운 스킨을 못 하얗게 만든다.
 	# 버프 tint 는 `modulate` 라 셰이더의 MODULATE 로 그대로 살아 있다.
 	var hero_mat := ShaderMaterial.new()
-	hero_mat.shader = Foe.FLASH_SHADER
+	hero_mat.shader = Foe.FX_SHADER
 	_hero.material = hero_mat
 	_hero.position = Vector2(HERO_X, ground_y - float(Grid.SPRITE))   # 발밑 = ground_y
 	_hero.scale = Vector2(2, 2)   # 32px 원본 -> 64px. 배경도 2배라 도트 밀도가 같다.
@@ -11998,6 +12002,8 @@ var boss_tier := 1
 var _dev_boss := -1
 # [개발 도구] --flash[=N] : 번쩍임을 고정한다. -1 이면 각자 기본값, 0~1 이면 그 값.
 var _dev_flash := -2.0
+# [개발 도구] --dying=N : 사망 진행도를 그 지점에 얼린다.
+var _dev_dying := -1.0
 
 
 func _boss_week_index() -> int:
@@ -14066,6 +14072,10 @@ func _spawn_foe() -> void:
 	# 이 시점의 f 는 아직 멀쩡하다 — _forget_foe 참고.
 	f.tree_exiting.connect(_forget_foe.bind(f))
 	add_child(f)
+	if _dev_dying >= 0.0:
+		# [개발 도구] 죽는 도중에 얼린다 — 디졸브를 눈으로 고르려면 필요하다.
+		f.die_freeze = _dev_dying
+		f._die()
 	if _dev_flash > -2.0:
 		# [개발 도구] 번쩍임 고정 — 0.1초짜리라 그냥 찍으면 안 잡힌다.
 		f.flash_hold = _dev_flash if _dev_flash >= 0.0 else (

@@ -130,7 +130,7 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 # 보스가 낮은 건 몸이 커서 같은 값이면 화면이 번쩍이기 때문이다(사장님).
 const FLASH_MOB := 0.85
 const FLASH_BOSS := 0.45
-const FLASH_SHADER := preload("res://shaders/hit_flash.gdshader")
+const FX_SHADER := preload("res://shaders/sprite_fx.gdshader")
 
 
 func _ready() -> void:
@@ -138,7 +138,7 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	# 몹마다 제 재질이 필요하다 — 번쩍임 상태가 개체마다 다르다.
 	var m := ShaderMaterial.new()
-	m.shader = FLASH_SHADER
+	m.shader = FX_SHADER
 	material = m
 
 
@@ -161,6 +161,8 @@ func take_damage(d: float) -> void:
 # [개발 도구] 0 이상이면 번쩍임을 그 값으로 **고정**한다(--flash 캡처용).
 # 0.1초짜리라 전투가 곧바로 꺼버려서, 고정이 없으면 절대 안 잡힌다.
 var flash_hold := -1.0
+# [개발 도구] 0 이상이면 사망 진행도를 그 지점에 **얼린다**(--dying 캡처용).
+var die_freeze := -1.0
 
 
 # 재질이 없으면 조용히 지나간다 — 셰이더 파일이 빠져도 게임이 안 죽는다.
@@ -209,6 +211,10 @@ func _process(delta: float) -> void:
 			if _flash_t <= 0.0:
 				_set_flash(0.0)
 	if dying:
+		if die_freeze >= 0.0:
+			dying_t = die_freeze * DIE_DUR   # [개발 도구] 얼린다
+			queue_redraw()
+			return
 		dying_t += delta
 		if dying_t >= DIE_DUR:
 			queue_free()
