@@ -724,7 +724,8 @@ func _base_hit_damage() -> float:
 			_stat_eff("critdmg"),
 			_trait_add("critdmg") + RelicDefs.add("critdmg", relics)
 			+ _gear_stat("critdmg") * GEAR_CRITDMG
-			+ _collection_bonus("critdmg") + _boon("critdmg"))
+			+ _collection_bonus("critdmg") + _boon("critdmg")
+			+ SkinDefs.bonus("critdmg", skins_owned))
 
 
 # 실제 타격 피해. 대상을 주면 그 몹의 **지식 레벨**만큼 더 아프게 때린다.
@@ -1970,7 +1971,8 @@ func _show_info() -> void:
 	var critdmg := 1.5 + 0.05 * (float(_stat_eff("critdmg")) - 1.0) \
 		+ _trait_add("critdmg") + RelicDefs.add("critdmg", relics) \
 		+ _gear_stat("critdmg") * GEAR_CRITDMG \
-		+ _collection_bonus("critdmg") + _boon("critdmg")
+		+ _collection_bonus("critdmg") + _boon("critdmg") \
+		+ SkinDefs.bonus("critdmg", skins_owned)
 	var sections: Array = [
 		["능력치", [
 			["평타 한 방", _n(_base_hit_damage() * (1.0 + _codex_act_bonus()))],
