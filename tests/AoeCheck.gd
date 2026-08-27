@@ -326,6 +326,21 @@ func _init() -> void:
 	assert(marked_exec, "처형인데 exec_fall 이 안 켜졌다 — 그냥 맞아 죽은 것과 똑같이 보인다")
 	assert(exec_fx >= 2, "처형인데 이펙트가 %d장뿐이다 — 왕관이 안 떴다" % exec_fx)
 
+	# **시전 중에는 전진 국면으로 안 넘어간다.** 넘어가면 _resolve_skill 이 첫
+	# 줄에서 통째로 빠져나가 파·진·가호가 쿨다운만 먹고 화면엔 아무 일도 없다.
+	# 실측(2026-08-27): 고치기 전 스킬 임팩트의 36%가 여기서 사라졌고, 고친 뒤 0%.
+	scene._phase = "fight"
+	scene._skill_action = "wave_common"
+	scene._skill_action_t = scene.SKILL_DUR
+	scene._tick_advance(0.016, [])      # 전열이 빈 상태
+	assert(scene._phase == "fight",
+		"시전 중에 전진으로 넘어갔다 - 그 스킬은 피해도 이펙트도 0이 된다")
+	# 두 번째가 있어야 "그냥 fight 에 못 박기"로 퇴화하는 걸 잡는다.
+	scene._skill_action = ""
+	scene._tick_advance(0.016, [])
+	assert(scene._phase == "advance",
+		"시전이 끝났는데도 전진을 안 한다 - 구간이 멈춘다")
+
 	print("")
 	print("AoeCheck OK")
 	quit()

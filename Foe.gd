@@ -389,6 +389,15 @@ func _special_move(mv: String) -> void:
 			main._dash_ghost(self)
 		_move_tw.tween_property(self, "position:x", at, 0.14) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		# **표식도 몸과 같이 옮긴다.** `Main._foe_arrived` 는 position.x 와 stop_x 가
+		# 붙어 있을 때만 참이라, 몸만 옮기면 대시가 도는 내내 영웅의 평타도 격도
+		# 광역도 통째로 사라진다 — 몸은 코앞에 와 있는데 표식만 원래 칸에 남아서다.
+		# **아래 점프가 착지 콜백에서 하는 바로 그 일**을 이동 중에도 하는 것뿐이다
+		# (2026-08-25 에 점프만 고치고 이 형제를 남겼다).
+		# 곡선을 똑같이 줘야 중간에 안 벌어진다 — 선형으로 두면 QUAD_OUT 과
+		# 어긋나서 `absf(position.x - stop_x) <= 1.0` 이 도중에 다시 거짓이 된다.
+		_move_tw.parallel().tween_property(self, "stop_x", at, 0.14) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		_move_tw.parallel().tween_callback(func() -> void:
 			var m2 := get_parent()
 			if m2 and m2.has_method("_dash_ghost"):
@@ -399,6 +408,8 @@ func _special_move(mv: String) -> void:
 		# 복귀는 스윙이 끝날 시간에 — 벤 모습을 보여 준 뒤 물러난다.
 		_move_tw.tween_interval(attack_dur() + 0.1)
 		_move_tw.tween_property(self, "position:x", _home_x, 0.35) \
+			.set_trans(Tween.TRANS_SINE)
+		_move_tw.parallel().tween_property(self, "stop_x", _home_x, 0.35) \
 			.set_trans(Tween.TRANS_SINE)
 		_move_tw.tween_callback(func() -> void: _home_x = INF)
 	else:   # jump

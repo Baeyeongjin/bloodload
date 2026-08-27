@@ -59,5 +59,30 @@ func _init() -> void:
 	h.setup(FoeTiers.get_tier("gargoyle"), 1.0, 0.0, true)
 	h.special_swing = true
 	assert(g.reach() > h.reach() * 1.5, "촉수 사거리가 안 길다")
+	# 5) **대시 중에도 표식(stop_x)이 몸을 따라오는가.**
+	#    Main._foe_arrived 는 position.x 와 stop_x 가 붙어 있을 때만 참이라,
+	#    몸만 옮기면 대시가 도는 내내 영웅의 평타도 격도 광역도 통째로 사라진다.
+	#    점프에서 같은 증상을 한 번 고쳤는데(2026-08-25 사장님: "보스가
+	#    점프공격하고나서 캐릭터 공격을 멈춤") **대시 형제가 남아 있었다.**
+	var d := Foe.new()
+	d.setup(FoeTiers.get_tier("wraith_knight"), 1.0, 0.0, true)
+	root.add_child(d)
+	d.visible = false          # 그림은 안 본다 - 트윈만 돌린다
+	d.set_process(false)
+	d.position.x = 400.0
+	d.stop_x = 400.0
+	d._special_move("dash")
+	var worst := 0.0
+	var el := 0.0
+	while el < 0.6:
+		await process_frame
+		el += root.get_process_delta_time()
+		worst = maxf(worst, absf(d.position.x - d.stop_x))
+	# 문턱 1.0 은 Main._foe_arrived 가 쓰는 값 그대로다. 곡선(set_trans/ease)을
+	# 안 맞추면 도중에 벌어져서 여기 걸린다 - 그래서 문턱을 느슨하게 안 잡았다.
+	assert(worst <= 1.0,
+		"대시 중 stop_x 가 %.1fpx 뒤처졌다 - 그동안 영웅이 이 보스를 못 때린다" % worst)
+	d.queue_free()
+
 	print("SpecialKindCheck OK  (기전 %d종)" % seen.size())
 	quit()
