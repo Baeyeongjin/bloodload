@@ -25,6 +25,9 @@ func _init() -> void:
 	while scene._phase != "fight":
 		await process_frame
 
+	# 사거리가 열린 프레임(또는 그 다음)에 스윙이 나갔나 — 아래 assert 참고.
+	var SWING: Array = []
+	var _reach_frame := false
 	var A: Array = []
 	var B: Array = []
 	var C: Array = []
@@ -62,6 +65,19 @@ func _init() -> void:
 			continue
 		if t_reach < 0.0 and not e.dying and scene._in_front_reach(e):
 			t_reach = t
+			_reach_frame = true
+			# 스킬 중이면 뺀다. 기본공격 봉쇄는 **별개 결함**이라 여기 섞으면
+			# 둘 다 못 읽는다(_skill_action != "" 이면 10174 에서 조기 반환).
+			if scene._skill_action == "":
+				SWING.append(1.0 if scene._pending_target != null else 0.0)
+		elif _reach_frame:
+			# **한 프레임은 봐준다.** 사거리를 여는 이동(_tick_dash)이 공격 판정
+			# (_tick_hero_attack)보다 뒤에 돌아서(Main.gd 틱 순서), 열린 그
+			# 프레임엔 구조적으로 스윙이 못 나는 경우가 있다. 실측: 그 프레임만
+			# 보면 0.89, 한 프레임 봐주면 1.00.
+			_reach_frame = false
+			if not SWING.is_empty() and float(SWING[SWING.size() - 1]) < 0.5 					and scene._pending_target != null:
+				SWING[SWING.size() - 1] = 1.0
 		if t_reach >= 0.0 and float(e.hp) < hp0 - 0.001:
 			A.append(maxf(0.0, t_target - t_fight))
 			B.append(maxf(0.0, t_reach - t_target))
@@ -103,9 +119,42 @@ func _init() -> void:
 	for x in C:
 		wait_mean += float(x)
 	wait_mean /= float(maxi(1, C.size()))
-	assert(wait_mean < scene.attack_interval() * 0.8,
-		"마주치고 공격까지 너무 오래 기다린다: %.2f초 (주기 %.2f초)"
-		% [wait_mean, scene.attack_interval()])
+	# **재는 것을 바꿨다**(2026-08-27). 옛 문턱은 `대기 < 주기 x 0.8` 이었는데
+	# 밸런스 개편으로 주기가 0.60 -> 0.22 로 줄면서 **통과가 불가능해졌다**:
+	# _attack_swing() 이 min(ATTACK_SWING 0.34, 주기) 라 스윙만으로 0.22 초이고,
+	# 임팩트는 그림이 제일 뻗는 프레임(9장 중 5·6·8번 = 스윙의 0.61~0.94)에서
+	# 난다. 하한 0.195초 > 문턱 0.176초 — 완벽한 코드도 못 넘는다.
+	# 문턱을 옮겨 봐야 공속이 또 오르면 다시 빨개진다. 축이 틀린 것이다.
+	#
+	# 이 검사가 지키려던 건 총 대기시간 예산이 아니라 **"달려가는 동안 쿨다운이
+	# 도는가"** 하나다. 그러면 그것만 직접 잰다: 사거리가 열린 프레임에 스윙이
+	# 나가는가. 스윙 길이·임팩트 프레임·스킬 점유가 자동으로 빠지고 주기에도
+	# 안 묶인다. 대기시간(C)은 아래에 찍기만 하고 문턱으로 쓰지 않는다.
+	#
+	# **실측**(주기 0.60, 표본 27 / 되돌림 21). 세 후보를 다 찍어서 골랐다:
+	#     신호                          고쳐진 상태   버그 되돌림
+	#     사거리 열린 프레임에 스윙         0.89        0.14
+	#     +1프레임까지 스윙                 1.00        0.19   <- 쓴다
+	#     사거리 열릴 때 쿨다운 끝남        0.11        0.05   <- 버렸다
+	#
+	# 쿨다운 잔량(_attack_t)을 보는 건 **안 된다.** 가드가 `_attack_t > 0` 이라
+	# 0 이 되는 순간 스윙이 나가고 같은 프레임에 _attack_t 가 주기로 되돌려져서,
+	# 프레임 끝에서 재면 고쳐진 상태에서도 늘 양수다. 코드를 읽어서는 이걸
+	# 몰랐고 두 상태를 다 돌려 보고 알았다.
+	#
+	# 문턱 0.9 는 1.00 과 0.19 사이다. 딱 1.00 을 요구하지 않는 이유는 스킬이
+	# 사거리 다음 프레임에 시작하면(위 필터는 열린 프레임에서 본다) 정상인데도
+	# 0 이 하나 섞일 수 있어서다. 0.19 와는 4.7 배 벌어져 있어 튜닝이 필요 없다.
+	var swing_rate := 0.0
+	for x in SWING:
+		swing_rate += float(x)
+	swing_rate /= float(maxi(1, SWING.size()))
+	print("사거리 열린 프레임(+1)에 스윙: %.2f  (표본 %d · 스킬 중 제외)"
+		% [swing_rate, SWING.size()])
+	assert(SWING.size() >= 8, "표본이 %d 개뿐이라 못 믿는다" % SWING.size())
+	assert(swing_rate >= 0.9,
+		"사거리가 열렸는데 스윙이 안 나간다: %.0f%% (달려가는 동안 공격 쿨다운이 얼어붙는다)"
+		% (swing_rate * 100.0))
 	# 표적 선정·이동은 즉시여야 한다 — 전열을 몸통 폭에 붙여 뒀으므로(FRONT_X).
 	var move_mean := 0.0
 	for x in B:
