@@ -125,9 +125,21 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	z_index = 2 if boss else 1
 
 
+# 피격 번쩍임 세기. **곱셈이 아니라 덮어쓰기 비율**이라 몹이 밝든 어둡든
+# 결과가 같다 — 미궁 깊이 색이 씌워진 몹도 같은 만큼 하얘진다.
+# 보스가 낮은 건 몸이 커서 같은 값이면 화면이 번쩍이기 때문이다(사장님).
+const FLASH_MOB := 0.85
+const FLASH_BOSS := 0.45
+const FLASH_SHADER := preload("res://shaders/hit_flash.gdshader")
+
+
 func _ready() -> void:
 	add_to_group("foes")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# 몹마다 제 재질이 필요하다 — 번쩍임 상태가 개체마다 다르다.
+	var m := ShaderMaterial.new()
+	m.shader = FLASH_SHADER
+	material = m
 
 
 func take_damage(d: float) -> void:
@@ -137,13 +149,25 @@ func take_damage(d: float) -> void:
 	_flash_t = 0.10
 	_hit_t = HIT_REACT_DUR
 	# 보스는 절반만 하얘진다 — 몸이 커서 잡몹 값 그대로면 화면이 번쩍인다
-	# (사장님: "너무 과해"). 스쿼시도 아래(_draw)에서 같은 비율로 줄인다.
-	self_modulate = Color(3, 3, 3.5) if is_boss or is_midboss 		else Color(7, 7, 8)
+	# (사장님: "너무 과해").
+	_set_flash(FLASH_BOSS if is_boss or is_midboss else FLASH_MOB)
 	var main := get_parent()
 	if main and main.has_method("on_foe_hit"):
 		main.on_foe_hit(self, d)
 	if hp <= 0.0:
 		_die()
+
+
+# [개발 도구] 0 이상이면 번쩍임을 그 값으로 **고정**한다(--flash 캡처용).
+# 0.1초짜리라 전투가 곧바로 꺼버려서, 고정이 없으면 절대 안 잡힌다.
+var flash_hold := -1.0
+
+
+# 재질이 없으면 조용히 지나간다 — 셰이더 파일이 빠져도 게임이 안 죽는다.
+func _set_flash(v: float) -> void:
+	if material is ShaderMaterial:
+		(material as ShaderMaterial).set_shader_parameter("flash",
+			flash_hold if flash_hold >= 0.0 else v)
 
 
 func attack_interval() -> float:
@@ -183,7 +207,7 @@ func _process(delta: float) -> void:
 		if _flash_t > 0.0:
 			_flash_t -= delta
 			if _flash_t <= 0.0:
-				self_modulate = Color(1, 1, 1)
+				_set_flash(0.0)
 	if dying:
 		dying_t += delta
 		if dying_t >= DIE_DUR:

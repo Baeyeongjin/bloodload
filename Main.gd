@@ -926,6 +926,10 @@ func _ready() -> void:
 				_pet_roll_many(n)
 			else:
 				_pet_roll()
+		# [개발 도구] --flash : 화면의 몹을 전부 피격 상태로 고정해 번쩍임을 캡처한다.
+		# 번쩍임은 0.1초라 그냥 찍으면 절대 안 잡힌다 — 값을 눈으로 고르려면 고정이 필요하다.
+		if arg.begins_with("--flash"):
+			_dev_flash = float(arg.trim_prefix("--flash=")) if "=" in arg else -1.0
 		# [개발 도구] --trip : 펫 열둘을 쥐여 주고 둘을 내보낸 채로 원정 판을 연다.
 		# 원정은 시간이 지나야 그림이 생기므로 하나는 도착시켜 둔다 — 안 그러면
 		# 캡처가 늘 "보내기" 한 가지 상태밖에 못 잡는다.
@@ -1398,6 +1402,11 @@ func _build_scene() -> void:
 
 	_hero = Sprite2D.new()
 	_hero.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# 피격 번쩍임 — self_modulate(곱셈)로는 어두운 스킨을 못 하얗게 만든다.
+	# 버프 tint 는 `modulate` 라 셰이더의 MODULATE 로 그대로 살아 있다.
+	var hero_mat := ShaderMaterial.new()
+	hero_mat.shader = Foe.FLASH_SHADER
+	_hero.material = hero_mat
 	_hero.position = Vector2(HERO_X, ground_y - float(Grid.SPRITE))   # 발밑 = ground_y
 	_hero.scale = Vector2(2, 2)   # 32px 원본 -> 64px. 배경도 2배라 도트 밀도가 같다.
 	# 원본은 왼쪽을 보고 있는데 몹은 오른쪽에서 오므로 뒤집는다.
@@ -10466,7 +10475,7 @@ func _tick_hero_state(delta: float) -> void:
 	if _hero_flash_t > 0.0:
 		_hero_flash_t -= delta
 		if _hero_flash_t <= 0.0:
-			_hero.self_modulate = Color.WHITE
+			_set_hero_flash(0.0)
 	# **버프가 도는 동안 영웅이 붉게 물든다**(RULES.tint — 피의 제단). 칼만 따로는
 	# 못 물들인다: 영웅이 스프라이트 한 장이라 부위를 못 가른다. 몸 전체가 붉어지면
 	# "피를 뒤집어썼다"로 읽혀서 오히려 맞는다.
@@ -11353,6 +11362,11 @@ func _pop_damage(foe: Foe, damage: float) -> void:
 #
 # 크기는 **최대 체력 대비**로 정한다. 몹 쪽과 같은 기준이다 — 화면에서 궁금한 건
 # 절대값이 아니라 "얼마나 아팠나"고, 한 방에 반이 날아가면 그건 커야 한다.
+func _set_hero_flash(v: float) -> void:
+	if _hero and _hero.material is ShaderMaterial:
+		(_hero.material as ShaderMaterial).set_shader_parameter("flash", v)
+
+
 func _pop_hero_damage(damage: float) -> void:
 	var bite := damage / maxf(1.0, max_hp())
 	_pop_number(_n(damage), hero_x, ground_y - float(Grid.SPRITE) * HERO_DRAW_SCALE - 8.0,
@@ -11450,7 +11464,7 @@ func on_foe_attack(_foe: Foe) -> void:
 		_foe.hp = minf(_foe.max_hp, _foe.hp + incoming * 0.5)
 	_pop_hero_damage(incoming)
 	_hero_flash_t = 0.10
-	_hero.self_modulate = Color(7, 7, 8)
+	_set_hero_flash(Foe.FLASH_MOB)
 	_play("hurt", 0.10)
 	# **때린 놈 반대쪽으로 민다.** 피가 줄고 몸이 붉게 번쩍이는 것만으로는 맞았다는 게
 	# 잘 안 읽힌다 — 자리가 움직여야 몸으로 읽힌다. 대시가 곧 다시 파고들므로
@@ -11537,7 +11551,7 @@ func on_foe_meteor(f: Foe) -> void:
 		hero_hp = maxf(0.0, hero_hp - incoming)
 		_pop_hero_damage(incoming)
 		_hero_flash_t = 0.10
-		_hero.self_modulate = Color(7, 7, 8)
+		_set_hero_flash(Foe.FLASH_MOB)
 		_play("hurt", 0.10)
 		if hero_hp <= 0.0:
 			_kill_hero())
@@ -11686,7 +11700,7 @@ func _kill_hero() -> void:
 	_skill_action = ""
 	_skill_target = null
 	_hero_flash_t = 0.0
-	_hero.self_modulate = Color.WHITE
+	_set_hero_flash(0.0)
 	_anim_fx("fx_death_blood", Vector2(hero_x, ground_y - 42.0), 18.0, 2.0)
 	# **쓰러져 눕는 걸 보여준다.** 예전엔 위로 띄우면서(-32) 0.55초에 페이드아웃해
 	# 넘어지는 그림이 있어도 안 보였다 — 사장님: "쓰러지는것도 아예 눕거나".
@@ -11734,7 +11748,7 @@ func _revive_hero() -> void:
 	_hero.visible = true
 	_hero.position = Vector2(HERO_X, ground_y - float(Grid.SPRITE))
 	_hero.modulate = Color.WHITE
-	_hero.self_modulate = Color.WHITE
+	_set_hero_flash(0.0)
 	_attack_t = 0.0
 	_play("idle")
 	_save_game()
@@ -11982,6 +11996,8 @@ var boss_tier := 1
 # [개발 도구] --boss=4 : 순환을 무시하고 그 보스를 띄운다. 8종이 되면서 특정
 # 보스를 화면에서 보려면 몇 주를 기다려야 하는데, 그건 검수 방법이 아니다.
 var _dev_boss := -1
+# [개발 도구] --flash[=N] : 번쩍임을 고정한다. -1 이면 각자 기본값, 0~1 이면 그 값.
+var _dev_flash := -2.0
 
 
 func _boss_week_index() -> int:
@@ -14050,6 +14066,11 @@ func _spawn_foe() -> void:
 	# 이 시점의 f 는 아직 멀쩡하다 — _forget_foe 참고.
 	f.tree_exiting.connect(_forget_foe.bind(f))
 	add_child(f)
+	if _dev_flash > -2.0:
+		# [개발 도구] 번쩍임 고정 — 0.1초짜리라 그냥 찍으면 안 잡힌다.
+		f.flash_hold = _dev_flash if _dev_flash >= 0.0 else (
+			Foe.FLASH_BOSS if (boss or f.is_midboss) else Foe.FLASH_MOB)
+		f._set_flash(f.flash_hold)
 	if boss:
 		# 보스는 **컷신**이다 — 카메라가 가고(팬) 이름이 크게 뜬다(레퍼런스).
 		_boss_pan(f)
