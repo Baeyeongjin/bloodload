@@ -9961,10 +9961,13 @@ func _process(delta: float) -> void:
 		_slam_demo_t -= delta
 		if _slam_demo_t <= 0.0:
 			_slam_demo_t = 0.55   # 임팩트가 0.45초 - 주기를 붙여야 캡처가 운이 아니다
-			# 사거리는 **실측값**을 준다 — 190 을 쓰던 동안 데모가 실전보다 좁아서
-			# 캡처가 실제보다 얌전해 보였다. 특수 사거리 실측(2026-08-27):
-			# 촉수 412 · 음파 464 · 처형 243 · 유령 231 px.
-			_slam_wave(hero_x + 170.0, 412.0, _slam_demo)
+			# **실전 숫자를 쓴다.** 실측(2026-08-27): 영웅-보스 간격 중간 59px,
+			# 특수 사거리 촉수 412 · 음파 464 · 처형 243 · 유령 231 px.
+			# 예전엔 보스를 hero_x+170 에, 사거리를 190 으로 놓고 그려서 캡처가
+			# 실전과 딴판이었다 — 그 그림을 보고 판단하면 틀린다.
+			var demo_boss := hero_x + 59.0
+			_slam_wave(_slam_at_x(str(FoeTiers.slam_theme(_slam_demo)[0]), demo_boss),
+				412.0, _slam_demo, 1.0)
 	_tick_hero_state(delta)
 	var visual_frozen := _visual_hitstop_t > 0.0
 	_visual_hitstop_t = maxf(0.0, _visual_hitstop_t - delta)
@@ -11503,11 +11506,17 @@ var _slam_demo_t := 0.0
 # 타격점에 뜨는 구조(검기·피보라·X참격·촉수)는 몹 발밑이 아니라 **영웅 쪽**에
 # 그린다 — 원거리 촉수가 보스 발밑에서 터지면 "누가 맞았는지"가 안 보인다.
 func _foe_slam_fx(f: Foe) -> void:
-	var style := str(FoeTiers.slam_theme(f.key)[0])
-	var at_x := f.position.x
+	_slam_wave(_slam_at_x(str(FoeTiers.slam_theme(f.key)[0]), f.position.x),
+		f.reach(), f.key, signf(f.position.x - hero_x))
+
+
+# 착지 그림이 뜨는 자리. **--slam 데모와 실전이 같은 함수를 본다** — 갈라져
+# 있던 동안 데모가 보스를 hero_x+170 에 놓고 그려서, 실전(간격 59px)보다
+# 훨씬 벌어진 그림을 보고 판단할 뻔했다.
+func _slam_at_x(style: String, boss_x: float) -> float:
 	if style in ["lash", "spray", "cross", "arc"]:
-		at_x = hero_x + (f.position.x - hero_x) * 0.25
-	_slam_wave(at_x, f.reach(), f.key, signf(f.position.x - hero_x))
+		return hero_x + (boss_x - hero_x) * 0.25
+	return boss_x
 
 
 # 대시 잔상 — 지나온 자리에 반투명 몸이 남았다 사라진다. 텍스처는 걷기 첫
@@ -11620,11 +11629,11 @@ func _slam_wave(at_x: float, r: float, key: String, dir := 1.0) -> void:
 			var t := create_tween()
 			t.tween_interval(delay)
 			t.tween_callback(_slam_fx_one.bind(at_x, e))
-	_lash_trail(at_x, r, key, dir)
+	_reach_trail(at_x, r, key, dir)
 	_shake_combat(4.0)
 
 
-# **사거리를 그림이 말하게 한다** — 촉수(lash)만.
+# **사거리를 그림이 말하게 한다.**
 #
 # `SPECIAL_KIND` 의 사거리 배수는 보스마다 1.7~3.2 로 갈리는데 착지 그림은
 # 전부 같은 크기였다(이 함수 전까지 `_slam_wave` 의 `r` 은 서명에만 있고 본문에서
@@ -11638,15 +11647,29 @@ func _slam_wave(at_x: float, r: float, key: String, dir := 1.0) -> void:
 #
 # 뒤로 갈수록 작고 어둡고 늦다: 등급 색표의 테두리 색(`SLAM_THEME` 셋째)을
 # 써서 심-테두리 두 톤을 만든다. 한 색이면 그냥 복사본으로 보인다(같은 문서 4장).
+#
+# **어느 쪽으로 뻗는지는 스타일이 정한다.** 값은 `dir`(보스가 있는 쪽)에 곱하는
+# 부호다. 표에 없는 스타일은 안 탄다.
+#   lash  촉수 — 영웅 발밑에서 터져 **보스 쪽 지면**까지 덩굴이 이어진다 (+)
+#
+# **음파(sonic)는 넣었다가 뺐다**(2026-08-27). 영웅 쪽(-)으로 뻗게 했더니
+# 영웅을 덮었다. 원인은 전제가 틀렸던 것이다: `reach()` 는 **맞는 반경**이지
+# 떨어져서 때리는 거리가 아니다. 실측하면 영웅-보스 간격은 중간값 **59px**
+# 인데(표본 716) 특수 사거리는 412~464px 다 — 배수가 큰 건 "멀리서 때린다"가
+# 아니라 **"물러나도 못 피한다"** 는 뜻이다. 그래서 음파는 지금도 이미
+# 영웅에게 닿아 있고, 더 뻗으면 지나쳐 가릴 뿐 새로 말해 주는 게 없다.
+const REACH_TRAIL := {"lash": 1.0}
 const LASH_TRAIL_SPAN := 0.60   # 사거리의 몇 할까지 늘어놓나
 const LASH_TRAIL_MAX := 150.0   # ponytail: 화면을 못 덮게 박은 천장. 사거리가
                                 # 더 늘면 칸을 늘리는 게 아니라 이 값을 다시 잰다.
 
 
-func _lash_trail(at_x: float, r: float, key: String, dir: float) -> void:
+func _reach_trail(at_x: float, r: float, key: String, dir: float) -> void:
 	var theme: Array = FoeTiers.slam_theme(key)
-	if str(theme[0]) != "lash":
+	var sign_: float = float(REACH_TRAIL.get(str(theme[0]), 0.0))
+	if sign_ == 0.0:
 		return
+	dir *= sign_
 	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
 	if recipe.is_empty():
 		return
