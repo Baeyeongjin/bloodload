@@ -933,6 +933,9 @@ func _ready() -> void:
 				_pet_roll()
 		# [개발 도구] --dying=N : 몹을 죽는 도중 N(0~1) 지점에 얼려 디졸브를 캡처한다.
 		# 사망이 0.62초라 그냥 찍으면 원하는 순간이 안 걸린다.
+		# [개발 도구] --shatter : 보스 하나를 그 자리에서 터뜨려 캡처한다.
+		if arg == "--shatter":
+			_dev_shatter = true
 		if arg.begins_with("--dying="):
 			_dev_dying = clampf(float(arg.trim_prefix("--dying=")), 0.0, 1.0)
 		# [개발 도구] --flash : 화면의 몹을 전부 피격 상태로 고정해 번쩍임을 캡처한다.
@@ -10020,6 +10023,14 @@ func _notify_stat(text: String) -> void:
 func _process(delta: float) -> void:
 	play_time += delta
 	_drop_tick(delta)
+	if _dev_shatter:
+		# [개발 도구] 0.9초마다 교전 몹을 그 자리에서 흩뿌린다(안 죽인다).
+		# 터짐이 0.75초라 한 방 캡처는 운이다 — --slam 과 같은 길.
+		_shatter_demo_t -= delta
+		if _shatter_demo_t <= 0.0:
+			_shatter_demo_t = 1.05
+			if is_instance_valid(_engaged) and not _engaged.dying:
+				_shatter(_engaged)
 	if _slam_demo != "":
 		_slam_demo_t -= delta
 		if _slam_demo_t <= 0.0:
@@ -11584,6 +11595,66 @@ func _slam_at_x(style: String, boss_x: float) -> float:
 	return boss_x
 
 
+# **보스 사망 — 제 픽셀로 흩어진다.** 파티클 하나하나가 제 격자 칸으로
+# 몸 그림을 찍어 그 색을 들고 날아간다. 터지는 첫 프레임에는 구름이 원래
+# 그림이라, 새 그림 한 장 없이 몹 서른 종의 폭발이 생긴다
+# (docs/ATTACK_FX_RECIPE.md 7장 · 출처는 거기 적었다).
+#
+# 디졸브(sprite_fx)는 픽셀을 **제자리에서 지우고** 이건 **날려 보낸다**.
+# 잡몹은 디졸브, 보스는 이것 — 그래야 보스 죽음이 한 번 더 읽힌다.
+const SHATTER_SHADER := preload("res://shaders/shatter.gdshader")
+const SHATTER_CELLS := 16          # 16x16 = 256 조각
+
+
+func _shatter(f: Foe) -> void:
+	if not is_instance_valid(f) or f._walk_frames.is_empty():
+		return
+	var tex: Texture2D = f._walk_frames[0]
+	var sz: float = f._size()
+	var p := GPUParticles2D.new()
+	var m := ShaderMaterial.new()
+	m.shader = SHATTER_SHADER
+	m.set_shader_parameter("sprite_tex", tex)
+	m.set_shader_parameter("sprite_size", sz)
+	m.set_shader_parameter("cells", SHATTER_CELLS)
+	p.process_material = m
+	# 조각 하나의 그림. **1x1 흰 점을 조각 크기로 늘린다** — 몸 텍스처를
+	# 그대로 쓰면 조각마다 그림 전체가 그려져 죽이 된다.
+	p.texture = _dot_tex()
+	p.amount = SHATTER_CELLS * SHATTER_CELLS
+	# 0.75 는 읽히는 창이 너무 짧았다 — 그림으로 읽히는 건 첫 0.2초뿐이라
+	# 조금 늘리고 중력을 낮춰 파편이 눈에 남게 한다.
+	p.lifetime = 0.95
+	p.one_shot = true
+	p.explosiveness = 1.0        # 한꺼번에 터진다
+	# 자리를 셰이더가 직접 쓰므로 **노드 기준**이어야 한다. 대신 세상이 흐를 때
+	# 같이 밀리도록 월드 그룹에 넣는다 — 장판·시체와 같은 길이다.
+	p.local_coords = true
+	p.add_to_group(WORLD_FX_GROUP)
+	p.z_index = 3
+	# 발밑이 아니라 몸 가운데에서 터진다.
+	p.position = Vector2(f.position.x, ground_y - sz * 0.5)
+	add_child(p)
+	p.emitting = true
+	# 수명이 끝나면 스스로 사라진다 — 노드를 안 들고 있으므로 몹이 먼저
+	# 지워져도 안전하다(_dash_ghost 와 같은 길).
+	var t := create_tween()
+	t.tween_interval(p.lifetime + 0.2)
+	t.tween_callback(p.queue_free)
+
+
+# 1x1 흰 점. 파티클 조각의 몸이다 — 한 번 만들어 두고 계속 쓴다.
+var _dot_cache: Texture2D = null
+
+
+func _dot_tex() -> Texture2D:
+	if _dot_cache == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color.WHITE)
+		_dot_cache = ImageTexture.create_from_image(img)
+	return _dot_cache
+
+
 # 대시 잔상 — 지나온 자리에 반투명 몸이 남았다 사라진다. 텍스처는 걷기 첫
 # 프레임(몸의 기본형)이고 색은 그 보스의 파동 심 색이다.
 func _dash_ghost(f: Foe) -> void:
@@ -11694,8 +11765,36 @@ func _slam_wave(at_x: float, r: float, key: String, dir := 1.0) -> void:
 			var t := create_tween()
 			t.tween_interval(delay)
 			t.tween_callback(_slam_fx_one.bind(at_x, e))
+	_slam_echo(at_x, key, dir)
 	_reach_trail(at_x, r, key, dir)
 	_shake_combat(4.0)
+
+
+# **착지는 한 박자가 아니다.** 같은 그림을 반 박자 뒤에 작게 한 번 더 얹으면
+# "터짐이 한꺼번에 오지 않아서" 폭발로 읽힌다 — Penusbmic 의 방법이 정확히
+# 이것이다(작은 원소를 시차·위치로 어긋나게 복사한다,
+# docs/ATTACK_FX_RECIPE.md 8장). 레시피의 시차 칸이 그 자리인데 열한 보스 중
+# 열이 한 줄짜리라 원리를 적어만 두고 안 쓰고 있었다.
+#
+# **하나만 얹는다.** 촉수에서 둘을 세웠다가 바닥이 너무 차서 하나로 줄였다
+# (2026-08-27 사장님) — 같은 자로 여기도 하나다.
+const SLAM_ECHO_DELAY := 0.07
+const SLAM_ECHO_SCALE := 0.62
+const SLAM_ECHO_DX := 26.0
+
+
+func _slam_echo(at_x: float, key: String, dir: float) -> void:
+	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
+	if recipe.is_empty():
+		return
+	var head: Array = recipe[0]
+	# 뒤엣것이라 작고 늦다. 틴트는 안 건다 — 그림이 이미 제 색을 갖고 있고
+	# 곱하면 계조가 눌린다(같은 문서 4장).
+	var e := [head[0], float(head[1]) + dir * SLAM_ECHO_DX, float(head[2]) - 6.0,
+		float(head[3]) * SLAM_ECHO_SCALE, head[4], null, 0.0]
+	var t := create_tween()
+	t.tween_interval(SLAM_ECHO_DELAY)
+	t.tween_callback(_slam_fx_one.bind(at_x, e))
 
 
 # **사거리를 그림이 말하게 한다.**
@@ -12095,6 +12194,9 @@ var _dev_boss := -1
 var _dev_flash := -2.0
 # [개발 도구] --dying=N : 사망 진행도를 그 지점에 얼린다.
 var _dev_dying := -1.0
+# [개발 도구] --shatter : 첫 몹을 보스로 세워 터뜨린다.
+var _dev_shatter := false
+var _shatter_demo_t := 0.0
 
 
 func _boss_week_index() -> int:

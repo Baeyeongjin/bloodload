@@ -214,6 +214,11 @@ func _die() -> void:
 	# 그동안 배경은 200px/s). 미는 일에만 다시 끼워 준다.
 	add_to_group("corpses")
 	var main := get_parent()
+	# **보스는 제 픽셀로 흩어진다**(잡몹은 디졸브 그대로). 둘을 갈라 써야
+	# "보스가 죽었다" 가 한 번 더 읽힌다. 그림은 안 늘어난다 — 걷기 첫
+	# 프레임을 그대로 쪼갠다(docs/ATTACK_FX_RECIPE.md 7장).
+	if (is_boss or is_midboss) and main and main.has_method("_shatter"):
+		main._shatter(self)
 	if main and main.has_method("on_foe_killed"):
 		main.on_foe_killed(self)
 
