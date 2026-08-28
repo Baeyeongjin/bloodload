@@ -159,11 +159,29 @@ COLOR = spriteColor;
 **PixelLab 한계를 정확히 메우는 자리다** — 몹 서른 종의 폭발을 그림 0장으로
 만든다. 색이 그 몹의 색이라 자동으로 어울린다.
 
-**[실측] 우리 렌더러에서 된다.** `shader_type particles` 를 `GPUParticles2D`
-의 `process_material` 로 붙여 `gl_compatibility` 로 돌렸더니 SHADER ERROR
-없이 컴파일·부착됐다. 단 **헤드리스라 화면에 실제로 그려지는지는 못 봤다** —
-쓰기 전에 창으로 한 장 찍어야 한다. 이 저장소는 Intel Vulkan 에서 TDR 이
-난 이력이 있어(HANDOFF) GPU 기능은 늘 실측하고 쓴다.
+### **[실측] 이 셰이더 길은 우리 렌더러에서 막혔다**
+
+컴파일은 된다(SHADER ERROR 0건). 그런데 **화면에 한 조각도 안 그려진다.**
+갈라 본 순서가 이렇다:
+
+| 실험 | 결과 |
+|---|---|
+| 기본 `GPUParticles2D` (셰이더 없음) | **그려진다** — 파티클 자체는 된다 |
+| 이 셰이더 그대로 | 안 그려진다 |
+| `ACTIVE` 게이트 빼고 `COLOR` 를 단색 빨강으로 | **그려진다**(빨강 99픽셀) |
+
+즉 `gl_compatibility` 에서 **process 셰이더의 `texture(sprite, ...)` 가 알파
+0 을 돌려준다.** `ACTIVE = c.a > 0.35` 가 조각을 전부 죽이고 있었다.
+헤드리스로는 못 잡는다 — 창으로 찍어야 나온다.
+
+**그래서 색을 CPU 에서 뽑는다.** `Main._shatter` 가 몸 그림을 격자로 읽어
+칸마다 [자리·속도·색] 을 만들고, `Node2D` 하나가 `_draw` 로 그 사각형들을
+그린다. 렌더러를 안 타고, 이 저장소가 이미 쓰던 방식이다. 조각 수가 70~140
+개라 `draw_rect` 로 충분하다(보스가 죽을 때 한 번이다).
+
+> **교훈**: 셰이더가 컴파일된다고 그려지는 게 아니다. 이 저장소는 Intel
+> Vulkan TDR 이력 때문에 `gl_compatibility` 를 쓰는데, 그 렌더러는 기능
+> 지원이 Forward+ 와 다르다. **GPU 기능은 창으로 찍어 봐야 안다.**
 
 **포팅 주의**: 영상은 Godot 3(`Particles2D`, `vertex()`)이다. 4.7 은
 `GPUParticles2D` 이고 `start()` / `process()` 로 갈린다.

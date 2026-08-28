@@ -10030,6 +10030,9 @@ func _process(delta: float) -> void:
 		if _shatter_demo_t <= 0.0:
 			_shatter_demo_t = 1.05
 			if is_instance_valid(_engaged) and not _engaged.dying:
+				# **느리게 돌린다.** 터짐이 1초도 안 되는데 부팅 시간이 들쭉날쭉해
+				# --wait 로 그 창을 맞추는 건 운이었다(여러 번 놓쳤다). 8배 늦추면
+				# 아무 때나 찍어도 잡힌다 — 튜닝은 눈으로 보고 해야 한다.
 				_shatter(_engaged)
 	if _slam_demo != "":
 		_slam_demo_t -= delta
@@ -11595,64 +11598,71 @@ func _slam_at_x(style: String, boss_x: float) -> float:
 	return boss_x
 
 
-# **보스 사망 — 제 픽셀로 흩어진다.** 파티클 하나하나가 제 격자 칸으로
-# 몸 그림을 찍어 그 색을 들고 날아간다. 터지는 첫 프레임에는 구름이 원래
-# 그림이라, 새 그림 한 장 없이 몹 서른 종의 폭발이 생긴다
-# (docs/ATTACK_FX_RECIPE.md 7장 · 출처는 거기 적었다).
+# **보스 사망 — 제 픽셀로 흩어진다.** 몸 그림을 격자로 쪼개 칸마다 그 색의
+# 조각 하나를 만들고, 중심에서 밀어내며 떨어뜨린다. 터지는 첫 프레임에는
+# 조각이 원래 그림 그대로라 **새 그림이 0장 든다**
+# (docs/ATTACK_FX_RECIPE.md 7장).
 #
 # 디졸브(sprite_fx)는 픽셀을 **제자리에서 지우고** 이건 **날려 보낸다**.
 # 잡몹은 디졸브, 보스는 이것 — 그래야 보스 죽음이 한 번 더 읽힌다.
-const SHATTER_SHADER := preload("res://shaders/shatter.gdshader")
-const SHATTER_CELLS := 16          # 16x16 = 256 조각
+#
+# **파티클 셰이더로 하려다 접었다**(2026-08-27). 원본 기법은 process 셰이더가
+# `texture(sprite, ...)` 로 제 색을 읽는 것인데, `gl_compatibility` 에서는 그
+# 샘플이 알파 0 을 돌려줘 조각이 전부 죽었다 — 게이트를 빼고 단색으로 두면
+# 그려진다는 것까지 실측으로 갈랐다(기본 GPUParticles2D 는 잘 그려지므로
+# 파티클 자체의 문제가 아니다). 색을 CPU 에서 뽑으면 렌더러를 안 탄다.
+const SHATTER_CELLS := 12          # 조각 한 변 = 몸 크기 / 이 값
+const SHATTER_LIFE := 0.95
+const SHATTER_BURST := 2.4         # 중심에서 밀어내는 배수
+const SHATTER_RISE := 90.0
+const SHATTER_GRAV := 300.0
 
 
 func _shatter(f: Foe) -> void:
 	if not is_instance_valid(f) or f._walk_frames.is_empty():
 		return
-	var tex: Texture2D = f._walk_frames[0]
+	var img := (f._walk_frames[0] as Texture2D).get_image()
 	var sz: float = f._size()
-	var p := GPUParticles2D.new()
-	var m := ShaderMaterial.new()
-	m.shader = SHATTER_SHADER
-	m.set_shader_parameter("sprite_tex", tex)
-	m.set_shader_parameter("sprite_size", sz)
-	m.set_shader_parameter("cells", SHATTER_CELLS)
-	p.process_material = m
-	# 조각 하나의 그림. **1x1 흰 점을 조각 크기로 늘린다** — 몸 텍스처를
-	# 그대로 쓰면 조각마다 그림 전체가 그려져 죽이 된다.
-	p.texture = _dot_tex()
-	p.amount = SHATTER_CELLS * SHATTER_CELLS
-	# 0.75 는 읽히는 창이 너무 짧았다 — 그림으로 읽히는 건 첫 0.2초뿐이라
-	# 조금 늘리고 중력을 낮춰 파편이 눈에 남게 한다.
-	p.lifetime = 0.95
-	p.one_shot = true
-	p.explosiveness = 1.0        # 한꺼번에 터진다
-	# 자리를 셰이더가 직접 쓰므로 **노드 기준**이어야 한다. 대신 세상이 흐를 때
-	# 같이 밀리도록 월드 그룹에 넣는다 — 장판·시체와 같은 길이다.
-	p.local_coords = true
-	p.add_to_group(WORLD_FX_GROUP)
-	p.z_index = 3
-	# 발밑이 아니라 몸 가운데에서 터진다.
-	p.position = Vector2(f.position.x, ground_y - sz * 0.5)
-	add_child(p)
-	p.emitting = true
-	# 수명이 끝나면 스스로 사라진다 — 노드를 안 들고 있으므로 몹이 먼저
-	# 지워져도 안전하다(_dash_ghost 와 같은 길).
-	var t := create_tween()
-	t.tween_interval(p.lifetime + 0.2)
-	t.tween_callback(p.queue_free)
-
-
-# 1x1 흰 점. 파티클 조각의 몸이다 — 한 번 만들어 두고 계속 쓴다.
-var _dot_cache: Texture2D = null
-
-
-func _dot_tex() -> Texture2D:
-	if _dot_cache == null:
-		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
-		img.fill(Color.WHITE)
-		_dot_cache = ImageTexture.create_from_image(img)
-	return _dot_cache
+	var n := SHATTER_CELLS
+	var cell := sz / float(n)
+	# [시작 오프셋, 속도, 색] — 빈 칸은 아예 안 담는다.
+	var bits: Array = []
+	for iy in n:
+		for ix in n:
+			var u := int((float(ix) + 0.5) / float(n) * float(img.get_width()))
+			var v := int((float(iy) + 0.5) / float(n) * float(img.get_height()))
+			var c := img.get_pixel(mini(u, img.get_width() - 1),
+				mini(v, img.get_height() - 1))
+			if c.a <= 0.35:
+				continue
+			var off := Vector2((float(ix) + 0.5) / float(n) - 0.5,
+				(float(iy) + 0.5) / float(n) - 0.5) * sz
+			bits.append([off, off * SHATTER_BURST - Vector2(0.0, SHATTER_RISE),
+				Color(c.r, c.g, c.b)])
+	if bits.is_empty():
+		return
+	var node := Node2D.new()
+	node.position = Vector2(f.position.x, ground_y - sz * 0.5)
+	node.z_index = 3
+	add_child(node)
+	# 세상이 흐르면 같이 밀린다 — 장판·시체와 같은 길.
+	node.add_to_group(WORLD_FX_GROUP)
+	var st := {"t": 0.0}
+	node.draw.connect(func() -> void:
+		var t: float = st["t"]
+		var a := clampf((1.0 - t / SHATTER_LIFE) * 2.2, 0.0, 1.0)
+		for b in bits:
+			var p: Vector2 = b[0] + b[1] * t \
+				+ Vector2(0.0, 0.5 * SHATTER_GRAV * t * t)
+			var col: Color = b[2]
+			node.draw_rect(Rect2(p - Vector2(cell, cell) * 0.5,
+				Vector2(cell, cell)), Color(col.r, col.g, col.b, a)))
+	var tw := create_tween()
+	tw.tween_method(func(v: float) -> void:
+		st["t"] = v
+		if is_instance_valid(node):
+			node.queue_redraw(), 0.0, SHATTER_LIFE, SHATTER_LIFE)
+	tw.tween_callback(node.queue_free)
 
 
 # 대시 잔상 — 지나온 자리에 반투명 몸이 남았다 사라진다. 텍스처는 걷기 첫
