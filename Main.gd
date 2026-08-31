@@ -10019,6 +10019,82 @@ func _notify_stat(text: String) -> void:
 		_power_num.text = text
 
 
+# ── 모바일 수명주기 ────────────────────────────────────────────────────────
+#
+# **폰은 껐다 켜는 게 아니라 전환이 기본이다.** 앱을 안 죽이고 홈으로 나갔다
+# 몇 시간 뒤 돌아온다 — 그 사이를 안 쳐 주면 방치형인데 "들어왔더니 아무것도
+# 안 쌓였다"가 된다. 실행할 때만 보던 `left_at` 을 여기서도 본다.
+#
+# 저장소에 `_notification` 이 한 곳도 없어서(2026-08-27) 셋 다 비어 있었다:
+# 뒤로가기는 앱을 바로 껐고, 복귀는 아무 일도 안 했고, 백그라운드에서 OS 가
+# 죽이면 마지막 저장 이후가 날아갔다.
+
+# 나간 시각. 0 이면 지금 화면 안에 있다는 뜻이다.
+var _away_at := 0.0
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_WM_GO_BACK_REQUEST:
+			_go_back()
+		NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+			_app_paused()
+		NOTIFICATION_APPLICATION_RESUMED, NOTIFICATION_WM_WINDOW_FOCUS_IN:
+			_app_resumed()
+		NOTIFICATION_WM_CLOSE_REQUEST:
+			# 데스크톱에서 창을 닫을 때. 저장하고 나간다.
+			if _hud_root:
+				_save_game()
+
+
+func _app_paused() -> void:
+	# 아직 다 안 지어졌으면(로딩 중) 건드리지 않는다.
+	if _hud_root == null or _away_at > 0.0:
+		return
+	_away_at = Time.get_unix_time_from_system()
+	# **여기서 저장한다.** 백그라운드에서 OS 가 죽이면 다시 저장할 기회가 없다.
+	_save_game()
+
+
+func _app_resumed() -> void:
+	if _hud_root == null or _away_at <= 0.0:
+		return
+	var at := _away_at
+	_away_at = 0.0
+	_grant_offline(at)
+	# 켤 때와 **같은 함수**를 탄다 — 요율이 갈리면 "전환은 손해"가 된다.
+	# 1분 미만은 이 함수가 스스로 걸러내므로 데스크톱 알트탭에는 무해하다.
+	_refresh_chest()
+	_refresh_hud()
+
+
+# **뒤로가기가 닫을 팝업들.** 빠뜨리면 그 창이 떠 있는데 탭이 닫히거나 종료
+# 확인이 뜬다 — 화면이 하나 밀린 것처럼 읽힌다. 새 팝업을 만들면 여기 넣는다.
+# (판 안의 `_stat_view`·`_shop_view` 같은 것은 팝업이 아니라 탭 내용이라 뺀다.)
+func _popups() -> Array:
+	return [_confirm_view, _reward_view, _info_view, _name_view,
+		_outfit_view, _bulk_view, _codex_view, _quest_view,
+		_oath_view, _rates_view, _status_view]
+
+
+# 안드로이드 뒤로가기. **한 겹씩 걷는다** — 팝업 -> 탭 -> 종료 확인.
+# 바로 끄면 방치형에서 실수 한 번에 그날 판이 날아간 것처럼 읽힌다.
+func _go_back() -> void:
+	if _hud_root == null:
+		return
+	# 맨 위 팝업 하나만 닫는다.
+	for v in _popups():
+		if v != null and v.visible:
+			v.visible = false
+			return
+	if _tab != "home":
+		_select_tab("home")
+		return
+	_ask("게임을 끝냅니다. 진행은 저장돼 있습니다.", func() -> void:
+		_save_game()
+		get_tree().quit())
+
+
 # ── 루프 ───────────────────────────────────────────────────────────────────
 func _process(delta: float) -> void:
 	play_time += delta

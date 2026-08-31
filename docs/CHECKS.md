@@ -125,6 +125,7 @@ JOBS=2 LIMIT=300 bash tools/run_checks.sh
 | `NameCheck` | 이름 입력 — 사람이 친 글자도 저장본도 안 믿는다 |
 | `DotCheck` | 알림 점 — 켜지는 조건과 **꺼지는 조건을 같이** |
 | `BuyStepCheck` | 배수 버튼 — **화면에 눌린 것과 실제로 사는 양이 같은가** |
+| `LifecycleCheck` | 모바일 수명주기 — 뒤로가기 3겹 · 전환 복귀에 방치가 붙는가 |
 
 ### PaceProbe 는 사장님이 직접 돌린다
 
