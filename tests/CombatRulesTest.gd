@@ -201,6 +201,30 @@ func _init() -> void:
 			assert(float_px < 8.0,
 				"%s 가 바닥에서 %.1fpx 떠 있다 (여백 %d) — tools/seat_sprites.py %s"
 				% [str(sk), float_px, low, str(sk)])
+
+			# ── 걷기는 **다리**가 움직여야 걷기다 ──────────────────────────
+			# 사장님(2026-08-27): "걷는 모션인데 가만히있는게 많아".
+			#
+			# **처음엔 몸 전체로 재서 놓쳤다.** 팔·망토·덩굴이 흔들리기만 해도
+			# 점수가 채워져서, 다리를 심은 채 미끄러지는 놈이 통과했다 —
+			# 덩굴 거상은 몸 전체로 3.1% 였는데 다리로만 재니 2.1% 였고,
+			# 사냥개는 몸 전체 9.7% 로 멀쩡해 보였지만 다리는 9.9% 로 기존
+			# 최저(orc 14.6%)에 못 미쳤다. **아래 1/3 만 본다.**
+			#
+			# 잣대: 이웃 프레임의 다리 실루엣이 얼마나 어긋나나(XOR/OR).
+			# 마지막->첫 프레임도 본다 — 걷기는 되풀이라 거기도 이어져야 한다.
+			#
+			# **문턱은 기존 몹을 다 재서 뽑았다**(눈으로 정한 값이 아니다).
+			# 기존 27종 실측: 11.8(눈알 덩어리) ~ 58.9(거미). 하위 셋 —
+			# 눈알 덩어리 11.8 · 독버섯 12.7 · 슬라임 13.7 — 은 전부 **다리가
+			# 없는** 몹이라 낮게 나오는 게 맞다. 그래서 11.0 이 기존을 다 통과
+			# 시키면서 문제를 잡는 자리다: 사장님이 짚은 다섯(결정 골렘 4.2 ·
+			# 익사한 왕 6.5 · 근위 구울 7.3 · 사냥개 9.9)과, 짚지 않았지만
+			# 제일 나빴던 덩굴 거상 2.1 이 전부 걸린다.
+			var legs := _leg_motion(sf)
+			assert(legs >= 11.0,
+				"%s 걷기가 다리를 안 움직인다: %.1f%% (기존 최저 11.8)"
+				% [str(sk), legs])
 	# 특수 스윙은 평타보다 아프고 멀리 닿는다. 오프라인 평균 배수는 그 사이에 있어야
 	# 한다 — 1.0 이면 특수를 안 세는 것이고, SPECIAL_DMG 면 매번 특수로 치는 셈이다.
 	var avg := Foe.avg_attack_mult(true, false)
@@ -728,3 +752,42 @@ func _init() -> void:
 
 	print("CombatRulesTest OK")
 	quit()
+
+
+# 걷기 프레임들의 **다리** 움직임(%). 몸통 세로 범위의 아래 1/3 만 떼어
+# 이웃 프레임끼리 실루엣이 어긋난 비율을 잰다. 되풀이라 마지막->첫도 센다.
+func _leg_motion(fr: Array) -> float:
+	if fr.size() < 2:
+		return 100.0
+	var imgs: Array[Image] = []
+	for t in fr:
+		var im: Image = t.get_image()
+		if im.is_compressed():
+			im.decompress()
+		imgs.append(im)
+	# 모든 프레임을 합친 몸통 범위에서 아래 1/3
+	var top := imgs[0].get_height()
+	var bot := 0
+	for im in imgs:
+		var u: Rect2i = im.get_used_rect()
+		top = mini(top, u.position.y)
+		bot = maxi(bot, u.position.y + u.size.y)
+	var y0 := top + int(float(bot - top) * 2.0 / 3.0)
+	var w := imgs[0].get_width()
+	var h := imgs[0].get_height()
+	var total := 0.0
+	for i in imgs.size():
+		var a: Image = imgs[i]
+		var b: Image = imgs[(i + 1) % imgs.size()]
+		var diff := 0
+		var uni := 0
+		for y in range(y0, h):
+			for x in w:
+				var pa := a.get_pixel(x, y).a > 0.5
+				var pb := b.get_pixel(x, y).a > 0.5
+				if pa or pb:
+					uni += 1
+					if pa != pb:
+						diff += 1
+		total += 100.0 * float(diff) / float(maxi(1, uni))
+	return total / float(imgs.size())

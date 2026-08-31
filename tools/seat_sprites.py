@@ -11,10 +11,15 @@
 # 실측(2026-08-27): 기존 몹은 0~5px 뜨는데 PixelLab 로 새로 뽑은 것 일부가
 # 8~13px 떴다. 사장님: "캐릭터랑 보스가 바닥보다 조금 위에있는것같아서".
 #
-# **한 유닛을 통째로 같은 만큼 옮긴다.** 프레임마다 여백을 0 으로 맞추면
+# **동작 하나를 통째로 같은 만큼 옮긴다.** 프레임마다 여백을 0 으로 맞추면
 # 걷기의 위아래 흔들림과 내려찍기의 눌림이 통째로 평평해진다 — 그건 애니를
-# 죽이는 것이다. 그래서 그 유닛의 **모든 동작·모든 프레임 중 제일 낮은 것**을
-# 기준으로 잡아 다 같이 내린다. 상대 높이차는 그대로 남는다.
+# 죽이는 것이다. 그래서 그 동작의 **모든 프레임 중 제일 낮은 것**을 기준으로
+# 잡아 다 같이 내린다. 동작 안의 상대 높이차는 그대로 남는다.
+#
+# **동작끼리는 따로 앉힌다**(2026-08-27 실측). 처음엔 유닛을 통째로 옮겼는데,
+# 늪 거머리가 걷기 6~7 · 공격 1~2 로 서로 5px 어긋나 있었다 — 통째로 옮기면
+# 둘 중 하나는 반드시 틀리고, 실제로 공격할 때 아래로 툭 떨어졌다. 동작은
+# 각각 재생되니 각각 바닥에 붙어야 맞다. CombatRulesTest 가 걷기를 재서 잡았다.
 import os
 import sys
 
@@ -42,17 +47,16 @@ def top_pad(a):
     return None if len(rows) == 0 else int(rows.min())
 
 
-def unit_frames(key):
-    """이 유닛의 (경로, 이미지) 전부. 동작을 가리지 않는다 — 같이 옮겨야 한다."""
+def motion_frames(key, motion):
+    """이 동작의 (경로, 이미지). 동작 단위로 앉히므로 여기서 안 섞는다."""
+    d = os.path.join(ANIM, "%s_%s" % (key, motion))
+    if not os.path.isdir(d):
+        return []
     out = []
-    for m in MOTIONS:
-        d = os.path.join(ANIM, "%s_%s" % (key, m))
-        if not os.path.isdir(d):
-            continue
-        for f in sorted(os.listdir(d)):
-            if f.endswith(".png"):
-                p = os.path.join(d, f)
-                out.append((p, np.asarray(Image.open(p).convert("RGBA"))))
+    for f in sorted(os.listdir(d)):
+        if f.endswith(".png"):
+            p = os.path.join(d, f)
+            out.append((p, np.asarray(Image.open(p).convert("RGBA"))))
     return out
 
 
@@ -66,36 +70,41 @@ def units():
     return ks
 
 
-def seat(key, write):
-    fr = unit_frames(key)
+def seat_motion(key, motion, write):
+    fr = motion_frames(key, motion)
     if not fr:
         return None
-    pads = [bottom_pad(a) for _, a in fr]
-    pads = [p for p in pads if p is not None]
+    pads = [p for p in (bottom_pad(a) for _, a in fr) if p is not None]
     if not pads:
         return None
-    low = min(pads)                      # 제일 낮게 내려온 프레임
+    low = min(pads)                      # 이 동작에서 제일 낮게 내려온 프레임
     if low < TRIGGER:
         return None
+    tag = "%s_%s" % (key, motion)
     shift = low - TARGET
     # 위로 잘리면 안 된다. 머리 여유가 모자라면 그만큼만 내린다.
-    head = min(top_pad(a) for _, a in fr if top_pad(a) is not None)
+    head = min(p for p in (top_pad(a) for _, a in fr) if p is not None)
     shift = min(shift, head)
     if shift <= 0:
-        return ("%-18s 여백 %d 인데 머리 여유가 %d — 못 내린다" % (key, low, head))
+        return "%-22s 여백 %d 인데 머리 여유가 %d — 못 내린다" % (tag, low, head)
     if write:
         for p, a in fr:
             out = np.zeros_like(a)
             out[shift:, :, :] = a[: a.shape[0] - shift, :, :]
             Image.fromarray(out, "RGBA").save(p)
-    return "%-18s 여백 %d -> %d  (%d px 내림, 머리 여유 %d, 프레임 %d장)" % (
-        key, low, low - shift, shift, head, len(fr))
+    return "%-22s 여백 %d -> %d  (%d px 내림, 머리 여유 %d, %d장)" % (
+        tag, low, low - shift, shift, head, len(fr))
+
+
+def seat(key, write):
+    return [r for r in (seat_motion(key, m, write) for m in MOTIONS) if r]
 
 
 def main():
     write = "--write" in sys.argv
-    hits = [seat(k, write) for k in units()]
-    hits = [h for h in hits if h]
+    hits = []
+    for k in units():
+        hits.extend(seat(k, write))
     if not hits:
         print("전부 관례(여백 %d 미만) 안이다 — 손댈 것 없음" % TRIGGER)
         return
