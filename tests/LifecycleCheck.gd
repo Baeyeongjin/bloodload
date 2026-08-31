@@ -18,6 +18,16 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 
+	# ── 0) 트리가 알아서 끄면 안 된다 ────────────────────────────────────
+	# **에뮬레이터에서만 나온 것이다.** Godot 은 뒤로가기에서 이 설정이 켜져
+	# 있으면 우리 `_notification` 이 무엇을 하든 **트리를 알아서 종료한다**.
+	# 기본값이 켜짐이라, 아래 검사가 전부 통과하는데도 실기에서는 앱이 그냥
+	# 꺼졌다(2026-08-27, 안드로이드 에뮬레이터에서 확인). 헤드리스로는
+	# `_notification` 을 직접 부르므로 이 자동 종료를 안 지난다.
+	assert(not bool(ProjectSettings.get_setting(
+		"application/config/quit_on_go_back", true)),
+		"quit_on_go_back 이 켜져 있다 — 뒤로가기가 우리 처리를 무시하고 앱을 끈다")
+
 	# ── 1) 뒤로가기는 **한 겹씩** 걷는다 ──────────────────────────────────
 	# 팝업이 떠 있으면 그것부터. 바로 탭을 닫으면 화면이 하나 밀린 것처럼 읽힌다.
 	scene._select_tab("gear")
