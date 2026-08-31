@@ -27,3 +27,6 @@ Bloodlord.exe
 Bloodlord.console.exe
 Bloodlord.zip
 Bloodlord.pck
+build/
+*.apk
+*.aab
