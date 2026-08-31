@@ -30,6 +30,13 @@ func _init() -> void:
 
 	# ── 1) 뒤로가기는 **한 겹씩** 걷는다 ──────────────────────────────────
 	# 팝업이 떠 있으면 그것부터. 바로 탭을 닫으면 화면이 하나 밀린 것처럼 읽힌다.
+	#
+	# **켤 때 이미 떠 있는 팝업을 먼저 걷는다.** 저장본에 `left_at` 이 남아 있으면
+	# 방치 보상창이 뜬 채로 시작하고, 그러면 뒤로가기가 그것부터 닫아서 이 검사가
+	# 엉뚱하게 실패한다(2026-08-27 실측 — 검사가 저장본 상태에 취약했다).
+	for v in scene._popups():
+		if v != null:
+			v.visible = false
 	scene._select_tab("gear")
 	scene._info_view.visible = true
 	scene._notification(scene.NOTIFICATION_WM_GO_BACK_REQUEST)
