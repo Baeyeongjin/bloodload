@@ -30,3 +30,12 @@ Bloodlord.pck
 build/
 *.apk
 *.aab
+
+# 안드로이드 빌드 템플릿 — 내보내기 템플릿에서 푼 것이라 저장소에 안 담는다.
+# 없으면 `--install-android-build-template` 로 다시 깐다.
+android/
+
+# **서명 키는 절대 커밋하지 않는다.** 잃으면 앱을 영영 갱신 못 하고,
+# 새면 남이 우리 이름으로 앱을 낼 수 있다. 따로 백업해 둘 것.
+*.keystore
+*.jks
