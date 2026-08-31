@@ -642,6 +642,55 @@ _tick_hero_state → _tick_motion → _tick_titles → _tick_boss_timer(참이�
   그 다섯 갈래가 전부 곧바로 판을 리셋한다.
 - 이펙트 자리 5곳이 대시 전 `hero_x` 를 본다 — 4px = 원본 2도트. 안 보인다.
 
+### 8-7. 출시 준비 — 어디까지 됐나 (2026-08-27)
+
+**된 것**
+
+| | 비고 |
+|---|---|
+| 안드로이드 APK | `--export-debug "Android" build/Bloodlord.apk` |
+| **AAB** | `build/Bloodlord.aab` 62MB. 스토어는 APK 가 아니라 이걸 받는다 |
+| 에뮬레이터 실행 | SDK 에 `Pixel_4` AVD 가 이미 있다. **`-gpu host` 로 띄울 것** |
+| 세로 고정 · 버전 | project.godot. 손으로 쓰지 말고 `ProjectSettings.save()` 로 |
+| 모바일 수명주기 | 뒤로가기 3겹 · 전환 복귀 방치 · 나갈 때 저장 (`LifecycleCheck`) |
+| 앱 아이콘 | `assets/icon/` 5종(레거시·적응형 배경/전경/단색) |
+
+**바로 다음 — 릴리즈 서명**
+
+사장님이 키스토어를 직접 만들기로 했다(2026-08-27). 만들고 나면:
+
+```
+GODOT_ANDROID_KEYSTORE_RELEASE_PATH=<경로>
+GODOT_ANDROID_KEYSTORE_RELEASE_USER=bloodlord
+GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=<비번>
+```
+를 환경변수로 주고 `--export-release "Android" build/Bloodlord.aab`.
+**환경변수로 주는 이유는 비밀번호가 export_presets.cfg 에 안 남게 하기 위해서다.**
+키스토어와 `android/` 는 `.gitignore` 로 막아 뒀다.
+
+지금 AAB 는 **디버그 서명**이고 네이티브가 72~77MB 인 것도 그래서다 —
+릴리즈로 빼면 크게 준다.
+
+**남은 것**
+
+- 결제 SDK — 없으면 상점 절반(정기권·팩·보석 충전)이 죽은 채로 나간다
+- 광고 SDK — 상점 광고 3줄이 "준비 중"으로 잠겨 있다
+- 스토어 자료 — 스크린샷(폰 2장 이상)·설명·개인정보처리방침
+- 실기기 확인 — 폰이 없어 에뮬레이터로만 봤다
+
+**밟은 지뢰 셋 (다시 밟지 말 것)**
+
+1. **내보내기 템플릿이 반만 깔려 있었다** — `android_debug.apk` 만 있고
+   `android_source.zip`·`android_release.apk` 가 없었다. 그래서 디버그 APK 는
+   나오는데 AAB 도 릴리즈도 안 됐고, `--install-android-build-template` 이
+   조용히 실패했다. 공식 tpz(1.2GB)에서 빠진 둘만 넣었다.
+2. **`export_presets.cfg` 의 주석은 `;` 다.** `#` 로 적었는데 그 안에 `=` 가
+   있으면 대입문으로 읽혀 **파일 전체가 파싱에 실패한다**(프리셋이 하나도 안
+   읽힌다). `#` 인데 멀쩡했던 줄들은 `=` 가 없어서였을 뿐이다.
+3. **`application/config/quit_on_go_back` 은 기본이 켜짐이다.** 우리
+   `_notification` 이 뭘 하든 트리가 알아서 종료한다 — 헤드리스 검사는 그
+   자동 종료를 안 지나므로 **실기에서만 드러난다.**
+
 ### 대기 — **광고·결제 SDK 둘뿐이다**
 
 붙는 날 `IapDefs.DEV_FREE` 를 끄고 상점의 `ad` 줄 잠금을 푼다. 그 외에
