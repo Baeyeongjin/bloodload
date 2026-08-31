@@ -67,8 +67,9 @@ func _init() -> void:
 	# 5성 펫은 낀 장비의 조각을 판다 — 그리고 **시간은 장비 등급**을 따른다.
 	# (커먼 펫을 보내 전설 장비 조각을 4시간에 캐면 안 된다.)
 	scene.pets_got["nightwing"] = PetDefs.MAX_STAR
-	assert(scene._trip_prize("nightwing").is_empty(),
-		"5성인데 장비가 없는데도 보낼 수 있다")
+	# (옛 규칙은 "장비가 없으면 못 보낸다"였다. 2026-08-27 부터 완성한 펫은
+	#  심부름을 가므로, 장비가 없어도 미완성 동료가 있으면 그쪽 조각을 판다 —
+	#  심부름 자체는 8절이 잰다. 여기는 장비 조각 갈래만 본다.)
 	var leg_gear := ""
 	for g in PetDefs.GEAR:
 		if str(g["rarity"]) == "legend":
@@ -80,9 +81,12 @@ func _init() -> void:
 	assert(str(pz2["key"]) == "petgear:" + leg_gear, "5성이 장비 조각을 안 판다")
 	assert(str(pz2["rarity"]) == "legend",
 		"시간 기준이 보낸 펫(커먼)을 따라갔다 — 나올 조각(전설)이어야 한다")
-	# 장비도 5성이면 보낼 곳이 없다.
+	# 장비도 5성이면 — 옛 규칙은 빈손(원정 불가)이었다. 2026-08-27 부터는
+	# **심부름**이다: 보유 중 미완성 펫(여기서는 전설 1성)의 조각을 파 온다.
 	scene.pet_gear_got[leg_gear] = PetDefs.MAX_STAR
-	assert(scene._trip_prize("nightwing").is_empty(), "장비도 5성인데 보낼 수 있다")
+	var pz3: Dictionary = scene._trip_prize("nightwing")
+	assert(str(pz3.get("key", "")) == "pet:" + leg,
+		"다 완성했는데 심부름을 안 간다: %s" % str(pz3))
 	scene.pet_gear_got[leg_gear] = 1
 	scene.pets_got["nightwing"] = 1
 	scene.pet_gear_worn = {}
@@ -157,6 +161,35 @@ func _init() -> void:
 	assert(not scene._tab_todo("pet"), "아직 안 왔는데 점이 켜졌다")
 	scene.pet_trip["nightwing"][0] = 0.0
 	assert(scene._tab_todo("pet"), "도착했는데 점이 안 켜진다")
+
+	# ── 8) 다 완성한 펫은 심부름을 간다 (2026-08-27 새 칸) ────────────────
+	# 제 별도 낀 장비도 5성이면 예전엔 빈손이라 원정을 아예 못 갔다 — 제일
+	# 공들인 펫이 짐이 됐다. 이제 보유 중 미완성 펫 가운데 **제일 희귀한 놈**의
+	# 조각을 파 온다. 시간은 그 조각의 등급을 따른다(기존 규칙 그대로).
+	scene.pets_got = {"nightwing": PetDefs.MAX_STAR, "gravemoss": 2}
+	scene.pet_gear_worn = {}
+	scene.pet_trip = {}
+	var errand: Dictionary = scene._trip_prize("nightwing")
+	assert(str(errand.get("key", "")) == "pet:gravemoss",
+		"완성한 펫이 심부름을 안 간다: %s" % str(errand))
+	# 더 희귀한 미완성이 생기면 그쪽으로 간다.
+	scene.pets_got[leg] = 1              # 전설 1성 (표에서 찾아 둔 진짜 id)
+	var errand2: Dictionary = scene._trip_prize("nightwing")
+	assert(str(errand2.get("rarity", "")) == "legend",
+		"심부름이 제일 희귀한 놈을 안 고른다: %s" % str(errand2))
+	# 시간은 심부름 대상 등급이 정한다 — 커먼 펫을 보내도 전설이면 16시간.
+	scene.best_stage = 999
+	scene._trip_send("nightwing")
+	var row: Array = scene.pet_trip["nightwing"]
+	var left := float(row[0]) - Time.get_unix_time_from_system()
+	assert(absf(left - PetDefs.trip_hours("legend") * 3600.0) < 5.0,
+		"심부름 시간이 대상 등급을 안 따른다: %.0f초" % left)
+	assert(str(row[1]) == "pet:" + leg, "심부름 보상 키가 다르다: %s" % str(row[1]))
+	# 미보유 펫 조각은 절대 안 준다 — 소환을 우회하게 된다.
+	scene.pet_trip = {}
+	scene.pets_got = {"nightwing": PetDefs.MAX_STAR}
+	assert(scene._trip_prize("nightwing").is_empty(),
+		"로스터가 다 끝났는데도 뭘 파 온다 — 미보유 조각이 새고 있다")
 
 	print("TripCheck OK")
 	quit(0)

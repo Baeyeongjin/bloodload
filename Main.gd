@@ -17078,11 +17078,41 @@ func _trip_prize(id: String) -> Dictionary:
 		return {"key": "pet:" + id, "name": str(p.get("name", id)),
 			"rarity": str(p.get("rarity", "common"))}
 	var gid := str(pet_gear_worn.get(id, ""))
-	if gid == "" or int(pet_gear_got.get(gid, 0)) >= PetDefs.MAX_STAR:
+	if gid != "" and int(pet_gear_got.get(gid, 0)) < PetDefs.MAX_STAR:
+		var g := PetDefs.gear_of(gid)
+		return {"key": "petgear:" + gid, "name": str(g.get("name", gid)),
+			"rarity": str(g.get("rarity", "common"))}
+	# **다 완성한 펫은 심부름을 간다**(2026-08-27). 제 별도 장비도 끝났으면
+	# 예전엔 빈손을 돌려줘 원정을 아예 못 갔다 — 제일 공들인 펫이 그 순간
+	# 짐이 됐다. 대신 **보유 중 미완성 펫 가운데 제일 희귀한 놈**의 조각을
+	# 파 온다. 전설 로스터의 자물쇠(중복 확률 0.18%, 기대 9,434연)를 완성한
+	# 펫이 깎아 주는 자리다.
+	#
+	# 규칙은 안 늘었다: 시간은 여전히 "나올 조각의 등급"이 정하고(전설 조각
+	# 심부름 = 16시간), 새 재화도 새 UI 도 없다(보상 라벨이 대상 이름을 이미
+	# 보여 준다). **미보유 펫 조각은 안 준다** — 그건 소환을 우회하는 것이다.
+	# 로스터 25종이 전부 5성이면 그때는 정말 빈손이다 — 시스템이 완성된 것이다.
+	return _trip_errand(id)
+
+
+# 심부름 대상 — 보유 중 미완성(별 < 5) 펫 가운데 제일 희귀한 놈. 같은 등급이
+# 여럿이면 표 순서(PETS)라 결과가 흔들리지 않는다. 자기 자신은 위에서 이미
+# 5성으로 걸러졌으니 다시 안 나온다.
+func _trip_errand(_id: String) -> Dictionary:
+	var best := {}
+	var best_r := -1
+	for p in PetDefs.PETS:
+		var pid := str(p["id"])
+		if not pets_got.has(pid) or _pet_star(pid) >= PetDefs.MAX_STAR:
+			continue
+		var r := PetDefs.RARITY_KEYS.find(str(p.get("rarity", "common")))
+		if r > best_r:
+			best_r = r
+			best = p
+	if best.is_empty():
 		return {}
-	var g := PetDefs.gear_of(gid)
-	return {"key": "petgear:" + gid, "name": str(g.get("name", gid)),
-		"rarity": str(g.get("rarity", "common"))}
+	return {"key": "pet:" + str(best["id"]), "name": str(best.get("name", "")),
+		"rarity": str(best.get("rarity", "common"))}
 
 
 # 남은 초. 안 나가 있으면 -1.
