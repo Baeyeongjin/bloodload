@@ -163,6 +163,44 @@ func _init() -> void:
 	# 하나도 안 걸리면 자산이 통째로 빠진 것이다 — 위 루프가 조용히 0번 돌면
 	# "전부 통과"로 보인다. 8종은 2026-08-06 부터 있다.
 	assert(slam_seen >= 8, "내려찍기 자산이 %d 종밖에 없다" % slam_seen)
+
+	# ── 몹은 **바닥에 앉아 있어야** 한다 ────────────────────────────────────
+	# `Foe._draw` 는 원점이 발밑이라, PNG 아래쪽 투명 여백이 그대로 "뜬 높이"가
+	# 된다. 게다가 화면에서는 원본 px 이 아니라 `여백 x 그린높이 / 원본높이`
+	# 만큼 커진다 — 32px 원본을 61px 로 그리는 몹은 여백 7px 이 화면에서 13px 다.
+	#
+	# 사장님(2026-08-27): "캐릭터랑 보스가 바닥보다 조금 위에있는것같아서".
+	# 실측하니 기존 몹은 0~5px 뜨는데 새로 뽑은 것 일부가 8~13px 떠 있었다.
+	# 눈으로는 "왠지 어색하다"까지밖에 안 가는 종류라 자로 재야 잡힌다.
+	# 고치는 도구는 tools/seat_sprites.py (유닛을 통째로 같은 만큼 내린다 —
+	# 프레임마다 0 으로 맞추면 걷기의 흔들림과 내려찍기의 눌림이 평평해진다).
+	for act2 in StageDefs.ACTS:
+		var seat_keys: Array = (act2["roster"] as Array).duplicate()
+		seat_keys.append(str(act2["boss"]))
+		for sk in seat_keys:
+			var sf := Assets.frames("res://assets/anim/%s_walk" % str(sk))
+			if sf.is_empty():
+				continue
+			var low := 999
+			var src_h := 1
+			for tex in sf:
+				var img: Image = tex.get_image()
+				src_h = img.get_height()
+				var used: Rect2i = img.get_used_rect()
+				low = mini(low, src_h - (used.position.y + used.size.y))
+			if low >= 999:
+				continue
+			# 그려지는 높이는 Foe._size() 와 같은 식으로 낸다.
+			var tier2: Dictionary = FoeTiers.get_tier(str(sk))
+			var bsz := float(tier2.get("size", 1.0))
+			var is_b: bool = str(sk) == str(act2["boss"])
+			var drawn := float(Grid.SPRITE) * 2.0 * (maxf(2.0, bsz * 2.0) * Foe.BOSS_BODY
+				if is_b else bsz)
+			var float_px := float(low) * drawn / float(src_h)
+			# 기존 몹 최대가 5.1px(ice_wisp) 라 8 을 넘으면 확실히 이상한 것이다.
+			assert(float_px < 8.0,
+				"%s 가 바닥에서 %.1fpx 떠 있다 (여백 %d) — tools/seat_sprites.py %s"
+				% [str(sk), float_px, low, str(sk)])
 	# 특수 스윙은 평타보다 아프고 멀리 닿는다. 오프라인 평균 배수는 그 사이에 있어야
 	# 한다 — 1.0 이면 특수를 안 세는 것이고, SPECIAL_DMG 면 매번 특수로 치는 셈이다.
 	var avg := Foe.avg_attack_mult(true, false)
