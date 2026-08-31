@@ -70,6 +70,26 @@ const ACTS := [
 	{"name": "빼앗긴 본성", "bg": "res://assets/bg/wide_castle.png",
 		"roster": ["dark_knight", "wraith_knight", "cultist", "demon", "orc"],
 		"boss": "dark_knight", "boss_name": "다크 나이트", "boss_anim": "boss_5"},
+	# ── 6~10막 (2026-08-27 사장님: "10개 딱 맞추고 계속 돌리는거지") — 막은
+	# act_of() 의 나머지 연산으로 돌므로 여기 줄만 늘리면 순환이 늘어난다.
+	# 막마다 신규 몹 둘 + 재사용 셋, 보스는 전원 신규(픽: 전부 A 안).
+	{"name": "봉인된 심연", "bg": "res://assets/bg/wide_abyss.png",
+		"roster": ["crystal_crab", "crystal_wisp", "ice_wisp", "frost_spider", "void_wraith"],
+		"boss": "crystal_golem", "boss_name": "결정 골렘", "boss_anim": "crystal_golem"},
+	{"name": "달빛 유적", "bg": "res://assets/bg/wide_ruins.png",
+		"roster": ["vine_statue", "moon_moth", "skeleton", "ghoul", "spider"],
+		"boss": "vine_colossus", "boss_name": "덩굴 거상", "boss_anim": "vine_colossus"},
+	{"name": "혈월 제단", "bg": "res://assets/bg/wide_altar.png",
+		"roster": ["blood_acolyte", "blood_raven", "cultist", "bat", "demon"],
+		"boss": "bloodmoon_avatar", "boss_name": "혈월의 화신",
+		"boss_anim": "bloodmoon_avatar"},
+	{"name": "잠긴 습지", "bg": "res://assets/bg/wide_marsh.png",
+		"roster": ["swamp_leech", "bog_wisp", "mushroom", "zombie", "lava_toad"],
+		"boss": "drowned_king", "boss_name": "익사한 왕", "boss_anim": "drowned_king"},
+	{"name": "핏빛 왕좌", "bg": "res://assets/bg/wide_throne.png",
+		"roster": ["royal_guard", "royal_hound", "dark_knight", "wraith_knight",
+			"gargoyle"],
+		"boss": "usurper", "boss_name": "찬탈자", "boss_anim": "usurper"},
 ]
 
 

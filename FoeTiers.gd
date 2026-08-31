@@ -28,6 +28,27 @@ const TIERS := {
 	"wraith_knight":{"name": "망령 기사", "hp_mult": 3.4, "size": 1.25},
 	"cultist":      {"name": "뿔 광신도", "hp_mult": 2.9, "size": 1.1},
 	"dark_knight":  {"name": "다크 나이트", "hp_mult": 3.8, "size": 1.4},
+	# ── 6~10막 신규 로스터 (2026-08-27 사장님 픽 — 막마다 신규 2 + 재사용 3).
+	# 후보 A/B 를 뽑아 사장님이 골랐다. 애니는 픽된 스틸에서 animate_image 로.
+	"crystal_crab": {"name": "수정 게", "hp_mult": 2.5, "size": 0.95},
+	"crystal_wisp": {"name": "수정 정령", "hp_mult": 2.6, "size": 0.85},
+	"vine_statue":  {"name": "덩굴 석상", "hp_mult": 2.8, "size": 1.1},
+	"moon_moth":    {"name": "달 나방", "hp_mult": 2.4, "size": 0.8},
+	"blood_acolyte":{"name": "혈월 사도", "hp_mult": 2.9, "size": 1.05},
+	"blood_raven":  {"name": "핏빛 까마귀", "hp_mult": 2.5, "size": 0.8},
+	"swamp_leech":  {"name": "늪 거머리", "hp_mult": 2.7, "size": 0.95},
+	"bog_wisp":     {"name": "도깨비불", "hp_mult": 2.6, "size": 0.85},
+	"royal_guard":  {"name": "근위 구울", "hp_mult": 3.2, "size": 1.15},
+	"royal_hound":  {"name": "왕실 사냥개", "hp_mult": 3.0, "size": 1.05},
+	# ── 6~10막 전용 보스 (사장님: 전부 A 안). 기존 막 보스처럼 로스터에는
+	# 안 들어가고 막 끝에서만 나온다. 시련·성소 전용(ruin_warden·
+	# sanctum_guardian)을 빌리는 안은 접었다 — 둘 다 "재활용하지 말라"로
+	# 만들어진 얼굴이다.
+	"crystal_golem":   {"name": "결정 골렘", "hp_mult": 4.0, "size": 1.45},
+	"vine_colossus":   {"name": "덩굴 거상", "hp_mult": 4.2, "size": 1.45},
+	"bloodmoon_avatar":{"name": "혈월의 화신", "hp_mult": 4.4, "size": 1.4},
+	"drowned_king":    {"name": "익사한 왕", "hp_mult": 4.6, "size": 1.45},
+	"usurper":         {"name": "찬탈자", "hp_mult": 4.8, "size": 1.35},
 	# 주간 보스 전용 4종 (2026-08-13 사장님: "새로운 신규 보스"). 본편 로스터에는
 	# 안 들어간다 — StageDefs.ACTS 가 안 부르므로 주간 보스에서만 나온다.
 	# 걷기·공격·특수 애니를 전용으로 뽑았다(기존 보스 몸을 빌리면 "또 저놈"이 된다).
@@ -72,6 +93,15 @@ const SLAM_THEME := {
 	"butcher": ["cross", Color(0.62, 0.16, 0.30), Color(0.36, 0.04, 0.15)],
 	"plague_hag": ["boil", Color(0.44, 0.80, 0.20), Color(0.14, 0.38, 0.19)],
 	"ruin_warden": ["debris", Color(0.60, 0.78, 0.10), Color(0.26, 0.46, 0.03)],
+	# 6~10막 보스 — 구조는 기존 그리기 갈래를 빌리고(새 갈래를 늘리면 또
+	# "다 똑같은 이펙트"의 반대 문제, 그리는 코드가 다섯 배가 된다) 색은
+	# 픽된 스틸에서 실측했다(core=채도x밝기 최대, edge=어두운 몸통 —
+	# 순백·순흑 하이라이트는 걸렀다).
+	"crystal_golem": ["crystal", Color(0.50, 1.00, 1.00), Color(0.00, 0.11, 0.20)],
+	"vine_colossus": ["lash", Color(0.69, 0.78, 0.78), Color(0.31, 0.36, 0.24)],
+	"bloodmoon_avatar": ["pillar", Color(0.94, 0.70, 0.68), Color(0.40, 0.05, 0.08)],
+	"drowned_king": ["crack", Color(0.95, 0.82, 0.49), Color(0.42, 0.51, 0.19)],
+	"usurper": ["arc", Color(0.97, 0.87, 0.54), Color(0.18, 0.02, 0.08)],
 }
 
 
@@ -99,6 +129,14 @@ const SPECIAL_KIND := {
 	"butcher": [0.70, 2.8, 1.7, 1, "dash"],       # 돌진 강타 — 여왕보다 둔하고 아프다
 	"plague_hag": [0.85, 2.0, 1.7, 1, "meteor"],  # 독 구슬 — 하늘에서 떨어진다
 	"ruin_warden": [1.00, 3.0, 1.9, 1, "jump"],   # 대지 격노 — 유적째로 내려찍는다
+	# 6~10막 보스 — 다섯이 서로 다르다(제자리 강타 · 넓은 휩쓸기 · 낙하체 ·
+	# 점프 · 대시). 기존 축 다섯 개 안에서만 골랐다 — 새 움직임을 만들면
+	# Foe._special_move 에 갈래가 늘어난다.
+	"crystal_golem":    [0.85, 2.4, 1.7, 1, ""],        # 제자리 수정 강타
+	"vine_colossus":    [0.85, 2.2, 2.4, 1, ""],        # 덩굴 휩쓸기 — 사거리가 넓다
+	"bloodmoon_avatar": [0.85, 2.4, 1.7, 1, "meteor"],  # 혈월 낙하체
+	"drowned_king":     [0.90, 2.6, 1.8, 1, "jump"],    # 몸통 박치기
+	"usurper":          [0.70, 2.2, 1.7, 1, "dash"],    # 발도 돌진
 }
 const SPECIAL_DEFAULT := [0.85, 2.4, 1.7, 1, ""]   # 표에 없는 보스·중간보스
 
@@ -106,6 +144,7 @@ const SPECIAL_DEFAULT := [0.85, 2.4, 1.7, 1, ""]   # 표에 없는 보스·중�
 const METEOR_ART := {
 	"gargoyle": "vfx_fire_ball",
 	"plague_hag": "vfx_earth_ball",
+	"bloodmoon_avatar": "vfx_dark_ball",   # 혈월 — 어둠 구체가 맞다
 }
 
 

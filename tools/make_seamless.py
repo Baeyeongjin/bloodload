@@ -26,7 +26,7 @@ BLEND = 24          # 섞는 폭(원본 px). 좁을수록 잔상이 적다
 STEP = 4            # 굴림 후보 간격
 NAMES = ["wide_graveyard", "wide_hell", "wide_glacier", "wide_sanctum", "wide_castle",
          "wide_maze", "wide_maze_deep", "wide_raid_blood", "wide_raid_essence",
-         "wide_raid_pact", "wide_raid_hunt", "wide_raid_trial", "wide_abyss", "wide_ruins"]
+         "wide_raid_pact", "wide_raid_hunt", "wide_raid_trial", "wide_abyss", "wide_ruins", "wide_altar", "wide_marsh", "wide_throne"]
 
 
 def load(path):

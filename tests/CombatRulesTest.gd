@@ -35,7 +35,14 @@ func _init() -> void:
 	assert(StageDefs.major_stage(last - StageDefs.STEPS_PER_STAGE + 1)
 		== StageDefs.MAJOR_STAGE_COUNT and StageDefs.step_in_act(last) == 10)
 	assert(StageDefs.is_midboss_stage(last - 5) and StageDefs.is_boss_stage(last))
-	assert(StageDefs.act_of(1) == StageDefs.act_of(51), "5개 테마가 순환하지 않는다")
+	# 막은 표 크기만큼 돌고 다시 처음으로 온다. **51 을 박으면 안 된다** —
+	# 그건 "막이 5개"라는 뜻이라 막을 늘릴 때마다 깨진다(2026-08-27 실측:
+	# 10막으로 늘리자 여기서 빨개졌다). 한 바퀴 뒤 = ACTS.size() x 10 + 1.
+	var wrap := StageDefs.ACTS.size() * StageDefs.STEPS_PER_STAGE + 1
+	assert(StageDefs.act_of(1) == StageDefs.act_of(wrap),
+		"%d개 테마가 순환하지 않는다" % StageDefs.ACTS.size())
+	assert(StageDefs.act_of(StageDefs.STEPS_PER_STAGE + 1) != StageDefs.act_of(1),
+		"막이 안 바뀐다 — 전부 같은 테마로 읽힌다")
 	assert(StageDefs.enemy_power(last) > StageDefs.enemy_power(last - 1))
 
 	# Main 은 class_name 이 없어서 상수를 읽으려면 스크립트를 불러와야 한다.
