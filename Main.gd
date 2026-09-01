@@ -3325,7 +3325,10 @@ func _toggle_skill(key: String) -> void:
 
 
 # 아직 못 얻은 스킬 — 장비 보관함의 "?" 칸과 같은 문법이다.
-func _skill_unknown_card(rarity: Dictionary) -> Control:
+# 아직 없는 스킬 칸. **왜 없는지가 두 가지다** — 아직 안 뽑혔거나(미획득),
+# 형태 천장이 낮아 소환 풀에 아예 안 들어오거나(잠김). 둘을 같은 "?"로 두면
+# 뽑아도 안 나오는 걸 계속 뽑게 된다 — 규칙을 넣었으면 화면이 말해야 한다.
+func _skill_unknown_card(rarity: Dictionary, shape := "") -> Control:
 	var cell := Control.new()
 	cell.custom_minimum_size = SK_CARD
 	cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3341,6 +3344,13 @@ func _skill_unknown_card(rarity: Dictionary) -> Control:
 	var nm := _panel_label(cell, Vector2(0.0, 60.0), Type.SIZE_SMALL,
 		Color(dim.r * 1.4, dim.g * 1.4, dim.b * 1.4), SK_CARD.x, 18.0)
 	nm.text = "%s · 미획득" % str(rarity["name"])
+	# 천장 위면 **무엇을 하면 열리는지**를 적는다. "미획득" 만 적으면 뽑기로
+	# 해결되는 줄 알고 계속 뽑는다 — 실제로는 그 형태에 레벨을 부어야 한다.
+	if shape != "" and not SkillDefs.shape_allows(shape, str(rarity["key"]),
+			skill_owned):
+		var pg: Array = SkillDefs.cap_progress(shape, skill_owned)
+		q.text = "잠김"
+		nm.text = "%s 숙련 +%d" % [str(SkillDefs.SHAPES[shape]["name"]), int(pg[2])]
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return cell
 
@@ -3421,7 +3431,7 @@ func _refresh_skills(rebuild_info := true) -> void:
 			if skill_owned.has(key):
 				_skill_grid.add_child(_skill_card(key))
 			else:
-				_skill_grid.add_child(_skill_unknown_card(rarity))
+				_skill_grid.add_child(_skill_unknown_card(rarity, shape))
 	_skill_bulk_btn.disabled = _skill_levelable().is_empty()
 	_skill_synth_btn.disabled = false
 	_skill_auto_btn.set_pressed_no_signal(skill_auto_equip)
