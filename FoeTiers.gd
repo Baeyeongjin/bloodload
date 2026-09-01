@@ -189,17 +189,23 @@ static func all_keys() -> Array:
 # 소환권을 여기 태우는 이유(2026-08-13, MONETIZATION_PLAN 4-2): 도감은 가장 긴
 # 수집(154종 · 10만 처치)인데 보상이 스탯 %뿐이라 눈에 안 보였다. 합 소환권 38 ·
 # 종류별로 흩어 놓았다 — 끝까지 미는 사람에게 83회 소환이 걸려 있다.
+# **눈금은 도감 키 수 x 숙련 단계다.** 몹을 늘리면 여기도 같이 늘려야 한다 —
+# 안 고치면 마지막 보상이 영영 도달 불가가 되는데 화면에는 표시가 안 난다.
+# `tests/GearTest` 가 마지막 줄과 `codex_max_knowledge()` 를 대조해서 잡는다.
+#
+# 2026-08-27: 10막 확장으로 도감 키가 **22 -> 37** 이 되면서 만렙 합계가
+# 154 -> 259 로 뛰었다. 단계 눈금(37 x 1..7)으로 다시 깔았다.
 const CODEX_REWARDS := [
 	{"need": 3,   "stat": "damage", "rate": 0.02, "ticket_weapon": 3.0},
 	{"need": 10,  "stat": "crit",   "rate": 0.03, "ticket_armor": 5.0},
-	{"need": 22,  "stat": "damage", "rate": 0.05, "ticket_trinket": 5.0},   # 모든 몹 숙련 1단계
-	{"need": 44,  "stat": "tough",  "rate": 0.08, "ticket_skill": 10.0},  # 모든 몹 2단계
-	{"need": 66,  "stat": "crit",   "rate": 0.10, "ticket_weapon": 10.0},
-	{"need": 88,  "stat": "damage", "rate": 0.12, "ticket_armor": 15.0},
-	{"need": 110, "stat": "damage", "rate": 0.15, "gem": 300.0},   # 옛 만렙(5단계)
+	{"need": 37,  "stat": "damage", "rate": 0.05, "ticket_trinket": 5.0},   # 모든 몹 숙련 1단계
+	{"need": 74,  "stat": "tough",  "rate": 0.08, "ticket_skill": 10.0},  # 모든 몹 2단계
+	{"need": 111, "stat": "crit",   "rate": 0.10, "ticket_weapon": 10.0},
+	{"need": 148, "stat": "damage", "rate": 0.12, "ticket_armor": 15.0},
+	{"need": 185, "stat": "damage", "rate": 0.15, "gem": 300.0},   # 옛 만렙(5단계)
 	# 6~7단계 확장분 (2026-08-12). 3만·10만 처치 구간이라 진짜 장기 목표다.
-	{"need": 132, "stat": "tough",  "rate": 0.15, "ticket_trinket": 15.0},
-	{"need": 154, "stat": "damage", "rate": 0.20, "ticket_skill": 20.0},
+	{"need": 222, "stat": "tough",  "rate": 0.15, "ticket_trinket": 15.0},
+	{"need": 259, "stat": "damage", "rate": 0.20, "ticket_skill": 20.0},
 ]
 
 # 그 줄의 부가 보상 (종류, 수량). 없으면 빈 사전.

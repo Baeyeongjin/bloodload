@@ -283,11 +283,28 @@ func _init() -> void:
 	assert(FoeTiers.codex_next_need(10) == 90 and FoeTiers.codex_next_need(999999) == 0)
 	# 누적이라 합계가 늘면 보정도 늘어야 하고, 0에서는 0이어야 한다.
 	assert(is_equal_approx(FoeTiers.codex_bonus(0, "damage"), 0.0))
-	assert(FoeTiers.codex_bonus(22, "damage") > FoeTiers.codex_bonus(3, "damage"),
+	# **눈금을 박지 않는다.** 22 를 적어 뒀더니 10막 확장으로 표가 다시 깔리면서
+	# 22 가 눈금이 아니게 됐고(37 x 1..7), 그 줄이 damage 도 아니라 조용히
+	# 같은 값이 됐다. 표에서 읽으면 몹을 더 늘려도 안 깨진다.
+	var first_row: Dictionary = FoeTiers.CODEX_REWARDS[0]
+	var last_row: Dictionary = FoeTiers.CODEX_REWARDS[FoeTiers.CODEX_REWARDS.size() - 1]
+	assert(str(first_row["stat"]) == str(last_row["stat"]),
+		"표의 첫 줄과 끝 줄이 다른 스탯이다 — 아래 비교가 뜻을 잃는다")
+	assert(FoeTiers.codex_bonus(int(last_row["need"]), str(last_row["stat"]))
+		> FoeTiers.codex_bonus(int(first_row["need"]), str(first_row["stat"])),
 		"도감 보정이 누적되지 않는다")
 	assert(is_equal_approx(FoeTiers.codex_bonus(9, "crit"), 0.0), "치명 보상이 일찍 열린다")
 	assert(FoeTiers.codex_bonus(10, "crit") > 0.0)
-	assert(FoeTiers.codex_bonus(44, "tough") > 0.0, "체력 보상이 안 붙는다")
+	# 체력 줄도 **표에서 찾는다** — 44 를 박아 뒀다가 표가 다시 깔리면서 낡았다.
+	var tough_need := -1
+	for r in FoeTiers.CODEX_REWARDS:
+		if str(r["stat"]) == "tough":
+			tough_need = int(r["need"])
+			break
+	assert(tough_need > 0, "표에 체력 보상 줄이 없다")
+	assert(FoeTiers.codex_bonus(tough_need, "tough") > 0.0, "체력 보상이 안 붙는다")
+	assert(is_equal_approx(FoeTiers.codex_bonus(tough_need - 1, "tough"), 0.0),
+		"체력 보상이 눈금 전에 붙는다")
 	# 칸을 정확히 밟았을 때만 수령한다 — 합계는 1씩만 오르므로 두 번 밟히지 않는다.
 	assert(not FoeTiers.codex_reward_at(3).is_empty())
 	assert(FoeTiers.codex_reward_at(4).is_empty())

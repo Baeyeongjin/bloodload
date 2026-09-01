@@ -363,6 +363,18 @@ var _fade_t := 0.0           # 0보다 크면 전환 중 — 타이머·전진·
 var _skill_cd := {}          # 스킬 키 -> 남은 쿨다운
 var skill_owned := {}        # 스킬 키 -> 레벨 (있으면 보유)
 var skill_equipped: Array[String] = []   # 장착 6칸. 순서가 곧 발동 우선순위다
+# 프리셋 — 스킬과 장비를 **따로** 담는다(사장님 2026-08-27: "스킬 장비
+# 프리셋 각각 따로"). 한 벌로 묶으면 무기만 바꾸고 싶을 때도 스킬이 딸려
+# 간다. 스킬은 키 목록, 장비는 slot -> inventory_key 다 — 장비 dict 를
+# 통째로 담으면 레벨을 올렸을 때 프리셋만 옛 수치로 굳는다.
+const PRESETS := 3
+var skill_presets: Array = []
+# 화면 쪽 — 저장 모드일 때 번호를 누르면 담고, 아니면 꺼낸다. 버튼을
+# 여섯 개(저장 3 + 불러오기 3) 두는 것보다 줄이 반으로 준다.
+var _preset_write := {"skill": false, "gear": false}
+var _preset_btns := {"skill": [], "gear": []}
+var _preset_write_btns := {}
+var gear_presets: Array = []
 # 켜 두면 새 스킬을 얻거나 레벨을 올릴 때마다 알아서 다시 낀다. 방치형에서
 # "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
 # 손으로 한 칸이라도 만지면 꺼진다 — 고른 걸 뒤에서 덮어쓰면 그게 더 나쁘다.
@@ -3189,8 +3201,10 @@ func _build_skill_view(root: Control) -> void:
 	_skill_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 	var list_y := top + 98.0
+	# 프리셋 줄이 버튼 줄 위에 하나 더 들어간다(46). 목록이 그만큼 줄지만
+	# 어차피 스크롤이라 보이는 칸만 줄고 내용은 그대로다.
 	var sc := Ui.scroll(Vector2(PAD, list_y),
-		Vector2(CONTENT_W, CONTENT_BOTTOM - 44.0 - list_y))
+		Vector2(CONTENT_W, CONTENT_BOTTOM - 90.0 - list_y))
 	_skill_view.add_child(sc)
 	_skill_grid = GridContainer.new()
 	_skill_grid.columns = 4
@@ -3203,6 +3217,7 @@ func _build_skill_view(root: Control) -> void:
 	# 3개 기준(24)을 그대로 두면 마지막 버튼이 창 밖으로 나간다.
 	var bw := (CONTENT_W - 36.0) / 4.0
 	var by := CONTENT_BOTTOM - 38.0
+	_preset_row(_skill_view, "skill", by - 42.0)
 	# 토글이다. 켜 두면 새 스킬·레벨업·조합 때마다 알아서 다시 낀다 — 방치형에서
 	# "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
 	_skill_detail = Control.new()
@@ -3436,6 +3451,7 @@ func _refresh_skills(rebuild_info := true) -> void:
 	_skill_synth_btn.disabled = false
 	_skill_auto_btn.set_pressed_no_signal(skill_auto_equip)
 	_skill_auto_btn.text = "자동 장착 켬" if skill_auto_equip else "자동 장착"
+	_refresh_presets("skill")
 	if rebuild_info:
 		_skill_info.text = _combo_text()
 
@@ -3736,6 +3752,8 @@ func _build_gear(root: Control) -> void:
 		stat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl,
 			"lv": lv_lbl, "stat": stat_lbl}
+	# 슬롯 이름·수치가 216 에서 끝난다 — 그 아래는 비어 있어 그냥 놓으면 된다.
+	_preset_row(_gear_equipped_view, "gear", 232.0)
 	_gear_inventory_view = Control.new()
 	_gear_inventory_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_inventory_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4624,6 +4642,7 @@ func _synthesize(old_key: String) -> String:
 
 
 func _refresh_gear_slots() -> void:
+	_refresh_presets("gear")
 	for slot in _gear_slots.keys():
 		var item: Dictionary = equipped.get(slot, {})
 		var nodes: Dictionary = _gear_slots[slot]
@@ -10786,6 +10805,157 @@ func _skill_combo_bonus(key: String) -> float:
 
 # 슬롯을 비워 두면 그만큼 손해다. 방치형에서 매번 고르게 하면 방치가 아니라서
 # 자동으로 채운다 — 형태를 골고루 먼저 채우고 남은 칸을 센 것부터 메운다.
+# ── 프리셋 ────────────────────────────────────────────────────────────────
+#
+# 저장본이 짧거나 길거나 엉뚱한 타입이어도 **PRESETS 칸으로 맞춘다.** 옛 저장본
+# 에는 이 키가 아예 없고, 칸 수를 나중에 늘릴 수도 있다 — 화면이 인덱스로
+# 접근하므로 길이가 어긋나면 그 자리에서 터진다.
+func _preset_load(raw: Variant, empty: Variant) -> Array:
+	var out: Array = []
+	var src: Array = raw if raw is Array else []
+	for i in PRESETS:
+		var v: Variant = src[i] if i < src.size() else null
+		if typeof(v) != typeof(empty):
+			v = (empty as Variant).duplicate()
+		out.append(v)
+	return out
+
+
+# 지금 장착을 n 번 칸에 담는다.
+func _preset_save(kind: String, n: int) -> void:
+	if n < 0 or n >= PRESETS:
+		return
+	if n >= (skill_presets.size() if kind == "skill" else gear_presets.size()):
+		return
+	if kind == "skill":
+		skill_presets[n] = skill_equipped.duplicate()
+	else:
+		# **장비 dict 가 아니라 inventory_key 만** 담는다. 통째로 담으면 레벨을
+		# 올렸을 때 프리셋이 옛 수치로 굳어 되돌리는 순간 능력치가 깎인다.
+		var row := {}
+		for slot in equipped.keys():
+			var k := str((equipped[slot] as Dictionary).get("inventory_key", ""))
+			if k != "":
+				row[str(slot)] = k
+		gear_presets[n] = row
+	_save_game()
+
+
+# n 번 칸을 꺼내 낀다. **없어진 것은 조용히 건너뛴다** — 팔았거나 조합에 쓴
+# 장비, 아직 안 뽑은 스킬이 프리셋에 남아 있는 것은 정상이다. 거기서 터지면
+# 프리셋을 한 번 저장한 뒤로는 장비를 못 판다.
+func _preset_apply(kind: String, n: int) -> bool:
+	if n < 0 or n >= PRESETS:
+		return false
+	if n >= (skill_presets.size() if kind == "skill" else gear_presets.size()):
+		return false
+	if kind == "skill":
+		var want: Array = skill_presets[n]
+		var keep: Array[String] = []
+		for k in want:
+			if skill_owned.has(str(k)) and not keep.has(str(k)) \
+					and keep.size() < _equip_cap():
+				keep.append(str(k))
+		if keep.is_empty():
+			return false
+		# **프리셋을 고르면 자동 장착이 꺼진다**(사장님 확정). 안 끄면 다음
+		# 레벨업·뽑기에서 _auto_equip_skills 가 덮어써서 고른 것이 사라진다.
+		skill_auto_equip = false
+		skill_equipped = keep
+		_refresh_skills()
+		_save_game()
+		return true
+	var row: Dictionary = gear_presets[n]
+	var old_max := max_hp()
+	var hit := false
+	for slot in row.keys():
+		var key := str(row[slot])
+		if not gear_inventory.has(key):
+			continue
+		var item: Dictionary = (gear_inventory[key] as Dictionary).duplicate(true)
+		item["inventory_key"] = key
+		equipped[str(slot)] = item
+		hit = true
+	if not hit:
+		return false
+	_apply_hp_growth(old_max)
+	_refresh_gear_slots()
+	_refresh_gear_inventory()
+	_refresh_hud()
+	_save_game()
+	return true
+
+
+# 그 칸이 비었나 — 화면이 "저장 안 됨"으로 흐리게 그린다.
+func _preset_empty(kind: String, n: int) -> bool:
+	# **배열 크기까지 본다.** 화면은 _load_game 보다 먼저 그려질 수 있고 그때는
+	# 배열이 비어 있다 — PRESETS 만 보고 들어가면 인덱스가 튄다(실측).
+	var src: Array = skill_presets if kind == "skill" else gear_presets
+	if n < 0 or n >= PRESETS or n >= src.size():
+		return true
+	return (skill_presets[n] as Array).is_empty() if kind == "skill" \
+		else (gear_presets[n] as Dictionary).is_empty()
+
+
+# 프리셋 줄 하나. **스킬·장비가 같은 줄을 쓴다** — 두 화면에서 문법이
+# 달라지면 어느 쪽이 저장인지 매번 헷갈린다.
+#
+#   [저장]  [1] [2] [3]
+#
+# 저장이 꺼져 있으면 번호 = 꺼내기, 켜져 있으면 번호 = 담기. 담고 나면 저장이
+# 자동으로 꺼진다 — 켠 채로 두면 다음에 꺼내려다 덮어쓴다.
+func _preset_row(parent: Control, kind: String, y: float) -> void:
+	var wbtn := Ui.button("저장", Vector2(PAD, y), Vector2(96.0, 34.0),
+		Type.SIZE_SMALL)
+	wbtn.toggle_mode = true
+	wbtn.pressed.connect(func() -> void:
+		_preset_write[kind] = not bool(_preset_write[kind])
+		_refresh_presets(kind))
+	parent.add_child(wbtn)
+	_preset_write_btns[kind] = wbtn
+	var bw := (CONTENT_W - 96.0 - 12.0 * 3.0) / 3.0
+	var row: Array = []
+	for i in PRESETS:
+		var n := i
+		var b := Ui.button(str(n + 1),
+			Vector2(PAD + 96.0 + 12.0 + float(i) * (bw + 12.0), y),
+			Vector2(bw, 34.0), Type.SIZE_SMALL)
+		b.pressed.connect(func() -> void: _preset_tap(kind, n))
+		parent.add_child(b)
+		row.append(b)
+	_preset_btns[kind] = row
+
+
+func _preset_tap(kind: String, n: int) -> void:
+	if bool(_preset_write[kind]):
+		_preset_save(kind, n)
+		# 담고 나면 저장을 끈다 — 켠 채로 두면 다음에 꺼내려다 덮어쓴다.
+		_preset_write[kind] = false
+	else:
+		# 빈 칸은 꺼내기 모드에서 아예 못 누르게 해 두므로, 여기 오면
+		# 담긴 게 다 없어진 경우다(판 장비·안 가진 스킬). 조용히 넘긴다 —
+		# 알림 장치를 새로 만들 만한 일이 아니다.
+		_preset_apply(kind, n)
+	_refresh_presets(kind)
+
+
+func _refresh_presets(kind: String) -> void:
+	var wbtn: Variant = _preset_write_btns.get(kind)
+	if wbtn == null:
+		return
+	var on := bool(_preset_write[kind])
+	(wbtn as Button).set_pressed_no_signal(on)
+	(wbtn as Button).text = "저장할 칸" if on else "저장"
+	for i in (_preset_btns[kind] as Array).size():
+		var b: Button = (_preset_btns[kind] as Array)[i]
+		# 빈 칸은 흐리게 — 눌러 보기 전에 어디가 찼는지 보여야 한다.
+		var empty := _preset_empty(kind, i)
+		b.modulate = Color(0.62, 0.62, 0.68) if empty else Color.WHITE
+		# **빈 칸은 꺼내기 모드에서 못 누른다.** 눌러도 아무 일이 없으면
+		# 고장으로 읽히는데, 못 누르게 하면 알림 장치가 아예 필요 없다.
+		b.disabled = empty and not on
+
+
 func _auto_equip_skills() -> void:
 	var owned := skill_owned.keys()
 	# **센 것부터**. 등급만이 아니라 등급 x 레벨을 곱한 값이라, 올려 둔 커먼이
@@ -15507,6 +15677,7 @@ func _save_game() -> void:
 	cfg.set_value("up", "buy_step", buy_step)
 	cfg.set_value("gear", "equipped", equipped)
 	cfg.set_value("gear", "inventory", gear_inventory)
+	cfg.set_value("gear", "presets", gear_presets)
 	cfg.set_value("gacha", "pity", gacha_pity)
 	cfg.set_value("gacha", "pulls", gacha_pulls)
 	cfg.set_value("gacha", "owned", gacha_owned)
@@ -15548,6 +15719,7 @@ func _save_game() -> void:
 	cfg.set_value("skill", "owned", skill_owned)
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
+	cfg.set_value("skill", "presets", skill_presets)
 	cfg.set_value("codex", "kills", codex)
 	cfg.set_value("goal", "index", goal_index)
 	cfg.set_value("chest", "gold", chest_gold)
@@ -15799,6 +15971,8 @@ func _load_game() -> void:
 			valid.append(str(key))
 	skill_equipped = valid
 	skill_auto_equip = bool(cfg.get_value("skill", "auto", true))
+	skill_presets = _preset_load(cfg.get_value("skill", "presets", []), [])
+	gear_presets = _preset_load(cfg.get_value("gear", "presets", []), {})
 	if skill_equipped.is_empty():
 		_auto_equip_skills()
 	codex = cfg.get_value("codex", "kills", {})
