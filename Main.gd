@@ -3535,32 +3535,26 @@ func _skill_unknown_card(rarity: Dictionary, shape := "") -> Control:
 	var nm := _panel_label(cell, Vector2(0.0, 60.0), Type.SIZE_SMALL,
 		Color(dim.r * 1.4, dim.g * 1.4, dim.b * 1.4), SK_CARD.x, 18.0)
 	nm.text = "%s · 미획득" % str(rarity["name"])
-	# 천장 위면 **무엇을 하면 열리는지**를 적는다. "미획득" 만 적으면 뽑기로
-	# 해결되는 줄 알고 계속 뽑는다 — 실제로는 그 형태에 레벨을 부어야 한다.
-	#
-	# 문구는 **뭘 세는지 그대로**다: "격 레벨합 20/30". 처음엔 "격 숙련 +10"
-	# 이라고 적었는데 사장님이 "왜 안 나오는지 모르겠다"고 했다(2026-09-01) —
-	# "숙련"은 코드가 만든 은어지 설명이 아니었다.
-	if shape != "" and not SkillDefs.shape_allows(shape, str(rarity["key"]),
-			skill_owned):
-		var pg: Array = SkillDefs.cap_progress(shape, skill_owned)
+	# **잠김은 신화뿐이다**(2026-09-01 사장님 — 형태별 천장은 하루 만에 폐기).
+	# 커먼~레전더리 미획득 칸은 전부 "뽑으면 나온다"가 맞는 말이 됐다.
+	# 문구는 뭘 세는지 그대로: "격 레벨합 87/200". "숙련" 같은 은어는 금지 —
+	# 실제로 사장님이 못 알아들었다.
+	if str(rarity["key"]) == "mythic" and shape != "":
 		var now := SkillDefs.shape_mastery(shape, skill_owned)
-		var need := now + int(pg[2])
 		q.text = "잠김"
 		nm.text = "%s 레벨합 %d/%d" % [str(SkillDefs.SHAPES[shape]["name"]),
-			now, need]
+			now, SkillDefs.MYTHIC_NEED]
 		# 누르면 안내 줄이 풀어 말한다 — 칸이 좁아 문장은 여기 못 싣는다.
 		var why := Button.new()
 		why.flat = true
 		why.size = SK_CARD
 		why.focus_mode = Control.FOCUS_NONE
 		var shape_name := str(SkillDefs.SHAPES[shape]["name"])
-		var rar_name := str(rarity["name"])
+		var mythic_name := SkillDefs.name_of(SkillDefs.mythic_key(shape))
 		why.pressed.connect(func() -> void:
-			var pg2: Array = SkillDefs.cap_progress(shape, skill_owned)
-			var now2 := SkillDefs.shape_mastery(shape, skill_owned)
-			_skill_info.text = "%s 스킬들의 레벨 합이 %d이 되면 %s이 소환에 나온다 — 지금 %d" \
-				% [shape_name, now2 + int(pg2[2]), rar_name, now2])
+			_skill_info.text = "%s 스킬들의 레벨 합이 %d이 되면 신화 %s을 얻는다 — 지금 %d" \
+				% [shape_name, SkillDefs.MYTHIC_NEED, mythic_name,
+				SkillDefs.shape_mastery(shape, skill_owned)])
 		cell.add_child(why)
 		cell.mouse_filter = Control.MOUSE_FILTER_STOP
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -3644,6 +3638,15 @@ func _refresh_skills(rebuild_info := true) -> void:
 				_skill_grid.add_child(_skill_card(key))
 			else:
 				_skill_grid.add_child(_skill_unknown_card(rarity, shape))
+	# 신화 행 — 표의 마지막 줄. 뽑기 밖 등급이라 위 루프(SKILL_TOP_INDEX 가드)
+	# 에 안 걸린다. 잠긴 칸은 "격 레벨합 87/200" 을 말한다.
+	var mythic_rar := GachaDefs.rarity("mythic")
+	for shape in SkillDefs.SHAPE_ORDER:
+		var mk := SkillDefs.mythic_key(str(shape))
+		if skill_owned.has(mk):
+			_skill_grid.add_child(_skill_card(mk))
+		else:
+			_skill_grid.add_child(_skill_unknown_card(mythic_rar, str(shape)))
 	_skill_bulk_btn.disabled = _skill_levelable().is_empty()
 	_skill_synth_btn.disabled = false
 	_skill_auto_btn.set_pressed_no_signal(skill_auto_equip)
@@ -5357,17 +5360,10 @@ func _receive_gacha_relic(rarity_key: String) -> Dictionary:
 
 
 func _receive_gacha_skill(rarity_key: String) -> Dictionary:
-	# **열린 형태 중에서 고른다**(2026-08-27, 해금 사슬). 예전에는 네 형태를
-	# 균등하게 골랐다 — 초반에 스무 종으로 흩어져 아무것도 못 키웠다.
-	#
-	# **등급은 여기 오기 전에 이미 정해져 있다.** 천장은 "어느 형태로 나올지"만
-	# 좁힌다 — 전설을 굴렸으면 전설이 나온다. 그 등급을 받는 형태가 하나도
-	# 없을 때만 조각으로 돌린다(그마저도 커먼은 넷 다 열려 있어서, 커먼
-	# 하나라도 가진 뒤에는 사실상 안 일어난다).
-	var open_shapes := SkillDefs.shapes_for(rarity_key, skill_owned)
-	if open_shapes.is_empty():
-		return _skill_cap_shards(rarity_key)
-	var shape: String = open_shapes[randi() % open_shapes.size()]
+	# 네 형태 균등. 형태별 등급 천장(해금 사슬)은 하루 만에 폐기됐다
+	# (2026-09-01 사장님) — 잠김은 신화에만 남고, 신화는 뽑기 밖이다
+	# (SKILL_TOP_INDEX = 레전더리가 이미 그 문이다).
+	var shape: String = SkillDefs.SHAPE_ORDER[randi() % SkillDefs.SHAPE_ORDER.size()]
 	var key := SkillDefs.key_of(shape, rarity_key)
 	var owned_key := "skill:" + key
 	if skill_owned.has(key):
@@ -5380,35 +5376,6 @@ func _receive_gacha_skill(rarity_key: String) -> Dictionary:
 			_auto_equip_skills()
 	return {"kind": "skill", "key": key, "name": SkillDefs.name_of(key),
 		"rarity": rarity_key, "icon": SkillDefs.icon_path(key)}
-
-
-# 굴린 등급을 받을 형태가 하나도 없을 때. **뽑기를 무르지 않는다** — 등급은
-# 이미 굴러갔고 천장은 형태만 좁히는 규칙이라, 등급값만큼 조각으로 돌려준다.
-# 조각은 이미 가진 스킬 중 **제일 낮은 등급**에 얹는다(키울 데가 있는 쪽).
-func _skill_cap_shards(rarity_key: String) -> Dictionary:
-	var pick := ""
-	var low := 99
-	for k in skill_owned.keys():
-		var ri := GachaDefs.rarity_index(str(SkillDefs.split(str(k))[1]))
-		if ri < low:
-			low = ri
-			pick = str(k)
-	if pick == "":
-		# 가진 게 하나도 없다 — 커먼은 넷 다 열려 있으니 여기 오면 안 되지만,
-		# 오면 커먼 하나를 준다. 빈손으로 돌려보내지 않는다.
-		var shape: String = SkillDefs.SHAPE_ORDER[randi() % SkillDefs.SHAPE_ORDER.size()]
-		pick = SkillDefs.key_of(shape, "common")
-		skill_owned[pick] = 0
-		gacha_owned["skill:" + pick] = true
-		if skill_auto_equip:
-			_auto_equip_skills()
-		return {"kind": "skill", "key": pick, "name": SkillDefs.name_of(pick),
-			"rarity": "common", "icon": SkillDefs.icon_path(pick)}
-	var n := maxi(1, GachaDefs.rarity_index(rarity_key) + 1)
-	gacha_shards["skill:" + pick] = int(gacha_shards.get("skill:" + pick, 0)) + n
-	return {"kind": "skill", "key": pick, "name": SkillDefs.name_of(pick),
-		"rarity": str(SkillDefs.split(pick)[1]), "icon": SkillDefs.icon_path(pick),
-		"shards": n}
 
 
 # ── 스킬 상세보기 ──────────────────────────────────────────────────────────
@@ -5846,6 +5813,24 @@ func _claim_goal() -> float:
 
 # 조각으로 스킬 레벨을 올린다. 장비 강화가 정수를 쓰듯 스킬은 조각을 쓴다 —
 # 재화를 새로 만들지 않는다.
+# 신화 지급 — 형태 레벨합이 문턱에 닿는 순간 완성형으로 준다.
+# 호출처는 레벨이 오르는 자리(레벨업)와 로드(옛 저장본 소급) 둘이다.
+func _check_mythic() -> void:
+	for shape in SkillDefs.SHAPE_ORDER:
+		var mk := SkillDefs.mythic_key(str(shape))
+		if skill_owned.has(mk):
+			continue
+		if SkillDefs.shape_mastery(str(shape), skill_owned) < SkillDefs.MYTHIC_NEED:
+			continue
+		skill_owned[mk] = SkillDefs.MAX_LV
+		gacha_owned["skill:" + mk] = true
+		if skill_auto_equip:
+			_auto_equip_skills()
+		_show_clear("신화 해금!", "%s — %s 헌신의 증표"
+			% [SkillDefs.name_of(mk), str(SkillDefs.SHAPES[shape]["name"])])
+	_refresh_skills()
+
+
 func _level_up_skill(key: String) -> bool:
 	if not skill_owned.has(key):
 		return false
@@ -16330,6 +16315,8 @@ func _load_game() -> void:
 			valid.append(str(key))
 	skill_equipped = valid
 	skill_auto_equip = bool(cfg.get_value("skill", "auto", true))
+	# 옛 저장본 소급 — 이미 문턱을 넘긴 채 로드되면 여기서 지급된다.
+	_check_mythic.call_deferred()
 	skill_presets = _preset_load(cfg.get_value("skill", "presets", []), [])
 	gear_presets = _preset_load(cfg.get_value("gear", "presets", []), {})
 	var pn: Variant = cfg.get_value("skill", "preset_names", {})

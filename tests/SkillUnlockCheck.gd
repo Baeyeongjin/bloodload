@@ -1,15 +1,14 @@
 extends SceneTree
 
-# 스킬 해금 사슬 — 형태별 등급 천장(숙련 사다리).
-# 설계는 docs/SKILL_UNLOCK_PLAN.md 3장 "다", 사장님 픽 2026-08-27.
+# 신화 스킬 (2026-09-01 사장님: "잠김을 없애고 신화 스킬을 추가해서 신화만
+# 잠김 조건. 뽑기에서는 레전더리까지").
 #
-# 재는 것:
-#   1) 천장 표 — 레벨 합이 오르면 천장도 오른다, 커먼은 처음부터
-#   2) 형태 고르기 — 천장 위 등급은 그 형태로 안 나온다
-#   3) **등급 분포가 안 바뀐다** — 이 설계의 약속이라 제일 중요하다.
-#      사장님 질문("뽑기 확률을 엄청 낮춰야겟는데")에 대한 답이 이 절이다.
-#   4) 그 등급을 받을 형태가 없으면 조각으로 돌아온다 (뽑기를 무르지 않는다)
-#   5) 진행 표시 — 다음 천장까지 남은 값
+# 형태별 등급 천장(숙련 사다리)은 하루 만에 폐기됐다 — 이 파일이 그 검사였고,
+# 지금은 그 자리를 이어받아 신화 규칙을 잰다:
+#   1) 뽑기 — 등급 보존 + 형태 4종 전부 나옴 (천장이 사라졌다는 증거)
+#   2) 뽑기·조합에서 신화가 절대 안 나온다
+#   3) 문턱 전 미지급 · 문턱 도달 시 완성형(만렙) 지급 + 배너
+#   4) 잠긴 카드 문구 — "격 레벨합 N/200" (은어 금지, 사장님이 못 알아들었다)
 #
 # 씬 테스트다 — 반드시 APPDATA 격리로 돌린다(docs/CHECKS.md).
 
@@ -18,110 +17,85 @@ func _init() -> void:
 		push_error("안 끝났다")
 		quit(1))
 
-	# ── 1) 천장 표 ────────────────────────────────────────────────────────
-	# 커먼은 0 이다 — 넷 다 처음부터 열려 있어야 첫 소환이 빈손이 안 된다.
-	assert(SkillDefs.shape_cap("strike", {}) == "common",
-		"아무것도 안 가졌는데 커먼도 안 열렸다")
-	# 레벨 합이 오르면 천장도 오른다. 표(SHAPE_CAP_STEPS)의 눈금을 그대로 짚는다.
-	var owned := {"strike_common": 10}
-	assert(SkillDefs.shape_cap("strike", owned) == "uncommon",
-		"합 10 인데 언커먼이 안 열렸다: %s" % SkillDefs.shape_cap("strike", owned))
-	assert(SkillDefs.shape_cap("wave", owned) == "common",
-		"격에 부었는데 파의 천장이 올랐다 — 형태별이 아니다")
-	owned = {"strike_common": 50, "strike_uncommon": 50, "strike_rare": 30}
-	assert(SkillDefs.shape_cap("strike", owned) == "legend",
-		"합 130 인데 레전더리가 안 열렸다: %s" % SkillDefs.shape_cap("strike", owned))
-	# 합은 **그 형태 것만** 센다.
-	assert(SkillDefs.shape_mastery("strike", {"strike_common": 7, "wave_epic": 40}) == 7,
-		"다른 형태 레벨이 숙련도에 섞였다")
-
-	# ── 2) 열린 형태만 나온다 ─────────────────────────────────────────────
-	var only_strike := {"strike_common": 130}
-	var legend_shapes := SkillDefs.shapes_for("legend", only_strike)
-	assert(legend_shapes.size() == 1 and legend_shapes[0] == "strike",
-		"전설을 받는 형태가 격 하나여야 하는데: %s" % str(legend_shapes))
-	# 커먼은 늘 넷 다.
-	assert(SkillDefs.shapes_for("common", {}).size() == SkillDefs.SHAPE_ORDER.size(),
-		"커먼이 네 형태에서 다 안 열린다")
+	# ── 0) 표 성질 ────────────────────────────────────────────────────────
+	assert(SkillDefs.mythic_key("strike") == "strike_mythic")
+	assert(SkillDefs.name_of("strike_mythic") == "혈신의 송곳니",
+		"신화 이름이 표에 없다: %s" % SkillDefs.name_of("strike_mythic"))
+	# 아이콘은 레전더리를 빌린다(전용 그림은 사장님 픽 대기) — 파일이 실존해야 한다.
+	assert(FileAccess.file_exists(SkillDefs.icon_path("wave_mythic")),
+		"신화 아이콘 폴백이 없는 파일을 가리킨다: %s"
+		% SkillDefs.icon_path("wave_mythic"))
+	# 조합은 레전더리에서 멈춘다 — 신화는 잠김 조건 전용이다.
+	assert(SkillDefs.promote_key("strike_legend") == "",
+		"조합이 레전더리 위로 간다 — 신화가 조합으로 샌다")
 
 	var scene: Node = load("res://Main.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame
 	await process_frame
 
-	# ── 3) **등급 분포가 안 바뀐다** ──────────────────────────────────────
-	# 이 설계의 약속이다. 천장은 "어느 형태로 나올지"만 좁히고 등급표는 손대지
-	# 않는다 — 전설을 굴리면 전설이 나온다. 해금이 거의 안 된 상태(커먼만)와
-	# 다 된 상태에서 같은 등급을 넣어 보고, **들어간 등급 그대로 나오는지**를
-	# 센다. (뽑기 자체를 굴리면 난수 두 겹이라 분산이 커져 못 잰다 — 등급은
-	# GachaDefs 가 이미 정해서 넘겨주므로 여기서는 그 등급이 보존되는지만 본다.)
-	for state in [{"tag": "커먼만", "owned": {"strike_common": 0}},
-			{"tag": "전부 해금", "owned": {"strike_common": 50, "strike_uncommon": 50,
-				"strike_rare": 30, "wave_common": 50, "wave_uncommon": 50,
-				"wave_rare": 30, "field_common": 50, "field_uncommon": 50,
-				"field_rare": 30, "ward_common": 50, "ward_uncommon": 50,
-				"ward_rare": 30}}]:
-		for want in ["common", "uncommon", "rare", "epic", "legend"]:
-			scene.skill_owned = (state["owned"] as Dictionary).duplicate()
-			scene.gacha_shards = {}
-			var kept := 0
-			for i in 200:
-				var got: Dictionary = scene._receive_gacha_skill(want)
-				if str(got.get("rarity", "")) == want:
-					kept += 1
-			# 커먼만 열린 상태에서 상위 등급은 조각으로 가므로 등급이 보존되지
-			# 않는다 — 그 경우는 4절이 따로 잰다. 여기서는 열린 등급만 본다.
-			var open_now: Array[String] = SkillDefs.shapes_for(want,
-				state["owned"] as Dictionary)
-			if open_now.is_empty():
-				assert(kept == 0, "%s/%s: 안 열렸는데 그 등급이 나왔다" % [state["tag"], want])
-			else:
-				assert(kept == 200,
-					"%s/%s: 200 번 중 %d 번만 그 등급이다 — 천장이 등급을 갈아치웠다"
-					% [state["tag"], want, kept])
-
-	# 그리고 **형태는 실제로 갈린다** — 격만 130 이면 전설은 격으로만 나와야 한다.
-	scene.skill_owned = {"strike_common": 130}
-	scene.gacha_shards = {}
-	var shapes_seen := {}
-	for i in 120:
-		var got2: Dictionary = scene._receive_gacha_skill("legend")
-		shapes_seen[str(SkillDefs.split(str(got2["key"]))[0])] = true
-	assert(shapes_seen.size() == 1 and shapes_seen.has("strike"),
-		"전설이 격 말고 다른 형태로도 나왔다: %s" % str(shapes_seen.keys()))
-
-	# ── 4) 받을 형태가 없으면 조각 ────────────────────────────────────────
-	# 커먼만 열린 상태에서 전설을 굴리면 **뽑기를 무르지 않고** 조각으로 준다.
+	# ── 1) 뽑기 — 등급 보존 + 형태 4종 전부 ───────────────────────────────
+	# 천장이 있던 시절엔 안 열린 형태가 빠졌다. 이제 어떤 보유 상태에서든
+	# 네 형태가 다 나오고, 들어간 등급이 그대로 나온다.
 	scene.skill_owned = {"strike_common": 0}
 	scene.gacha_shards = {}
-	var res: Dictionary = scene._receive_gacha_skill("legend")
-	assert(res.has("shards") and int(res["shards"]) > 0,
-		"천장 위 등급인데 조각이 안 왔다: %s" % str(res))
-	assert(int(scene.gacha_shards.get("skill:strike_common", 0)) > 0,
-		"조각이 가진 스킬에 안 얹혔다")
-	assert(not scene.skill_owned.has("strike_legend"),
-		"천장 위인데 스킬이 그냥 들어왔다 — 사슬이 새고 있다")
+	for want in ["common", "uncommon", "rare", "epic", "legend"]:
+		var shapes := {}
+		for i in 120:
+			var got: Dictionary = scene._receive_gacha_skill(want)
+			assert(str(got["rarity"]) == want,
+				"등급이 갈렸다: %s -> %s" % [want, str(got["rarity"])])
+			shapes[str(SkillDefs.split(str(got["key"]))[0])] = true
+		assert(shapes.size() == SkillDefs.SHAPE_ORDER.size(),
+			"%s 가 형태 %d 종에서만 나온다 — 천장이 남아 있다" % [want, shapes.size()])
 
-	# ── 5) 진행 표시 ──────────────────────────────────────────────────────
-	var pg: Array = SkillDefs.cap_progress("strike", {"strike_common": 7})
-	assert(str(pg[0]) == "common" and str(pg[1]) == "uncommon" and int(pg[2]) == 3,
-		"다음 천장까지 남은 값이 틀리다: %s" % str(pg))
-	var done: Array = SkillDefs.cap_progress("strike", {"strike_common": 500})
-	assert(str(done[0]) == "legend" and str(done[1]) == "",
-		"천장을 다 올렸는데 다음이 남아 있다: %s" % str(done))
+	# ── 2) 신화는 뽑기 밖 ─────────────────────────────────────────────────
+	var seen_mythic := false
+	for i in 200:
+		var got2: Dictionary = scene._receive_gacha_skill("legend")
+		if str(SkillDefs.split(str(got2["key"]))[1]) == "mythic":
+			seen_mythic = true
+	assert(not seen_mythic, "뽑기에서 신화가 나왔다")
 
-	# ── 6) 잠긴 카드가 말을 한다 (2026-09-01 사장님: "왜 안 나오는지 모름") ──
-	# 문구는 뭘 세는지 그대로다: "격 레벨합 7/10". "숙련 +3" 같은 은어는
-	# 설명이 아니다 — 실제로 사장님이 못 알아들었다.
+	# ── 3) 문턱 전 미지급 · 도달 시 완성형 지급 ───────────────────────────
+	scene.skill_owned = {"strike_common": 50, "strike_uncommon": 50,
+		"strike_rare": 50, "strike_epic": 49}   # 합 199 — 한 끗 모자란다
+	scene.gacha_shards = {}
+	scene._check_mythic()
+	assert(not scene.skill_owned.has("strike_mythic"),
+		"합 199 인데 신화가 지급됐다 (문턱 %d)" % SkillDefs.MYTHIC_NEED)
+	scene.skill_owned["strike_epic"] = 50       # 합 200
+	scene._clear_view.visible = false
+	scene._check_mythic()
+	assert(scene.skill_owned.has("strike_mythic"), "합 200 인데 신화가 안 왔다")
+	assert(int(scene.skill_owned["strike_mythic"]) == SkillDefs.MAX_LV,
+		"신화가 완성형이 아니다: %d" % int(scene.skill_owned["strike_mythic"]))
+	# 배너 — 조용히 주면 없는 기능이다.
+	assert(scene._clear_view.visible and "신화" in scene._clear_title.text,
+		"신화 지급 배너가 안 떴다")
+	# 다른 형태는 안 열렸다 — 형태별이다.
+	assert(not scene.skill_owned.has("wave_mythic"), "안 부은 형태의 신화가 왔다")
+	# 두 번 부르면 두 번 안 준다.
+	scene._check_mythic()
+	assert(int(scene.skill_owned["strike_mythic"]) == SkillDefs.MAX_LV, "재지급됐다")
+
+	# ── 4) 잠긴 카드 문구 ─────────────────────────────────────────────────
 	scene.skill_owned = {"strike_common": 7}
 	var lock_card: Control = scene._skill_unknown_card(
-		GachaDefs.rarity("uncommon"), "strike")
+		GachaDefs.rarity("mythic"), "strike")
 	var lock_txt := ""
 	for c in lock_card.get_children():
 		if c is Label and "레벨합" in (c as Label).text:
 			lock_txt = (c as Label).text
-	assert(lock_txt == "격 레벨합 7/10",
+	assert(lock_txt == "격 레벨합 7/%d" % SkillDefs.MYTHIC_NEED,
 		"잠긴 카드 문구가 다르다: %s" % lock_txt)
+	# 커먼~레전더리 미획득 칸에는 잠김이 없다 — "뽑으면 나온다"가 맞는 말이다.
+	var open_card: Control = scene._skill_unknown_card(
+		GachaDefs.rarity("uncommon"), "strike")
+	for c in open_card.get_children():
+		if c is Label:
+			assert(not ("레벨합" in (c as Label).text),
+				"커먼~레전더리 칸에 잠김 문구가 남았다: %s" % (c as Label).text)
 
-	print("SkillUnlockCheck OK  (천장 사다리 · 등급 분포 불변 · 조각 대체)")
+	print("SkillUnlockCheck OK  (천장 폐기 · 신화 문턱 지급 · 뽑기 밖 · 문구)")
 	quit(0)

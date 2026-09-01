@@ -88,6 +88,9 @@ const NAMES := {
 		"epic": "피의 제단", "legend": "피의 왕좌"},
 	"ward": {"common": "피의 결계", "uncommon": "진홍 방패", "rare": "붉은 성배",
 		"epic": "혈월", "legend": "불멸의 심장"},
+	# 신화 — 형태당 하나. 세로줄(같은 형태의 상위) 결을 따른다.
+	"mythic": {"strike": "혈신의 송곳니", "wave": "핏빛 해일",
+		"field": "혈계 강림", "ward": "영겁의 성혈"},
 }
 
 # 스킬 고유 규칙. **형태 기본값을 덮는 것만** 적는다 (2026-08-06 사장님 지시).
@@ -355,29 +358,23 @@ const SHARD_PER_LV := 3     # N -> N+1 레벨에 조각 3N 개
 # 여기 있던 SYNTH_SHARDS(5)는 화면만 읽고 실제 지불은 3 이라 거짓말이 됐다.
 
 
-# ── 해금 사슬 — 형태별 등급 천장 (2026-08-27 사장님 픽: 설계표 3장 "다") ────
+# ── 신화 스킬 (2026-09-01 사장님: "잠김을 없애고 신화 스킬을 추가") ────────
 #
-# **그 형태에 얼마나 투자했는가**가 그 형태에서 나올 수 있는 최고 등급을 정한다.
-# 투자 = 그 형태 스킬들의 레벨 합.
+# 형태별 등급 천장(숙련 사다리)은 **하루 만에 폐기됐다** — 사장님이 화면을
+# 보고 "왜 안 나오는지 모르겠다"고 했고, 문구를 고쳐도 규칙 자체가 낯설었다.
+# 뽑기는 처음부터 4형태 x 커먼~레전더리 전부다(SKILL_TOP_INDEX 가 이미
+# 레전더리라 뽑기·조합은 손대지 않아도 거기서 멈춘다).
 #
-# 왜 이 축인가 (실측 근거는 docs/SKILL_UNLOCK_PLAN.md 1장):
-#   - 형태 안에서 **하위 등급이 상위를 이기는 경우가 하나도 없었다.** 잡몹전
-#     최적 6개가 전설 2 · 에픽 2 · 레어 1 이라 그냥 좋은 순으로 끼면 끝이었고,
-#     자동 장착까지 켜져 있어 **선택이 아예 없었다.**
-#   - 네 형태를 동시에 130 까지 못 올리므로 **내 로스터가 곧 내 빌드**가 된다.
-#
-# **등급 확률은 안 건드린다.** 뽑기는 등급을 먼저 굴리고(전설 0.9%, 천장 100연)
-# 그다음 형태를 고른다 — 천장은 뒤쪽만 좁힌다. 전설을 굴리면 전설이 나오고,
-# 어느 형태로 나올지만 내 투자가 정한다. `tests/SkillUnlockCheck` 가 해금 전후로
-# 등급 분포가 같은지를 재서 이 약속을 못 박는다.
-#
-# 커먼이 0 인 이유: 넷 다 처음부터 열려 있어야 첫 소환이 빈손이 안 된다.
-const SHAPE_CAP_STEPS := [
-	["common", 0], ["uncommon", 10], ["rare", 30], ["epic", 70], ["legend", 130],
-]
+# 잠김은 **신화에만** 남는다. 형태당 하나, 그 형태 스킬들의 레벨 합이
+# MYTHIC_NEED 에 닿으면 **완성형(만렙)으로 지급**된다:
+#   - 뽑기 밖 등급이라 중복 조각이 원천적으로 없다 — 레벨업 경로를 새로
+#     만드느니 완성형이 맞다. 위력 9.0 x 만렙 4배 = 36배로 레전더리
+#     만렙(5.5 x 4 = 22배) 위에 선다
+#   - 문턱 200 = 형태 만렙합 250 의 80%. 다섯 중 넷을 만렙까지 키운 헌신이다
+const MYTHIC_NEED := 200
 
 
-# 이 형태에 부은 레벨 합. `owned` 는 Main.skill_owned (key -> 레벨).
+# 이 형태에 부은 레벨 합. 신화 지급 문턱이 이걸 본다.
 static func shape_mastery(shape: String, owned: Dictionary) -> int:
 	var sum := 0
 	for k in owned.keys():
@@ -386,39 +383,8 @@ static func shape_mastery(shape: String, owned: Dictionary) -> int:
 	return sum
 
 
-# 이 형태에서 지금 나올 수 있는 **최고 등급 키**.
-static func shape_cap(shape: String, owned: Dictionary) -> String:
-	var m := shape_mastery(shape, owned)
-	var cap := "common"
-	for step in SHAPE_CAP_STEPS:
-		if m >= int(step[1]):
-			cap = str(step[0])
-	return cap
-
-
-# 이 형태가 그 등급을 받을 수 있나.
-static func shape_allows(shape: String, rarity: String, owned: Dictionary) -> bool:
-	return GachaDefs.rarity_index(rarity) \
-		<= GachaDefs.rarity_index(shape_cap(shape, owned))
-
-
-# 그 등급을 받을 수 있는 형태들. 비어 있으면 부를 쪽이 조각으로 돌린다.
-static func shapes_for(rarity: String, owned: Dictionary) -> Array[String]:
-	var out: Array[String] = []
-	for shape in SHAPE_ORDER:
-		if shape_allows(str(shape), rarity, owned):
-			out.append(str(shape))
-	return out
-
-
-# 다음 천장까지 얼마나 남았나 — 화면이 "왜 안 나오지"에 답하는 값이다.
-# [지금 천장, 다음 등급(없으면 ""), 다음까지 남은 레벨 합]
-static func cap_progress(shape: String, owned: Dictionary) -> Array:
-	var m := shape_mastery(shape, owned)
-	for step in SHAPE_CAP_STEPS:
-		if m < int(step[1]):
-			return [shape_cap(shape, owned), str(step[0]), int(step[1]) - m]
-	return [shape_cap(shape, owned), "", 0]
+static func mythic_key(shape: String) -> String:
+	return "%s_mythic" % shape
 
 
 static func key_of(shape: String, rarity: String) -> String:
@@ -442,7 +408,10 @@ static func all_keys() -> Array[String]:
 
 static func name_of(key: String) -> String:
 	var sr := split(key)
-	return str(NAMES.get(sr[0], {}).get(sr[1], key))
+	# 신화는 형태당 하나라 표가 {mythic: {형태: 이름}} 으로 뒤집혀 있다.
+	if str(sr[1]) == "mythic":
+		return str(NAMES["mythic"].get(str(sr[0]), key))
+	return str(NAMES.get(str(sr[0]), {}).get(str(sr[1]), key))
 
 
 static func shape_of(key: String) -> Dictionary:
@@ -451,7 +420,10 @@ static func shape_of(key: String) -> Dictionary:
 
 static func icon_path(key: String) -> String:
 	var sr := split(key)
-	return "res://assets/skills/sk_%s_%s.png" % [sr[1], sr[0]]
+	# 신화 전용 아이콘은 아직 없다 — 레전더리 그림을 빌린다. 등급 테두리
+	# 색(mythic)이 구분을 맡는다. 전용 그림은 사장님 픽으로 뽑을 자리다.
+	var rar := "legend" if str(sr[1]) == "mythic" else str(sr[1])
+	return "res://assets/skills/sk_%s_%s.png" % [rar, sr[0]]
 
 
 # 이펙트는 **스킬마다 다르다.** 형태 4종만 두면 1,000회 뽑아 나온 레전더리가
