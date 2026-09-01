@@ -2,7 +2,9 @@ class_name SkillDefs
 extends RefCounted
 
 # 스킬. 형태 4 x 등급 5 = 20종, 장착 슬롯 6칸.
-# 설계 근거는 docs/SKILL_PLAN.md 에 있다.
+# 설계 근거는 이 파일 자체다 — `docs/SKILL_PLAN.md` 는 **없는 파일이었다**
+# (2026-08-27 확인, 유물의 RELIC_UNLOCK_DESIGN.md 와 같은 유령 참조).
+# 해금·프리셋 이야기는 docs/SKILL_UNLOCK_PLAN.md 에 있다.
 #
 # **원소는 없다.** 전부 피(血) 계열이고, 갈리는 축은 형태(무엇을 하는가)와
 # 등급(얼마나 센가) 둘뿐이다. 자동 전투에서 속성 상성은 플레이어가 개입할 수 없는
