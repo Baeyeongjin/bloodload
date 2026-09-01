@@ -3537,11 +3537,32 @@ func _skill_unknown_card(rarity: Dictionary, shape := "") -> Control:
 	nm.text = "%s · 미획득" % str(rarity["name"])
 	# 천장 위면 **무엇을 하면 열리는지**를 적는다. "미획득" 만 적으면 뽑기로
 	# 해결되는 줄 알고 계속 뽑는다 — 실제로는 그 형태에 레벨을 부어야 한다.
+	#
+	# 문구는 **뭘 세는지 그대로**다: "격 레벨합 20/30". 처음엔 "격 숙련 +10"
+	# 이라고 적었는데 사장님이 "왜 안 나오는지 모르겠다"고 했다(2026-09-01) —
+	# "숙련"은 코드가 만든 은어지 설명이 아니었다.
 	if shape != "" and not SkillDefs.shape_allows(shape, str(rarity["key"]),
 			skill_owned):
 		var pg: Array = SkillDefs.cap_progress(shape, skill_owned)
+		var now := SkillDefs.shape_mastery(shape, skill_owned)
+		var need := now + int(pg[2])
 		q.text = "잠김"
-		nm.text = "%s 숙련 +%d" % [str(SkillDefs.SHAPES[shape]["name"]), int(pg[2])]
+		nm.text = "%s 레벨합 %d/%d" % [str(SkillDefs.SHAPES[shape]["name"]),
+			now, need]
+		# 누르면 안내 줄이 풀어 말한다 — 칸이 좁아 문장은 여기 못 싣는다.
+		var why := Button.new()
+		why.flat = true
+		why.size = SK_CARD
+		why.focus_mode = Control.FOCUS_NONE
+		var shape_name := str(SkillDefs.SHAPES[shape]["name"])
+		var rar_name := str(rarity["name"])
+		why.pressed.connect(func() -> void:
+			var pg2: Array = SkillDefs.cap_progress(shape, skill_owned)
+			var now2 := SkillDefs.shape_mastery(shape, skill_owned)
+			_skill_info.text = "%s 스킬들의 레벨 합이 %d이 되면 %s이 소환에 나온다 — 지금 %d" \
+				% [shape_name, now2 + int(pg2[2]), rar_name, now2])
+		cell.add_child(why)
+		cell.mouse_filter = Control.MOUSE_FILTER_STOP
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return cell
 

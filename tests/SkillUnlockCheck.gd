@@ -110,5 +110,18 @@ func _init() -> void:
 	assert(str(done[0]) == "legend" and str(done[1]) == "",
 		"천장을 다 올렸는데 다음이 남아 있다: %s" % str(done))
 
+	# ── 6) 잠긴 카드가 말을 한다 (2026-09-01 사장님: "왜 안 나오는지 모름") ──
+	# 문구는 뭘 세는지 그대로다: "격 레벨합 7/10". "숙련 +3" 같은 은어는
+	# 설명이 아니다 — 실제로 사장님이 못 알아들었다.
+	scene.skill_owned = {"strike_common": 7}
+	var lock_card: Control = scene._skill_unknown_card(
+		GachaDefs.rarity("uncommon"), "strike")
+	var lock_txt := ""
+	for c in lock_card.get_children():
+		if c is Label and "레벨합" in (c as Label).text:
+			lock_txt = (c as Label).text
+	assert(lock_txt == "격 레벨합 7/10",
+		"잠긴 카드 문구가 다르다: %s" % lock_txt)
+
 	print("SkillUnlockCheck OK  (천장 사다리 · 등급 분포 불변 · 조각 대체)")
 	quit(0)
