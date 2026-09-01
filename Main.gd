@@ -267,20 +267,22 @@ func _tick_titles(delta: float) -> void:
 		return
 	_title_check_t = 1.0
 	play_sec += 1.0   # 켜 둔 시간 전부 — 방치형에서는 방치도 플레이다
+	# **무거운 셋은 다음 프레임들로 미룬다**(2026-08-27, --perf 실측).
+	# 칭호루프 1.1 · 임무 0.95 · 수입 0.8ms 가 한 프레임에 몰려 매 초
+	# 한 프레임만 7.2 -> 10.3ms 가 됐다. PC 는 안 떨구지만 폰은 그대로
+	# 끊김이다. 주기는 그대로 1초고, 한 프레임이 지는 짐만 3분의 1 이 된다.
+	_slow_jobs = ["quests", "income", "titles"]
 	var _q1 := Time.get_ticks_usec()
 	_oath_tick()
 	_perf_mark("틱:계약", _q1)
 	var _q2 := Time.get_ticks_usec()
 	_refresh_board()
 	_perf_mark("틱:보드", _q2)
-	# 임무도 이 1초 틱을 탄다 — 자정 넘김과 알림점(처치가 50에 닿는 순간 등)을
-	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
-	var _q3 := Time.get_ticks_usec()
-	_refresh_quests()
-	_perf_mark("틱:임무", _q3)
-	var _q4 := Time.get_ticks_usec()
-	_tick_income()
-	_perf_mark("틱:수입", _q4)
+	return
+
+
+# 1초틱에서 떼어 낸 무거운 조각. 프레임을 나눠 하나씩 돈다.
+func _slow_titles() -> void:
 	# 장착 칭호 — 레벨 배지 아래. 여기서 갱신하면 로드 직후·장착 직후를 다 잡는다.
 	if _lbl_worn:
 		_lbl_worn.visible = title_worn != ""
@@ -361,6 +363,8 @@ var _perf_spent := {}
 # 미리 데울 애니 폴더 줄. **한꺼번에 안 데운다** — 막 시작에 몰아 하면
 # 끊김이 전투 중에서 막 전환으로 옮겨갈 뿐이다. 매 프레임 한 칸씩 소화한다.
 var _warm_queue: Array[String] = []
+# 1초틱에서 미뤄 둔 무거운 일. 프레임마다 하나씩 꺼내 돈다.
+var _slow_jobs: Array[String] = []
 var _gap_t := 0.0
 var hero_face := 1        # +1 오른쪽, -1 왼쪽. 원본이 왼쪽을 보므로 flip_h = face > 0
 var _dash_to := HERO_X    # 이번에 붙으려는 자리
@@ -10231,6 +10235,22 @@ func _warm_enqueue_act() -> void:
 # 줄에서 한 칸을 꺼내 데운다. **전투 중에 하는 일과 같은 것을 미리 한다** —
 # 프레임을 올리고, 잉크 폭·발밑 여백·정점 프레임까지 캐시에 넣는다. 여기서
 # 안 해 두면 그 계산이 첫 타격 프레임에 통째로 얹힌다.
+# 미뤄 둔 일 하나. 줄이 비어 있으면 곧바로 돌아온다.
+func _slow_step() -> void:
+	if _slow_jobs.is_empty():
+		return
+	var job: String = _slow_jobs.pop_front()
+	var t0 := Time.get_ticks_usec()
+	match job:
+		"quests":
+			_refresh_quests()
+		"income":
+			_tick_income()
+		"titles":
+			_slow_titles()
+	_perf_mark("틱:" + job, t0)
+
+
 func _warm_step() -> void:
 	# **시간 예산으로 돈다.** 한 프레임에 폴더 하나만 데우면 줄이 45프레임
 	# 넘게 남아서, 첫 몹이 공격할 때까지 못 끝난다 — 실측에서 평타가
@@ -10307,6 +10327,7 @@ func _process(delta: float) -> void:
 	var _pw := Time.get_ticks_usec()
 	_warm_step()
 	_perf_mark("데우기", _pw)
+	_slow_step()
 	_drop_tick(delta)
 	if _dev_shatter:
 		# [개발 도구] 0.9초마다 교전 몹을 그 자리에서 흩뿌린다(안 죽인다).
