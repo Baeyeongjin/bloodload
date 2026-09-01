@@ -101,6 +101,27 @@ static func total_stages() -> int:
 	return MAJOR_STAGE_COUNT * STEPS_PER_STAGE
 
 
+# 보스 구간 **첫 격파** 보상 (2026-08-27 사장님: "이긴 보람" — 6~10단계를
+# 세게 두기로 한 결정과 짝이다. 벽에 보상이 걸려야 벽이 목표가 된다).
+#
+# 보석은 예전부터 줬는데 **조용히 줬다** — 배너가 없어서 받은 줄도 몰랐다.
+# 이제 소환권을 얹고 배너로 알린다(부르는 쪽 Main._advance_stage).
+#
+#   보석    GachaDefs.COST (한 번 뽑기 값). 늘리지 않는다 — 보석은 상점과
+#           얽혀 있어 여기서 불리면 경제가 흔들린다
+#   소환권  종류는 대단계마다 돌고(무기->방어구->장신구->스킬), 장수는
+#           순환이 돌 때마다 +1 (1~10단계 1장, 11~20단계 2장 … 41~50단계 5장).
+#           평생 합 150장 — 도감이 평생 주는 93장과 같은 자릿수다.
+#           천장이 종류별로 쌓이므로 순환이 네 종을 고르게 채운다
+static func boss_first_reward(at_stage: int) -> Dictionary:
+	if not is_boss_stage(at_stage):
+		return {}
+	var major := major_stage(at_stage)
+	return {"gem": GachaDefs.COST,
+		"kind": TicketDefs.KINDS[(major - 1) % TicketDefs.KINDS.size()],
+		"n": 1 + (major - 1) / 10}
+
+
 # 개발 플래그는 기존 내부 숫자와 새 `큰단계-구간` 표기를 둘 다 받는다.
 static func parse(value: String) -> int:
 	var parts := value.split("-", false, 1)

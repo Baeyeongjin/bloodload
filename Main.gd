@@ -15052,14 +15052,28 @@ func _advance_stage() -> void:
 		hero_hp = max_hp()
 		var next_stage := mini(stage + 1, StageDefs.total_stages())
 		if next_stage > best_stage:
-			if StageDefs.is_boss_stage(stage):
-				gem += GachaDefs.COST
-			# 군림 — 돌파가 해금 문턱을 넘는 순간 배너로 알린다. 자동 해금은
-			# 알리지 않으면 없는 기능과 같다.
+			# 첫 격파 보상과 군림 해금을 **배너 하나로** 알린다. 따로 띄우면
+			# 서로 덮는다 — 군림 문턱(50·100·200…)이 전부 보스 구간이라 둘은
+			# 늘 같은 순간에 온다. (_show_clear 는 한 장짜리 판이다.)
+			#
+			# 군림 배너는 예전에 _offline_banner 에 띄웠는데 그 배너를 상점
+			# 정리(2026-08-27)에서 지우면서 **표시가 통째로 유실**됐었다 —
+			# "알리지 않으면 없는 기능"이라는 주석만 남고 알림이 없었다.
+			var lines := PackedStringArray()
+			var prize := StageDefs.boss_first_reward(stage)
+			if not prize.is_empty():
+				gem += float(prize["gem"])
+				var kind := str(prize["kind"])
+				tickets[kind] = int(tickets.get(kind, 0)) + int(prize["n"])
+				lines.append("첫 격파 — 보석 +%d · %s +%d" % [int(prize["gem"]),
+					str(TicketDefs.INFO[kind]["short"]), int(prize["n"])])
 			var mastery0 := MasteryDefs.unlocked_count(best_stage)
 			best_stage = next_stage
 			if MasteryDefs.unlocked_count(best_stage) > mastery0:
 				var r: Dictionary = MasteryDefs.RANKS[mastery0]
+				lines.append("%s — %s" % [str(r["name"]), str(r["desc"])])
+			if not lines.is_empty():
+				_show_clear("돌파!", "\n".join(lines))
 		stage = next_stage
 		_quest_bump("stage")
 		_boss_time = StageDefs.time_limit(stage)
