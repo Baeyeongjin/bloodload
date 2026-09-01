@@ -578,6 +578,11 @@ var buy_step := 1          # 한 번에 올리는 단계 수 (x1 / x10 / x100)
 var _stat_rows := {}
 var _growth_mode := "stat"
 var _growth_mode_buttons := {}
+# 소탭 알림점 — 탭 점이 "성장 어딘가에 할 일"만 말해서, 소탭 여섯을
+# 다 눌러 봐야 했다(사장님 2026-08-27: "빨간점 세세하게 다 표시해줘").
+var _growth_mode_dots := {}
+var _shop_mode_dots := {}
+var _oath_side_dot: TextureRect
 var _growth_mode_labels := {}   # 그림 탭이라 글자는 따로 얹는다
 var _stat_view: Control
 var _skill_view: Control
@@ -2580,6 +2585,11 @@ func _build_growth(root: Control) -> void:
 		_shop_outline(ml, 6)
 		_growth_mode_buttons[mode] = mb
 		_growth_mode_labels[mode] = ml
+		var gdot := Ui.icon("res://assets/ui/dot_alert.png",
+			mb.position + Vector2(mb.size.x - 12.0, -4.0), 16.0)
+		gdot.visible = false
+		root.add_child(gdot)
+		_growth_mode_dots[mode] = gdot
 
 	_stat_view = Control.new()
 	_stat_view.size = Vector2(PANEL_W, PANEL_H)
@@ -8252,6 +8262,11 @@ func _build_quests() -> void:
 		OATH_BTN_AT + Vector2(4.0, 4.0), 48.0)
 	_side_root.add_child(_oath_icon)
 	_nav_hover(o_btn, _oath_icon)
+	# 임무·도감 버튼과 같은 문법의 알림점. 조건은 _refresh_tab_dots.
+	_oath_side_dot = Ui.icon("res://assets/ui/dot_alert.png",
+		OATH_BTN_AT + Vector2(40.0, 0.0), 18.0)
+	_oath_side_dot.visible = false
+	_side_root.add_child(_oath_side_dot)
 	# 상점 진입점은 **일부러 안 만든다** (사장님 2026-08-12): 상점은 과금과 한
 	# 묶음으로 **별도 탭**이 되고 지금 이 판은 그 탭 안의 한 소탭으로 들어간다.
 	# 옆줄에 버튼을 세워 두면 곧 두 곳에서 같은 걸 파는 화면이 된다.
@@ -8448,6 +8463,11 @@ func _build_shop(root: Control) -> void:
 		Ui.hover_pop(tb)
 		tb.pressed.connect(func() -> void: _shop_set_mode(mode))
 		root.add_child(tb)
+		var sdot := Ui.icon("res://assets/ui/dot_alert.png",
+			tb.position + Vector2(tb.size.x - 12.0, -4.0), 16.0)
+		sdot.visible = false
+		root.add_child(sdot)
+		_shop_mode_dots[mode] = sdot
 		# 박쥐 문양이 알약 정중앙이라 글자와 무조건 겹친다 — 11px 는 문양에
 		# 묻혔다(실측). 16px + 두꺼운 외곽선으로 글자가 문양을 이기게 한다.
 		var tl := _panel_label(root, Vector2(tb.position.x, SHOP_TAB_Y + 7.0),
@@ -9953,27 +9973,70 @@ func _gear_can_fuse(key: String) -> bool:
 # 성장 탭의 여섯 소탭 중 지금 손댈 게 있나. 스탯만 보던 것을 전부로 넓힌다
 # (사장님 2026-08-26) — 혈맥·혈맹·유물·회귀는 각자 재화가 따로라, 하나가
 # 마르는 동안 다른 하나가 차 있는 게 이 게임의 보통 상태다.
+# 상점 소탭의 "할 일". 지금 점이 켜질 수 있는 소탭은 둘뿐이다 — 특가·정기·
+# 교환·의상은 "받을 것"이 아니라 "살 것"이라 점을 안 켠다(점의 원칙).
+func _shop_mode_todo(mode: String) -> bool:
+	match mode:
+		"book":
+			var bstep := OathDefs.book_step(oath_used)
+			var bactive := IapDefs.sub_active(iap_subs, "season_pass")
+			for i in range(1, bstep + 1):
+				if not oath_book_free.has(i):
+					return true
+				if bactive and not oath_book_paid.has(i):
+					return true
+		"pass":
+			var pstep := PassDefs.step_of(pass_points)
+			var pactive := _pass_active()
+			for i in range(1, pstep + 1):
+				if not pass_free_got.has(i):
+					return true
+				if pactive and not pass_paid_got.has(i):
+					return true
+	return false
+
+
+# 소탭 하나의 "할 일" — 탭 점과 소탭 점이 같은 함수를 본다. 조건을 두 벌로
+# 적으면 반드시 한쪽이 낡는다(스킬 조각 점이 소환 탭에 남아 있던 사고가 그것).
+func _growth_mode_todo(mode: String) -> bool:
+	match mode:
+		"stat":
+			var major := StageDefs.major_stage(stage)
+			for st in StatDefs.STATS:
+				var k := str(st["key"])
+				if StatDefs.is_open(k, major, lv) and stat_lv(k) < _stat_cap(k) 				and gold >= _buy_cost(k, _step_for(k)):
+					return true
+		"skill":
+			# 조각이 모인 스킬 — 성장 탭 조건이다. 예전엔 소환 탭 점이 봤는데
+			# 스킬 화면이 성장 탭으로 이사한 뒤로는 엉뚱한 탭을 켜고 있었다.
+			for key in skill_owned:
+				if int(skill_owned[key]) >= SkillDefs.MAX_LV:
+					continue
+				if int(gacha_shards.get("skill:" + str(key), 0)) \
+						>= SkillDefs.shard_cost(int(skill_owned[key])):
+					return true
+		"trait":
+			for n in TraitDefs.NODES:
+				if _trait_steps(str(n["id"])) > 0:
+					return true
+		"pact":
+			if _pact_steps(1) > 0 and sigil >= _pact_cost(1):
+				return true
+		"relic":
+			for r in RelicDefs.RELICS:
+				var rid := str(r["id"])
+				if RelicDefs.level_of(rid, relics) > 0 				and RelicDefs.level_of(rid, relics) < RelicDefs.MAX_LV 				and int(gacha_shards.get("relic:" + rid, 0)) >= RelicDefs.SHARDS_PER_LV:
+					return true
+		"prestige":
+			if best_stage >= PrestigeDefs.OPEN_STAGE 			and PrestigeDefs.marks_for(best_stage, prestige_peak) > 0:
+				return true
+	return false
+
+
 func _growth_todo() -> bool:
-	var major := StageDefs.major_stage(stage)
-	for st in StatDefs.STATS:
-		var k := str(st["key"])
-		if StatDefs.is_open(k, major, lv) and stat_lv(k) < _stat_cap(k) 				and gold >= _buy_cost(k, _step_for(k)):
+	for m in ["stat", "skill", "trait", "pact", "relic", "prestige"]:
+		if _growth_mode_todo(str(m)):
 			return true
-	# 혈맥 — 열려 있고 혈정이 닿는 노드가 하나라도 있나.
-	for n in TraitDefs.NODES:
-		if _trait_steps(str(n["id"])) > 0:
-			return true
-	# 혈맹 — 인장으로 한 칸.
-	if _pact_steps(1) > 0 and sigil >= _pact_cost(1):
-		return true
-	# 유물 — 조각이 다 모인 것.
-	for r in RelicDefs.RELICS:
-		var rid := str(r["id"])
-		if RelicDefs.level_of(rid, relics) > 0 				and RelicDefs.level_of(rid, relics) < RelicDefs.MAX_LV 				and int(gacha_shards.get("relic:" + rid, 0)) >= RelicDefs.SHARDS_PER_LV:
-			return true
-	# 회귀 — 지금 돌면 혈흔이 나오나.
-	if best_stage >= PrestigeDefs.OPEN_STAGE 			and PrestigeDefs.marks_for(best_stage, prestige_peak) > 0:
-		return true
 	return false
 
 
@@ -10034,39 +10097,32 @@ func _tab_todo(tab: String) -> bool:
 						_pet_gear_value(str(id), "gather")) >= 1.0:
 					return true
 		"shop":
-			# 계약의 서 — 받을 칸이 남아 있다.
-			var bstep := OathDefs.book_step(oath_used)
-			var bactive := IapDefs.sub_active(iap_subs, "season_pass")
-			for i in range(1, bstep + 1):
-				if not oath_book_free.has(i):
-					return true
-				if bactive and not oath_book_paid.has(i):
-					return true
-			# 성장 패스 — 받을 칸이 남아 있다.
-			var pstep := PassDefs.step_of(pass_points)
-			var pactive := _pass_active()
-			for i in range(1, pstep + 1):
-				if not pass_free_got.has(i):
-					return true
-				if pactive and not pass_paid_got.has(i):
-					return true
+			return _shop_mode_todo("book") or _shop_mode_todo("pass")
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
 				return true
-			# _skill_levelable() 를 안 쓴다 — 매 프레임 도는 자리라 배열을 새로 만들
-			# 이유가 없다. 여기는 "하나라도 있나"만 알면 된다.
-			for key in skill_owned:
-				if int(skill_owned[key]) >= SkillDefs.MAX_LV:
-					continue
-				if int(gacha_shards.get("skill:" + str(key), 0)) \
-						>= SkillDefs.shard_cost(int(skill_owned[key])):
-					return true
+			# 스킬 조각 조건은 여기 없다 — 스킬 화면이 성장 탭에 살아서
+			# _growth_mode_todo("skill") 이 본다. 여기 남겨 두면 소환 탭이
+			# 엉뚱하게 켜진다(실제로 그랬다 — 2026-08-27 정비에서 옮김).
 	return false
 
 
 func _refresh_tab_dots() -> void:
 	for key in _tab_dots:
 		_tab_dots[key].visible = _tab_todo(key)
+	for key in _growth_mode_dots:
+		(_growth_mode_dots[key] as CanvasItem).visible = _growth_mode_todo(str(key))
+	for key in _shop_mode_dots:
+		(_shop_mode_dots[key] as CanvasItem).visible = _shop_mode_todo(str(key))
+	# 계약 옆줄 — **카드가 상한에 꽉 찼을 때**만 켠다. 한 장 이상으로 켜면
+	# 40분마다 켜지는 잔소리다("늘 켜진 점은 없는 점"). 꽉 참 = 자연 충전이
+	# 낭비되는 상태라 지금 뽑는 게 실제로 이득인 순간이다. 수집 보상이
+	# 차 있어도 켠다 — 그건 받을 것이 있는 것이다.
+	if _oath_side_dot:
+		var nx := _oath_col_next()
+		var col_ready := not nx.is_empty() and _oath_col_count() >= int(nx["need"])
+		_oath_side_dot.visible = col_ready \
+			or oath_cards >= OathDefs.card_cap(_oath_member())
 
 
 # 실효 상한 — 스탯 고유 cap 과 승급 공통 상한(미궁 층이 연다) 중 작은 쪽.
