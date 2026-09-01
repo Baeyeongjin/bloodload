@@ -10,6 +10,32 @@ static var _cache := {}
 static var _fcache := {}
 static var _reach_cache := {}
 static var _gap_cache := {}
+static var _img_cache := {}
+
+
+# **텍스처 한 장을 한 번만 편다.** `get_image()` 는 임포트된 텍스처를 그때그때
+# 디코드하는 비싼 호출인데, 잉크폭·발밑여백·바닥패드·정점프레임이 각자 새로
+# 부르고 있었다 — 프레임 하나당 다섯 번이다. 계산 결과는 저마다 캐시하지만
+# **첫 계산에서 다섯 번 디코드하는 것**이 막 하나에 250ms 를 만들었다
+# (2026-08-27 --perf 실측).
+#
+# 캐시는 데우기가 끝나면 Main 이 비운다 — 값은 이미 각 캐시에 들어가 있어서
+# 편 이미지를 계속 들고 있을 이유가 없다.
+static func image_of(texture: Texture2D) -> Image:
+	if texture == null:
+		return null
+	var key := texture.resource_path
+	if key != "" and _img_cache.has(key):
+		return _img_cache[key]
+	var img := texture.get_image()
+	if img != null and key != "":
+		_img_cache[key] = img
+	return img
+
+
+# 편 이미지를 버린다(계산 결과 캐시는 그대로 둔다).
+static func drop_images() -> void:
+	_img_cache.clear()
 
 
 # 그림이 캔버스 **아래끝에서 몇 칸 떠 있는가**(원본 픽셀 단위).
@@ -28,7 +54,7 @@ static func ink_half_width(texture: Texture2D) -> float:
 	var key := "w:" + texture.resource_path
 	if _gap_cache.has(key):
 		return float(_gap_cache[key])
-	var image := texture.get_image()
+	var image := image_of(texture)
 	var used := image.get_used_rect()
 	var half := 0.0
 	if used.size.x > 0:
@@ -45,7 +71,7 @@ static func bottom_gap(texture: Texture2D) -> float:
 	var key := texture.resource_path
 	if _gap_cache.has(key):
 		return float(_gap_cache[key])
-	var image := texture.get_image()
+	var image := image_of(texture)
 	var used := image.get_used_rect()
 	var gap := 0.0 if used.size.y <= 0 \
 		else float(image.get_height() - (used.position.y + used.size.y))
@@ -163,7 +189,7 @@ static func slam_peak_frame(dir_path: String) -> int:
 	var best_h := 1 << 30
 	for f in all_frames.size():
 		var texture: Texture2D = all_frames[f]
-		var used := texture.get_image().get_used_rect()
+		var used := image_of(texture).get_used_rect()
 		if used.size.x <= 0:
 			continue
 		if used.size.y < best_h:
@@ -193,17 +219,32 @@ static func bottom_pad(dir_path: String) -> float:
 	var key := "bpad:%s" % dir_path
 	if _reach_cache.has(key):
 		return float(_reach_cache[key])
+	# **get_pixel 로 훑지 않는다.** 한 픽셀마다 Color 를 하나씩 만들어 내므로
+	# 64x64 짜리 9프레임이면 36,864 번이다 — `--perf` 로 재니 이 함수가 든 데우기
+	# 구간이 막 하나에 **254ms** 였다(2026-08-27). 알파만 필요하니 바이트를 직접
+	# 읽는다: 같은 값이 나오고 비용만 빠진다.
 	var pad := 1 << 30
 	for texture in frames(dir_path):
-		var img := (texture as Texture2D).get_image()
+		var img := image_of(texture as Texture2D)
+		# 임포트 설정에 따라 압축돼 올 수 있다. 바이트를 직접 읽으려면 편다.
+		# **사본에 한다** — decompress/convert 는 제자리에서 바꾸는데
+		# 이 이미지는 image_of 캐시가 남들과 같이 쓰는 것이다.
+		if img.is_compressed() or img.get_format() != Image.FORMAT_RGBA8:
+			img = img.duplicate()
+			if img.is_compressed():
+				img.decompress()
+			if img.get_format() != Image.FORMAT_RGBA8:
+				img.convert(Image.FORMAT_RGBA8)
+		var data := img.get_data()
 		var w := img.get_width()
 		var h := img.get_height()
 		var rows: Array[int] = []
 		var widest := 0
 		for y in h:
 			var n := 0
+			var base := y * w * 4 + 3      # 알파는 네 번째 바이트
 			for x in w:
-				if img.get_pixel(x, y).a >= 0.5:
+				if data[base + x * 4] >= 128:
 					n += 1
 			rows.append(n)
 			widest = maxi(widest, n)
@@ -228,7 +269,7 @@ static func frame_reach(dir_path: String, frame: int, draw_scale: float = 1.0,
 	if all_frames.is_empty():
 		return 0.0
 	var texture: Texture2D = all_frames[clampi(frame, 0, all_frames.size() - 1)]
-	var image := texture.get_image()
+	var image := image_of(texture)
 	var used := image.get_used_rect()
 	if used.size.x <= 0:
 		return 0.0

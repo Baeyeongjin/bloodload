@@ -267,18 +267,29 @@ func _tick_titles(delta: float) -> void:
 		return
 	_title_check_t = 1.0
 	play_sec += 1.0   # 켜 둔 시간 전부 — 방치형에서는 방치도 플레이다
+	var _q1 := Time.get_ticks_usec()
 	_oath_tick()
+	_perf_mark("틱:계약", _q1)
+	var _q2 := Time.get_ticks_usec()
 	_refresh_board()
+	_perf_mark("틱:보드", _q2)
 	# 임무도 이 1초 틱을 탄다 — 자정 넘김과 알림점(처치가 50에 닿는 순간 등)을
 	# 여기서 갱신한다. 줄 6개 글자 갱신이라 1초에 한 번은 공짜다.
+	var _q3 := Time.get_ticks_usec()
 	_refresh_quests()
+	_perf_mark("틱:임무", _q3)
+	var _q4 := Time.get_ticks_usec()
 	_tick_income()
+	_perf_mark("틱:수입", _q4)
 	# 장착 칭호 — 레벨 배지 아래. 여기서 갱신하면 로드 직후·장착 직후를 다 잡는다.
 	if _lbl_worn:
 		_lbl_worn.visible = title_worn != ""
 		if title_worn != "":
 			_lbl_worn.text = str(TitleDefs.title(title_worn).get("name", ""))
+	var _q5 := Time.get_ticks_usec()
 	var state := _title_state()
+	_perf_mark("틱:칭호상태", _q5)
+	var _q6 := Time.get_ticks_usec()
 	for t in TitleDefs.TITLES:
 		var id := str(t["id"])
 		if titles_got.has(id) or not TitleDefs.earned(id, state):
@@ -287,6 +298,7 @@ func _tick_titles(delta: float) -> void:
 		titles_new[id] = true
 		_claim_title_milestones()
 		_save_game()
+	_perf_mark("틱:칭호루프", _q6)
 	# 로드 직후의 남은 알림도 이 1초 틱이 다시 켠다 — 갱신 경로가 하나다.
 	if _codex_dot:
 		_codex_dot.visible = not titles_new.is_empty()
@@ -339,6 +351,16 @@ var hero_hp := 100.0
 var hero_x := HERO_X      # 영웅의 현재 x. 대시로 매 프레임 움직인다
 var _knock_vx := 0.0      # 맞아서 밀리는 속도. 대시가 곧 되돌린다
 var _gap_probe := false   # [개발 도구] --gaps
+# [개발 도구] --perf — 프레임 시간을 재서 2초마다 찍는다. 무엇이 느린지는
+# 재기 전엔 모른다. 평균만 보면 안 된다 — **랙은 최악 프레임이 만든다**.
+var _perf_probe := false
+var _perf_t := 0.0
+var _perf_ms: Array[float] = []
+# 의심 지점별 누적 시간(ms). 어느 함수가 그 프레임을 만들었는지 좁힌다.
+var _perf_spent := {}
+# 미리 데울 애니 폴더 줄. **한꺼번에 안 데운다** — 막 시작에 몰아 하면
+# 끊김이 전투 중에서 막 전환으로 옮겨갈 뿐이다. 매 프레임 한 칸씩 소화한다.
+var _warm_queue: Array[String] = []
 var _gap_t := 0.0
 var hero_face := 1        # +1 오른쪽, -1 왼쪽. 원본이 왼쪽을 보므로 flip_h = face > 0
 var _dash_to := HERO_X    # 이번에 붙으려는 자리
@@ -1231,6 +1253,12 @@ func _ready() -> void:
 		if arg == "--cut":
 			_boss_cut("뼈의 합창단")
 		# [개발 도구] 영웅과 몹이 겹치는 순간만 골라 찍는다.
+		if arg == "--perf":
+			_perf_probe = true
+			# **vsync 를 끈다.** 켜 두면 평균이 늘 16.7ms 로 붙어서 여유가
+			# 얼마나 남았는지 안 보인다 — 튀는 것만 보이고 "왜 튀는지"는
+			# 안 보인다. 끄면 진짜 한 프레임 원가가 나온다.
+			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		if arg == "--gaps":
 			_gap_probe = true
 		# [개발 도구] 보상 창을 띄운 채로 캡처한다. 실제로는 F9(치트)나 가이드 수령으로만
@@ -10169,8 +10197,116 @@ func _go_back() -> void:
 
 
 # ── 루프 ───────────────────────────────────────────────────────────────────
+# [개발 도구] 프레임 시간 프로브. 2초마다 한 줄 찍는다.
+#
+# **평균이 아니라 꼬리를 본다.** 60fps 는 16.7ms 인데, 평균이 8ms 라도 매 초
+# 한 번 40ms 가 끼면 화면은 끊긴 것으로 읽힌다 — 그래서 최악과 상위 5%(p95)를
+# 같이 찍는다. 무엇이 그 프레임을 만들었는지 좁히려고 그 순간의 개수도 같이
+# 적는다(몹·시체·이펙트·그리기 호출).
+# [개발 도구] 한 구간의 시간을 _perf_spent 에 쌓는다. 프로브가 꺼져 있으면
+# 아무 일도 안 한다 — 켜 두지 않으면 비용이 없다.
+# ── 자산 미리 데우기 ──────────────────────────────────────────────────────
+#
+# **왜 필요한가**(2026-08-27 실측): 몹이 처음 공격하거나 죽을 때 그 애니의
+# 프레임을 그 자리에서 읽어 디코드한다. `Assets.reach_peak_frame` 은 프레임마다
+# `get_image()` 를 부르므로 9프레임 보스면 아홉 번이다 — `--perf` 로 재니
+# 평타 구간이 한 창에서 **194.7ms** 를 찍고 그다음 창엔 9.8ms 였다. 신규 몹
+# 15종(245장)이 들어오면서 더 두드러졌다.
+#
+# 그래서 막이 바뀔 때 그 막이 쓸 폴더를 줄에 세워 두고 **프레임마다 하나씩**
+# 데운다. 한 칸이 곧 한 폴더이고, 데우는 값은 Assets 가 캐시에 넣는다.
+func _warm_enqueue_act() -> void:
+	var act: Dictionary = _c_act_data()
+	var keys: Array = (act.get("roster", []) as Array).duplicate()
+	keys.append(str(act.get("boss", "")))
+	for k in keys:
+		if str(k) == "":
+			continue
+		for m in ["walk", "attack", "special"]:
+			var dir := "res://assets/anim/%s_%s" % [str(k), str(m)]
+			if not _warm_queue.has(dir):
+				_warm_queue.append(dir)
+
+
+# 줄에서 한 칸을 꺼내 데운다. **전투 중에 하는 일과 같은 것을 미리 한다** —
+# 프레임을 올리고, 잉크 폭·발밑 여백·정점 프레임까지 캐시에 넣는다. 여기서
+# 안 해 두면 그 계산이 첫 타격 프레임에 통째로 얹힌다.
+func _warm_step() -> void:
+	# **시간 예산으로 돈다.** 한 프레임에 폴더 하나만 데우면 줄이 45프레임
+	# 넘게 남아서, 첫 몹이 공격할 때까지 못 끝난다 — 실측에서 평타가
+	# 그대로 125ms 를 찍었다. 2ms 안에서 되는 만큼 삼킨다: 평상시 한
+	# 프레임이 7.2ms 라 9.2ms 여도 60fps 예산(16.7)에 든다.
+	if _warm_queue.is_empty():
+		return
+	var until := Time.get_ticks_usec() + 2000
+	while not _warm_queue.is_empty() and Time.get_ticks_usec() < until:
+		_warm_one(_warm_queue.pop_front())
+	if _warm_queue.is_empty():
+		# 다 데웠으면 편 이미지를 버린다 — 값은 이미 캐시에 들어가 있고,
+		# 이미지를 계속 들고 있으면 메모리만 먹는다(폰에서 중요하다).
+		Assets.drop_images()
+
+
+func _warm_one(dir: String) -> void:
+	var fr := Assets.frames(dir)
+	if fr.is_empty():
+		return
+	for t in fr:
+		Assets.ink_half_width(t)
+		Assets.bottom_gap(t)
+	Assets.bottom_pad(dir)
+	if dir.ends_with("_special"):
+		Assets.slam_peak_frame(dir)
+	else:
+		Assets.reach_peak_frame(dir)
+
+
+func _perf_mark(key: String, usec: int) -> void:
+	if not _perf_probe:
+		return
+	_perf_spent[key] = float(_perf_spent.get(key, 0.0)) \
+		+ float(Time.get_ticks_usec() - usec) / 1000.0
+
+
+func _perf_tick(delta: float) -> void:
+	_perf_ms.append(delta * 1000.0)
+	_perf_t += delta
+	if _perf_t < 2.0:
+		return
+	_perf_t = 0.0
+	var sorted_ms := _perf_ms.duplicate()
+	sorted_ms.sort()
+	var n := sorted_ms.size()
+	var sum := 0.0
+	for v in sorted_ms:
+		sum += v
+	var p95: float = sorted_ms[mini(n - 1, int(float(n) * 0.95))]
+	var foes := get_tree().get_nodes_in_group("foes").size()
+	var corpses := get_tree().get_nodes_in_group("corpses").size()
+	print("[perf] n=%d  평균 %.1fms  p95 %.1fms  최악 %.1fms  |  몹 %d 시체 %d 노드 %d  그리기 %d"
+		% [n, sum / float(n), p95, sorted_ms[n - 1], foes, corpses,
+		get_tree().get_node_count(),
+		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
+	if not _perf_spent.is_empty():
+		var spent := PackedStringArray()
+		var keys: Array = _perf_spent.keys()
+		keys.sort_custom(func(a: Variant, b: Variant) -> bool:
+			return float(_perf_spent[a]) > float(_perf_spent[b]))
+		for k in keys:
+			spent.append("%s %.1f" % [str(k), float(_perf_spent[k])])
+		print("[perf] 2초간 쓴 시간(ms): " + "  ".join(spent))
+		_perf_spent.clear()
+	_perf_ms.clear()
+
+
 func _process(delta: float) -> void:
 	play_time += delta
+	if _perf_probe:
+		_perf_tick(delta)
+	# 프레임마다 한 칸. 줄이 비어 있으면 곧바로 돌아온다.
+	var _pw := Time.get_ticks_usec()
+	_warm_step()
+	_perf_mark("데우기", _pw)
 	_drop_tick(delta)
 	if _dev_shatter:
 		# [개발 도구] 0.9초마다 교전 몹을 그 자리에서 흩뿌린다(안 죽인다).
@@ -10199,7 +10335,9 @@ func _process(delta: float) -> void:
 	_visual_hitstop_t = maxf(0.0, _visual_hitstop_t - delta)
 	_hitstop_cd = maxf(0.0, _hitstop_cd - delta)
 	_shake_cd = maxf(0.0, _shake_cd - delta)
+	var _pf := Time.get_ticks_usec()
 	_tick_motion(0.0 if visual_frozen else delta)
+	_perf_mark("모션", _pf)
 	queue_redraw()   # 그림자는 몹이 움직일 때마다 다시 그려야 한다
 	_boss_pan_t = maxf(0.0, _boss_pan_t - delta)
 	# 연속 도전 — 암전이 걷히고 판이 비었을 때 다시 들어간다.
@@ -10213,7 +10351,9 @@ func _process(delta: float) -> void:
 	# 그게 맞다: 소탕은 배경 수입이고, 목돈은 첫 돌파가 준다.
 	if dungeon_best > 0:
 		crystal += _sweep_per_hour() / 3600.0 * delta
+	var _pa := Time.get_ticks_usec()
 	_tick_titles(delta)
+	_perf_mark("1초틱", _pa)
 	if _power_toast_t > 0.0:
 		_power_toast_t -= delta
 		if _power_toast_t <= 0.0:
@@ -10228,8 +10368,12 @@ func _process(delta: float) -> void:
 	if _tick_boss_timer(delta):
 		_refresh_hud()
 		return
+	var _pb := Time.get_ticks_usec()
 	_tick_advance(delta, foes)
+	_perf_mark("전진", _pb)
+	var _pc := Time.get_ticks_usec()
 	_tick_engage(foes)
+	_perf_mark("교전", _pc)
 	for f in foes:
 		if is_instance_valid(f):
 			f.set_visual_frozen(visual_frozen)
@@ -10239,8 +10383,12 @@ func _process(delta: float) -> void:
 			# 스윙을 시작하고 임팩트 때 빗나갔다 — 6칸 중 절반 이상이 매번 그랬고,
 			# 화면에서는 "몹이 때리는데 아무 일도 안 일어난다"로 보인다.
 			f.hero_x = hero_x
+	var _pd := Time.get_ticks_usec()
 	_tick_skills(delta, foes)
+	_perf_mark("스킬", _pd)
+	var _pe := Time.get_ticks_usec()
 	_tick_hero_attack(delta, foes)
+	_perf_mark("평타", _pe)
 	_tick_dash(delta)
 	_refresh_hud()
 	# [개발 도구] --gaps : 영웅과 몹이 겹치는 순간만 골라 찍는다.
@@ -14990,6 +15138,8 @@ func _fade(action: Callable, rect: ColorRect = null) -> void:
 
 func _apply_stage_bg() -> void:
 	var act: Dictionary = _c_act_data()
+	# 막이 바뀌면 그 막이 쓸 애니를 줄에 세운다(데우는 것은 _warm_step).
+	_warm_enqueue_act()
 	# 전용 배경 (사장님 선택: 심층 M1 · 혈액 동굴 C2 · 정수 성소 S2, 2026-08-12).
 	var bg_path := str(act["bg"])
 	if raid_on != "":
@@ -15611,6 +15761,12 @@ var save_muted := false
 func _save_game() -> void:
 	if save_muted:
 		return
+	var _ps := Time.get_ticks_usec()
+	_save_game_inner()
+	_perf_mark("저장", _ps)
+
+
+func _save_game_inner() -> void:
 	if _wiped:
 		return
 	var cfg := ConfigFile.new()
