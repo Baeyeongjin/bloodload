@@ -115,5 +115,22 @@ func _init() -> void:
 	assert(scene.gear_presets[0] == gear_before, "스킬을 저장했는데 장비가 바뀌었다")
 	assert(not (scene.skill_presets[0] as Array).is_empty(), "스킬 저장이 안 됐다")
 
+	# ── 7) 전용 화면 (2026-09-01 사장님: 인라인 줄은 "너무 불친절") ────────
+	# 팝업이 실제로 조립돼 있고, 뒤로가기가 걷는 팝업 목록에 들어 있다.
+	assert(scene._preset_view != null, "프리셋 화면이 안 지어졌다")
+	assert(scene._popups().has(scene._preset_view),
+		"프리셋 화면이 뒤로가기 팝업 목록에 없다 — 안드로이드 뒤로가기가 탭을 닫는다")
+	# 이름 — 기본은 "프리셋 N", 바꾸면 그 이름, 지우면 기본으로 돌아온다.
+	assert(scene._preset_name("skill", 0) == "프리셋 1", "기본 이름이 아니다")
+	scene.preset_names["skill:0"] = "보스용"
+	assert(scene._preset_name("skill", 0) == "보스용", "지은 이름이 안 나온다")
+	scene.preset_names["skill:0"] = ""
+	assert(scene._preset_name("skill", 0) == "프리셋 1", "빈 이름이 기본으로 안 돌아온다")
+	# 화면을 열면 카드 여섯 장이 선다 (스킬 3 + 장비 3).
+	scene._open_presets()
+	assert(scene._preset_view.visible, "열었는데 안 보인다")
+	assert(scene._preset_body.get_child_count() == scene.PRESETS * 2,
+		"카드가 %d 장이다 (6 이어야)" % scene._preset_body.get_child_count())
+
 	print("PresetCheck OK  (스킬·장비 각각 3벌 · 자동 꺼짐 · 없어진 것 견딤)")
 	quit(0)

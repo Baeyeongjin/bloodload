@@ -395,11 +395,15 @@ var skill_equipped: Array[String] = []   # 장착 6칸. 순서가 곧 발동 우
 # 통째로 담으면 레벨을 올렸을 때 프리셋만 옛 수치로 굳는다.
 const PRESETS := 3
 var skill_presets: Array = []
-# 화면 쪽 — 저장 모드일 때 번호를 누르면 담고, 아니면 꺼낸다. 버튼을
-# 여섯 개(저장 3 + 불러오기 3) 두는 것보다 줄이 반으로 준다.
-var _preset_write := {"skill": false, "gear": false}
-var _preset_btns := {"skill": [], "gear": []}
-var _preset_write_btns := {}
+# 프리셋 화면 — 전용 팝업 하나에 스킬 3장 + 장비 3장이 카드로 나열된다
+# (사장님 2026-09-01: 인라인 [저장][1][2][3] 줄은 "너무 불친절" — 철거했다.
+# 레퍼런스: 참고작의 프리셋 판. 카드마다 이름·저장·장착·미리보기).
+var _preset_view: Control
+var _preset_body: Control
+var preset_names := {}          # "skill:0" -> 이름. 비어 있으면 "프리셋 N"
+# 이름 입력 판의 행선지. 비어 있으면 기존 동작(영웅 이름)이다 — 프리셋 이름
+# 변경이 같은 판을 빌려 쓴다(판을 하나 더 만들면 글자 수·정리 규칙이 갈라진다).
+var _name_target := Callable()
 var gear_presets: Array = []
 # 켜 두면 새 스킬을 얻거나 레벨을 올릴 때마다 알아서 다시 낀다. 방치형에서
 # "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
@@ -1406,6 +1410,11 @@ func _ready() -> void:
 			gem = maxf(gem, GachaDefs.COST * float(pull_count))
 			_pull_gacha(pull_count)
 		# [개발 도구] --gear-mode=inventory : 보관함을 연 채 캡처한다.
+		# [개발 도구] --presets : 프리셋 화면을 연 채로 캡처한다.
+		# **늦은 루프다** — 이른 루프에서 열면 _load_game 전이라 배열이
+		# 비어 있어 카드가 인덱스에서 튄다(실측).
+		if arg == "--presets":
+			_open_presets()
 		if arg.begins_with("--gear-mode="):
 			_set_gear_mode(arg.trim_prefix("--gear-mode="))
 		# [개발 도구] --gear-detail=first : 첫 보관 장비 상세/합성 팝업을 연다.
@@ -1526,6 +1535,7 @@ func _build_scene() -> void:
 	_build_codex_view()
 	_build_oath_view()
 	_build_dialogs()
+	_build_preset_view()
 	_build_clear_view()
 	await _load_tick(0.95)
 	# 창이 뜰 때의 반응을 **한 곳에서** 건다(사장님: "모든 창들 띄울 때 애니메이션").
@@ -1995,10 +2005,130 @@ func _build_portrait() -> void:
 
 # 이름을 확정한다. 못 쓰는 이름이면 **판을 안 닫고** 이유를 적는다 — 닫고 나서
 # 안 바뀐 걸 발견하면 무엇이 잘못됐는지 알 길이 없다.
+# ── 프리셋 화면 ────────────────────────────────────────────────────────────
+# 카드 여섯 장(스킬 3 + 장비 3)이 세로로 선다. 레퍼런스(참고작 프리셋 판)의
+# 문법: 카드마다 [연필=이름] 이름 [저장] [장착], 아래에 담긴 것 미리보기.
+func _build_preset_view() -> void:
+	_preset_view = _overlay(61)
+	var tap := Button.new()
+	tap.flat = true
+	tap.size = Vector2(Grid.BG)
+	tap.focus_mode = Control.FOCUS_NONE
+	tap.pressed.connect(func() -> void: _preset_view.visible = false)
+	_preset_view.add_child(tap)
+	_preset_view.add_child(Ui.panel(Vector2(24.0, 96.0), Vector2(528.0, 680.0)))
+	var title := _dlg_label(_preset_view, Vector2(24.0, 112.0), Type.SIZE_BODY,
+		Color(1.0, 0.88, 0.55), 528.0, 32.0)
+	title.text = "프리셋"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var hint := _dlg_label(_preset_view, Vector2(24.0, 146.0), Type.SIZE_SMALL,
+		Color(0.72, 0.72, 0.80), 528.0, 20.0)
+	hint.text = "저장 = 지금 낀 것을 담는다  ·  장착하면 자동 장착이 꺼진다"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sc := Ui.scroll(Vector2(40.0, 174.0), Vector2(496.0, 560.0))
+	_preset_view.add_child(sc)
+	_preset_body = VBoxContainer.new()
+	_preset_body.custom_minimum_size.x = 496.0 - Ui.SCROLL_W
+	_preset_body.add_theme_constant_override("separation", 10)
+	sc.add_child(_preset_body)
+	var close := Ui.button("닫기", Vector2(176.0, 742.0), Vector2(224.0, 40.0),
+		Type.SIZE_MID)
+	close.pressed.connect(func() -> void: _preset_view.visible = false)
+	_preset_view.add_child(close)
+
+
+# 카드 한 장. 담긴 것이 없으면 미리보기 자리에 "비어 있음"이 선다.
+func _preset_card(kind: String, n: int) -> Control:
+	var card := Control.new()
+	card.custom_minimum_size = Vector2(456.0, 108.0)
+	var box := Ui.panel(Vector2.ZERO, Vector2(456.0, 104.0))
+	card.add_child(box)
+	# "✎" 는 이 폰트(블랙레터)에 없어 동그라미로 나온다(실측) — 글자로 쓴다.
+	var pencil := Ui.button("이름", Vector2(8.0, 10.0), Vector2(52.0, 30.0),
+		Type.SIZE_SMALL)
+	pencil.pressed.connect(func() -> void:
+		_name_target = func(want: String) -> void:
+			preset_names["%s:%d" % [kind, n]] = want
+			_save_game()
+			_refresh_preset_view()
+		_name_edit.text = str(preset_names.get("%s:%d" % [kind, n], ""))
+		_name_note.text = ""
+		_front(_name_view)
+		_name_view.visible = true)
+	card.add_child(pencil)
+	var nm := _dlg_label(card, Vector2(68.0, 12.0), Type.SIZE_MID,
+		Color(1.0, 0.92, 0.72), 200.0, 26.0)
+	nm.text = "%s%s" % ["스킬 · " if kind == "skill" else "장비 · ",
+		_preset_name(kind, n)]
+	var save_btn := Ui.button("저장", Vector2(268.0, 10.0), Vector2(84.0, 30.0),
+		Type.SIZE_SMALL)
+	save_btn.pressed.connect(func() -> void:
+		_preset_save(kind, n)
+		_refresh_preset_view())
+	card.add_child(save_btn)
+	var use_btn := Ui.button("장착", Vector2(360.0, 10.0), Vector2(84.0, 30.0),
+		Type.SIZE_SMALL)
+	use_btn.disabled = _preset_empty(kind, n)
+	use_btn.pressed.connect(func() -> void:
+		if _preset_apply(kind, n):
+			_preset_view.visible = false)
+	card.add_child(use_btn)
+	# 미리보기 — 담긴 것의 아이콘. 없어진 것(판 장비·안 가진 스킬)은 흐리게.
+	var icons: Array = []
+	# 배열이 짧으면(로드 전·옛 저장본) 빈 카드로 그린다 — 인덱스로 튀지 않는다.
+	var have := n < (skill_presets.size() if kind == "skill" else gear_presets.size())
+	if not have:
+		pass
+	elif kind == "skill":
+		for k in (skill_presets[n] as Array):
+			icons.append([SkillDefs.icon_path(str(k)), skill_owned.has(str(k))])
+	else:
+		var row: Dictionary = gear_presets[n]
+		for slot in row.keys():
+			var inv_key := str(row[slot])
+			if gear_inventory.has(inv_key):
+				icons.append([GearDefs.icon_path(gear_inventory[inv_key]), true])
+			else:
+				icons.append(["", false])
+	if icons.is_empty():
+		var empty_lbl := _dlg_label(card, Vector2(52.0, 52.0), Type.SIZE_SMALL,
+			Color(0.55, 0.52, 0.58), 300.0, 20.0)
+		empty_lbl.text = "비어 있음 — 지금 낀 것을 [저장]으로 담는다"
+	else:
+		for i in mini(icons.size(), 9):
+			var frame := Ui.icon("res://assets/ui/slot_common.png",
+				Vector2(52.0 + float(i) * 44.0, 48.0), 40.0)
+			card.add_child(frame)
+			if str(icons[i][0]) != "":
+				var ic := Ui.icon(str(icons[i][0]),
+					Vector2(56.0 + float(i) * 44.0, 52.0), 32.0)
+				if not bool(icons[i][1]):
+					ic.modulate = Color(0.45, 0.42, 0.48)
+				card.add_child(ic)
+	return card
+
+
+func _refresh_preset_view() -> void:
+	if _preset_body == null:
+		return
+	for c in _preset_body.get_children():
+		c.queue_free()
+	for kind in ["skill", "gear"]:
+		for n in PRESETS:
+			_preset_body.add_child(_preset_card(str(kind), n))
+
+
 func _name_apply() -> void:
 	var want := _clean_name(_name_edit.text)
 	if want == "":
 		_name_note.text = "이름을 적어 주세요"
+		return
+	# 행선지가 지정돼 있으면 그쪽으로 — 프리셋 이름 변경이 이 판을 빌려 쓴다.
+	if _name_target.is_valid():
+		var cb := _name_target
+		_name_target = Callable()
+		_name_view.visible = false
+		cb.call(want)
 		return
 	hero_name = want
 	_name_edit.text = want          # 다듬은 결과를 보여 준다
@@ -3259,7 +3389,11 @@ func _build_skill_view(root: Control) -> void:
 	# 3개 기준(24)을 그대로 두면 마지막 버튼이 창 밖으로 나간다.
 	var bw := (CONTENT_W - 36.0) / 4.0
 	var by := CONTENT_BOTTOM - 38.0
-	_preset_row(_skill_view, "skill", by - 42.0)
+	# 프리셋은 전용 화면이다 — 버튼 하나만 둔다(사장님: 인라인 줄은 불친절).
+	var preset_btn := Ui.button("프리셋", Vector2(PAD, by - 42.0),
+		Vector2(CONTENT_W, 34.0), Type.SIZE_SMALL)
+	preset_btn.pressed.connect(_open_presets)
+	_skill_view.add_child(preset_btn)
 	# 토글이다. 켜 두면 새 스킬·레벨업·조합 때마다 알아서 다시 낀다 — 방치형에서
 	# "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
 	_skill_detail = Control.new()
@@ -3493,7 +3627,6 @@ func _refresh_skills(rebuild_info := true) -> void:
 	_skill_synth_btn.disabled = false
 	_skill_auto_btn.set_pressed_no_signal(skill_auto_equip)
 	_skill_auto_btn.text = "자동 장착 켬" if skill_auto_equip else "자동 장착"
-	_refresh_presets("skill")
 	if rebuild_info:
 		_skill_info.text = _combo_text()
 
@@ -3795,7 +3928,10 @@ func _build_gear(root: Control) -> void:
 		_gear_slots[slot] = {"frame": frame, "icon": ic, "label": name_lbl,
 			"lv": lv_lbl, "stat": stat_lbl}
 	# 슬롯 이름·수치가 216 에서 끝난다 — 그 아래는 비어 있어 그냥 놓으면 된다.
-	_preset_row(_gear_equipped_view, "gear", 232.0)
+	var gpreset_btn := Ui.button("프리셋", Vector2(PAD, 232.0),
+		Vector2(CONTENT_W, 34.0), Type.SIZE_SMALL)
+	gpreset_btn.pressed.connect(_open_presets)
+	_gear_equipped_view.add_child(gpreset_btn)
 	_gear_inventory_view = Control.new()
 	_gear_inventory_view.size = Vector2(PANEL_W, PANEL_H)
 	_gear_inventory_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4684,7 +4820,6 @@ func _synthesize(old_key: String) -> String:
 
 
 func _refresh_gear_slots() -> void:
-	_refresh_presets("gear")
 	for slot in _gear_slots.keys():
 		var item: Dictionary = equipped.get(slot, {})
 		var nodes: Dictionary = _gear_slots[slot]
@@ -10235,7 +10370,7 @@ func _app_resumed() -> void:
 func _popups() -> Array:
 	return [_confirm_view, _reward_view, _info_view, _name_view,
 		_outfit_view, _bulk_view, _codex_view, _quest_view,
-		_oath_view, _rates_view, _status_view]
+		_oath_view, _rates_view, _status_view, _preset_view]
 
 
 # 안드로이드 뒤로가기. **한 겹씩 걷는다** — 팝업 -> 탭 -> 종료 확인.
@@ -11122,63 +11257,18 @@ func _preset_empty(kind: String, n: int) -> bool:
 		else (gear_presets[n] as Dictionary).is_empty()
 
 
-# 프리셋 줄 하나. **스킬·장비가 같은 줄을 쓴다** — 두 화면에서 문법이
-# 달라지면 어느 쪽이 저장인지 매번 헷갈린다.
-#
-#   [저장]  [1] [2] [3]
-#
-# 저장이 꺼져 있으면 번호 = 꺼내기, 켜져 있으면 번호 = 담기. 담고 나면 저장이
-# 자동으로 꺼진다 — 켠 채로 두면 다음에 꺼내려다 덮어쓴다.
-func _preset_row(parent: Control, kind: String, y: float) -> void:
-	var wbtn := Ui.button("저장", Vector2(PAD, y), Vector2(96.0, 34.0),
-		Type.SIZE_SMALL)
-	wbtn.toggle_mode = true
-	wbtn.pressed.connect(func() -> void:
-		_preset_write[kind] = not bool(_preset_write[kind])
-		_refresh_presets(kind))
-	parent.add_child(wbtn)
-	_preset_write_btns[kind] = wbtn
-	var bw := (CONTENT_W - 96.0 - 12.0 * 3.0) / 3.0
-	var row: Array = []
-	for i in PRESETS:
-		var n := i
-		var b := Ui.button(str(n + 1),
-			Vector2(PAD + 96.0 + 12.0 + float(i) * (bw + 12.0), y),
-			Vector2(bw, 34.0), Type.SIZE_SMALL)
-		b.pressed.connect(func() -> void: _preset_tap(kind, n))
-		parent.add_child(b)
-		row.append(b)
-	_preset_btns[kind] = row
+func _preset_name(kind: String, n: int) -> String:
+	var custom := str(preset_names.get("%s:%d" % [kind, n], ""))
+	return custom if custom != "" else "프리셋 %d" % (n + 1)
 
 
-func _preset_tap(kind: String, n: int) -> void:
-	if bool(_preset_write[kind]):
-		_preset_save(kind, n)
-		# 담고 나면 저장을 끈다 — 켠 채로 두면 다음에 꺼내려다 덮어쓴다.
-		_preset_write[kind] = false
-	else:
-		# 빈 칸은 꺼내기 모드에서 아예 못 누르게 해 두므로, 여기 오면
-		# 담긴 게 다 없어진 경우다(판 장비·안 가진 스킬). 조용히 넘긴다 —
-		# 알림 장치를 새로 만들 만한 일이 아니다.
-		_preset_apply(kind, n)
-	_refresh_presets(kind)
-
-
-func _refresh_presets(kind: String) -> void:
-	var wbtn: Variant = _preset_write_btns.get(kind)
-	if wbtn == null:
+func _open_presets() -> void:
+	if _preset_view == null:
 		return
-	var on := bool(_preset_write[kind])
-	(wbtn as Button).set_pressed_no_signal(on)
-	(wbtn as Button).text = "저장할 칸" if on else "저장"
-	for i in (_preset_btns[kind] as Array).size():
-		var b: Button = (_preset_btns[kind] as Array)[i]
-		# 빈 칸은 흐리게 — 눌러 보기 전에 어디가 찼는지 보여야 한다.
-		var empty := _preset_empty(kind, i)
-		b.modulate = Color(0.62, 0.62, 0.68) if empty else Color.WHITE
-		# **빈 칸은 꺼내기 모드에서 못 누른다.** 눌러도 아무 일이 없으면
-		# 고장으로 읽히는데, 못 누르게 하면 알림 장치가 아예 필요 없다.
-		b.disabled = empty and not on
+	_boss_cut_clear()
+	_refresh_preset_view()
+	_front(_preset_view)
+	_preset_view.visible = true
 
 
 func _auto_equip_skills() -> void:
@@ -15967,6 +16057,7 @@ func _save_game_inner() -> void:
 	cfg.set_value("skill", "equipped", skill_equipped)
 	cfg.set_value("skill", "auto", skill_auto_equip)
 	cfg.set_value("skill", "presets", skill_presets)
+	cfg.set_value("skill", "preset_names", preset_names)
 	cfg.set_value("codex", "kills", codex)
 	cfg.set_value("goal", "index", goal_index)
 	cfg.set_value("chest", "gold", chest_gold)
@@ -16220,6 +16311,8 @@ func _load_game() -> void:
 	skill_auto_equip = bool(cfg.get_value("skill", "auto", true))
 	skill_presets = _preset_load(cfg.get_value("skill", "presets", []), [])
 	gear_presets = _preset_load(cfg.get_value("gear", "presets", []), {})
+	var pn: Variant = cfg.get_value("skill", "preset_names", {})
+	preset_names = pn if pn is Dictionary else {}
 	if skill_equipped.is_empty():
 		_auto_equip_skills()
 	codex = cfg.get_value("codex", "kills", {})
