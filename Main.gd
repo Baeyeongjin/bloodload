@@ -5130,7 +5130,17 @@ func _receive_gacha_relic(rarity_key: String) -> Dictionary:
 
 
 func _receive_gacha_skill(rarity_key: String) -> Dictionary:
-	var shape: String = SkillDefs.SHAPE_ORDER[randi() % SkillDefs.SHAPE_ORDER.size()]
+	# **열린 형태 중에서 고른다**(2026-08-27, 해금 사슬). 예전에는 네 형태를
+	# 균등하게 골랐다 — 초반에 스무 종으로 흩어져 아무것도 못 키웠다.
+	#
+	# **등급은 여기 오기 전에 이미 정해져 있다.** 천장은 "어느 형태로 나올지"만
+	# 좁힌다 — 전설을 굴렸으면 전설이 나온다. 그 등급을 받는 형태가 하나도
+	# 없을 때만 조각으로 돌린다(그마저도 커먼은 넷 다 열려 있어서, 커먼
+	# 하나라도 가진 뒤에는 사실상 안 일어난다).
+	var open_shapes := SkillDefs.shapes_for(rarity_key, skill_owned)
+	if open_shapes.is_empty():
+		return _skill_cap_shards(rarity_key)
+	var shape: String = open_shapes[randi() % open_shapes.size()]
 	var key := SkillDefs.key_of(shape, rarity_key)
 	var owned_key := "skill:" + key
 	if skill_owned.has(key):
@@ -5143,6 +5153,35 @@ func _receive_gacha_skill(rarity_key: String) -> Dictionary:
 			_auto_equip_skills()
 	return {"kind": "skill", "key": key, "name": SkillDefs.name_of(key),
 		"rarity": rarity_key, "icon": SkillDefs.icon_path(key)}
+
+
+# 굴린 등급을 받을 형태가 하나도 없을 때. **뽑기를 무르지 않는다** — 등급은
+# 이미 굴러갔고 천장은 형태만 좁히는 규칙이라, 등급값만큼 조각으로 돌려준다.
+# 조각은 이미 가진 스킬 중 **제일 낮은 등급**에 얹는다(키울 데가 있는 쪽).
+func _skill_cap_shards(rarity_key: String) -> Dictionary:
+	var pick := ""
+	var low := 99
+	for k in skill_owned.keys():
+		var ri := GachaDefs.rarity_index(str(SkillDefs.split(str(k))[1]))
+		if ri < low:
+			low = ri
+			pick = str(k)
+	if pick == "":
+		# 가진 게 하나도 없다 — 커먼은 넷 다 열려 있으니 여기 오면 안 되지만,
+		# 오면 커먼 하나를 준다. 빈손으로 돌려보내지 않는다.
+		var shape: String = SkillDefs.SHAPE_ORDER[randi() % SkillDefs.SHAPE_ORDER.size()]
+		pick = SkillDefs.key_of(shape, "common")
+		skill_owned[pick] = 0
+		gacha_owned["skill:" + pick] = true
+		if skill_auto_equip:
+			_auto_equip_skills()
+		return {"kind": "skill", "key": pick, "name": SkillDefs.name_of(pick),
+			"rarity": "common", "icon": SkillDefs.icon_path(pick)}
+	var n := maxi(1, GachaDefs.rarity_index(rarity_key) + 1)
+	gacha_shards["skill:" + pick] = int(gacha_shards.get("skill:" + pick, 0)) + n
+	return {"kind": "skill", "key": pick, "name": SkillDefs.name_of(pick),
+		"rarity": str(SkillDefs.split(pick)[1]), "icon": SkillDefs.icon_path(pick),
+		"shards": n}
 
 
 # ── 스킬 상세보기 ──────────────────────────────────────────────────────────

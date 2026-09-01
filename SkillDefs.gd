@@ -355,6 +355,72 @@ const SHARD_PER_LV := 3     # N -> N+1 레벨에 조각 3N 개
 # 여기 있던 SYNTH_SHARDS(5)는 화면만 읽고 실제 지불은 3 이라 거짓말이 됐다.
 
 
+# ── 해금 사슬 — 형태별 등급 천장 (2026-08-27 사장님 픽: 설계표 3장 "다") ────
+#
+# **그 형태에 얼마나 투자했는가**가 그 형태에서 나올 수 있는 최고 등급을 정한다.
+# 투자 = 그 형태 스킬들의 레벨 합.
+#
+# 왜 이 축인가 (실측 근거는 docs/SKILL_UNLOCK_PLAN.md 1장):
+#   - 형태 안에서 **하위 등급이 상위를 이기는 경우가 하나도 없었다.** 잡몹전
+#     최적 6개가 전설 2 · 에픽 2 · 레어 1 이라 그냥 좋은 순으로 끼면 끝이었고,
+#     자동 장착까지 켜져 있어 **선택이 아예 없었다.**
+#   - 네 형태를 동시에 130 까지 못 올리므로 **내 로스터가 곧 내 빌드**가 된다.
+#
+# **등급 확률은 안 건드린다.** 뽑기는 등급을 먼저 굴리고(전설 0.9%, 천장 100연)
+# 그다음 형태를 고른다 — 천장은 뒤쪽만 좁힌다. 전설을 굴리면 전설이 나오고,
+# 어느 형태로 나올지만 내 투자가 정한다. `tests/SkillUnlockCheck` 가 해금 전후로
+# 등급 분포가 같은지를 재서 이 약속을 못 박는다.
+#
+# 커먼이 0 인 이유: 넷 다 처음부터 열려 있어야 첫 소환이 빈손이 안 된다.
+const SHAPE_CAP_STEPS := [
+	["common", 0], ["uncommon", 10], ["rare", 30], ["epic", 70], ["legend", 130],
+]
+
+
+# 이 형태에 부은 레벨 합. `owned` 는 Main.skill_owned (key -> 레벨).
+static func shape_mastery(shape: String, owned: Dictionary) -> int:
+	var sum := 0
+	for k in owned.keys():
+		if str(split(str(k))[0]) == shape:
+			sum += int(owned[k])
+	return sum
+
+
+# 이 형태에서 지금 나올 수 있는 **최고 등급 키**.
+static func shape_cap(shape: String, owned: Dictionary) -> String:
+	var m := shape_mastery(shape, owned)
+	var cap := "common"
+	for step in SHAPE_CAP_STEPS:
+		if m >= int(step[1]):
+			cap = str(step[0])
+	return cap
+
+
+# 이 형태가 그 등급을 받을 수 있나.
+static func shape_allows(shape: String, rarity: String, owned: Dictionary) -> bool:
+	return GachaDefs.rarity_index(rarity) \
+		<= GachaDefs.rarity_index(shape_cap(shape, owned))
+
+
+# 그 등급을 받을 수 있는 형태들. 비어 있으면 부를 쪽이 조각으로 돌린다.
+static func shapes_for(rarity: String, owned: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	for shape in SHAPE_ORDER:
+		if shape_allows(str(shape), rarity, owned):
+			out.append(str(shape))
+	return out
+
+
+# 다음 천장까지 얼마나 남았나 — 화면이 "왜 안 나오지"에 답하는 값이다.
+# [지금 천장, 다음 등급(없으면 ""), 다음까지 남은 레벨 합]
+static func cap_progress(shape: String, owned: Dictionary) -> Array:
+	var m := shape_mastery(shape, owned)
+	for step in SHAPE_CAP_STEPS:
+		if m < int(step[1]):
+			return [shape_cap(shape, owned), str(step[0]), int(step[1]) - m]
+	return [shape_cap(shape, owned), "", 0]
+
+
 static func key_of(shape: String, rarity: String) -> String:
 	return "%s_%s" % [shape, rarity]
 
