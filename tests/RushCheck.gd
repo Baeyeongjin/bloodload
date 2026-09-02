@@ -104,7 +104,18 @@ func _init() -> void:
 	scene._rush_enter()
 	assert(scene.raid_on == "", "하루 한 판인데 또 들어가졌다")
 
-	# ── 7) _c_is_raid 회귀 ────────────────────────────────────────────────
+	# ── 7) 소탭 전환 — 눌러서 판이 뜬다 ───────────────────────────────────
+	# 렌더 캡처(--autoshot)가 이 환경에서 안 돌아 눈으로 못 봤다. 최소한
+	# **누르면 돌아온다**(멈추지 않는다)와 판이 뜬다는 것은 여기서 잰다.
+	scene.raid_on = ""
+	scene._raid_set_mode("rush")
+	assert(scene._rush_panel.visible, "혈전 소탭을 눌렀는데 판이 안 뜬다")
+	assert(not scene._trial_panel.visible and not scene._raid_list.visible,
+		"혈전 판이 떴는데 다른 판이 같이 남아 있다")
+	scene._raid_set_mode("trial")
+	assert(not scene._rush_panel.visible, "다른 소탭으로 옮겼는데 혈전 판이 남았다")
+
+	# ── 8) _c_is_raid 회귀 ────────────────────────────────────────────────
 	scene.raid_on = "blood"
 	assert(scene._c_is_raid(), "재화 던전이 재화 던전이 아니라고 한다")
 	scene.raid_on = "trial"
