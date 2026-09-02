@@ -51,7 +51,19 @@ const COST_SCALE := BLOOD_UNIT
 # 굽히는 단위는 **옛 레벨** u=(lv-1)/SPLIT 이다. 15분할 뒤에 (lv-1)^k 를 그대로
 # 쓰면 20배 과잉으로 굽는다(실측 x0.048) — 문서의 k 값이 그 뜻대로 살려면
 # 옛 눈금으로 되돌려 굽혀야 한다.
-static var COST_BEND := 1.0          # k. 1.0 이면 아래 식이 옛 곡선과 항등이다
+# **k = 0.65 확정** (2026-09-02, 200일 실측). 무릎 아래는 항등이라 3·14·30·60
+# 일차가 기준선과 **한 구간도 안 다르고**, 200일차가 227 -> 256 구간이다.
+# 더 중요한 건 혈액이 **쌓이지 않고 쓰인다**는 것이다 — 기준선은 120일차에
+# 106,329M 이 남아 못 쓰는데(그게 이 벽의 증상이다) 여기서는 10,570M 이다.
+# 훈련 상한 대비 84% 라 여유도 남는다(상한에 붙으면 이번엔 혈액이 무의미해진다).
+#
+# 후보 실측(전부 무릎 120, 14일차는 넷 다 160 으로 동일):
+#   k     90일   200일   200일 상한대비
+#   1.00  221    227     17%   (기준선 — 110일 동안 여섯 구간)
+#   0.85  226    232     ?
+#   0.75  227    236     ?
+#   0.65  242    256     84%   <- 이것
+static var COST_BEND := 0.65         # k. 1.0 이면 아래 식이 옛 곡선과 항등이다
 # **무릎점** — 여기(옛 레벨) 아래는 굽히지 않는다. 이게 없으면 굽힘이 초반까지
 # 같이 빠르게 만든다: 실측으로 k=0.85 가 14일차를 160 -> 200 구간으로 밀었는데,
 # 그건 문서가 COST_EXP_SCALE 0.35 를 기각한 바로 그 조건이다("14일 200 은
@@ -65,33 +77,32 @@ static var COST_BEND := 1.0          # k. 1.0 이면 아래 식이 옛 곡선과
 # 90일 옛 170 · 200일 옛 211).
 static var COST_BEND_FROM := 120.0
 # a — 이음매 기울기 보정. (u-u0)^k 는 u0 에서 기울기가 무한대라 a 가 없으면
-# 무릎 바로 위 한 칸이 열 배가 된다. k^(1/(1-k)) 면 이음매 기울기가 1 이 되어
-# 곡선이 매끄럽게 이어진다(값도 미분도 연속).
-static var COST_BEND_SHIFT := 1.0
+# 무릎 바로 위 한 칸이 **열 배**가 된다. k^(1/(1-k)) 면 이음매 기울기가 1 이
+# 되어 곡선이 매끄럽게 이어진다(값도 미분도 연속).
+#
+# **k 에서 매번 계산한다.** 따로 변수로 두면 k 만 바꾸고 이걸 안 바꿔서
+# 이음매가 튀는 사고가 난다 — 손잡이는 하나면 된다.
+static func bend_a() -> float:
+	var k := COST_BEND
+	return 1.0 if k >= 1.0 else pow(k, 1.0 / (1.0 - k))
 
 
 # 지수부. 무릎 아래는 그대로, 위는 굽는다.
 static func bend_exp(u: float) -> float:
-	var k := COST_BEND
-	if k >= 1.0:
-		return u
 	var u0 := COST_BEND_FROM
-	if u <= u0:
+	if COST_BEND >= 1.0 or u <= u0:
 		return u
-	var a := COST_BEND_SHIFT
-	return u0 + pow(u - u0 + a, k) - pow(a, k)
+	var a := bend_a()
+	return u0 + pow(u - u0 + a, COST_BEND) - pow(a, COST_BEND)
 
 
 # bend_exp 의 역함수 — max_steps 가 누적을 뒤집을 때 쓴다.
 static func bend_inv(x: float) -> float:
-	var k := COST_BEND
-	if k >= 1.0:
-		return x
 	var u0 := COST_BEND_FROM
-	if x <= u0:
+	if COST_BEND >= 1.0 or x <= u0:
 		return x
-	var a := COST_BEND_SHIFT
-	return u0 + pow(x - u0 + pow(a, k), 1.0 / k) - a
+	var a := bend_a()
+	return u0 + pow(x - u0 + pow(a, COST_BEND), 1.0 / COST_BEND) - a
 
 
 # Lv1 에서 level 까지의 누적. **나머지 셋이 전부 여기서 나온다** — 그래야

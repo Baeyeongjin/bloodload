@@ -10,12 +10,11 @@ func _init() -> void:
 		push_error("안 끝났다")
 		quit(1))
 	# 1) 항등 — 등가 레벨의 누적 비용이 옛 곡선과 같아야 한다.
-	# **굽힘(COST_BEND)이 켜져 있으면 이 절은 성립하지 않는다** — 옛 식을 여기
-	# 직접 적어 뒀기 때문이다. 굽힘은 아래 1b 가 따로 잰다. 이 가드가 없으면
-	# 굽힘을 켠 순간 이 파일이 빨개지고, 그러면 "원래 빨간 검사"로 취급되기
-	# 시작한다(CHECKS.md 가 경고하는 실패 모드).
-	assert(is_equal_approx(Balance.COST_BEND, 1.0),
-		"굽힘이 켜진 채로 항등 절을 돌리고 있다 — 기본값은 1.0 이어야 한다")
+	# **굽힘을 꺼 놓고 잰다.** 이 절은 옛 식을 여기 직접 적어 둔 자리라 굽힘이
+	# 켜져 있으면 성립하지 않는다. 끄고 재는 것이 맞다 — 15분할이 곡선을 안
+	# 깼다는 것과, 굽힘이 옛 곡선 위에 얹혔다는 것은 서로 다른 주장이다.
+	var keep_bend: float = Balance.COST_BEND
+	Balance.COST_BEND = 1.0
 	for spec in [[10.0, 1.15], [12.0, 1.15], [20.0, 1.22], [50.0, 1.35],
 			[40.0, 1.28], [15.0, 1.22]]:
 		var base: float = spec[0]
@@ -28,6 +27,39 @@ func _init() -> void:
 			var err: float = absf(new_sum - old_sum) / maxf(1.0, old_sum)
 			assert(err < 1e-6, "누적이 안 맞는다 base %.1f exp %.2f 옛Lv%d: %.6f"
 				% [base, e, old_lv, err])
+
+	Balance.COST_BEND = keep_bend
+
+	# 1b) 굽힘 (200일 벽, 2026-09-02) ─────────────────────────────────────
+	# **무릎 아래는 완전 항등**이어야 한다. 이게 이 설계의 전제다 — 굽힘이
+	# 초반까지 같이 빠르게 만들면 그건 문서가 COST_EXP_SCALE 을 기각한 조건
+	# 그대로다("14일 200 은 사장님 기준 2주 105 의 두 배").
+	var knee: float = Balance.COST_BEND_FROM
+	for u in [0.0, 1.0, 50.0, knee - 0.01, knee]:
+		assert(is_equal_approx(Balance.bend_exp(float(u)), float(u)),
+			"무릎 아래(%.2f)가 굽었다: %.6f" % [u, Balance.bend_exp(float(u))])
+	# 무릎 **위**는 싸져야 한다(안 싸지면 이 기능이 아무 일도 안 한다).
+	assert(Balance.bend_exp(knee + 100.0) < knee + 100.0, "무릎 위가 안 굽는다")
+	# **이음매가 안 튄다.** a 가 없으면 무릎 바로 위 한 칸이 열 배가 된다 —
+	# 값도 기울기도 이어져야 한다.
+	var step_below: float = Balance.bend_exp(knee) - Balance.bend_exp(knee - 0.01)
+	var step_above: float = Balance.bend_exp(knee + 0.01) - Balance.bend_exp(knee)
+	assert(absf(step_above - step_below) < 0.002,
+		"무릎 이음매에서 기울기가 튄다: %.6f -> %.6f" % [step_below, step_above])
+	# 역함수가 진짜 역함수인가 — max_steps 가 이걸로 누적을 뒤집는다.
+	for u2 in [0.0, 50.0, knee, knee + 10.0, knee + 500.0]:
+		var back: float = Balance.bend_inv(Balance.bend_exp(float(u2)))
+		assert(absf(back - float(u2)) < 1e-6,
+			"역함수가 안 맞는다 u=%.1f -> %.6f" % [u2, back])
+	# **환급 == 지불.** 굽힘을 켠 채로도 누적의 차(환급)와 한 칸 값의 합(지불)이
+	# 같아야 한다. 이게 어긋나면 훈련 초기화가 혈액 인쇄기가 된다(실측 4.2만 배).
+	var paid := 0.0
+	var from_lv := int(Balance.SPLIT * 200.0)     # 무릎 한참 위
+	for j in 60:
+		paid += Balance.upgrade_cost(from_lv + j, 10.0, 1.15)
+	var refund := Balance.buy_cost(from_lv, 60, 10.0, 1.15)
+	assert(absf(refund - paid) / maxf(1.0, paid) < 1e-9,
+		"굽힘에서 환급이 지불과 다르다: %.3e 대 %.3e" % [refund, paid])
 
 	# 2) 묶음 == 낱개 합 (닫힌식이 등비합과 같은가)
 	var loop := 0.0
