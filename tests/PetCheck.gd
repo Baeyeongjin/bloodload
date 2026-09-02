@@ -176,6 +176,48 @@ func _init() -> void:
 	assert(with_pet > scene._base_hit_damage(), "데려가도 공격력이 그대로다")
 	scene.pet_worn = keep_worn
 
+	# ── 보유 효과 (2026-09-02) — 데려가지 않아도 모은 것이 값한다 ──────────
+	# 이 검사가 없으면 회귀가 조용히 지나간다: 위 동행 검사는 pets_got 를
+	# 고정한 채 pet_worn 만 껐다 켜므로 보유분이 양변에서 상쇄된다.
+	var keep_got: Dictionary = scene.pets_got.duplicate()
+	scene.pet_worn = ""
+	scene.pets_got = {}
+	var bare_dmg: float = scene._base_hit_damage()
+	var bare_hp: float = scene.max_hp()
+	scene.pets_got = {str(PetDefs.PETS[0]["id"]): 1}
+	assert(scene._base_hit_damage() > bare_dmg,
+		"안 데려간 펫을 모아도 공격력이 그대로다")
+	assert(scene.max_hp() > bare_hp, "안 데려간 펫을 모아도 체력이 그대로다")
+
+	# **축을 안 가린다** — 공속형을 모아도 공격·체력이 오른다. 이게 안 되면
+	# 공속 펫 여섯이 보유 효과에서 통째로 빠진다(비대칭).
+	var speed_pet := ""
+	for p3 in PetDefs.PETS:
+		if str(p3["stat"]) == "speed":
+			speed_pet = str(p3["id"])
+			break
+	assert(speed_pet != "", "공속 펫이 표에 없다")
+	scene.pets_got = {speed_pet: 1}
+	assert(scene._base_hit_damage() > bare_dmg,
+		"공속 펫은 모아도 공격력에 안 붙는다 — 축을 가리고 있다")
+
+	# **성장을 안 태운다** — 별을 올려도 보유분은 그대로다(동행 몫에만 붙는다).
+	var one_star: float = PetDefs.owned_bonus({speed_pet: 1})
+	assert(is_equal_approx(one_star, PetDefs.owned_bonus({speed_pet: 5})),
+		"별이 보유 효과를 키운다 — 만별 x2 가 25종에 곱해지면 천장이 터진다")
+
+	# **상한** — 표를 늘렸을 때 조용히 부풀지 않게 못 박는다. 눈금 근거는
+	# 스킨 전량(+25%)이다(PetDefs.COLLECT_RATE 주석).
+	var all_pets := {}
+	for p4 in PetDefs.PETS:
+		all_pets[str(p4["id"])] = PetDefs.MAX_STAR
+	var full: float = PetDefs.owned_bonus(all_pets)
+	assert(full > 0.15 and full < 0.30,
+		"25종 전부 보유 효과가 +%.1f%% — 예산(15~30%%, 스킨 전량 +25%% 급)을 벗어났다"
+		% (full * 100.0))
+	scene.pets_got = keep_got
+	scene.pet_worn = keep_worn
+
 	# ── 모두 받기 — 통화별 합산, 그릇 전부 비움 ───────────────────────────
 	scene.pet_bank[got] = 50.0
 	scene.pet_bank[other] = 30.0

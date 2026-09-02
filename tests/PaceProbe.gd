@@ -129,9 +129,11 @@ func _init() -> void:
 	print("")
 	print("축별 기여 (%d일차 무과금, 공격력 기준 배수)" % days)
 	var a: Dictionary = free["axes"]
-	for k in ["스탯", "장비", "도감", "혈맹", "혈맥", "유물", "칭호", "회귀",
-			"시련", "펫"]:
-		print("  %-8s x%.2f" % [k, float(a.get(k, 1.0))])
+	# **표를 직접 훑는다.** 예전엔 이름 목록이 여기 또 적혀 있었고, _axes 에 축을
+	# 하나 더했더니 그 행이 조용히 사라졌다(빠진 키가 x1.00 으로 찍혀 "펫이 아무
+	# 일도 안 한다"로 읽혔다). 사전이 순서를 지키므로 정의한 차례 그대로 나온다.
+	for k in a:
+		print("  %-8s x%.2f" % [str(k), float(a[k])])
 	print("")
 	print("소환 — 하루 평균 %.1f회 (두 판 합산 %d일 기준, 목표 30)"
 		% [float(_pulls_total) / maxf(1.0, float(_pulls_days)), _pulls_days])
@@ -454,7 +456,10 @@ func _axes(game) -> Dictionary:
 		"칭호": with_title / maxf(0.001, stat_only),
 		"회귀": game._prestige_mult(),
 		"시련": TrialDefs.mult(game.trial_stage),
-		"펫": 1.0 + game._pet_mult("damage"),
+		"펫 동행": 1.0 + game._pet_mult("damage"),
+		# 보유 합산은 합연산 괄호에 들어가서 dps 에는 반영되지만 축 표에서는
+		# 안 보인다 — 행을 따로 세워야 "어디서 온 힘인지"를 표가 적는다.
+		"펫 보유": 1.0 + PetDefs.owned_bonus(game.pets_got),
 	}
 
 

@@ -631,6 +631,7 @@ func damage() -> float:
 		* (1.0 + _collection_bonus("damage") + FoeTiers.codex_bonus(codex_knowledge,"damage") \
 		+ PactDefs.bonus(pact_lv) + _lore_bonus("damage") \
 		+ SkinDefs.bonus("attack", skins_owned) \
+		+ PetDefs.owned_bonus(pets_got) \
 		+ 0.01 * (_stat_eff("rage") - 1.0)) \
 		* _relic_mult("damage")
 
@@ -830,6 +831,7 @@ func max_hp() -> float:
 		* (1.0 + _collection_bonus("tough") + FoeTiers.codex_bonus(codex_knowledge, "tough") \
 		+ PactDefs.bonus(pact_lv) + _lore_bonus("tough") \
 		+ SkinDefs.bonus("tough", skins_owned) \
+		+ PetDefs.owned_bonus(pets_got) \
 		+ 0.01 * (_stat_eff("grit") - 1.0)) \
 		* _trait_mult("hp") * _relic_mult("hp") * TrialDefs.mult(trial_stage) \
 		* (1.0 + _pet_mult("tough"))
@@ -2183,6 +2185,11 @@ func _show_info() -> void:
 			["핏빛 회귀", "x%.2f" % _prestige_mult()],
 			["시련", "x%.2f" % TrialDefs.mult(trial_stage)],
 			["펫 동행 (공격)", "+%d%%" % int(round(_pet_mult("damage") * 100.0))],
+			# 동행 줄만 있으면 보유분이 어디서 왔는지 화면에 없다 — 합산을
+			# 넣으면서 그 줄도 같이 낸다(값을 고치면 그 값을 설명하는 글도 고친다).
+			["펫 보유 (공격·체력)", "+%d%% (%d/%d종)" % [
+				int(round(PetDefs.owned_bonus(pets_got) * 100.0)),
+				pets_got.size(), PetDefs.PETS.size()]],
 			["지식 (도감 평균)", "+%d%%" % int(round(_codex_act_bonus() * 100.0))],
 			["혈맹 (체력)", "+%d%%" % int(round(PactDefs.bonus(pact_lv) * 100.0))],
 			["혈액 획득", "x%.2f" % gold_mult()],
@@ -17235,6 +17242,11 @@ func _pet_build_own(root: Control) -> void:
 		PET_DETAIL_Y + 114.0), Vector2(120.0, 36.0), "모두 받기")
 	take_all["btn"].pressed.connect(_pet_collect_all)
 	_pet_detail["all"] = take_all
+	# 합산 총계 — 상세 카드(y+156)가 끝나는 아래 빈 자리. 스물다섯을 모아도
+	# 무엇이 늘었는지 화면에 없으면 모을 이유가 안 읽힌다(스킨이 그 상태다).
+	_pet_detail["own"] = _panel_label(root,
+		Vector2(PAD + 18.0, PET_DETAIL_Y + 166.0), Type.SIZE_SMALL,
+		Color(0.86, 0.80, 0.62), CONTENT_W - 36.0, 16.0)
 
 
 # 원정 판 — 보유 판과 같은 격자를 쓴다. 칸 표식이 남은 시간이고, 아래 상세가
@@ -17525,6 +17537,11 @@ func _refresh_pet_own() -> void:
 	_pet_detail["name"].add_theme_color_override("font_color",
 		rar["col"] if got else Color(0.60, 0.58, 0.62))
 	_pet_detail["desc"].text = str(d["desc"]) if got else "소환에서 만난다"
+	# 보유 효과는 고른 펫과 무관한 총계다 — 칸마다 적으면 개별 버프와 섞인다.
+	if _pet_detail.has("own"):
+		_pet_detail["own"].text = "보유 효과 %d/%d종  ·  공격·체력 +%d%%" % [
+			pets_got.size(), PetDefs.PETS.size(),
+			int(round(PetDefs.owned_bonus(pets_got) * 100.0))]
 	_pet_detail["buff"].text = "%s +%d%%  ·  %s을 물어온다" % [
 		TitleDefs.stat_name(str(d["stat"])),
 		int(round(PetDefs.bonus(_pet_sel, str(d["stat"]), lv, star) * 100.0)),
