@@ -97,5 +97,79 @@ func _init() -> void:
 			assert(not ("레벨합" in (c as Label).text),
 				"커먼~레전더리 칸에 잠김 문구가 남았다: %s" % (c as Label).text)
 
+	# ── 5) 신화 고유 규칙 (2026-09-02) — 넷 다 "피해로는 못 만드는 결과" ──
+	# 표 성질부터.
+	assert(bool(SkillDefs.rule_of("strike_mythic").get("reset_on_kill", false)),
+		"송곳니에 처치 초기화가 없다")
+	assert(float(SkillDefs.rule_of("wave_mythic").get("knockback", 0.0)) > 0.0,
+		"해일에 밀어냄이 없다")
+	assert(float(SkillDefs.rule_of("field_mythic").get("lifesteal", 0.0)) > 0.0,
+		"강림에 흡혈이 없다")
+	assert(float(SkillDefs.rule_of("ward_mythic").get("revive", 0.0)) > 0.0
+		and bool(SkillDefs.rule_of("ward_mythic").get("passive", false)),
+		"성혈이 패시브 부활이 아니다")
+
+	# 부활 — 치명상을 한 번 무르고, 쿨이 도는 동안엔 죽는다.
+	var six: Array[String] = ["ward_mythic"]
+	scene.skill_owned = {"ward_mythic": SkillDefs.MAX_LV}
+	scene.skill_equipped = six
+	scene._immortal_cd = 0.0
+	scene._hero_dead = false
+	scene.hero_hp = 1.0
+	scene._kill_hero()
+	assert(not scene._hero_dead, "성혈을 꼈는데 죽었다")
+	assert(is_equal_approx(scene.hero_hp, scene.max_hp()), "부활이 완전 회복이 아니다")
+	assert(scene._immortal_cd > 0.0, "부활 쿨이 안 돌기 시작했다")
+	scene._kill_hero()
+	assert(scene._hero_dead, "쿨이 도는데 또 부활했다 — 불사가 된다")
+	scene._hero_dead = false
+	scene._revive_t = 0.0
+
+	# 격 — 처치하면 쿨이 그 자리에서 돌아온다. 몹은 씬이 스폰한 것을 잡는다.
+	var foes: Array = scene.get_tree().get_nodes_in_group("foes")
+	for i2 in 300:
+		await process_frame
+		foes = scene.get_tree().get_nodes_in_group("foes")
+		if not foes.is_empty():
+			break
+	assert(not foes.is_empty(), "몹이 안 스폰됐다")
+	var prey: Foe = foes[0]
+	prey.hp = 0.5                        # 한 입 거리
+	scene.skill_owned["strike_mythic"] = SkillDefs.MAX_LV
+	scene._skill_cd["strike_mythic"] = 99.0
+	var sd: Dictionary = scene._skill_data("strike_mythic")
+	scene._strike_once(prey, 10.0, sd, "", 0.0, 10.0, "burst", 1.0, 0, 0.0, 1, 1, 0.0)
+	assert(prey.dying, "한 입 거리가 안 죽었다")
+	assert(is_equal_approx(float(scene._skill_cd["strike_mythic"]), 0.0),
+		"처치했는데 쿨이 안 돌아왔다: %f" % float(scene._skill_cd["strike_mythic"]))
+
+	# 파 — 밀어냄. 살아남은 놈이 뒤로 밀린다.
+	foes = scene.get_tree().get_nodes_in_group("foes")
+	var pushed: Foe = null
+	for f in foes:
+		if not f.dying:
+			pushed = f
+			break
+	if pushed != null:
+		pushed.hp = 99999.0              # 안 죽게
+		var x0: float = pushed.position.x
+		var wd: Dictionary = scene._skill_data("wave_mythic")
+		var one: Array[Foe] = [pushed]
+		scene._wave_hit(one, 1.0, false, wd)
+		assert(pushed.position.x > x0, "해일에 안 밀렸다: %f -> %f" % [x0, pushed.position.x])
+
+	# 진 — 흡혈. 장판을 실제로 깔고 틱이 체력을 물어오는지 본다(훅이 장판
+	# 람다 안이라 표 검사만으로는 그 줄이 도는지 모른다).
+	scene.skill_owned["field_mythic"] = SkillDefs.MAX_LV
+	scene.hero_hp = 1.0
+	var hp0: float = scene.hero_hp
+	scene._phase = "fight"
+	scene._resolve_skill("field_mythic")
+	for i3 in 300:
+		await process_frame
+		if scene.hero_hp > hp0:
+			break
+	assert(scene.hero_hp > hp0, "장판이 도는데 체력을 안 마신다")
+
 	print("SkillUnlockCheck OK  (천장 폐기 · 신화 문턱 지급 · 뽑기 밖 · 문구)")
 	quit(0)

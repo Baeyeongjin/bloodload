@@ -10552,6 +10552,7 @@ func _process(delta: float) -> void:
 	var visual_frozen := _visual_hitstop_t > 0.0
 	_visual_hitstop_t = maxf(0.0, _visual_hitstop_t - delta)
 	_hitstop_cd = maxf(0.0, _hitstop_cd - delta)
+	_immortal_cd = maxf(0.0, _immortal_cd - delta)
 	_shake_cd = maxf(0.0, _shake_cd - delta)
 	var _pf := Time.get_ticks_usec()
 	_tick_motion(0.0 if visual_frozen else delta)
@@ -11599,6 +11600,11 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 					f.take_damage(f.hp)
 					continue
 				f.take_damage(per_tick)
+				# 혈계 강림 — 틱 피해의 일부를 체력으로 마신다(RULES.lifesteal).
+				# 혈액(재화)이 아니라 **체력**이다 — 전투가 돈을 주는 예외를 안 만든다.
+				var steal := float(SkillDefs.rule_of(str(skill.get("key", ""))).get("lifesteal", 0.0))
+				if steal > 0.0:
+					hero_hp = minf(max_hp(), hero_hp + per_tick * steal)
 				_skill_hit_fx(skill, f)
 			_defer_stage_advance = false
 			if _c_kill_clear():
@@ -11642,6 +11648,11 @@ func _strike_once(who: Foe, dmg: float, skill: Dictionary, fx: String, fx_y: flo
 	if not is_instance_valid(who) or who.dying:
 		return
 	who.take_damage(dmg)
+	# 혈신의 송곳니 — **처치하면 쿨다운이 그 자리에서 돌아온다**(RULES.
+	# reset_on_kill). 다음 프레임의 _tick_skills 가 바로 다시 문다.
+	if who.dying and bool(SkillDefs.rule_of(str(skill.get("key", "")))
+			.get("reset_on_kill", false)):
+		_skill_cd[str(skill["key"])] = 0.0
 	# 스킬 흡혈(피해의 20%)은 뺐다 — 혈액은 배급으로만 들어온다(요구 4).
 	# 처치 혈액의 0.02~0.6% 라 곡선 영향은 없었지만, 남겨 두면 "전투가 돈을 준다"
 	# 는 예외가 하나 남아 규칙이 흐려진다.
@@ -11655,6 +11666,11 @@ func _strike_once(who: Foe, dmg: float, skill: Dictionary, fx: String, fx_y: flo
 # 파 한 타. 다단히트(RULES.ticks)가 같은 것을 여러 번 부른다 — 늦게 도는 타는
 # 그 사이 표적이 죽었을 수 있으므로 **매번 살아 있는지 다시 본다**(`_strike_once` 와 같다).
 func _wave_hit(targets: Array[Foe], dmg: float, pit: bool, skill: Dictionary) -> void:
+	# 핏빛 해일 — 살아남은 놈을 뒤로 쓸어낸다(RULES.knockback). **그 자리에서
+	# 옮긴다**(트윈 없이): 몹 걸음이 매 프레임 position 을 쓰는 자리라 트윈과
+	# 서로 덮어쓴다. 피격 섬광이 같은 프레임에 터져서 "쓸려났다"로 읽힌다.
+	var kb := float(SkillDefs.rule_of(str(skill.get("key", "")))
+		.get("knockback", 0.0))
 	for f in targets:
 		if not is_instance_valid(f) or f.dying:
 			continue
@@ -11662,6 +11678,9 @@ func _wave_hit(targets: Array[Foe], dmg: float, pit: bool, skill: Dictionary) ->
 		if pit and f.hp <= dmg:
 			f.pit_fall = true
 		f.take_damage(dmg)
+		# 보스·중간보스는 안 밀린다 — 보스전 시간 설계(Balance)가 무너진다.
+		if kb > 0.0 and not f.dying and not (f.is_boss or f.is_midboss):
+			f.position.x += kb
 		_skill_hit_fx(skill, f)
 
 
@@ -12502,8 +12521,20 @@ func _slam_fx_one(at_x: float, e: Array) -> void:
 		n.modulate = e[5]
 
 
+# 영겁의 성혈의 내부 쿨(초). 저장 안 한다 — 세션마다 새로 차는 것으로 충분하고,
+# 저장하면 "껐다 켜면 부활이 돌아온다"는 구멍부터 막아야 한다(그게 더 일이다).
+var _immortal_cd := 0.0
+
+
 func _kill_hero() -> void:
 	if _hero_dead:
+		return
+	# 영겁의 성혈 — **치명상을 한 번 무르고 완전 회복한다**(RULES.revive).
+	# 죽음 자체를 지우는 규칙이라 신화 자격이 있다. 부활 뒤 긴 내부 쿨.
+	if _immortal_cd <= 0.0 and skill_equipped.has("ward_mythic"):
+		_immortal_cd = float(SkillDefs.rule_of("ward_mythic").get("revive", 300.0))
+		hero_hp = max_hp()
+		_show_clear("영겁의 성혈", "죽음을 한 번 물렀다 — 완전 회복")
 		return
 	_hero_dead = true
 	_revive_t = REVIVE_TIME
