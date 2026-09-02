@@ -33,14 +33,48 @@ const BLOOD_UNIT := 15.0
 const COST_SCALE := BLOOD_UNIT
 
 
+# ── 비용 굽힘 (200일 벽, 2026-09-02) ──────────────────────────────────────
+# 벽의 정체는 상한도 수입도 아니라 **가격은 지수인데 효과는 합연산**인 불일치다
+# (Balance.hero_damage 는 레벨에 선형). +1% 피해에 드는 혈액이 화면 Lv61 에서
+# 80, Lv900 에서 5.4e5, Lv2806 에서 6.8e13 으로 열두 자리 폭발한다. 그래서
+# 200일에 지갑이 1.25조인데 다음 레벨이 2.24조라 **아무것도 못 산다**.
+#
+# 처방은 지수부를 굽히는 것이다(MONETIZATION_PLAN 9-5b). 다만 문서가 적은
+# "upgrade_cost 한 줄"은 **못 쓴다**: buy_cost·max_steps 가 등비합 닫힌식이라
+# 한 칸 값만 굽히면 셋이 조용히 갈린다. 실측(k=0.90, 화면 Lv2806)으로
+# 훈련 초기화 환급이 실제 지불의 **4.2만 배**를 토하는 혈액 인쇄기가 되고
+# x100 버튼은 반대로 10만 배 바가지를 씌운다. 크래시가 안 나서 더 위험하다.
+#
+# 그래서 **누적(total_cost) 하나에서 셋을 다 뽑는다.** 환급이 지불과 어긋날
+# 자리 자체가 없어지고, 셋 다 O(1) 닫힌식으로 남는다.
+#
+# 굽히는 단위는 **옛 레벨** u=(lv-1)/SPLIT 이다. 15분할 뒤에 (lv-1)^k 를 그대로
+# 쓰면 20배 과잉으로 굽는다(실측 x0.048) — 문서의 k 값이 그 뜻대로 살려면
+# 옛 눈금으로 되돌려 굽혀야 한다.
+static var COST_BEND := 1.0          # k. 1.0 이면 아래 식이 옛 곡선과 항등이다
+# a — 원점 기울기 보정. u^k 는 u=0 에서 기울기가 무한대라 a 가 없으면 첫 칸이
+# 열 배가 된다. k^(1/(1-k)) 를 쓰면 u=0 근처 기울기가 1 이 되어 초반이 안 튄다.
+static var COST_BEND_SHIFT := 1.0
+
+
+# Lv1 에서 level 까지의 누적. **나머지 셋이 전부 여기서 나온다** — 그래야
+# 환급(누적의 차)이 지불(한 칸의 합)과 어긋날 수가 없다.
+# k=1 이면 (u+a)^1 - a^1 = u 라 a 와 무관하게 옛 식과 항등이다(상대오차 1.7e-12).
+static func total_cost(level: int, base := UP_BASE, e := UP_EXP) -> float:
+	var k := COST_BEND
+	var a := COST_BEND_SHIFT
+	var u := maxf(0.0, float(level - 1) / float(SPLIT))
+	return base * COST_SCALE / (e - 1.0) \
+		* (pow(e, pow(u + a, k) - pow(a, k)) - 1.0)
+
+
 # 한 단계 올리는 비용. level 은 "지금 레벨"이고, 그 다음 단계를 사는 값이다.
 # base/exp 는 스탯마다 다르다(StatDefs). 안 주면 무한 스탯 기본값을 쓴다.
 #
 # **조정은 지수로 한다, 레벨당 효과로 하지 않는다**(docs/STATS.md 6장) —
 # 효과를 만지면 이미 올린 플레이어의 수치가 바뀌어 체감이 어긋난다.
 static func upgrade_cost(level: int, base := UP_BASE, e := UP_EXP) -> float:
-	var r := pow(e, 1.0 / float(SPLIT))
-	return base * (r - 1.0) / (e - 1.0) * COST_SCALE * pow(r, float(level - 1))
+	return total_cost(level + 1, base, e) - total_cost(level, base, e)
 
 
 # level 에서 n 단계를 한 번에 살 때의 총액.
@@ -50,10 +84,7 @@ static func upgrade_cost(level: int, base := UP_BASE, e := UP_EXP) -> float:
 static func buy_cost(level: int, n: int, base := UP_BASE, e := UP_EXP) -> float:
 	if n <= 0:
 		return 0.0
-	# 닫힌식이다. 루프합은 Lv 수천 스케일에서 MAX 버튼을 못 버틴다
-	# (매 갱신마다 수천 회 pow). 등비합이라 값은 루프와 같다(오차 1e-16).
-	var r := pow(e, 1.0 / float(SPLIT))
-	return upgrade_cost(level, base, e) * (pow(r, float(n)) - 1.0) / (r - 1.0)
+	return total_cost(level + n, base, e) - total_cost(level, base, e)
 
 
 # 가진 혈액으로 몇 단계까지 사는가. MAX 버튼이 쓴다.
@@ -64,11 +95,16 @@ static func max_steps(level: int, purse: float, base := UP_BASE,
 	var one := upgrade_cost(level, base, e)
 	if one <= 0.0 or purse < one:
 		return 0
-	var r := pow(e, 1.0 / float(SPLIT))
+	# 누적을 뒤집는다 — 굽혀도 O(1) 로 남는다.
 	# 0.999999 는 부동소수 경계에서 한 단계 크게 나와 결제가 조용히 실패하는 것을
 	# 막는 여유다(살 수 있다고 표시해 놓고 아무 일도 안 일어나는 증상).
-	return maxi(0, int(floor(log(1.0 + purse * (r - 1.0) * 0.999999 / one)
-		/ log(r))))
+	var k := COST_BEND
+	var a := COST_BEND_SHIFT
+	var b := base * COST_SCALE / (e - 1.0)
+	var x := log(1.0 + (total_cost(level, base, e) + purse * 0.999999) / b) \
+		/ log(e)
+	var u := pow(x + pow(a, k), 1.0 / k) - a
+	return maxi(0, int(floor(1.0 + float(SPLIT) * u)) - level)
 
 
 # 치명타 배수. 확률과 피해가 **서로를 증폭하는** 유일한 축이라 둘 다 올려야 값이 난다.

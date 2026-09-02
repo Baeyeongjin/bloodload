@@ -150,6 +150,45 @@ static func act_data(stage: int) -> Dictionary:
 	return ACTS[act_of(stage)]
 
 
+# ── 회차(바퀴) — 같은 열 막을 다섯 번 돈다 (2026-09-02 사장님 픽) ───────────
+# 대단계 50 / 막 10 = 정확히 다섯 바퀴다. 101구간(11대단계)부터는 배경도 몹도
+# 보스도 **한 글자 안 바뀌고** 그대로 반복돼서, 순환이 그대로 티가 났다.
+#
+# 새 그림은 한 장도 안 뽑는다. 미궁이 깊이를 몸 색으로 읽히는 수법
+# (DungeonDefs.depth_tint)과 중간보스 수식어(MIDBOSS_PREFIXES) 둘을 그대로
+# 빌린다 — 도형 오버레이 금지(사장님) 규칙 안에 있다.
+static func lap(stage: int) -> int:
+	return (major_stage(stage) - 1) / ACTS.size() + 1
+
+
+# **1회차는 흰색·빈 문자열이다** — 지금 화면이 1픽셀도 안 바뀐다(회귀 위험 0).
+# 최저 채널 0.63 은 미궁이 쓰는 하한(0.60)보다 밝다 — 더 어두우면 체력 바·피해
+# 숫자와 대비가 죽는다(DungeonDefs.depth_tint 주석의 그 이유).
+# **알파는 반드시 1.0** — 사망 디졸브가 같은 채널을 쓴다.
+const LAP_TINT := [Color(1, 1, 1), Color(0.93, 0.88, 0.92),
+	Color(0.87, 0.79, 0.87), Color(0.82, 0.71, 0.82), Color(0.78, 0.63, 0.78)]
+# 중간보스에는 안 붙인다 — MIDBOSS_PREFIXES 가 이미 그 자리를 쓰고 있어서
+# "되살아난 굶주린 슬라임"처럼 수식어가 두 겹이 된다.
+const LAP_PREFIX := ["", "되살아난 ", "썩어든 ", "저주받은 ", "잊혀진 "]
+
+
+# 표 크기를 상수로 박지 않는다 — MAJOR_STAGE_COUNT 나 ACTS 가 바뀌면 바퀴 수가
+# 달라지는데, mini() 로 마지막 칸에 붙여 두면 조용히 어긋나지 않는다.
+static func lap_tint(stage: int) -> Color:
+	return LAP_TINT[mini(lap(stage), LAP_TINT.size()) - 1]
+
+
+static func lap_prefix(stage: int) -> String:
+	return LAP_PREFIX[mini(lap(stage), LAP_PREFIX.size()) - 1]
+
+
+# **밟아 본 막의 수**(1..10). act_of 는 순환하는 값이라 연대기·도감처럼
+# "어디까지 갔나"를 묻는 자리에 쓰면 101구간에서 1막으로 되감긴다 — 실제로
+# 연대기 보너스가 +10%/+10% 에서 +2%/+2% 로 떨어지고 6~10막이 다시 잠겼다.
+static func acts_seen(stage: int) -> int:
+	return mini(major_stage(stage), ACTS.size())
+
+
 # 큰 단계 안에서 몇 번째 구간인가 (1..STEPS_PER_STAGE).
 static func step_in_act(stage: int) -> int:
 	return (stage - 1) % STEPS_PER_STAGE + 1

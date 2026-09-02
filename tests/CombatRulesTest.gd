@@ -45,6 +45,35 @@ func _init() -> void:
 		"막이 안 바뀐다 — 전부 같은 테마로 읽힌다")
 	assert(StageDefs.enemy_power(last) > StageDefs.enemy_power(last - 1))
 
+	# ── 회차(바퀴) — 같은 열 막을 다섯 번 도는 게 티가 나는가 (2026-09-02) ──
+	assert(StageDefs.lap(1) == 1 and StageDefs.lap(wrap) == 2,
+		"바퀴가 안 세진다: 1구간 %d · %d구간 %d"
+		% [StageDefs.lap(1), wrap, StageDefs.lap(wrap)])
+	# **1회차는 아무것도 안 바뀐다** — 지금 화면을 건드리지 않는 것이 조건이었다.
+	assert(StageDefs.lap_tint(1) == Color(1, 1, 1) and StageDefs.lap_prefix(1) == "",
+		"1회차 화면이 바뀌었다")
+	# 어두워지되 체력 바·피해 숫자와 대비가 살아 있어야 한다(미궁 하한과 같은 자).
+	var deep := StageDefs.lap_tint(StageDefs.total_stages())
+	assert(deep.g >= 0.5 and deep.a == 1.0,
+		"회차 틴트가 너무 어둡거나 알파를 건드린다: %s" % str(deep))
+	assert(StageDefs.lap_prefix(wrap) != "", "2회차에 수식어가 안 붙는다")
+	# **밟은 막 수는 되감기면 안 된다.** act_of 는 순환하는 값이라 여기 쓰면
+	# 101구간에서 연대기가 1막으로 돌아가고 보너스가 +10% -> +2% 로 떨어졌다.
+	# 그 둘이 갈리는 자리가 정확히 한 바퀴째다: act_of 는 0 으로 돌아가는데
+	# acts_seen 은 열에 남아 있어야 한다.
+	assert(StageDefs.act_of(wrap) == 0 and StageDefs.acts_seen(wrap)
+			== StageDefs.ACTS.size(),
+		"한 바퀴 돌자 밟은 막 수가 되감긴다 — 연대기가 다시 잠긴다 (act_of %d · acts_seen %d)"
+		% [StageDefs.act_of(wrap), StageDefs.acts_seen(wrap)])
+	# 오르는 동안엔 단조로 는다(중간에 줄어드는 구간이 없어야 한다).
+	var seen_prev := 0
+	for mj in range(1, StageDefs.MAJOR_STAGE_COUNT + 1):
+		var seen := StageDefs.acts_seen((mj - 1) * StageDefs.STEPS_PER_STAGE + 1)
+		assert(seen >= seen_prev, "%d대단계에서 밟은 막 수가 줄었다" % mj)
+		seen_prev = seen
+	assert(seen_prev == StageDefs.ACTS.size(),
+		"끝까지 가도 막을 다 밟은 게 아니라고 한다")
+
 	# Main 은 class_name 이 없어서 상수를 읽으려면 스크립트를 불러와야 한다.
 	var main := load("res://Main.gd")
 	for i in StageDefs.act_count():

@@ -642,7 +642,7 @@ func damage() -> float:
 func _lore_bonus(stat: String) -> float:
 	var key := "hp" if stat == "tough" else stat
 	return LoreDefs.total_bonus(_lore_got("gear"), _lore_got("skill"), key) \
-		+ LoreDefs.act_bonus(StageDefs.act_of(best_stage), key)
+		+ LoreDefs.act_bonus(StageDefs.acts_seen(best_stage) - 1, key)
 
 
 # 장착 중인 장비가 주는 해당 스탯 합. 없으면 0.
@@ -15058,6 +15058,11 @@ func _spawn_foe() -> void:
 	elif midboss:
 		tier["midboss"] = true
 		tier["name_prefix"] = _c_midboss_prefix() + " "
+	# 회차 수식어 — 본편에서만, **중간보스는 빼고**. 거기는 MIDBOSS_PREFIXES 가
+	# 이미 그 자리를 쓰고 있어서 겹치면 "되살아난 굶주린 슬라임"이 된다.
+	if raid_on == "" and not dungeon_on and not midboss:
+		tier["name_prefix"] = StageDefs.lap_prefix(stage) \
+			+ str(tier.get("name_prefix", ""))
 	# 성소는 **수호자 한 마리**가 판이다 — 이름으로도 그게 읽혀야 한다.
 	if _c_is_raid() and RaidDefs.goal(raid_on) == "slay":
 		tier["name_prefix"] = "수호자 "
@@ -15086,6 +15091,10 @@ func _spawn_foe() -> void:
 	# 미궁 몹은 깊이만큼 어둡고 붉다 — 배경을 새로 뽑지 않고 "깊어졌다"를 읽힌다.
 	if dungeon_on:
 		f.modulate = DungeonDefs.depth_tint(dungeon_floor)
+	elif raid_on == "":
+		# 본편은 **바퀴만큼** 색이 죽는다. 같은 열 막을 다섯 번 도는 것이
+		# 그림 없이 읽히는 자리다(1회차는 흰색이라 아무것도 안 바뀐다).
+		f.modulate = StageDefs.lap_tint(stage)
 	# 줄 맨 뒤. 빈 사냥터면 전열에, 아니면 마지막 놈에서 FOE_GAP 뒤에 선다.
 	# **화면 밖까지 나가도 된다** — 그게 "저 앞에 더 있다"이고, 영웅이 달려가 만난다.
 	var tail := _queue_tail_x(get_tree().get_nodes_in_group("foes")) \
@@ -15606,11 +15615,20 @@ func _apply_stage_bg() -> void:
 	_hero.position.y = ground_y - float(Grid.SPRITE)
 	for f in get_tree().get_nodes_in_group("foes"):
 		f.position.y = ground_y
+	# 배경 회차 틴트 — **몹의 절반만** 건다. 배경은 화면 전체라 몹과 같은 세기로
+	# 물들이면 그림이 탁해지고, 회차가 아니라 "고장난 화면"으로 읽힌다.
+	# 미궁·던전은 제 배경을 따로 쓰므로 안 건드린다.
+	var lap_m := Color(1, 1, 1) if (dungeon_on or raid_on != "") \
+		else Color(1, 1, 1).lerp(StageDefs.lap_tint(stage), 0.5)
+	_bg.modulate = lap_m
+	_bg2.modulate = lap_m
 	# 위아래로 1~2px 틈이 생길 수 있어 화면 바탕을 막 색으로 깔아 둔다.
 	# 미궁은 막 색이 아니라 미궁 배경(wide_maze) 맨 아랫줄의 최빈색이다 —
 	# BACKDROP 과 같은 방법으로 실측한 값(33,33,29).
+	# **틈 색에도 같은 틴트를 곱한다** — 안 그러면 회차마다 위아래에 원래 색
+	# 얇은 줄이 남는다.
 	RenderingServer.set_default_clear_color(Color(0.129, 0.129, 0.114) if dungeon_on \
-		else BACKDROP[StageDefs.act_of(stage) % BACKDROP.size()])
+		else BACKDROP[StageDefs.act_of(stage) % BACKDROP.size()] * lap_m)
 	_bg.visible = t != null
 
 
@@ -16878,7 +16896,7 @@ func _act_build(root: Control) -> void:
 func _refresh_act() -> void:
 	if _act_rows.is_empty():
 		return
-	var reached := StageDefs.act_of(best_stage)
+	var reached := StageDefs.acts_seen(best_stage) - 1
 	for i in _act_rows.size():
 		var act: Dictionary = StageDefs.ACTS[i]
 		var open := i <= reached
@@ -16926,7 +16944,7 @@ func _codex_head_text(mode: String) -> Array:
 			return ["칭호 %d / %d" % [titles_got.size(), TitleDefs.TITLES.size()],
 				"지금 받는 것: 훈련 +%d레벨" % lv if lv > 0 else "아직 딴 칭호가 없다"]
 		"act":
-			var reached := StageDefs.act_of(best_stage)
+			var reached := StageDefs.acts_seen(best_stage) - 1
 			return ["연대기 %d / %d 막" % [reached + 1, StageDefs.ACTS.size()],
 				_gain_text(LoreDefs.act_bonus(reached, "damage"),
 					LoreDefs.act_bonus(reached, "hp"), 0.0)]
