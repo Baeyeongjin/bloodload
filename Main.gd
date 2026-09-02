@@ -1182,6 +1182,14 @@ func _ready() -> void:
 			_raid_set_mode("trial")
 			if arg.ends_with("=in"):
 				_trial_enter()
+		# [개발 도구] --rush[=in] : 혈전 판으로(잠금·오늘 판 해제), =in 이면 전투까지.
+		if arg.begins_with("--rush"):
+			best_stage = maxi(best_stage, RushDefs.OPEN_STAGE)
+			rush_date = ""
+			_select_tab("raid")
+			_raid_set_mode("rush")
+			if arg.ends_with("=in"):
+				_rush_enter()
 		# [개발 도구] --raid=blood|pact|hunt : 재화 던전에 들어간 채로 캡처한다.
 		# 오늘 표를 이미 썼어도 들어가야 하므로 표를 되돌려 넣는다 — 캡처 전용.
 		if arg.begins_with("--raid="):
@@ -6953,6 +6961,8 @@ var _raid_mode_btns := {}
 var trial_stage := 0
 var _trial_panel: Control
 var _trial_ui := {}
+var _rush_panel: Control
+var _rush_ui := {}
 # ── 핏빛 계약 (OathDefs, docs/OATH_DESIGN.md) — 운빨 돌파 ──
 var oath_cards := 1          # 보유 — 첫 장은 채워 시작(첫 경험이 에픽 확정이다)
 var oath_gold := 0           # 황금 계약서
@@ -7328,8 +7338,8 @@ func _build_raids(root: Control) -> void:
 	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
 	# 상점·소환과 같은 박쥐 알약 — 그림 버튼이라 글자는 라벨로 얹는다.
 	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"],
-		["trial", "시련"]]
-	var mw := (CONTENT_W - 10.0 * 3.0) / 4.0
+		["trial", "시련"], ["rush", "혈전"]]
+	var mw := (CONTENT_W - 10.0 * 4.0) / 5.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
 		var mb := TextureButton.new()
@@ -7366,6 +7376,12 @@ func _build_raids(root: Control) -> void:
 	_trial_panel.position.y = 214.0
 	root.add_child(_trial_panel)
 	_build_trial_panel(_trial_panel)
+	_rush_panel = Control.new()
+	_rush_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rush_panel.visible = false
+	_rush_panel.position.y = 214.0
+	root.add_child(_rush_panel)
+	_build_rush_panel(_rush_panel)
 	_build_raid_list(_raid_list)
 	_build_raid_detail(root)
 	_raid_set_mode("raid")
@@ -7378,6 +7394,7 @@ func _raid_set_mode(mode: String) -> void:
 	_boss_panel.visible = mode == "boss"
 	_maze_scroll.visible = mode == "maze"
 	_trial_panel.visible = mode == "trial"
+	_rush_panel.visible = mode == "rush"
 	# 헤더 이름표·대사 — 장소는 성문 하나지만 말은 소탭을 따라간다.
 	match mode:
 		"maze":
@@ -7392,6 +7409,9 @@ func _raid_set_mode(mode: String) -> void:
 		"trial":
 			_raid_place.text = "고대 유적지"
 			_raid_line.text = "물러날 줄 아는 것도 실력이지."
+		"rush":
+			_raid_place.text = "혈전 회랑"
+			_raid_line.text = "네가 쓰러뜨린 것들이 줄을 서 있다."
 	for key in _raid_mode_btns:
 		_raid_mode_btns[key].button_pressed = key == mode
 	_refresh_dungeon()
@@ -7644,6 +7664,82 @@ func _refresh_trial() -> void:
 		_trial_ui["btn"].disabled = not open or dungeon_on or raid_on != ""
 	_gate_btn_dim(_trial_ui["btn_tex"], _trial_ui["btn_lbl"],
 		_trial_ui["btn"].disabled)
+
+
+# 혈전 판 — 시련 판과 같은 문법(초상 + 이름 + 큰 숫자 + 버튼). 점수는
+# "최고 몇 층" 하나고, 얼굴은 다음에 만날 본편 보스다.
+func _build_rush_panel(root: Control) -> void:
+	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 56.0),
+		Vector2(CONTENT_W + 16.0, 140.0))
+	_rush_ui["art"] = _framed_portrait(root, Vector2(PAD + 10.0, 96.0))
+	var text_x := PAD + 92.0
+	var text_w := CONTENT_W - 92.0 - 168.0
+	_rush_ui["name"] = _panel_label(root, Vector2(text_x, 76.0), Type.SIZE_MID,
+		Color(0.98, 0.82, 0.62), text_w, 24.0)
+	_shop_outline(_rush_ui["name"], 6)
+	_rush_ui["best"] = _panel_label(root, Vector2(text_x, 106.0), Type.SIZE_MID,
+		Color(0.98, 0.90, 0.70), text_w, 24.0)
+	_shop_outline(_rush_ui["best"], 6)
+	_rush_ui["sub"] = _panel_label(root, Vector2(text_x, 140.0), Type.SIZE_SMALL,
+		Color(0.86, 0.84, 0.86), CONTENT_W - 100.0, 16.0)
+	_shop_outline(_rush_ui["sub"], 5)
+	var bx := Vector2(PAD + CONTENT_W - 156.0, 96.0)
+	_rush_ui["btn_tex"] = _shop_tex(root, "res://assets/ui/sets/gate_button.png",
+		bx, Vector2(148.0, 50.0))
+	_rush_ui["btn_lbl"] = _panel_label(root, Vector2(bx.x, bx.y + 15.0),
+		Type.SIZE_MID, Color(1.0, 0.95, 0.90), 148.0, 22.0)
+	_rush_ui["btn_lbl"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_outline(_rush_ui["btn_lbl"], 8)
+	var b := _shop_ghost(root, Vector2(148.0, 50.0), _rush_ui["btn_tex"])
+	b.position = bx
+	b.pressed.connect(func() -> void:
+		if raid_on == "rush":
+			_rush_exit("중단")
+		else:
+			_rush_enter())
+	_rush_ui["btn"] = b
+	# 규칙 카드 — 이 판의 규칙 두 줄(시련 판과 같은 자리).
+	_shop_tex(root, "res://assets/ui/sets/gate_panel.png", Vector2(PAD - 8.0, 220.0),
+		Vector2(CONTENT_W + 16.0, 96.0))
+	var r1 := _panel_label(root, Vector2(PAD + 18.0, 244.0), Type.SIZE_SMALL,
+		Color(0.86, 0.84, 0.86), CONTENT_W - 36.0, 16.0)
+	r1.text = "층마다 보상 — 쓰러져도 받은 것은 그대로"
+	_shop_outline(r1, 5)
+	var r2 := _panel_label(root, Vector2(PAD + 18.0, 272.0), Type.SIZE_SMALL,
+		Color(0.72, 0.70, 0.74), CONTENT_W - 36.0, 16.0)
+	r2.text = "하루 한 판 — %d층마다 보석과 소환권" % RushDefs.MILESTONE
+	_shop_outline(r2, 5)
+	_refresh_rush()
+
+
+func _refresh_rush() -> void:
+	if _rush_ui.is_empty():
+		return
+	# 얼굴은 **다음에 만날 보스** — 도는 중엔 지금 층, 밖에선 최고층 다음(거기서
+	# 막혔다). 본편 보스는 전용 초상이 없어 걷기 첫 장을 빌린다.
+	var fl := rush_floor if raid_on == "rush" else rush_best + 1
+	var act: Dictionary = StageDefs.ACTS[(maxi(1, fl) - 1) % StageDefs.ACTS.size()]
+	_rush_ui["art"].texture = Assets.tex(
+		"res://assets/anim/%s_walk/0.png" % str(act["boss_anim"]))
+	_rush_ui["name"].text = "%d층  ·  %s" % [fl, str(act["boss_name"])]
+	_rush_ui["best"].text = "최고 %d층" % rush_best
+	var used := rush_date == Time.get_date_string_from_system()
+	var locked := best_stage < RushDefs.OPEN_STAGE
+	if locked:
+		_rush_ui["sub"].text = "%d구간을 넘으면 열린다" % RushDefs.OPEN_STAGE
+	elif used:
+		_rush_ui["sub"].text = "오늘 판을 다 썼다 — 자정에 돌아온다"
+	else:
+		_rush_ui["sub"].text = "하루 한 판  ·  %d층마다 보석·소환권" % RushDefs.MILESTONE
+	if raid_on == "rush":
+		_rush_ui["btn_lbl"].text = "돌아가기"
+		_rush_ui["btn"].disabled = false
+	else:
+		_rush_ui["btn_lbl"].text = "%d구간" % RushDefs.OPEN_STAGE if locked \
+			else ("내일" if used else "도전")
+		_rush_ui["btn"].disabled = locked or used or dungeon_on or raid_on != ""
+	_gate_btn_dim(_rush_ui["btn_tex"], _rush_ui["btn_lbl"],
+		_rush_ui["btn"].disabled)
 
 
 func _build_raid_detail(root: Control) -> void:
@@ -8039,6 +8135,7 @@ func _refresh_dungeon() -> void:
 	if _dungeon_info == null:
 		return
 	_refresh_trial()
+	_refresh_rush()
 	for i in _dungeon_mastery.size():
 		var r: Dictionary = MasteryDefs.RANKS[i]
 		var got := best_stage > int(r["stage"])
@@ -10210,6 +10307,12 @@ func _tab_todo(tab: String) -> bool:
 			if trial_stage < TrialDefs.max_stage() \
 					and dungeon_best >= TrialDefs.floor_need(trial_stage + 1):
 				return true
+			# 혈전 — 오늘 판이 남아 있으면 켠다. 자정에 돌아오는 것이라
+			# 재화 던전 표와 같은 원칙이다.
+			if best_stage >= RushDefs.OPEN_STAGE and raid_on == "" \
+					and not dungeon_on \
+					and rush_date != Time.get_date_string_from_system():
+				return true
 			# 미궁 — **아직 안 뚫은 층이 열려 있다**(사장님 2026-08-26:
 			# "진행 가능한 던전"). 상한까지 다 뚫었으면 안 켠다 — 제자리를
 			# 도는 건 첫 돌파 보상이 없어서 "받을 게 있다"가 아니다.
@@ -11076,6 +11179,9 @@ func _tick_hero_state(delta: float) -> void:
 				return
 			if raid_on == "trial":
 				_trial_exit("쓰러짐")
+				return
+			if raid_on == "rush":
+				_rush_exit("쓰러짐")
 				return
 			# 재화 던전도 마찬가지 — 표는 이미 썼고, 빈손으로 나온다.
 			if raid_on != "":
@@ -12664,14 +12770,14 @@ func _start_advance() -> void:
 func _wave_size(_at_stage: int) -> int:
 	# 물량·버티기 던전은 더 많이 세운다 — 간격이 넓으면 100마리가 곧
 	# **달리기 100번**이 된다(사장님: "몬스터 줜나 나오게").
-	if raid_on != "" and raid_on != "boss" and raid_on != "trial":
+	if _c_is_raid():
 		return RaidDefs.wave_size(raid_on, MAX_FOES)
 	return MAX_FOES
 
 
 # 줄 간격. 물량 던전만 좁힌다 — 여기서만 "한 마리당 달리는 시간"이 판정이다.
 func _c_foe_gap() -> float:
-	if raid_on != "" and raid_on != "boss" and raid_on != "trial":
+	if _c_is_raid():
 		return RaidDefs.foe_gap(raid_on, FOE_GAP)
 	return FOE_GAP
 
@@ -12719,11 +12825,20 @@ func _apply_scroll() -> void:
 # 하나를 빠뜨린 자리가 조용히 본편 값을 읽는다 — 이 저장소가 여러 번 밟은 부류라
 # (틱 수·판정 폭·자리) 갈래를 이 여덟 함수로 모은다.
 # **오프라인·도감·경험치는 일부러 본편 기준 그대로다** — 미궁은 기록만 남긴다.
+# 지금 판이 **재화 던전인가** — RAIDS 표에 있는 kind 만 참. "boss 도 trial 도
+# 아니면 던전"이라는 옛 물음은 새 모드가 생길 때마다 조용히 틀린다(혈전이
+# 세 번째 손님이다) — 표에게 묻는 게 근본 수리다.
+func _c_is_raid() -> bool:
+	return RaidDefs.RAIDS.has(raid_on)
+
+
 func _c_is_boss() -> bool:
 	if raid_on == "boss":
 		return true      # 주간 보스 — 한 마리로 판을 채운다(체력 바·마크가 같이 붙는다)
 	if raid_on == "trial":
 		return true      # 시련도 한 마리 보스 판이다
+	if raid_on == "rush":
+		return true      # 혈전도 층마다 보스 한 마리다
 	if raid_on != "":
 		# **성소의 수호자도 그 판의 보스다** — 이 한 줄로 웨이브가 한 마리가 되고
 		# 상단 체력 바·등장 컷신까지 따라온다. 안 그러면 수호자가 여럿 서 있어서
@@ -12749,7 +12864,7 @@ func _c_kill_clear() -> bool:
 
 
 func _c_kills_needed() -> int:
-	if raid_on == "boss" or raid_on == "trial":
+	if raid_on == "boss" or raid_on == "trial" or raid_on == "rush":
 		return 1
 	if raid_on != "":
 		# 던전마다 목표가 다르다 — 버티기(제단)는 처치가 판정이 아니다.
@@ -12763,6 +12878,8 @@ func _c_time_limit() -> float:
 		return EventDefs.TIME_LIMIT
 	if raid_on == "trial":
 		return TrialDefs.TIME_LIMIT
+	if raid_on == "rush":
+		return RushDefs.TIME_LIMIT
 	if raid_on != "":
 		return RaidDefs.time_limit(raid_on)
 	return DungeonDefs.time_limit(dungeon_floor) if dungeon_on \
@@ -12774,6 +12891,9 @@ func _c_enemy_power() -> float:
 		return StageDefs.enemy_power(best_stage)
 	if raid_on == "trial":
 		return StageDefs.enemy_power(TrialDefs.eq_stage(trial_stage + 1))
+	if raid_on == "rush":
+		# 혈전 — 최고 구간보다 조금 아래서 출발해 층마다 세진다(RushDefs).
+		return StageDefs.enemy_power(RushDefs.eq_stage(rush_floor, best_stage))
 	if raid_on != "":
 		return StageDefs.enemy_power(
 			RaidDefs.eq_stage(_raid_stage(), raid_on, best_stage))
@@ -12787,6 +12907,10 @@ func _c_act_data() -> Dictionary:
 	if raid_on == "trial":
 		# 그 막의 보스가 시련의 얼굴이다 — 배경은 wide_raid_trial 이 따로 맡는다.
 		return StageDefs.act_data(TrialDefs.eq_stage(trial_stage + 1))
+	if raid_on == "rush":
+		# 층마다 다음 막의 보스 — 배경도 그 막을 따라간다(미궁과 같은 회전).
+		var ri := (maxi(1, rush_floor) - 1) % StageDefs.ACTS.size()
+		return StageDefs.act_data(ri * StageDefs.STEPS_PER_STAGE + 1)
 	if raid_on != "":
 		return StageDefs.act_data(
 			RaidDefs.eq_stage(_raid_stage(), raid_on, best_stage))
@@ -12811,6 +12935,8 @@ func _c_label() -> String:
 		return str(EventDefs.boss_of(_boss_week_index())["name"])
 	if raid_on == "trial":
 		return "시련 %d단계" % (trial_stage + 1)
+	if raid_on == "rush":
+		return "혈전 %d층" % rush_floor
 	if raid_on != "":
 		return RaidDefs.label(raid_on, _raid_stage())
 	return DungeonDefs.label(dungeon_floor) if dungeon_on else StageDefs.label(stage)
@@ -12827,6 +12953,13 @@ var raid_date := ""
 # kind -> 오늘 남은 판. **클리어할 때만 깎인다**(사장님) — 못 깨고 나온 판은
 # 세지 않으므로, 실패가 손해가 아니라서 "될까?" 싶을 때 눌러 볼 수 있다.
 var raid_left := {}
+
+# ── 혈전 회랑 (RushDefs) — 하루 한 판, 층마다 본편 보스 재대결 ────────────────
+# rush_floor 는 저장 안 한다 — 앱이 꺼지면 그 런은 끝이다(오늘 판은 1층 격파에
+# 이미 적혔고, 층 보상도 이미 줬으니 잃는 건 "이어서"뿐이다).
+var rush_floor := 0
+var rush_best := 0
+var rush_date := ""     # 오늘 판을 쓴 날 — 1층 격파에 적는다
 
 
 # ── 주간 보스 (EventDefs) ───────────────────────────────────────────────────
@@ -14552,6 +14685,42 @@ func _trial_exit(reason: String) -> void:
 		go_trial.call()
 
 
+# ── 혈전 회랑 — 잡았던 본편 보스 10종이 줄지어 재도전 (사장님 픽 2026-09-02) ──
+func _rush_enter() -> void:
+	if raid_on != "" or dungeon_on or _fade_t > 0.0:
+		return
+	if best_stage < RushDefs.OPEN_STAGE \
+			or rush_date == Time.get_date_string_from_system():
+		return
+	raid_on = "rush"
+	rush_floor = 1
+	_restart_stage("혈전 1층", true)
+	_enter_battle_view()
+	_battle_only(true)
+	_refresh_dungeon()
+
+
+func _rush_exit(reason: String) -> void:
+	if raid_on != "rush" or _fade_t > 0.0:
+		return
+	raid_on = ""
+	var floors := rush_floor - 1
+	rush_floor = 0
+	_show_clear("혈전 종료", "%s — %d층 격파  ·  최고 %d층"
+		% [reason, floors, rush_best])
+	# 여운 — 재화 던전·시련과 같은 규칙(사장님 2026-08-25).
+	var go := func() -> void:
+		_restart_stage(reason, true)
+		_refresh_currency_visibility()
+		_refresh_dungeon()
+		_return_gate("rush")
+		_save_game()
+	if is_inside_tree():
+		get_tree().create_timer(CLEAR_HOLD).timeout.connect(go)
+	else:
+		go.call()
+
+
 func _claim_milestone(i: int) -> void:
 	_boss_roll()
 	if boss_got.has(i) or boss_dmg < _boss_need(i):
@@ -14699,6 +14868,9 @@ func _refresh_board() -> void:
 		_board_pills[1].text = "격파 시 +%d%%" % int(round(
 			TrialDefs.BONUS_PER * 100.0 * float(trial_stage + 1)))
 		_board_pills[2].text = "도전 무제한"
+	elif raid_on == "rush":
+		_board_pills[1].text = "%d층 도전 중" % rush_floor
+		_board_pills[2].text = "최고 %d층" % rush_best
 	elif raid_on != "":
 		_board_pills[1].text = "%s +%s" % [str(RaidDefs.RAIDS[raid_on]["currency"]),
 			_n(_raid_gain(raid_on, _raid_stage()))]
@@ -14759,6 +14931,8 @@ func _gate_exit_pressed() -> void:
 		_boss_exit("도전 중단")
 	elif raid_on == "trial":
 		_trial_exit("도전 중단")
+	elif raid_on == "rush":
+		_rush_exit("중단")
 	elif raid_on != "":
 		_raid_exit("던전 중단 — 빈손")
 
@@ -14854,7 +15028,7 @@ func _spawn_foe() -> void:
 		tier = FoeTiers.get_tier(str(eb["key"]))
 		tier["name"] = str(eb["name"])
 		tier["anim_key"] = str(eb["anim"])
-	elif raid_on != "" and RaidDefs.goal(raid_on) == "slay":
+	elif _c_is_raid() and RaidDefs.goal(raid_on) == "slay":
 		# 성소 수호자도 전용 보스다(사장님 2026-08-20) — 여기만 본편 막 보스를
 		# 빌려 쓰고 있었다("또 저놈"). 시련·주간 보스와 같은 규칙으로 맞춘다.
 		tier = FoeTiers.get_tier("sanctum_guardian")
@@ -14878,8 +15052,7 @@ func _spawn_foe() -> void:
 		tier["midboss"] = true
 		tier["name_prefix"] = _c_midboss_prefix() + " "
 	# 성소는 **수호자 한 마리**가 판이다 — 이름으로도 그게 읽혀야 한다.
-	if raid_on != "" and raid_on != "boss" and raid_on != "trial" \
-			and RaidDefs.goal(raid_on) == "slay":
+	if _c_is_raid() and RaidDefs.goal(raid_on) == "slay":
 		tier["name_prefix"] = "수호자 "
 	var f := Foe.new()
 	# 혈액은 **배급으로만** 들어온다(2026-08-20, 사장님 요구 4: 던전+방치).
@@ -14890,7 +15063,7 @@ func _spawn_foe() -> void:
 		# 체력만 갈아 끼운다 — 40초에 못 눕히는 게 정상이고, 성과는 누적 피해다.
 		f.max_hp = EventDefs.boss_hp(boss_dps, boss_tier)
 		f.hp = f.max_hp
-	elif raid_on != "" and raid_on != "trial":
+	elif _c_is_raid():
 		# 성소의 **수호자 한 마리**는 웨이브 몫을 혼자 짊어진다(hp_mult).
 		# 다른 던전은 배수가 1 이라 이 줄이 아무것도 안 한다.
 		var mult := RaidDefs.hp_mult(raid_on)
@@ -15137,6 +15310,43 @@ func _advance_stage() -> void:
 		_trial_exit("시련 %d단계 격파 — 공격·체력 +%d%%" % [trial_stage,
 			int(round(TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))])
 		return
+	# ── 혈전: 층 보상을 즉시 주고 다음 보스를 세운다 ───────────────────────
+	if raid_on == "rush":
+		var fl := rush_floor
+		var g := RushDefs.gold_reward(fl, best_stage)
+		gold += g
+		var line := "%d층 격파  ·  혈액 +%s" % [fl, _n(g)]
+		# 이정표 — 보석과 소환권. 소환 곡선이 굶고 있어서(신화 장비 해금 누적
+		# 1000회/판) 여기가 그 굶주림을 먹인다(사장님 픽 2026-09-02).
+		if RushDefs.is_milestone(fl):
+			_grant_reward("gem", RushDefs.MILESTONE_GEM)
+			var tk := RushDefs.milestone_ticket(fl)
+			_grant_reward(tk, 1.0)
+			line += "\n이정표 — 보석 +%d · %s +1" % [int(RushDefs.MILESTONE_GEM),
+				TicketDefs.short_of(TicketDefs.kind_of(tk))]
+		if fl == 1:
+			# **판은 첫 격파에 쓴다** — 들어갔다 그냥 나오면 안 쓴 것이다
+			# (재화 던전 "표는 격파할 때만 깎인다"와 같은 규칙).
+			rush_date = Time.get_date_string_from_system()
+		rush_best = maxi(rush_best, fl)
+		_show_clear("클리어!", line)
+		# 미궁과 같은 여운 — 쓰러지는 그림과 보상 배너를 볼 시간이다.
+		var finish_rush := func() -> void: _fade(func() -> void:
+			kills = 0
+			# 새 판은 늘 만피로 시작한다(사장님 2026-08-12).
+			hero_hp = max_hp()
+			rush_floor += 1
+			_boss_time = _c_time_limit()
+			_begin_stage_pose()
+			_start_advance()
+			_apply_stage_bg())
+		if is_inside_tree():
+			get_tree().create_timer(CLEAR_HOLD).timeout.connect(finish_rush)
+		else:
+			finish_rush.call()
+		_refresh_dungeon()
+		_save_game()
+		return
 	# ── 재화 던전: 한 판이 끝났다 — 뭉치를 주고 본편으로 돌아간다 ──────────
 	if raid_on != "":
 		var kind := raid_on
@@ -15285,6 +15495,9 @@ func _tick_boss_timer(delta: float) -> bool:
 		return true
 	if raid_on == "trial":
 		_trial_exit("시간 초과")
+		return true
+	if raid_on == "rush":
+		_rush_exit("시간 초과")
 		return true
 	if raid_on != "":
 		# **버티기 던전은 시계가 성공 조건이다** (사장님 2026-08-14: 던전마다
@@ -15850,6 +16063,8 @@ func _refresh_hud() -> void:
 			str(EventDefs.boss_of(_boss_week_index())["name"]), boss_tier]
 	elif raid_on == "trial":
 		_lbl_stage.text = "시련 %d단계" % (trial_stage + 1)
+	elif raid_on == "rush":
+		_lbl_stage.text = _c_label()
 	elif raid_on != "":
 		_lbl_stage.text = "%s  %d단계" % [str(RaidDefs.RAIDS[raid_on]["name"]),
 			int(raid_best.get(raid_on, 0)) + 1]
@@ -16083,6 +16298,8 @@ func _save_game_inner() -> void:
 	cfg.set_value("raid", "best", raid_best)
 	cfg.set_value("raid", "date", raid_date)
 	cfg.set_value("raid", "left", raid_left)
+	cfg.set_value("rush", "best", rush_best)
+	cfg.set_value("rush", "date", rush_date)
 	cfg.set_value("boss", "week", boss_week)
 	cfg.set_value("boss", "date", boss_date)
 	cfg.set_value("boss", "tries", boss_tries)
@@ -16315,6 +16532,8 @@ func _load_game() -> void:
 	raid_best = cfg.get_value("raid", "best", {"blood": 0})
 	raid_date = str(cfg.get_value("raid", "date", ""))
 	raid_left = cfg.get_value("raid", "left", {})
+	rush_best = maxi(0, int(cfg.get_value("rush", "best", 0)))
+	rush_date = str(cfg.get_value("rush", "date", ""))
 	_raid_roll_day()
 	shop_date = str(cfg.get_value("shop", "date", ""))
 	shop_used = cfg.get_value("shop", "used", {})
