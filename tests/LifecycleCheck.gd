@@ -83,5 +83,33 @@ func _init() -> void:
 	assert(is_equal_approx(scene.chest_gold, g0),
 		"5초 전환에 방치 보상이 붙었다 — 알트탭이 수입이 된다")
 
-	print("LifecycleCheck OK  (뒤로가기 3겹 · 전환 복귀 2시간 · 짧은 전환 무시)")
+	# ── 방치와 접속이 **같은 요율**인가 (2026-09-02 디자인 대조) ────────────
+	# 이 게임이 스스로 한 약속인데 경험치가 그걸 어기고 있었다: 오프라인 정산이
+	# exp_per_kill 에 내부 구간(1~500)을 넘기고 접속 중은 막(1~50)을 넘겨서,
+	# 200구간에서 오프라인이 **아홉 배**였다. 화면에 안 보이는 종류의 거짓말이라
+	# 검사가 없으면 아무도 모른다.
+	scene.stage = 200
+	scene.best_stage = 200
+	var online: float = Balance.exp_per_kill(StageDefs.major_stage(scene.stage))
+	# 1분치 오프라인 경험치를 그 1분에 잡을 마릿수로 되나눈다 = 마리당 시세.
+	var prof: Dictionary = scene._offline_profile(scene.stage)
+	var ktime: float = maxf(0.2, float(prof["hp"]) / maxf(0.001, scene.dps()))
+	var kills_1m: float = 60.0 / ktime
+	var offline: float = scene._offline_exp(1.0) / kills_1m
+	assert(offline < online,
+		"오프라인 경험치가 접속보다 많다: 마리당 %.2f 대 %.2f" % [offline, online])
+	assert(is_equal_approx(offline / online, scene.IDLE_EFF),
+		"오프라인 경험치 효율이 혈액과 다른 상수를 쓴다: %.3f 대 %.3f"
+		% [offline / online, scene.IDLE_EFF])
+
+	# ── 계약 충전 표시가 실제 충전 규칙과 같은 자를 쓰는가 ──────────────────
+	# 라벨이 raw 상수(40)를 쓰고 지급은 charge_min(멤버 30)을 써서, 멤버십에게는
+	# "충전 12분"이라 적힌 채 카드가 이미 들어와 있는 화면이 났다.
+	for member in [false, true]:
+		var need: float = OathDefs.charge_min(member)
+		assert(need > 0.0, "충전 시간이 0 이다")
+		assert(need <= OathDefs.CHARGE_MIN,
+			"멤버십이 더 오래 기다린다: %.0f 대 %.0f" % [need, OathDefs.CHARGE_MIN])
+
+	print("LifecycleCheck OK  (뒤로가기 3겹 · 전환 복귀 2시간 · 짧은 전환 무시 · 방치 요율)")
 	quit(0)

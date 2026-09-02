@@ -40,6 +40,22 @@ func _init() -> void:
 	# 있다는 사실 자체를 모른다.
 	assert(GoalDefs.need("stage", 0) <= 5, "첫 단계 목표가 너무 멀다")
 	assert(GoalDefs.need("hero_lv", 0) <= 10, "첫 영웅 레벨 목표가 너무 멀다")
+	# **첫 칸에 몇 시간짜리 벽을 세우지 않는다** (2026-09-02 디자인 대조).
+	# 소환 트랙의 첫 칸이 30회(보석 900)라, 앞의 넷을 몇 분에 깬 사람이 다섯째
+	# 에서 멈춰 서고 그동안 "다음에 뭘 하지"를 말해 주는 유일한 위젯이 얼었다.
+	# **모든 트랙**을 재는 이유: 한 트랙만 고치면 다음에 다른 트랙이 같은 값을 쓴다.
+	for tr in GoalDefs.TRACKS:
+		var k0 := str(tr["kind"])
+		var cost0 := GoalDefs.need(k0, 0) * (GachaDefs.COST if k0 == "pulls" else 0.0)
+		assert(cost0 <= 200.0,
+			"%s 첫 칸이 보석 %.0f 어치다 — 배우는 동안엔 벽을 세우지 않는다"
+			% [k0, cost0])
+	# **첫 보상은 그 자리에서 쓸 수 있어야 한다.** 보석으로 살 수 있는 가장 싼
+	# 것이 소환 1회(GachaDefs.COST)인데 첫 보상이 그보다 작으면, 재화가 처음
+	# 화면에 나타나는 그 순간에 아무것도 못 산다.
+	assert(GoalDefs.gem_reward("stage", 0) >= GachaDefs.COST,
+		"첫 가이드 보상 %.0f 이 소환 1회(%.0f)보다 싸다 — 받아도 쓸 곳이 없다"
+		% [GoalDefs.gem_reward("stage", 0), GachaDefs.COST])
 
 	# 보상은 필요값보다 **완만하게** 는다. 같은 비율이면 후반 목표 하나가 소환
 	# 수백 회가 되어 초반 보상이 의미를 잃는다.

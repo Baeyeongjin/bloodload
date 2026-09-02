@@ -32,16 +32,25 @@ extends RefCounted
 #    `pulls` 도 같은 꼴이 됐다. 눈금이 바뀌면 그 눈금을 읽는 목표도 같이
 #    옮겨야 한다 — base 를 10 -> 150(=10x15) · 10 -> 30 으로 맞춘다.
 const TRACKS := [
+	# **첫 보상은 그 자리에서 쓸 수 있어야 한다.** 25 였는데 이 게임에서 보석으로
+	# 살 수 있는 가장 싼 것이 소환 1회 30 이라, 90초 걸려 첫 목표를 깨면 보석
+	# 알약이 새로 나타나면서 숫자가 25 — 아무것도 못 사는 첫 보상이었다.
 	{"kind": "stage", "name": "단계 도달", "unit": "단계",
-		"base": 3.0, "mult": 1.38, "gem": 25.0, "icon": "stat_damage"},
+		"base": 3.0, "mult": 1.38, "gem": 30.0, "icon": "stat_damage"},
 	{"kind": "kills", "name": "처치", "unit": "마리",
 		"base": 120.0, "mult": 1.75, "gem": 18.0, "icon": "stat_drain"},
 	{"kind": "hero_lv", "name": "영웅", "unit": "레벨",
 		"base": 5.0, "mult": 1.48, "gem": 20.0, "icon": "stat_tough"},
 	{"kind": "damage_lv", "name": "공격력", "unit": "레벨",
 		"base": 150.0, "mult": 1.55, "gem": 15.0, "icon": "stat_damage"},
+	# **사다리의 첫 칸에는 배급 눈금을 쓰면 안 된다.** base 30 은 정상 상태의
+	# 하루 소환 수인데, 가이드 다섯째 칸이 그것이라 앞의 넷을 몇 분에 깬 사람이
+	# 여기서 보석 900 어치를 모으느라 몇 시간 멈춰 섰다 — 그동안 "다음에 뭘
+	# 하지"를 알려주는 유일한 위젯이 얼어 있다. 무료 뽑기 하루 1회 + 보스 첫
+	# 격파 소환권이면 첫날 안에 닿는 값으로 내린다(mult 는 그대로라 두 바퀴째
+	# 부터는 지금 곡선으로 돌아온다).
 	{"kind": "pulls", "name": "소환", "unit": "회",
-		"base": 30.0, "mult": 1.75, "gem": 22.0, "icon": "stat_crit"},
+		"base": 5.0, "mult": 1.75, "gem": 22.0, "icon": "stat_crit"},
 	{"kind": "knowledge", "name": "지식", "unit": "레벨",
 		"base": 4.0, "mult": 1.42, "gem": 30.0, "icon": "stat_regen"},
 ]

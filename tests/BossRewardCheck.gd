@@ -39,6 +39,14 @@ func _init() -> void:
 	root.add_child(scene)
 	await process_frame
 	await process_frame
+	# **일일 배급을 막는다.** 아래 절들이 300 프레임씩 기다리는데, 그동안
+	# _process -> _refresh_tab_dots -> _tab_todo("raid") -> _raid_roll_day() 가
+	# 돌아 **날이 바뀌었으면 소환권을 준다.** 앞 검사가 남긴 저장본의 raid_date 를
+	# 물려받으면 그게 이 검사 한가운데서 터져 "재격파에 또 왔다"로 빨개진다
+	# (전수 실행에서 실제로 한 번 났고, 단독 실행에서는 초록이라 더 헷갈린다).
+	# 오늘로 못 박으면 그 창이 닫힌다.
+	scene.raid_date = Time.get_date_string_from_system()
+	scene.iap_subs = {}
 
 	# ── 2) 실제 지급 — 보스 구간을 처음 돌파하면 보석·소환권이 는다 ────────
 	# **페이드가 끝나길 기다린다.** _advance_stage 는 페이드 중이면 조용히
@@ -82,8 +90,11 @@ func _init() -> void:
 		await process_frame
 		if scene.stage > 10:
 			break
-	assert(is_equal_approx(scene.gem, 0.0), "재격파에 보석이 또 왔다")
-	assert(scene.tickets.is_empty(), "재격파에 소환권이 또 왔다")
+	assert(is_equal_approx(scene.gem, 0.0), "재격파에 보석이 또 왔다: %.0f" % scene.gem)
+	# 무엇이 들어왔는지 적는다 — "또 왔다"만 적으면 어디서 왔는지 찾는 데 한참 걸린다.
+	assert(scene.tickets.is_empty(),
+		"재격파에 소환권이 또 왔다: %s (구간 %d · 최고 %d · 판 '%s')"
+		% [str(scene.tickets), scene.stage, scene.best_stage, scene.raid_on])
 
 	# ── 5) 군림 배너 유실 회귀 — 해금 문턱을 넘으면 배너에 군림 줄이 있다 ──
 	while scene._fade_t > 0.0:

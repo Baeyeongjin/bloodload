@@ -2192,9 +2192,22 @@ func _show_info() -> void:
 				pets_got.size(), PetDefs.PETS.size()]],
 			["지식 (도감 평균)", "+%d%%" % int(round(_codex_act_bonus() * 100.0))],
 			["혈맹 (체력)", "+%d%%" % int(round(PactDefs.bonus(pact_lv) * 100.0))],
-			["혈액 획득", "x%.2f" % gold_mult()],
+			# 아래는 **여태 이 절에 없어서** 화면이 절반만 말하고 있었다
+			# (2026-09-02). damage()/max_hp() 에 실제로 들어가는 항인데
+			# 목록에 없으면 "내 힘이 어디서 오는지"의 답이 틀린 답이 된다.
+			["장비 (장착·보유)", "+%d%%" % int(round((_gear_stat("damage")
+				+ _collection_bonus("damage")) * 100.0))],
+			["유물", "x%.2f" % _relic_mult("damage")],
+			["도감 이정표·연대기", "+%d%%" % int(round(_lore_bonus("damage") * 100.0))],
+			["외형", "+%d%%" % int(round(
+				SkinDefs.bonus("attack", skins_owned) * 100.0))],
 		]],
 		["기록", [
+			# **혈액 획득은 힘이 아니다.** Balance.combat_power 가 흡혈량을
+			# 일부러 뺐다고 못 박아 뒀는데(그건 전투 능력이 아니라 재화 획득량이다)
+			# 화면은 그걸 "어디서 오는 힘인가" 목록에 넣고 있었다 — 읽는 사람은
+			# "혈액 획득을 올리면 전투력이 오른다"로 읽는다. 이 절이 제자리다.
+			["혈액 획득", "x%.2f" % gold_mult()],
 			["최고 구간", StageDefs.label(best_stage)],
 			["핏빛 미궁", "%d층" % dungeon_best],
 			["시련", "%d단계 격파" % trial_stage],
@@ -5722,7 +5735,7 @@ func _claim_chest() -> void:
 	var entries := [{"icon": "res://assets/ui/res_blood.png",
 		"label": _n(chest_gold), "sub": "혈액"}]
 	gold += chest_gold
-	# 경험치 — 방치 동안 잡은 몫. 접속 중과 같은 시세(절반 효율은 이미 물렸다).
+	# 경험치 — 방치 동안 잡은 몫. 접속 중과 같은 시세에 방치 효율(IDLE_EFF).
 	var xp := _offline_exp(chest_minutes)
 	if xp > 0.0:
 		_gain_exp(xp)
@@ -5743,14 +5756,25 @@ func _claim_chest() -> void:
 	_save_game()
 
 
-# 자리를 비운 동안의 경험치. 처치 수 x 마리당 경험치 — 혈액과 같은 모델이고
-# 절반 효율은 상자에 담을 때 이미 물렸으므로 여기서 또 곱하지 않는다.
+# 자리를 비운 동안의 경험치. 처치 수 x 마리당 경험치 — 혈액과 같은 모델이다.
+#
+# **여기 버그가 둘 있었다** (2026-09-02 디자인 대조에서 발견):
+#   1. `exp_per_kill` 에 **내부 구간**(stage, 1~500)을 넘겼다. 접속 중은
+#      `major_stage(stage)`(1~50)를 넘긴다(_advance 처치 자리). exp_per_kill 이
+#      `1 + s*0.5` 라 200구간에서 101 대 11 — **오프라인이 아홉 배**였다.
+#      "방치와 접속이 같은 요율"이라는 이 게임의 약속이 거짓이었다.
+#   2. 주석은 "절반 효율은 상자에 담을 때 이미 물렸다"고 했는데 chest_minutes 는
+#      **깎지 않은 실제 분**이다(혈액만 blood_per_sec 에서 IDLE_EFF 를 문다).
+#      즉 주석이 틀렸고 `* 0.5` 가 실제로 그 효율이었다.
+#
+# 효율은 혈액과 **같은 상수**를 쓴다. 같은 뜻에 상수가 둘이면 언젠가 갈린다.
 func _offline_exp(minutes: float) -> float:
 	if minutes <= 0.0:
 		return 0.0
 	var profile := _offline_profile(stage)
 	var kill_time := maxf(0.2, float(profile["hp"]) / maxf(0.001, dps()))
-	return (minutes * 60.0 / kill_time) * Balance.exp_per_kill(stage) * 0.5
+	return (minutes * 60.0 / kill_time) \
+		* Balance.exp_per_kill(StageDefs.major_stage(stage)) * IDLE_EFF
 
 
 # 상시 가이드 카드.
@@ -13618,7 +13642,10 @@ func _refresh_oath() -> void:
 		var ht := create_tween()
 		ht.tween_property(_oath_ui["halo"], "scale", Vector2(1.08, 1.08), 0.6)
 		ht.tween_property(_oath_ui["halo"], "scale", Vector2.ONE, 0.6)
-	var mins := OathDefs.CHARGE_MIN - oath_charge
+	# **멤버십은 30분에 찬다**(OathDefs.charge_min). 여기서 raw 상수(40)를 쓰면
+	# 라벨이 10분 아래로 안 내려가고, "충전 12분"이라 적힌 채 카드가 이미 들어와
+	# 있는 화면이 나온다 — 화면이 코드와 다른 말을 하는 자리였다.
+	var mins := OathDefs.charge_min(_oath_member()) - oath_charge
 	_oath_ui["p0"].text = "카드 %d / %d" \
 		% [oath_cards, OathDefs.card_cap(_oath_member())]
 	_oath_ui["p1"].text = "황금 %d" % oath_gold
