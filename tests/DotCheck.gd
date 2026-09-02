@@ -207,6 +207,10 @@ func _broke(scene: Node) -> void:
 	scene.relics = {}
 	scene.pact_lv = 0
 	scene.prestige_peak = 9999
+	# 혈흔도 비운다 — 군림 각인이 생기면서(2026-09-02) 혈흔이 **쓰는 재화**가
+	# 됐다. 안 비우면 "놀고 있는 혈흔"으로 점이 켜지고, 그건 점이 맞다.
+	scene.prestige_marks = 0
+	scene.prestige_keeps = {}
 	scene.gear_inventory = {}
 	scene.gacha_shards = {}
 	scene.dungeon_best = 0

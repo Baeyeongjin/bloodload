@@ -105,6 +105,9 @@ func _init() -> void:
 	assert(scene.pact_lv == 12, "혈맹이 사라졌다")
 
 	# 4) 배율이 **공격력에 실제로** 붙는가.
+	# 각인(6절)이 혈흔을 깎으므로 여기서는 비워 두고 잰다 — 안 그러면 저장본에
+	# 남은 각인이 배수를 줄여서 "표와 다르다"로 엉뚱하게 빨개진다.
+	scene.prestige_keeps = {}
 	var with_marks: float = scene._base_hit_damage()
 	var keep: int = scene.prestige_marks
 	scene.prestige_marks = 0
@@ -142,6 +145,55 @@ func _init() -> void:
 	assert(scene.prestige_marks == want and scene.prestige_count == 2,
 		"혈흔이 복원 안 됐다")
 	assert(scene.prestige_peak == 300, "문턱이 복원 안 됐다: %d" % scene.prestige_peak)
+
+	# ── 6) 군림 각인 — 혈흔이 처음으로 "쓰는 재화"가 된다 (2026-09-02) ──────
+	# 표 성질부터: 총액이 평생 총량(도달 500 clamp)의 3분의 1 안이어야 한다.
+	# 넘으면 "다 사면 배수가 없다"가 되어 고를 것이 아니라 함정이 된다.
+	var lifetime := PrestigeDefs.marks_for(StageDefs.total_stages())
+	var all_keys := {}
+	for o in PrestigeDefs.OFFERS:
+		all_keys[str(o["key"])] = true
+	var total_cost := PrestigeDefs.spent(all_keys)
+	assert(total_cost > 0 and total_cost * 3 <= lifetime,
+		"각인 총액 %d 이 평생 혈흔 %d 의 3분의 1을 넘는다" % [total_cost, lifetime])
+	# 첫 회귀(5개)에 하나는 살 수 있어야 판이 "고르는 판"으로 읽힌다.
+	var cheapest := 99
+	for o in PrestigeDefs.OFFERS:
+		cheapest = mini(cheapest, int(o["cost"]))
+	assert(cheapest <= PrestigeDefs.marks_for(PrestigeDefs.OPEN_STAGE),
+		"첫 회귀로는 아무것도 못 산다")
+
+	# 쓴 혈흔은 배수에서 빠진다 — 안 빠지면 각인이 공짜라 고를 것이 없다.
+	scene.prestige_marks = 20
+	scene.prestige_keeps = {}
+	var mult_free: float = scene._prestige_mult()
+	scene.prestige_keeps = {"sweep2": true}
+	assert(scene._prestige_mult() < mult_free,
+		"각인을 샀는데 배수가 그대로다 — 공짜다")
+	assert(is_equal_approx(scene._prestige_mult(),
+		PrestigeDefs.power_mult(20 - PrestigeDefs.offer_cost("sweep2"))),
+		"차감이 상품 값과 다르다")
+
+	# **회귀해도 안 꺼진다** — 이것이 이 상품이 파는 규칙 그 자체다.
+	scene.best_stage = 1
+	assert(not MasteryDefs.has("slot", scene.best_stage, scene.prestige_keeps),
+		"안 산 군림이 회귀 뒤에도 살아 있다")
+	assert(MasteryDefs.has("sweep2", scene.best_stage, scene.prestige_keeps),
+		"각인한 군림이 회귀로 꺼졌다 — 산 것이 사라진다")
+	# 옛 호출부(인자 둘)는 그대로 통과해야 한다.
+	assert(not MasteryDefs.has("sweep2", 1), "기본값 인자가 깨졌다")
+
+	# 저장·로드 + 쓰레기 키 걸러내기(안 거르면 spent 가 어긋나 배수가 틀어진다).
+	scene.prestige_keeps["없는키"] = true
+	scene._save_game()
+	scene.prestige_keeps = {}
+	scene._load_game()
+	assert(scene.prestige_keeps.has("sweep2"), "각인이 복원 안 됐다")
+	assert(not scene.prestige_keeps.has("없는키"), "표에 없는 각인이 살아 남았다")
+	# **뒷정리.** 각인을 남긴 채 끝나면 그 저장본이 다음 실행의 4절(배율 크기)을
+	# 깬다 — 실제로 한 번 그렇게 빨개졌다. 검사는 자기가 어질러 놓은 것을 치운다.
+	scene.prestige_keeps = {}
+	scene._save_game()
 
 	print("PrestigeCheck OK")
 	quit()

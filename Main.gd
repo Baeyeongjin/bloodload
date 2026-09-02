@@ -201,18 +201,18 @@ func _trait_add(kind: String) -> float:
 # ── 군림(MasteryDefs) 훅 — 기능 해금이 걸리는 자리를 헬퍼로 모은다 ──────────
 # 흩어 놓으면 하나를 빠뜨린 자리가 조용히 옛 규칙으로 돈다(래퍼 _c_* 와 같은 이유).
 func _equip_cap() -> int:
-	return SkillDefs.SLOTS + (1 if MasteryDefs.has("slot", best_stage) else 0)
+	return SkillDefs.SLOTS + (1 if MasteryDefs.has("slot", best_stage, prestige_keeps) else 0)
 
 
 # 처형 문턱 가산(군림 II). 처형이 있는 스킬에만 얹는다.
 func _exec_bonus() -> float:
-	return 0.05 if MasteryDefs.has("execute", best_stage) else 0.0
+	return 0.05 if MasteryDefs.has("execute", best_stage, prestige_keeps) else 0.0
 
 
 # 소탕 시급 — 기록 x 혈맥(탐욕) x 군림 V. 접속 중·오프라인 둘 다 이걸 쓴다.
 func _sweep_per_hour() -> float:
 	return DungeonDefs.sweep_per_hour(dungeon_best) * _trait_mult("sweep") 		* _relic_mult("sweep") \
-		* (2.0 if MasteryDefs.has("sweep2", best_stage) else 1.0) 		* (1.0 + _boon("sweep"))
+		* (2.0 if MasteryDefs.has("sweep2", best_stage, prestige_keeps) else 1.0) 		* (1.0 + _boon("sweep"))
 
 
 # 방치 상한(시간) — 기본 8 + 혈맥 긴 잠 + 군림 IV + 혈세.
@@ -222,7 +222,7 @@ func _sweep_per_hour() -> float:
 const IDLE_CAP_MAX := 16.0
 func _offline_cap_hours() -> float:
 	return minf(IDLE_CAP_MAX, 8.0 + _trait_add("hours") + RelicDefs.add("hours", relics) \
-		+ (4.0 if MasteryDefs.has("hours", best_stage) else 0.0) \
+		+ (4.0 if MasteryDefs.has("hours", best_stage, prestige_keeps) else 0.0) \
 		+ IapDefs.idle_bonus_hours(iap_subs) + _boon("hours"))
 
 
@@ -2835,9 +2835,9 @@ const RELIC_CELL := Vector2(168.0, 72.0)
 var _prestige_view: Control
 var _pr_now: Label
 var _pr_gain: Label
-var _pr_keep: Label
 var _pr_btn: Button
 var _pr_btn_tex: TextureRect
+var _pr_rows: Array = []      # 각인 줄 [{key, btn, name}]
 var _pr_btn_lbl: Label
 
 
@@ -2861,37 +2861,110 @@ func _build_prestige_view(root: Control) -> void:
 		Color(0.86, 0.90, 0.98), PANEL_W, 20.0)
 	_pr_gain.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_pr_gain, 5)
-	_pr_keep = _panel_label(_prestige_view, Vector2(PAD, top + 100.0),
-		Type.SIZE_SMALL, Color(0.80, 0.78, 0.82), CONTENT_W, 66.0)
-	_pr_keep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 세 줄로 나눈다 — "남는 것"을 한 줄에 이으면 폭을 넘어 잘린다(실측).
-	# 무엇이 사라지는지는 이 판에서 가장 중요한 글이라 잘리면 안 된다.
-	_pr_keep.text = "잃는 것 — 구간 · 스탯 레벨 · 혈액\n" \
-		+ "남는 것 — 장비 · 스킬 · 유물 · 미궁 기록\n" \
-		+ "도감 · 칭호 · 혈맹 · 혈맥 · 혈정 · 인장"
-	_shop_outline(_pr_keep, 5)
+	# **"잃는 것 / 남는 것" 세 줄은 확인창으로 옮겼다**(2026-09-02). 그 글이
+	# 이 판에서 가장 중요한 건 그대로지만, 되돌릴 수 없는 순간 **바로 앞**이
+	# 제자리다 — 확인창이 이미 그 절반을 적고 있었다. 비운 66px 은 각인 목록이
+	# 쓴다(혈흔에 처음으로 쓸 곳이 생겼다).
 	# 되돌릴 수 없는 버튼 — 혈액 세트의 붉은 판이 이 자리에 맞는다.
-	var bx := Vector2((PANEL_W - 220.0) * 0.5, top + 184.0)
+	var bx := Vector2((PANEL_W - 220.0) * 0.5, top + 100.0)
 	_pr_btn_tex = _shop_tex(_prestige_view, "res://assets/ui/sets/blood_button.png",
 		bx, Vector2(220.0, 52.0))
 	_pr_btn_lbl = _panel_label(_prestige_view, Vector2(bx.x, bx.y + 15.0),
 		Type.SIZE_MID, Color(1.0, 0.95, 0.92), 220.0, 24.0)
 	_pr_btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(_pr_btn_lbl, 8)
+	_pr_rows.clear()
 	_pr_btn = _shop_ghost(_prestige_view, Vector2(220.0, 52.0), _pr_btn_tex)
 	_pr_btn.position = bx
 	# **한 번 더 묻는다.** 되돌릴 수 없는 일은 확인 창을 지난다(공용 _confirm).
 	_pr_btn.pressed.connect(func() -> void:
-		_ask("%d구간을 접고 혈흔 %d 을 받습니다.\n구간·스탯·혈액이 처음으로 돌아갑니다.\n\n되돌릴 수 없습니다."
+		_ask("%d구간을 접고 혈흔 %d 을 받습니다.\n\n잃는 것 — 구간 · 스탯 레벨 · 혈액\n남는 것 — 장비 · 스킬 · 유물 · 미궁 기록\n도감 · 칭호 · 혈맹 · 혈맥 · 혈정 · 인장\n\n되돌릴 수 없습니다."
 			% [best_stage, PrestigeDefs.marks_for(best_stage, prestige_peak)],
 			_prestige_do))
+	# ── 군림 각인 — 혈흔을 쓰는 유일한 자리 ───────────────────────────────
+	var ly := top + 168.0
+	var lt := _panel_label(_prestige_view, Vector2(PAD, ly), Type.SIZE_SMALL,
+		Color(0.92, 0.82, 0.62), CONTENT_W, 18.0)
+	lt.text = "군림 각인 — 회귀해도 안 꺼진다"
+	_shop_outline(lt, 5)
+	var sc := Ui.scroll(Vector2(PAD, ly + 24.0),
+		Vector2(CONTENT_W, PANEL_H - (ly + 24.0) - 8.0))
+	_prestige_view.add_child(sc)
+	var col := Control.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W,
+		float(PrestigeDefs.OFFERS.size()) * 40.0)
+	sc.add_child(col)
+	for i in PrestigeDefs.OFFERS.size():
+		_prestige_view_row(col, i)
 	_refresh_prestige()
+
+
+# 각인 한 줄 — 이름·효과 + 값 버튼. 잠긴 줄은 버튼 대신 사유를 적는다
+# (_stat_row 가 이미 쓰는 규칙).
+func _prestige_view_row(col: Control, i: int) -> void:
+	var o: Dictionary = PrestigeDefs.OFFERS[i]
+	var key := str(o["key"])
+	var rank := {}
+	for r in MasteryDefs.RANKS:
+		if str(r["key"]) == key:
+			rank = r
+	var y := float(i) * 40.0
+	var nm := _panel_label(col, Vector2(0.0, y), Type.SIZE_SMALL,
+		Color(0.94, 0.90, 0.86), CONTENT_W - Ui.SCROLL_W - 96.0, 16.0)
+	nm.text = str(rank.get("name", key))
+	_shop_outline(nm, 5)
+	var ds := _panel_label(col, Vector2(0.0, y + 18.0), Type.SIZE_SMALL,
+		Color(0.74, 0.72, 0.76), CONTENT_W - Ui.SCROLL_W - 96.0, 16.0)
+	ds.text = str(rank.get("desc", ""))
+	_shop_outline(ds, 5)
+	var bw := 88.0
+	var b := Ui.button("혈흔 %d" % int(o["cost"]),
+		Vector2(CONTENT_W - Ui.SCROLL_W - bw, y + 4.0), Vector2(bw, 30.0),
+		Type.SIZE_SMALL)
+	b.pressed.connect(func() -> void: _prestige_buy(key))
+	col.add_child(b)
+	_pr_rows.append({"key": key, "btn": b, "name": nm})
+
+
+func _prestige_buy(key: String) -> void:
+	var cost := PrestigeDefs.offer_cost(key)
+	if prestige_keeps.has(key) or cost <= 0:
+		return
+	if prestige_marks - PrestigeDefs.spent(prestige_keeps) < cost:
+		return
+	# **배수가 눈에 띄게 떨어진다** — 되돌릴 수 없는 것은 미리 적는다(이 판의 규칙).
+	var before := _prestige_mult()
+	var after := PrestigeDefs.power_mult(maxi(0,
+		prestige_marks - PrestigeDefs.spent(prestige_keeps) - cost))
+	_ask("혈흔 %d 을 새겨 이 군림을 영구히 남깁니다.\n\n공격 x%.2f → x%.2f\n\n되돌릴 수 없습니다."
+		% [cost, before, after],
+		func() -> void:
+			prestige_keeps[key] = true
+			_refresh_prestige()
+			_refresh_tab_dots()
+			_save_game())
 
 
 func _refresh_prestige() -> void:
 	if _pr_now == null:
 		return
-	_pr_now.text = "혈흔 %d  ·  공격 x%.2f" % [prestige_marks, _prestige_mult()]
+	var free_marks := maxi(0, prestige_marks - PrestigeDefs.spent(prestige_keeps))
+	# 쓴 것이 있으면 **몇 개가 남았는지**를 적는다 — 총량만 적으면 각인을 산 뒤
+	# 배수가 왜 줄었는지 화면에 근거가 없다.
+	_pr_now.text = "혈흔 %d  ·  공격 x%.2f" % [prestige_marks, _prestige_mult()] \
+		if free_marks == prestige_marks \
+		else "혈흔 %d (남은 %d)  ·  공격 x%.2f" % [prestige_marks, free_marks,
+			_prestige_mult()]
+	for row in _pr_rows:
+		var key := str(row["key"])
+		var got: bool = prestige_keeps.has(key)
+		var cost := PrestigeDefs.offer_cost(key)
+		var btn: Button = row["btn"]
+		btn.text = "각인됨" if got else "혈흔 %d" % cost
+		btn.disabled = got or free_marks < cost
+		(row["name"] as Label).add_theme_color_override("font_color",
+			Color(0.92, 0.82, 0.62) if got else Color(0.94, 0.90, 0.86))
 	var got := PrestigeDefs.marks_for(best_stage, prestige_peak)
 	var can := got > 0
 	if can:
@@ -7082,9 +7155,16 @@ var prestige_count := 0     # 몇 번 회귀했나(화면 표기용)
 var prestige_peak := 0      # 회귀로 혈흔을 받은 최고 구간 — 여기까진 이미 받았다
 
 
+# 산 군림 각인 — key -> true. 회귀해도 그 군림이 안 꺼진다(PrestigeDefs.OFFERS).
+var prestige_keeps := {}
+
+
 # 회귀 배율. **공격력에만** 붙인다 — 체력·수입까지 곱하면 곡선을 다시 재야 한다.
+# **쓴 혈흔은 배수에서 빠진다** — 그래야 "화력이냐 규칙이냐"가 진짜 선택이 된다.
+# 안 빼면 각인이 공짜라 고를 게 없고, 판은 다시 버튼 하나짜리가 된다.
 func _prestige_mult() -> float:
-	return PrestigeDefs.power_mult(prestige_marks)
+	return PrestigeDefs.power_mult(
+		maxi(0, prestige_marks - PrestigeDefs.spent(prestige_keeps)))
 
 
 # 회귀 — 구간과 혈액으로 산 것을 되돌리고 혈흔을 받는다.
@@ -10275,6 +10355,13 @@ func _growth_mode_todo(mode: String) -> bool:
 		"prestige":
 			if best_stage >= PrestigeDefs.OPEN_STAGE 			and PrestigeDefs.marks_for(best_stage, prestige_peak) > 0:
 				return true
+			# 살 수 있는 각인이 있다 — 놀고 있는 혈흔이 있다는 뜻이다
+			# ("알림은 놀고 있는 자원이 있다에 켠다", HANDOFF 8장).
+			var free_marks := prestige_marks - PrestigeDefs.spent(prestige_keeps)
+			for o in PrestigeDefs.OFFERS:
+				if not prestige_keeps.has(str(o["key"])) \
+						and free_marks >= int(o["cost"]):
+					return true
 	return false
 
 
@@ -10855,7 +10942,7 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 				_cleave_swing(_pending_target)
 				# 군림 III — 3연격 마무리는 불멸의 심장과 같은 검기로 광역이 된다.
 				# 새 기계 없음: 버프 광역(_cleave_swing)의 기준을 잠깐 세워 재사용한다.
-				if _pending_finisher and MasteryDefs.has("cleave3", best_stage) \
+				if _pending_finisher and MasteryDefs.has("cleave3", best_stage, prestige_keeps) \
 						and (_summon_t <= 0.0 or _summon_cleave.is_empty()):
 					_mastery_cleave(_pending_target)
 			_pending_target = null
@@ -16268,6 +16355,7 @@ func _save_game_inner() -> void:
 	cfg.set_value("prestige", "marks", prestige_marks)
 	cfg.set_value("prestige", "count", prestige_count)
 	cfg.set_value("prestige", "peak", prestige_peak)
+	cfg.set_value("prestige", "keeps", prestige_keeps)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
@@ -16399,6 +16487,11 @@ func _load_game() -> void:
 	prestige_marks = maxi(0, int(cfg.get_value("prestige", "marks", 0)))
 	prestige_count = maxi(0, int(cfg.get_value("prestige", "count", 0)))
 	prestige_peak = maxi(0, int(cfg.get_value("prestige", "peak", 0)))
+	prestige_keeps = cfg.get_value("prestige", "keeps", {})
+	# 표에 없는 키가 섞이면 spent 가 안 세어 배수가 부풀거나 준다 — 걸러 낸다.
+	for k in prestige_keeps.keys():
+		if PrestigeDefs.offer_cost(str(k)) <= 0:
+			prestige_keeps.erase(k)
 	# 키가 없는 옛 저장본은 잔액으로 되살린다 — 이미 쓰던 재화가 갑자기 사라지면 안 된다.
 	var seen: Dictionary = cfg.get_value("wallet", "seen", {})
 	_currency_seen["gem"] = bool(seen.get("gem", gem > 0.0))

@@ -77,6 +77,15 @@ func _init() -> void:
 			sweep = true
 		if arg == "--prestige":
 			compare = true
+		# 비용 굽힘을 켜고 잰다 — k 후보를 고르는 자리(200일 벽, 2026-09-02).
+		# a 는 원점 기울기 보정: u^k 는 u=0 에서 기울기가 무한대라 이게 없으면
+		# 첫 칸이 열 배가 된다. k^(1/(1-k)) 면 u=0 근처 기울기가 1 이 된다.
+		if arg.begins_with("--bend="):
+			var k := clampf(float(arg.trim_prefix("--bend=")), 0.1, 1.0)
+			Balance.COST_BEND = k
+			Balance.COST_BEND_SHIFT = 1.0 if k >= 1.0 \
+				else pow(k, 1.0 / (1.0 - k))
+			print("[굽힘] COST_BEND=%.2f  SHIFT=%.4f" % [k, Balance.COST_BEND_SHIFT])
 	if sweep:
 		_sweep(days)
 		return

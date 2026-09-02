@@ -28,7 +28,12 @@ const RANKS := [
 ]
 
 
-static func has(key: String, best_stage: int) -> bool:
+# kept 는 **군림 각인**(PrestigeDefs.OFFERS)으로 산 것들이다. 회귀가 best_stage
+# 를 1 로 되돌려도 각인한 것은 안 꺼진다 — 그것이 그 상품이 파는 규칙이다.
+# 기본값이 빈 사전이라 옛 호출부(검사 포함)는 그대로 통과한다.
+static func has(key: String, best_stage: int, kept := {}) -> bool:
+	if kept.has(key):
+		return true
 	for r in RANKS:
 		if str(r["key"]) == key:
 			return best_stage > int(r["stage"])
