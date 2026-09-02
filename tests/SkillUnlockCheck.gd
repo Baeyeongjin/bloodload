@@ -21,7 +21,7 @@ func _init() -> void:
 	assert(SkillDefs.mythic_key("strike") == "strike_mythic")
 	assert(SkillDefs.name_of("strike_mythic") == "혈신의 송곳니",
 		"신화 이름이 표에 없다: %s" % SkillDefs.name_of("strike_mythic"))
-	# 아이콘은 레전더리를 빌린다(전용 그림은 사장님 픽 대기) — 파일이 실존해야 한다.
+	# 아이콘은 전용 파일이다(레전더리 + 금테 오라, 사장님 픽 A 2026-09-02).
 	assert(FileAccess.file_exists(SkillDefs.icon_path("wave_mythic")),
 		"신화 아이콘 폴백이 없는 파일을 가리킨다: %s"
 		% SkillDefs.icon_path("wave_mythic"))

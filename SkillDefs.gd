@@ -420,10 +420,10 @@ static func shape_of(key: String) -> Dictionary:
 
 static func icon_path(key: String) -> String:
 	var sr := split(key)
-	# 신화 전용 아이콘은 아직 없다 — 레전더리 그림을 빌린다. 등급 테두리
-	# 색(mythic)이 구분을 맡는다. 전용 그림은 사장님 픽으로 뽑을 자리다.
-	var rar := "legend" if str(sr[1]) == "mythic" else str(sr[1])
-	return "res://assets/skills/sk_%s_%s.png" % [rar, sr[0]]
+	# 신화 아이콘은 레전더리 그림에 금테 오라를 입힌 것이다(사장님 픽 A,
+	# 2026-09-02 — PixelLab 만료라 프로그램 변형으로 만들었다. 구독을 살리면
+	# 전용 그림으로 다시 뽑을 수 있는 자리).
+	return "res://assets/skills/sk_%s_%s.png" % [sr[1], sr[0]]
 
 
 # 이펙트는 **스킬마다 다르다.** 형태 4종만 두면 1,000회 뽑아 나온 레전더리가
