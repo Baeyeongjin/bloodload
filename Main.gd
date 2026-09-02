@@ -3292,7 +3292,9 @@ func _build_trait_view(root: Control) -> void:
 	_trait_buy = Ui.button("", Vector2(PAD + CONTENT_W - 152.0, iy),
 		Vector2(152.0, 34.0), Type.SIZE_SMALL)
 	Ui.cost_icon(_trait_buy, "res://assets/ui/res_crystal.png", 14)
-	_trait_buy.pressed.connect(func() -> void: _buy_trait(_trait_sel))
+	# **버튼을 새로 만들지 않는다.** 이 노드로 지금 할 수 있는 일은 하나뿐이라
+	# (올리거나 · 제련하거나 · 구운 것을 받거나) 버튼도 하나면 된다.
+	_trait_buy.pressed.connect(func() -> void: _trait_action(_trait_sel))
 	_trait_view.add_child(_trait_buy)
 	_trait_sel = str(seq[0])
 
@@ -3326,6 +3328,36 @@ func _refresh_traits() -> void:
 	_refresh_trait_info()
 
 
+# 고른 노드로 지금 할 수 있는 일. 화면 문구와 이 함수가 **같은 자**를 써야
+# "버튼은 켜졌는데 눌러도 안 되는" 일이 안 난다(HANDOFF 8장의 그 규칙).
+func _trait_action(id: String) -> void:
+	if id == "":
+		return
+	if trait_bake.has(id):
+		_bake_claim(id)
+		return
+	if TraitDefs.can_bake(id, traits):
+		var n := TraitDefs.node(id)
+		var tier := int(n.get("tier", 1))
+		# 되돌릴 수 없다 — 굽는 동안 이미 % 가 빠져 있어서 취소를 허용하면
+		# 그게 "공짜 혈맥 리셋"이 된다. 그러니 미리 묻는다.
+		_ask("%s 을(를) 되태워 %s 유물 조각 하나를 굽습니다.\n\n노드가 0 레벨로 돌아가고 %s이 걸립니다.\n다시 올리려면 혈정 %s 이 듭니다.\n\n되돌릴 수 없습니다."
+			% [str(n.get("name", id)),
+			_rarity_name(TraitDefs.bake_rarity(tier)),
+			_trip_text(TraitDefs.bake_hours(tier) * 3600.0),
+			_n(TraitDefs.cost(tier) * float(TraitDefs.MAX_LV), true)],
+			func() -> void: _bake_send(id))
+		return
+	_buy_trait(id)
+
+
+static func _rarity_name(key: String) -> String:
+	for r in GachaDefs.RARITIES:
+		if str(r["key"]) == key:
+			return str(r["name"])
+	return key
+
+
 func _refresh_trait_info() -> void:
 	if _trait_sel == "":
 		return
@@ -3336,7 +3368,24 @@ func _refresh_trait_info() -> void:
 	var lv := TraitDefs.level_of(_trait_sel, traits)
 	_trait_info.text = "%s %d/%d · 만렙 %s" % [str(n["name"]), lv,
 		TraitDefs.MAX_LV, _trait_effect_text(n)]
-	if reason == "만렙":
+	# ── 제련 (2026-09-02) — 만렙 노드가 죽은 칸이 아니게 된다 ─────────────
+	if trait_bake.has(_trait_sel):
+		var left := _bake_left(_trait_sel)
+		_trait_buy.text = "받기" if left <= 0.0 else _trip_tag(left)
+		_trait_buy.disabled = left > 0.0
+		_trait_info.text = "%s · 제련 중 — %s" % [str(n["name"]),
+			"끝났다" if left <= 0.0 else _trip_text(left)]
+	elif reason == "만렙" and TraitDefs.can_bake(_trait_sel, traits):
+		# 굽는 칸은 원정 칸을 나눠 쓴다 — 새 상수를 안 만든다.
+		var slots := PetDefs.trip_slots(pets_got.size())
+		var busy := trait_bake.size() >= slots
+		_trait_buy.text = "칸 없음" if busy else "제련"
+		_trait_buy.disabled = busy
+		_trait_info.text = "%s 만렙 · 되태우면 %s 유물 조각 (%s)" % [str(n["name"]),
+			_rarity_name(TraitDefs.bake_rarity(int(n["tier"]))),
+			_trip_text(TraitDefs.bake_hours(int(n["tier"])) * 3600.0)]
+	elif reason == "만렙":
+		# 위쪽 노드가 남아 있으면 못 태운다 — 태우면 그 위가 통째로 잠긴다.
 		_trait_buy.text = "만렙"
 		_trait_buy.disabled = true
 	elif reason != "":
@@ -7157,6 +7206,8 @@ var prestige_peak := 0      # 회귀로 혈흔을 받은 최고 구간 — 여�
 
 # 산 군림 각인 — key -> true. 회귀해도 그 군림이 안 꺼진다(PrestigeDefs.OFFERS).
 var prestige_keeps := {}
+# 제련 중인 혈맥 노드 — id -> [끝나는 유닉스시각, 굽는 등급].
+var trait_bake := {}
 
 
 # 회귀 배율. **공격력에만** 붙인다 — 체력·수입까지 곱하면 곡선을 다시 재야 한다.
@@ -16356,6 +16407,7 @@ func _save_game_inner() -> void:
 	cfg.set_value("prestige", "count", prestige_count)
 	cfg.set_value("prestige", "peak", prestige_peak)
 	cfg.set_value("prestige", "keeps", prestige_keeps)
+	cfg.set_value("trait", "bake", trait_bake)
 	cfg.set_value("wallet", "seen", _currency_seen)
 	cfg.set_value("run", "best_stage", best_stage)
 	cfg.set_value("run", "dungeon_best", dungeon_best)
@@ -16487,6 +16539,7 @@ func _load_game() -> void:
 	prestige_marks = maxi(0, int(cfg.get_value("prestige", "marks", 0)))
 	prestige_count = maxi(0, int(cfg.get_value("prestige", "count", 0)))
 	prestige_peak = maxi(0, int(cfg.get_value("prestige", "peak", 0)))
+	trait_bake = cfg.get_value("trait", "bake", {})
 	prestige_keeps = cfg.get_value("prestige", "keeps", {})
 	# 표에 없는 키가 섞이면 spent 가 안 세어 배수가 부풀거나 준다 — 걸러 낸다.
 	for k in prestige_keeps.keys():
@@ -18090,6 +18143,54 @@ func _trip_text(sec: float) -> String:
 	if sec < 3600.0:
 		return "%d분" % maxi(1, int(ceil(sec / 60.0)))
 	return "%d시간 %d분" % [int(sec / 3600.0), int(fmod(sec, 3600.0) / 60.0)]
+
+
+# ── 혈맥 제련 — 만렙 노드를 되태워 유물 조각으로 굽는다 (2026-09-02) ──────
+# node id -> [끝나는 유닉스시각, 굽는 등급]. 펫 원정(pet_trip)과 같은 모양이라
+# 회수 문법도 같다.
+# **취소는 없다.** 굽는 동안 이미 % 가 빠져 있으므로 취소를 허용하면 그게
+# "공짜 혈맥 리셋"이 된다.
+func _bake_left(id: String) -> float:
+	var row: Array = trait_bake.get(id, [])
+	if row.size() < 2:
+		return 0.0
+	return maxf(0.0, float(row[0]) - Time.get_unix_time_from_system())
+
+
+func _bake_send(id: String) -> void:
+	if trait_bake.has(id) or not TraitDefs.can_bake(id, traits):
+		return
+	# 동시에 굽는 칸은 원정 칸을 그대로 쓴다 — 새 상수를 안 만든다.
+	if trait_bake.size() >= PetDefs.trip_slots(pets_got.size()):
+		return
+	var n := TraitDefs.node(id)
+	var tier := int(n.get("tier", 1))
+	traits[id] = 0
+	trait_bake[id] = [Time.get_unix_time_from_system()
+		+ TraitDefs.bake_hours(tier) * 3600.0, TraitDefs.bake_rarity(tier)]
+	_save_game()
+	_refresh_traits()
+
+
+func _bake_claim(id: String) -> void:
+	var row: Array = trait_bake.get(id, [])
+	if row.size() < 2 or _bake_left(id) > 0.0:
+		return
+	trait_bake.erase(id)
+	# 굽는 등급 안에서 유물 하나를 고른다 — 조각은 기존 경로에 그대로 쌓인다.
+	var pool: Array = []
+	for r in RelicDefs.RELICS:
+		if str(r.get("rarity", "")) == str(row[1]):
+			pool.append(r)
+	if pool.is_empty():
+		pool = RelicDefs.RELICS
+	var pick: Dictionary = pool[randi() % pool.size()]
+	var sub := _shard_add("relic:" + str(pick["id"]))
+	_show_reward("제련이 끝났다",
+		[{"icon": "res://assets/ui/quest_summon.png",
+		"label": "%s 조각 +1" % str(pick["name"]), "sub": sub}])
+	_save_game()
+	_refresh_traits()
 
 
 func _trip_send(id: String) -> void:

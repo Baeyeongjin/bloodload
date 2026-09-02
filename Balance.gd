@@ -52,20 +52,54 @@ const COST_SCALE := BLOOD_UNIT
 # 쓰면 20배 과잉으로 굽는다(실측 x0.048) — 문서의 k 값이 그 뜻대로 살려면
 # 옛 눈금으로 되돌려 굽혀야 한다.
 static var COST_BEND := 1.0          # k. 1.0 이면 아래 식이 옛 곡선과 항등이다
-# a — 원점 기울기 보정. u^k 는 u=0 에서 기울기가 무한대라 a 가 없으면 첫 칸이
-# 열 배가 된다. k^(1/(1-k)) 를 쓰면 u=0 근처 기울기가 1 이 되어 초반이 안 튄다.
+# **무릎점** — 여기(옛 레벨) 아래는 굽히지 않는다. 이게 없으면 굽힘이 초반까지
+# 같이 빠르게 만든다: 실측으로 k=0.85 가 14일차를 160 -> 200 구간으로 밀었는데,
+# 그건 문서가 COST_EXP_SCALE 0.35 를 기각한 바로 그 조건이다("14일 200 은
+# 사장님 기준 2주 105 의 두 배"). 애초에 **비용 지수를 낮추는 안을 접고 회귀를
+# 만든 이유**가 "초반까지 같이 빨라져 방금 맞춘 곡선이 다시 깨진다"였다
+# (PrestigeDefs 머리글). 무릎을 두면 그 반대가 성립한다 — 무릎 아래는 **완전
+# 항등**이고 벽이 서는 구간만 싸진다.
+#
+# 120 = 옛 레벨(화면 Lv 1800). 실측 기준선에서 14일차 공격렙이 화면 1770(옛
+# 118)이라 **2주까지는 한 칸도 안 바뀐다.** 벽은 그 뒤에 선다(30일 옛 135 ·
+# 90일 옛 170 · 200일 옛 211).
+static var COST_BEND_FROM := 120.0
+# a — 이음매 기울기 보정. (u-u0)^k 는 u0 에서 기울기가 무한대라 a 가 없으면
+# 무릎 바로 위 한 칸이 열 배가 된다. k^(1/(1-k)) 면 이음매 기울기가 1 이 되어
+# 곡선이 매끄럽게 이어진다(값도 미분도 연속).
 static var COST_BEND_SHIFT := 1.0
+
+
+# 지수부. 무릎 아래는 그대로, 위는 굽는다.
+static func bend_exp(u: float) -> float:
+	var k := COST_BEND
+	if k >= 1.0:
+		return u
+	var u0 := COST_BEND_FROM
+	if u <= u0:
+		return u
+	var a := COST_BEND_SHIFT
+	return u0 + pow(u - u0 + a, k) - pow(a, k)
+
+
+# bend_exp 의 역함수 — max_steps 가 누적을 뒤집을 때 쓴다.
+static func bend_inv(x: float) -> float:
+	var k := COST_BEND
+	if k >= 1.0:
+		return x
+	var u0 := COST_BEND_FROM
+	if x <= u0:
+		return x
+	var a := COST_BEND_SHIFT
+	return u0 + pow(x - u0 + pow(a, k), 1.0 / k) - a
 
 
 # Lv1 에서 level 까지의 누적. **나머지 셋이 전부 여기서 나온다** — 그래야
 # 환급(누적의 차)이 지불(한 칸의 합)과 어긋날 수가 없다.
-# k=1 이면 (u+a)^1 - a^1 = u 라 a 와 무관하게 옛 식과 항등이다(상대오차 1.7e-12).
+# k=1 이면 bend_exp 가 항등이라 옛 식과 그대로 같다(상대오차 1.7e-12).
 static func total_cost(level: int, base := UP_BASE, e := UP_EXP) -> float:
-	var k := COST_BEND
-	var a := COST_BEND_SHIFT
 	var u := maxf(0.0, float(level - 1) / float(SPLIT))
-	return base * COST_SCALE / (e - 1.0) \
-		* (pow(e, pow(u + a, k) - pow(a, k)) - 1.0)
+	return base * COST_SCALE / (e - 1.0) * (pow(e, bend_exp(u)) - 1.0)
 
 
 # 한 단계 올리는 비용. level 은 "지금 레벨"이고, 그 다음 단계를 사는 값이다.
@@ -98,13 +132,10 @@ static func max_steps(level: int, purse: float, base := UP_BASE,
 	# 누적을 뒤집는다 — 굽혀도 O(1) 로 남는다.
 	# 0.999999 는 부동소수 경계에서 한 단계 크게 나와 결제가 조용히 실패하는 것을
 	# 막는 여유다(살 수 있다고 표시해 놓고 아무 일도 안 일어나는 증상).
-	var k := COST_BEND
-	var a := COST_BEND_SHIFT
 	var b := base * COST_SCALE / (e - 1.0)
 	var x := log(1.0 + (total_cost(level, base, e) + purse * 0.999999) / b) \
 		/ log(e)
-	var u := pow(x + pow(a, k), 1.0 / k) - a
-	return maxi(0, int(floor(1.0 + float(SPLIT) * u)) - level)
+	return maxi(0, int(floor(1.0 + float(SPLIT) * bend_inv(x))) - level)
 
 
 # 치명타 배수. 확률과 피해가 **서로를 증폭하는** 유일한 축이라 둘 다 올려야 값이 난다.

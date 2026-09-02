@@ -135,6 +135,59 @@ static func prev_id(id: String) -> String:
 
 
 # 지금 레벨 (없으면 0). 옛 저장본은 `true` 로 적혀 있으므로 만렙으로 읽는다.
+# ── 제련 (2026-09-02 사장님 픽) — 혈정 후반 싱크 ───────────────────────────
+# **만렙 노드를 되태워, 시간을 들여 유물 조각 하나로 굽는다.** 노드는 0 으로
+# 돌아가고, 다시 사려면 혈정이 또 든다 — 그게 무한 싱크의 정체다.
+#
+# 왜 이게 필요한가: 혈맥 완주 총액은 222,930 으로 **유한**한데 혈정 수입은
+# 무한이다(미궁 소탕 + 펫 둥지 + 상점). HANDOFF 의 "완주 133~368일"은 펫 둥지를
+# 뺀 소탕 전용 모델이라 실제와 열 배 다르다 — 펫을 넣으면 후반 하루 12,135,
+# 완주 18.4일이다. 다 찍고 나면 혈정이 죽은 재화가 된다.
+#
+# 왜 이 모양이어야 하는가:
+#   - **곱연산 예산을 안 건드린다.** 혈맥의 % 를 **덜어서** 유물의 % 로 옮기는
+#     것이라 두 축의 합이 안 늘고, 굽는 동안은 오히려 마이너스다
+#     (EXPANSION 2장 · RelicDefs 머리글의 "곱연산은 혈맥 + 유물 둘").
+#   - **숫자가 아니라 규칙이 바뀐다.** "혈맥은 다 찍으면 끝인 유한 축"이라는
+#     성질 자체가 없어지고 재구성 가능한 축이 된다.
+#   - **새 시계를 안 만든다.** 굽는 시간은 펫 원정(PetDefs.TRIP_HOURS)이 이미
+#     쓰는 동사를 그대로 빌린다.
+#
+# **줄기의 맨 위부터만 태운다.** 중간 티어를 태우면 그 위가 전부 잠긴 채로 남아
+# ("앞 노드 만렙"이 문턱이라) 무엇이 왜 안 열리는지 알 수 없게 된다.
+static func bake_hours(tier: int) -> float:
+	if tier >= 6:
+		return 16.0
+	if tier >= 5:
+		return 12.0
+	if tier >= 3:
+		return 8.0
+	return 4.0
+
+
+# 굽는 등급 — 티어가 정한다. **전설은 t6 에서만** 나와야 유물의 "뽑기로
+# 띄엄띄엄 크는 축"이라는 성격이 안 죽는다(RelicDefs 머리글).
+static func bake_rarity(tier: int) -> String:
+	if tier >= 6:
+		return "legend"
+	if tier >= 4:
+		return "epic"
+	return "rare"
+
+
+# 태울 수 있는가 — 만렙이면서, 같은 줄기의 **위쪽이 전부 비어 있어야** 한다.
+static func can_bake(id: String, owned: Dictionary) -> bool:
+	var n := node(id)
+	if n.is_empty() or level_of(id, owned) < MAX_LV:
+		return false
+	for m in NODES:
+		if str(m["branch"]) == str(n["branch"]) \
+				and int(m["tier"]) > int(n["tier"]) \
+				and level_of(str(m["id"]), owned) > 0:
+			return false
+	return true
+
+
 static func level_of(id: String, owned: Dictionary) -> int:
 	var v = owned.get(id, 0)
 	if typeof(v) == TYPE_BOOL:

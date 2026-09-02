@@ -150,8 +150,60 @@ func _init() -> void:
 	assert(TraitDefs.level_of("x", {"x": true}) == TraitDefs.MAX_LV,
 		"옛 bool 저장본 하위호환이 깨졌다")
 
+	# ── 4) 제련 (2026-09-02) — 혈정 후반 싱크 ──────────────────────────────
+	# 표 성질: 전설은 t6 에서만. 아니면 유물의 "뽑기로 띄엄띄엄 크는 축"이라는
+	# 성격이 죽는다(RelicDefs 머리글).
+	for t2 in range(1, 6):
+		assert(TraitDefs.bake_rarity(t2) != "legend",
+			"t%d 에서 전설 조각이 나온다" % t2)
+	assert(TraitDefs.bake_rarity(6) == "legend", "t6 이 전설을 안 굽는다")
+	assert(TraitDefs.bake_hours(6) > TraitDefs.bake_hours(1),
+		"윗 티어가 더 오래 안 걸린다")
+
+	# **줄기의 맨 위부터만 태운다.** 중간을 태우면 그 위가 통째로 잠긴 채 남아
+	# 무엇이 왜 안 열리는지 알 수 없게 된다.
+	var allmax := {}
+	for n2 in TraitDefs.NODES:
+		allmax[str(n2["id"])] = TraitDefs.MAX_LV
+	assert(TraitDefs.can_bake("attack_6", allmax), "맨 위 만렙 노드를 못 태운다")
+	assert(not TraitDefs.can_bake("attack_3", allmax),
+		"위가 남아 있는데 중간 노드가 태워진다 — 그 위가 잠긴 채 남는다")
+	var partial := {"attack_1": TraitDefs.MAX_LV, "attack_2": 3}
+	assert(not TraitDefs.can_bake("attack_1", partial),
+		"위에 레벨이 남았는데 태워진다")
+	assert(not TraitDefs.can_bake("attack_2", partial), "만렙이 아닌데 태워진다")
+
+	# **곱연산 예산 불변식** — 이 검사가 이 기능의 존재 이유다. 제련은 혈맥의
+	# % 를 유물의 % 로 **옮기는** 것이라 두 축의 곱이 늘면 안 된다(EXPANSION
+	# 2장). 이걸 안 재면 표가 늘 때 예산이 조용히 샌다.
+	scene.traits = allmax.duplicate()
+	scene.trait_bake = {}
+	var before: float = scene._trait_mult("attack") * scene._relic_mult("damage")
+	scene._bake_send("attack_6")
+	assert(scene.trait_bake.has("attack_6"), "제련이 안 시작됐다")
+	assert(TraitDefs.level_of("attack_6", scene.traits) == 0,
+		"되태웠는데 노드가 안 내려갔다")
+	var after: float = scene._trait_mult("attack") * scene._relic_mult("damage")
+	assert(after <= before + 1e-9,
+		"제련으로 곱연산 예산이 늘었다: x%.4f -> x%.4f" % [before, after])
+
+	# 굽는 동안엔 못 받는다. 시간이 지나면 조각이 실제로 들어온다.
+	var shards_before := 0
+	for r2 in RelicDefs.RELICS:
+		shards_before += int(scene.gacha_shards.get("relic:" + str(r2["id"]), 0))
+	scene._bake_claim("attack_6")
+	assert(scene.trait_bake.has("attack_6"), "다 안 구웠는데 받아졌다")
+	scene.trait_bake["attack_6"][0] = 0.0      # 시계를 앞당긴다
+	scene._bake_claim("attack_6")
+	assert(not scene.trait_bake.has("attack_6"), "다 구웠는데 안 받아진다")
+	var shards_after := 0
+	for r3 in RelicDefs.RELICS:
+		shards_after += int(scene.gacha_shards.get("relic:" + str(r3["id"]), 0))
+	assert(shards_after == shards_before + 1,
+		"유물 조각이 정확히 하나 안 들어왔다: %d -> %d" % [shards_before, shards_after])
+
 	print("")
-	print("표 18노드 · 노드 10레벨 · 잠금(앞 노드 만렙/비용) · 배선 · 저장 OK")
+	print("표 18노드 · 노드 10레벨 · 잠금(앞 노드 만렙/비용) · 배선 · 저장 · 제련 OK")
 	print("")
 	print("TraitCheck OK")
 	quit()
