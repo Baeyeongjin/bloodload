@@ -33,7 +33,9 @@ func _init() -> void:
 		assert(not Assets.frames(PetDefs.icon_dir(str(p["id"]))).is_empty(),
 			"%s 의 애니 폴더가 비었다: %s" % [p["id"], p["anim"]])
 	for g in PetDefs.GEAR:
-		assert(str(g["kind"]) in ["gather", "amp"], "모르는 장비 갈래: %s" % g["kind"])
+		# 갈래는 **둘 다 전투 효과**여야 한다(사장님 2026-09-02: "수집 40% 는
+		# 빼야지 저게 뭔효과임"). 재화 시급짜리 장비가 다시 들어오면 여기서 걸린다.
+		assert(str(g["kind"]) in ["power", "amp"], "모르는 장비 갈래: %s" % g["kind"])
 		# 아이콘은 파일명 규약(petw_<id>)이라 표가 아니라 디스크가 진실이다.
 		assert(FileAccess.file_exists("res://assets/items/petw_%s.png" % g["id"]),
 			"%s 아이콘이 없다" % g["id"])
@@ -56,9 +58,7 @@ func _init() -> void:
 		cap1), "상한을 넘겼다")
 	assert(is_equal_approx(PetDefs.accrue(id, cap1, 5.0, 1, 1), cap1),
 		"가득인데 더 쌓였다")
-	# 장비 gather 는 시급과 상한을 같이 올린다 — 시급만 올리면 상한이 금방 찬다.
-	assert(PetDefs.accrue(id, 0.0, PetDefs.CAP_HOURS * 100.0, 1, 1, 0.5) > cap1,
-		"gather 가 상한을 안 올린다")
+	# (장비 수집 증폭은 2026-09-02 에 없어졌다 — 펫 장비가 전부 전투 효과가 됐다.)
 	assert(str(PetDefs.roll_rarity()) in PetDefs.RARITY_KEYS, "등급 굴림이 밖을 쏜다")
 
 	# ── 표: 던전(야수 우리) ────────────────────────────────────────────────
@@ -172,6 +172,33 @@ func _init() -> void:
 			break
 	var with_pet: float = scene._base_hit_damage()
 	var keep_worn: String = scene.pet_worn
+
+	# ── 펫 장비가 **전투에** 붙는가 (2026-09-02) ──────────────────────────
+	# 사장님: "펫장비 효과 수집 40% 는 빼야지 저게 뭔효과임 공격력이나 이런걸로".
+	# 표만 power 로 바꾸고 훅을 안 달면 화면 문구만 바뀌고 아무 일도 안 난다.
+	var pw := ""
+	for g2 in PetDefs.GEAR:
+		if str(g2["kind"]) == "power":
+			pw = str(g2["id"])
+			break
+	assert(pw != "", "공격력 장비가 표에 없다")
+	scene.pet_gear_got[pw] = 1
+	scene.pet_gear_worn = {}
+	var no_gear: float = scene._base_hit_damage()
+	scene._pet_equip_gear(keep_worn, pw)
+	assert(scene._base_hit_damage() > no_gear,
+		"공격력 장비를 채웠는데 공격력이 그대로다")
+	# 벗기면 되돌아온다 — 한쪽만 도는 훅이면 여기서 걸린다.
+	scene._pet_equip_gear(keep_worn, pw)
+	assert(is_equal_approx(scene._base_hit_damage(), no_gear),
+		"장비를 벗겼는데 공격력이 안 돌아온다")
+	# **수집에는 안 붙는다** — 걷어 낸 축이 되살아나면 여기서 걸린다.
+	var pid := str(PetDefs.PETS[0]["id"])
+	assert(is_equal_approx(
+		PetDefs.accrue(pid, 0.0, PetDefs.CAP_HOURS * 100.0, 1, 1),
+		PetDefs.cap(pid, 1, 1)),
+		"수집이 상한을 넘는다 — 장비 증폭이 되살아났다")
+
 	scene.pet_worn = ""
 	assert(with_pet > scene._base_hit_damage(), "데려가도 공격력이 그대로다")
 	scene.pet_worn = keep_worn

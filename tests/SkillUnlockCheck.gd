@@ -171,5 +171,28 @@ func _init() -> void:
 			break
 	assert(scene.hero_hp > hp0, "장판이 도는데 체력을 안 마신다")
 
+	# ── 게시판 스킬 칸이 등급을 보이는가 (2026-09-02) ─────────────────────
+	# 사장님: "스킬 등급 표시해주면 좋을듯". 성장 화면 칸은 이미 등급 색 틀을
+	# 쓰는데 게시판만 전부 같은 돌 틀이었다 — 정작 전투를 보는 화면에서 무엇이
+	# 귀한지 안 읽혔다.
+	scene._board.visible = true
+	scene.skill_owned = {"strike_common": 1, "strike_legend": 1}
+	scene.skill_equipped = ["strike_common", "strike_legend"] as Array[String]
+	scene._refresh_board()
+	var f0: Color = (scene._board_cells[0]["frame"] as CanvasItem).modulate
+	var f1: Color = (scene._board_cells[1]["frame"] as CanvasItem).modulate
+	assert(f0 != f1, "커먼과 전설의 틀 색이 같다 — 등급이 화면에 없다")
+	assert(f1 == Color(SkillDefs.rarity_of("strike_legend")["col"]),
+		"틀 색이 등급 표의 색과 다르다: %s" % str(f1))
+	# **빈 칸으로 갔다가 돌아와도 색이 다시 칠해진다** — 키 기억을 안 지우면
+	# 다시 채웠을 때 옛 색이 남는다.
+	scene.skill_equipped = [] as Array[String]
+	scene._refresh_board()
+	scene.skill_equipped = ["strike_legend"] as Array[String]
+	scene._refresh_board()
+	assert((scene._board_cells[0]["frame"] as CanvasItem).modulate == f1,
+		"빈 칸을 거치니 등급 색이 안 돌아온다")
+	scene._board.visible = false
+
 	print("SkillUnlockCheck OK  (천장 폐기 · 신화 문턱 지급 · 뽑기 밖 · 문구)")
 	quit(0)

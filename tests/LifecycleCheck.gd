@@ -37,7 +37,12 @@ func _init() -> void:
 	for v in scene._popups():
 		if v != null:
 			v.visible = false
+	# 장비 탭은 **가진 게 있어야** 열린다(2026-09-02 진도 잠금) — 빈손이면
+	# _select_tab 이 성장으로 되돌려서 이 검사가 엉뚱하게 실패한다.
+	scene.gear_inventory["_life_probe"] = {"lv": 1}
+	scene._relayout_tabs()
 	scene._select_tab("gear")
+	assert(scene._tab == "gear", "장비 탭을 열어 뒀는데 못 갔다: %s" % scene._tab)
 	scene._info_view.visible = true
 	scene._notification(scene.NOTIFICATION_WM_GO_BACK_REQUEST)
 	assert(not scene._info_view.visible, "뒤로가기가 팝업을 안 닫았다")

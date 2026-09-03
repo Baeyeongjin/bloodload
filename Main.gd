@@ -634,6 +634,7 @@ func damage() -> float:
 		+ PactDefs.bonus(pact_lv) + _lore_bonus("damage") \
 		+ SkinDefs.bonus("attack", skins_owned) \
 		+ PetDefs.owned_bonus(pets_got) \
+		+ _pet_gear_value(pet_worn, "power") \
 		+ 0.01 * (_stat_eff("rage") - 1.0)) \
 		* _relic_mult("damage")
 
@@ -10792,8 +10793,7 @@ func _tab_todo(tab: String) -> bool:
 				if is_equal_approx(_trip_left(str(id)), 0.0):
 					return true
 				if PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)), pet_h,
-						plv, _pet_star(str(id)),
-						_pet_gear_value(str(id), "gather")) >= 1.0:
+						plv, _pet_star(str(id))) >= 1.0:
 					return true
 		"shop":
 			return _shop_mode_todo("book") or _shop_mode_todo("pass")
@@ -15305,8 +15305,20 @@ func _refresh_board() -> void:
 		for n in ["frame", "icon", "shade", "num"]:
 			(c[n] as CanvasItem).visible = live
 		if not live:
+			c["key"] = ""      # 다시 채울 때 색을 새로 칠하게
 			continue
 		(c["icon"] as TextureRect).texture = Assets.tex(SkillDefs.icon_path(key))
+		# **등급을 틀 색으로 보인다**(사장님 2026-09-02: "스킬 등급 표시해주면
+		# 좋을듯"). 성장 화면의 장착 칸은 이미 이렇게 하는데 게시판만 전부 같은
+		# 돌 틀이라, 정작 전투를 보는 화면에서 무엇이 귀한지 안 읽혔다.
+		# 소환 결과·유물·보관함이 다 쓰는 규칙이라 새로 배울 게 없다.
+		#
+		# **키가 바뀔 때만 칠한다.** 매 틱 칠하면 아래 시전 번쩍(0.45초 트윈)이
+		# 1초 틱에 잘린다.
+		var rc := Color(SkillDefs.rarity_of(key)["col"])
+		if str(c.get("key", "")) != key:
+			c["key"] = key
+			(c["frame"] as CanvasItem).modulate = rc
 		var cd := float(_skill_cd.get(key, 0.0))
 		var total := maxf(1.0, float(SkillDefs.shape_of(key).get("cooldown", 1.0)))
 		(c["shade"] as ColorRect).size.y = 54.0 * clampf(cd / total, 0.0, 1.0)
@@ -15315,7 +15327,8 @@ func _refresh_board() -> void:
 		if cd > float(_board_prev_cd.get(key, 0.0)) + 0.5 and is_inside_tree():
 			var fr := c["frame"] as CanvasItem
 			fr.modulate = Color(1.6, 1.35, 0.7)
-			create_tween().tween_property(fr, "modulate", Color.WHITE, 0.45)
+			# **등급 색으로 돌아온다** — 흰색으로 돌리면 번쩍인 칸만 등급을 잃는다.
+			create_tween().tween_property(fr, "modulate", rc, 0.45)
 		_board_prev_cd[key] = cd
 	var gate := _in_raid() or dungeon_on
 	_board_pills[0].text = "피해  %s /초" % _n(dps())
@@ -17839,7 +17852,7 @@ func _pet_build_gear(root: Control) -> void:
 		Vector2(PAD + 18.0, PET_DETAIL_Y + 68.0), Type.SIZE_SMALL,
 		Color(0.98, 0.86, 0.56), CONTENT_W - 240.0, 16.0)
 	# 장착 상대는 **보유 판에서 고른 펫**이다 — 데리고 다니는 펫과 수집 펫이
-	# 다를 수 있어야 gather 장비가 뜻을 가진다.
+	# 다를 수 있어야 장비를 갈아 끼울 뜻이 생긴다.
 	_petgear_detail["target"] = _panel_label(root,
 		Vector2(PAD + 18.0, PET_DETAIL_Y + 96.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.74), CONTENT_W - 240.0, 16.0)
@@ -18062,7 +18075,7 @@ func _refresh_pet_gear() -> void:
 	_petgear_detail["name"].add_theme_color_override("font_color",
 		rar["col"] if got else Color(0.60, 0.58, 0.62))
 	var v := float(g["value"]) * PetDefs.star_mult(maxi(1, star))
-	_petgear_detail["info"].text = (("수집 +%d%%" if str(g["kind"]) == "gather" \
+	_petgear_detail["info"].text = (("공격력 +%d%%" if str(g["kind"]) == "power" \
 		else "버프 증폭 +%d%%") % int(round(v * 100.0))) if got \
 		else "장비 소환에서 나온다"
 	var holder := ""
@@ -18216,9 +18229,9 @@ func _pet_tick() -> void:
 		# 원정 나간 펫은 둥지에서 못 긁는다 — 내보내는 값이 그 시간이다.
 		if pet_trip.has(id):
 			continue
+		# 장비는 이제 수집에 안 붙는다(2026-09-02) — 전부 전투 효과다.
 		pet_bank[id] = PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)),
-			hours, _pet_lv(str(id)), _pet_star(str(id)),
-			_pet_gear_value(str(id), "gather"))
+			hours, _pet_lv(str(id)), _pet_star(str(id)))
 
 
 # 펫 뽑기. 유물과 같은 문법이다 — **중복은 조각이 되고 조각이 차면 한 단계**.
@@ -18640,7 +18653,9 @@ func _pet_lv(id: String) -> int:
 	return clampi(int(pet_lv.get(id, 1)), 1, PetDefs.lv_cap(maxi(1, _pet_star(id))))
 
 
-# 그 펫이 든 장비의 갈래별 값. gather 는 수집에, amp 는 버프에 곱해진다.
+# 그 펫이 든 장비의 갈래별 값. power 는 공격력에 더해지고, amp 는 그 펫의
+# 버프에 곱해진다. **둘 다 동행 펫에게만** — 펫당 1슬롯 x 25마리라 보유 전체에
+# 붙이면 천장이 터진다.
 func _pet_gear_value(pet_id: String, kind: String) -> float:
 	var gid := str(pet_gear_worn.get(pet_id, ""))
 	var g := PetDefs.gear_of(gid)

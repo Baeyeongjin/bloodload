@@ -170,35 +170,46 @@ const PETS := [
 
 
 # ── 펫 장비(무기) 25 ───────────────────────────────────────────────────────
-# 두 갈래만 있다: gather(수집 시급 +%) / amp(장착 펫 버프 +%). 영웅 장비와
+# 두 갈래만 있다: **power(영웅 공격력 +%)** / amp(장착 펫 버프 +%).
+#
+# power 는 원래 gather(수집 시급 +%)였다. 사장님 2026-09-02: "수집 40% 는
+# 빼야지 저게 뭔효과임" — 맞는 지적이다. 이 판에서 장비를 갈아 끼우는 이유가
+# **재화 시급**이면 전투와 아무 상관이 없고, 그러면 "무엇을 낄까"가 전투 결정이
+# 아니게 된다. 수집은 펫 자체가 이미 하는 일이라(가진 전부가 모은다) 장비까지
+# 거기 얹으면 축이 겹치기만 한다.
+#
+# 둘 다 **동행 펫에게만** 붙는다(펫당 1슬롯 x 25마리라 보유 전체에 붙이면
+# 천장이 터진다). 그래서 진짜 선택이 된다 — 이 펫의 특기를 키울까(amp),
+# 아니면 특기와 무관하게 공격력을 받을까(power).
+# 영웅 장비와
 # 겹치지 않는 축이라 파워 예산 충돌이 없다. 아이콘은 assets/items/petw_<id>.png
 # 규약이다(2026-08-18 아트 배치, 25종 전부).
 const GEAR := [
-	{"id": "bone_dirk", "name": "뼈 단검", "rarity": "common", "kind": "gather", "value": 0.10},
+	{"id": "bone_dirk", "name": "뼈 단검", "rarity": "common", "kind": "power", "value": 0.10},
 	{"id": "rust_hook", "name": "녹슨 갈고리", "rarity": "common", "kind": "amp", "value": 0.08},
-	{"id": "blood_bell", "name": "핏빛 방울", "rarity": "common", "kind": "gather", "value": 0.10},
+	{"id": "blood_bell", "name": "핏빛 방울", "rarity": "common", "kind": "power", "value": 0.10},
 	{"id": "thorn_leash", "name": "가시 목줄", "rarity": "common", "kind": "amp", "value": 0.08},
-	{"id": "ash_cane", "name": "재의 지팡이", "rarity": "common", "kind": "gather", "value": 0.10},
+	{"id": "ash_cane", "name": "재의 지팡이", "rarity": "common", "kind": "power", "value": 0.10},
 	{"id": "frost_pick", "name": "서리 송곳", "rarity": "uncommon", "kind": "amp", "value": 0.12},
-	{"id": "moon_whistle", "name": "달빛 호루라기", "rarity": "uncommon", "kind": "gather", "value": 0.15},
+	{"id": "moon_whistle", "name": "달빛 호루라기", "rarity": "uncommon", "kind": "power", "value": 0.15},
 	{"id": "heart_chain", "name": "심장 사슬", "rarity": "uncommon", "kind": "amp", "value": 0.12},
-	{"id": "shade_whip", "name": "그늘 채찍", "rarity": "uncommon", "kind": "gather", "value": 0.15},
+	{"id": "shade_whip", "name": "그늘 채찍", "rarity": "uncommon", "kind": "power", "value": 0.15},
 	{"id": "ember_brand", "name": "잿불 낙인", "rarity": "uncommon", "kind": "amp", "value": 0.12},
-	{"id": "silver_bit", "name": "은 재갈", "rarity": "rare", "kind": "gather", "value": 0.22},
+	{"id": "silver_bit", "name": "은 재갈", "rarity": "rare", "kind": "power", "value": 0.22},
 	{"id": "storm_quill", "name": "폭풍 깃털", "rarity": "rare", "kind": "amp", "value": 0.18},
-	{"id": "blood_horn", "name": "핏빛 나팔", "rarity": "rare", "kind": "gather", "value": 0.22},
+	{"id": "blood_horn", "name": "핏빛 나팔", "rarity": "rare", "kind": "power", "value": 0.22},
 	{"id": "fang_spear", "name": "어금니 창", "rarity": "rare", "kind": "amp", "value": 0.18},
-	{"id": "rime_chime", "name": "서리 종", "rarity": "rare", "kind": "gather", "value": 0.22},
+	{"id": "rime_chime", "name": "서리 종", "rarity": "rare", "kind": "power", "value": 0.22},
 	{"id": "abyss_claw", "name": "심연 갈퀴", "rarity": "epic", "kind": "amp", "value": 0.25},
-	{"id": "crown_shard", "name": "왕관 파편", "rarity": "epic", "kind": "gather", "value": 0.30},
+	{"id": "crown_shard", "name": "왕관 파편", "rarity": "epic", "kind": "power", "value": 0.30},
 	{"id": "grail_sip", "name": "성혈 잔", "rarity": "epic", "kind": "amp", "value": 0.25},
-	{"id": "shadow_noose", "name": "그림자 올가미", "rarity": "epic", "kind": "gather", "value": 0.30},
+	{"id": "shadow_noose", "name": "그림자 올가미", "rarity": "epic", "kind": "power", "value": 0.30},
 	{"id": "thunder_torc", "name": "뇌우 목걸이", "rarity": "epic", "kind": "amp", "value": 0.25},
-	{"id": "doom_fang", "name": "종말의 이빨", "rarity": "legend", "kind": "gather", "value": 0.40},
+	{"id": "doom_fang", "name": "종말의 이빨", "rarity": "legend", "kind": "power", "value": 0.40},
 	{"id": "redmoon_scythe", "name": "붉은 달 낫", "rarity": "legend", "kind": "amp", "value": 0.35},
-	{"id": "void_chain", "name": "공허 사슬", "rarity": "legend", "kind": "gather", "value": 0.40},
+	{"id": "void_chain", "name": "공허 사슬", "rarity": "legend", "kind": "power", "value": 0.40},
 	{"id": "eternal_horn", "name": "영원의 뿔피리", "rarity": "legend", "kind": "amp", "value": 0.35},
-	{"id": "kings_vein", "name": "왕의 핏줄", "rarity": "legend", "kind": "gather", "value": 0.40},
+	{"id": "kings_vein", "name": "왕의 핏줄", "rarity": "legend", "kind": "power", "value": 0.40},
 ]
 
 
@@ -261,11 +272,14 @@ static func cap(id: String, lv: int, star: int) -> float:
 
 
 static func accrue(id: String, have: float, hours: float, lv: int,
-		star: int, gather := 0.0) -> float:
+		star: int) -> float:
 	if of(id).is_empty() or hours <= 0.0:
 		return have
-	var rate := per_hour(id, lv, star) * (1.0 + gather)
-	return minf(cap(id, lv, star) * (1.0 + gather), have + rate * hours)
+	# 장비 증폭은 **없다**(2026-09-02) — 펫 장비가 전부 전투 효과가 되면서
+	# 수집 쪽 손잡이가 사라졌다. 인자를 남겨 두면 늘 0 인 손잡이가 되어,
+	# 다음 사람이 "이걸 왜 안 쓰지"를 한 번 더 물어야 한다.
+	var rate := per_hour(id, lv, star)
+	return minf(cap(id, lv, star), have + rate * hours)
 
 
 # ── 보유 효과 (2026-09-02 사장님 픽) ───────────────────────────────────────
