@@ -607,6 +607,8 @@ var _lbl_time: Label
 var _power_toast: Label
 var _confirm_view: Control
 var _confirm_body: Label
+var _confirm_title: Label
+var _confirm_ok: Button
 var _confirm_action := Callable()
 var _reward_view: Control
 var _reward_title: Label
@@ -1871,6 +1873,11 @@ func _build_topbar() -> void:
 		_hud_root.remove_child(label)
 		pill.add_child(label)
 		labels.append(label)
+		# 눌러서 "어디서 얻고 어디에 쓰나"를 본다. 아이콘이 왼쪽으로 튀어나와
+		# 있으므로(PILL_ICON_OUT) 그만큼 넓게 잡아야 아이콘도 눌린다.
+		_currency_hit(pill, Vector2(-PILL_ICON_OUT, 0.0),
+			Vector2(PILL_W + PILL_ICON_OUT, PILL_H),
+			"gold" if i == 0 else "gem")
 	_lbl_gold = labels[0]
 	_lbl_gem = labels[1]
 	# ── 가운데: 막이름 + 단계 -> 진행바. 한 덩어리로 **화면 가운데에** 붙인다.
@@ -2251,13 +2258,106 @@ const DLG_AT := Vector2(48.0, 300.0)
 const DLG_H := 248.0
 
 
+# ── 재화 안내 (2026-09-02) ────────────────────────────────────────────────
+# 재화가 여덟인데 **어느 것도 눌러 볼 수 없었다**(Ui.pill 이 MOUSE_FILTER_IGNORE).
+# "재화가 0이라 버튼이 회색" 상태에서 어디로 가야 하는지 알 길이 없었다 —
+# 획득처 문구가 화면에 있는 건 인장·먹이 둘뿐이었고 그마저 이동 수단이 없었다.
+#
+# 표는 **수급의 주된 곳 하나**만 적는다. 전부 적으면 목록이 되고 목록은 안 읽힌다.
+const CURRENCY_INFO := {
+	"gold": {"name": "혈액", "icon": "res://assets/ui/res_blood.png",
+		"get": "몹을 잡으면 계속 들어온다. 목돈은 던전의 혈액의 동굴에서 나온다.",
+		"spend": "성장 탭 [스탯]에서 훈련에 쓴다.",
+		"tab": "raid", "mode": "raid"},
+	"gem": {"name": "보석", "icon": "res://assets/ui/res_gem.png",
+		"get": "임무·업적·출석 보상이 주력이다. 전투 화면에 떨어지는 방울도 보석이다.",
+		"spend": "소환 탭에서 뽑는 데 쓴다. 상점·계약에도 나간다.",
+		"tab": "quest", "mode": ""},
+	"crystal": {"name": "혈정", "icon": "res://assets/ui/res_crystal.png",
+		"get": "던전 탭 [미궁]에서 새 층을 처음 깰 때 나온다. 최고 기록만큼 소탕으로도 쌓인다.",
+		"spend": "성장 탭 [혈맥] 노드를 올리는 데만 쓴다.",
+		"tab": "raid", "mode": "maze"},
+	"sigil": {"name": "인장", "icon": "res://assets/ui/res_sigil.png",
+		"get": "던전 탭 [재화 던전]의 계약의 제단에서 나온다.",
+		"spend": "성장 탭 [혈맹] 레벨을 올리는 데만 쓴다.",
+		"tab": "raid", "mode": "raid"},
+	"feed": {"name": "먹이", "icon": "res://assets/ui/raid_hunt.png",
+		"get": "던전 탭 [재화 던전]의 야수 우리에서 나온다.",
+		"spend": "펫 탭 [강화]에서 펫에게 먹여 레벨을 올린다.",
+		"tab": "raid", "mode": "raid"},
+	"whet": {"name": "연마석", "icon": "res://assets/ui/raid_essence.png",
+		"get": "던전 탭 [재화 던전]의 제련의 성소에서 나온다.",
+		"spend": "장비 탭에서 장비 레벨을 올리는 데 쓴다.",
+		"tab": "raid", "mode": "raid"},
+	"ticket": {"name": "소환권", "icon": "res://assets/ui/ticket_weapon.png",
+		"get": "임무·업적·출석 보상으로 들어온다. 종류별로 따로 쌓인다.",
+		"spend": "소환 탭에서 보석 대신 낸다. 펫 소환도 같은 권을 쓴다.",
+		"tab": "quest", "mode": ""},
+	"mark": {"name": "혈흔", "icon": "res://assets/ui/res_blood.png",
+		"get": "성장 탭 [회귀]에서 판을 접을 때 받는다. 구간이 깊을수록 많다.",
+		"spend": "같은 판의 군림 각인에 새긴다. 새긴 만큼 공격 배수에서 빠진다.",
+		"tab": "growth", "mode": "prestige"},
+}
+
+
+# 재화 하나를 눌렀다. **얻는 곳과 쓰는 곳 두 줄**, 그리고 갈 수 있으면 이동 버튼.
+func _show_currency(key: String) -> void:
+	var c: Dictionary = CURRENCY_INFO.get(key, {})
+	if c.is_empty():
+		return
+	var body := "얻는 곳 — %s\n\n쓰는 곳 — %s" % [str(c["get"]), str(c["spend"])]
+	var tab := str(c["tab"])
+	var mode := str(c["mode"])
+	# 잠긴 탭으로는 안 보낸다. 대신 **아직 잠겼다**고 적는다 — 이동 버튼이
+	# 성장 탭으로 튕기면 "왜 엉뚱한 데로 갔지"가 된다.
+	if tab != "" and tab != "quest" and not _tab_open(tab):
+		_ask(body + "\n\n(아직 잠겨 있다 — 구간을 더 밀면 열린다)",
+			Callable(), str(c["name"]), "")
+		return
+	if tab == "":
+		_ask(body, Callable(), str(c["name"]), "")
+		return
+	_ask(body, func() -> void: _goto_currency(tab, mode), str(c["name"]), "가기")
+
+
+func _goto_currency(tab: String, mode: String) -> void:
+	if tab == "quest":
+		# 임무판은 탭이 아니라 옆줄 판이다 — 여는 문법이 따로다.
+		_quest_view.visible = true
+		_boss_cut_clear()
+		_refresh_quests()
+		return
+	_select_tab(tab)
+	if mode == "":
+		return
+	if tab == "raid":
+		_raid_set_mode(mode)
+	elif tab == "growth":
+		_set_growth_mode(mode)
+
+
+# 재화 표시 위에 **투명 버튼**을 겹친다. 알약·라벨이 전부 마우스를 무시하도록
+# 만들어져 있어서(도트 화면에서 판이 클릭을 먹으면 곤란했다) 겹치는 쪽이 작다.
+func _currency_hit(parent: Control, at: Vector2, size: Vector2,
+		key: String) -> Button:
+	var b := Button.new()
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.position = at
+	b.size = size
+	b.modulate = Color(1, 1, 1, 0)
+	b.pressed.connect(func() -> void: _show_currency(key))
+	parent.add_child(b)
+	return b
+
+
 func _build_dialogs() -> void:
 	# 확인창
 	_confirm_view = _overlay(70)
 	_confirm_view.add_child(Ui.panel(DLG_AT, Vector2(DLG_W, DLG_H)))
-	var title := _dlg_label(_confirm_view, Vector2(DLG_AT.x, DLG_AT.y + 20.0),
+	_confirm_title = _dlg_label(_confirm_view, Vector2(DLG_AT.x, DLG_AT.y + 20.0),
 		Type.SIZE_BODY, Color(0.96, 0.90, 0.86), DLG_W, 32.0)
-	title.text = "알림"
+	_confirm_title.text = "알림"
 	_confirm_body = _dlg_label(_confirm_view, Vector2(DLG_AT.x + 28.0, DLG_AT.y + 72.0),
 		Type.SIZE_SMALL, Color(0.90, 0.88, 0.92), DLG_W - 56.0, 92.0)
 	_confirm_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2269,6 +2369,7 @@ func _build_dialogs() -> void:
 	var ok := Ui.button("확인",
 		Vector2(DLG_AT.x + 44.0 + bw, DLG_AT.y + DLG_H - 76.0),
 		Vector2(bw, 48.0), Type.SIZE_SMALL)
+	_confirm_ok = ok
 	ok.pressed.connect(func() -> void:
 		_confirm_view.visible = false
 		if _confirm_action.is_valid():
@@ -2554,8 +2655,17 @@ func _show_clear(title: String, sub: String) -> void:
 	tw.tween_callback(func() -> void: _clear_view.visible = false)
 
 
-func _ask(text: String, on_ok: Callable) -> void:
+# 제목·확인 문구를 열어 뒀다 — 재화 안내가 이 창을 그대로 빌려 쓴다(2026-09-02).
+# 새 판을 만들면 같은 모양의 창이 둘이 되고, 그러면 하나만 고치는 사고가 난다.
+func _ask(text: String, on_ok: Callable, title := "알림", ok_text := "확인") -> void:
 	_confirm_body.text = text
+	if _confirm_title:
+		_confirm_title.text = title
+	if _confirm_ok:
+		_confirm_ok.text = ok_text
+		# 갈 곳이 없는 안내창은 확인 버튼을 감춘다 — 누를 게 없는 버튼을 두면
+		# "눌러도 소용없는 것"을 가르치게 된다(탭 점과 같은 원칙).
+		_confirm_ok.visible = ok_text != ""
 	_confirm_action = on_ok
 	_front(_confirm_view)      # 어떤 판 위에서든 확인은 맨 위다
 	_confirm_view.visible = true
@@ -2808,6 +2918,8 @@ var _growth_open_n := -1
 # 열린 소탭끼리 폭을 나눈다. 회귀(200구간)·유물(100)이 첫 화면에서 눌리던
 # 자리다 — 눌러 봐야 "200구간까지 가면 열린다"는 회색 판을 본다.
 func _relayout_growth() -> void:
+	if _growth_mode_buttons.is_empty():
+		return          # 위와 같은 이유 — 짓기 전에 세면 캐시가 거짓말을 한다
 	var open: Array = []
 	for row in GROWTH_MODES:
 		if _growth_mode_open(str(row[0])):
@@ -2914,6 +3026,8 @@ func _build_prestige_view(root: Control) -> void:
 	_pr_now = _panel_label(_prestige_view, Vector2(0.0, top + 36.0), Type.SIZE_MID,
 		Color(0.98, 0.90, 0.70), PANEL_W, 24.0)
 	_pr_now.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_currency_hit(_prestige_view, Vector2(PAD, top + 36.0),
+		Vector2(CONTENT_W, 24.0), "mark")
 	_shop_outline(_pr_now, 6)
 	_pr_gain = _panel_label(_prestige_view, Vector2(0.0, top + 72.0), Type.SIZE_SMALL,
 		Color(0.86, 0.90, 0.98), PANEL_W, 20.0)
@@ -3139,6 +3253,9 @@ func _build_pact_view(root: Control) -> void:
 		Vector2(PAD + CONTENT_W / 2.0 - 46.0, top), Type.SIZE_SMALL,
 		Color(0.92, 0.82, 0.62), 118.0, 26.0)
 	_pact_sigil.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	# 위쪽 알약과 같은 규칙 — 재화는 어디서나 눌러 볼 수 있어야 한다.
+	_currency_hit(_pact_view, Vector2(PAD + CONTENT_W / 2.0 - 80.0, top),
+		Vector2(160.0, 26.0), "sigil")
 	_pact_view.add_child(Ui.card(Vector2(PAD - 8.0, top + 34.0),
 		Vector2(CONTENT_W + 16.0, 150.0)))
 	_pact_stars = _panel_label(_pact_view, Vector2(PAD, top + 44.0), Type.SIZE_MID,
@@ -3274,6 +3391,8 @@ func _build_trait_view(root: Control) -> void:
 		Vector2(PAD + CONTENT_W * 0.5 - 67.0, top + 3.0), 20.0))
 	_trait_head = _panel_label(_trait_view, Vector2(PAD + CONTENT_W * 0.5 - 41.0, top),
 		Type.SIZE_SMALL, Color(1.0, 0.55, 0.62), 108.0, 26.0)
+	_currency_hit(_trait_view, Vector2(PAD + CONTENT_W * 0.5 - 75.0, top),
+		Vector2(150.0, 26.0), "crystal")
 	# 덩굴 캔버스 — 스크롤 안에 산다. 18단이라 화면보다 훨씬 길다.
 	var sc_y := top + 34.0
 	var sc_h := CONTENT_BOTTOM - sc_y - 44.0
@@ -7113,7 +7232,8 @@ func _build_tabbar() -> void:
 		marker.size = cell
 		marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_nav_root.add_child(marker)
-		marker.add_child(Ui.image("res://assets/ui/tab_cell.png", Vector2.ZERO, cell))
+		var bg := Ui.image("res://assets/ui/tab_cell.png", Vector2.ZERO, cell)
+		marker.add_child(bg)
 		var ic := Ui.icon("res://assets/ui/%s.png" % TABS[i][1],
 			Vector2(icon_x, 6.0), 48.0)
 		marker.add_child(ic)
@@ -7133,8 +7253,12 @@ func _build_tabbar() -> void:
 			dot.visible = false
 			_nav_root.add_child(dot)
 			_tab_dots[name] = dot
-		_tab_cells[name] = {"btn": b, "marker": marker,
-			"dot": _tab_dots.get(name)}
+		# **노드를 직접 들고 있는다.** 예전엔 재배치가 marker 의 자식을 크기로
+		# 골랐는데, 칸 바탕(7탭에서 82px)과 아이콘(48px)이 둘 다 같은 조건에
+		# 걸려서 바탕이 아이콘 자리로 밀렸다(사장님 실기: "하단UI다깨졋노").
+		# 모양으로 노드를 알아맞히려 들면 언젠가 틀린다.
+		_tab_cells[name] = {"btn": b, "marker": marker, "bg": bg, "icon": ic,
+			"label": label, "dot": _tab_dots.get(name)}
 	_relayout_tabs()
 	# 던전 전투 하단(사장님: 수동 조작이 없으니 빈 바닥이 그대로 드러났다) —
 	# 어둠을 깔고 **판 정보 카드**(어디서 뭘 하는 중인가)를 세운다.
@@ -10400,6 +10524,12 @@ var _tab_open_n := -1
 
 
 func _relayout_tabs() -> void:
+	# **아직 안 지었으면 세지도 않는다.** _refresh_tab_dots 가 _build_tabbar 보다
+	# 먼저 도는 경로가 있어서(로드 직후), 노드가 없는 채로 개수만 기록해 두면
+	# 정작 다 짓고 부른 호출이 "안 바뀌었다"며 그냥 빠진다 — 탭이 일곱 폭 그대로
+	# 남고 자리도 안 잡혔다(사장님 실기: "하단UI다깨졋노").
+	if _tab_cells.is_empty():
+		return
 	var open: Array = []
 	for row in TABS:
 		if _tab_open(str(row[0])):
@@ -10430,13 +10560,9 @@ func _relayout_tabs() -> void:
 		var mk := c["marker"] as Control
 		mk.position = Grid.uv(i * w, 50.0)
 		mk.size = cell
-		for ch in mk.get_children():
-			if ch is Label:
-				(ch as Control).size.x = cell.x
-			elif ch is TextureRect and (ch as Control).size.x > 40.0:
-				(ch as Control).position.x = icon_x     # 아이콘(48)만 다시 가운데로
-			elif ch is TextureRect:
-				(ch as Control).size = cell             # 칸 바탕(tab_cell)
+		(c["bg"] as Control).size = cell             # 칸 바탕은 칸 전체
+		(c["icon"] as Control).position.x = icon_x   # 아이콘만 가운데로
+		(c["label"] as Control).size.x = cell.x
 
 
 func _select_tab(name: String) -> void:

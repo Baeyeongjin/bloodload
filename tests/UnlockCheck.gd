@@ -106,6 +106,23 @@ func _init() -> void:
 		if (c["marker"] as Control).visible:
 			xs.append((c["marker"] as Control).position.x)
 	assert(xs.size() >= 3, "첫 화면에 탭이 %d개뿐이다" % xs.size())
+	# **칸 바탕이 칸을 채우고 아이콘은 가운데** — 재배치가 marker 의 자식을
+	# 크기로 골랐다가 바탕(82px)과 아이콘(48px)이 같은 조건에 걸려 바탕이
+	# 아이콘 자리로 밀린 적이 있다(사장님 실기: "하단UI다깨졋노").
+	for row2 in scene.TABS:
+		var c2: Dictionary = scene._tab_cells[str(row2[0])]
+		if not (c2["marker"] as Control).visible:
+			continue
+		var mk2 := c2["marker"] as Control
+		assert(is_equal_approx((c2["bg"] as Control).size.x, mk2.size.x),
+			"%s: 칸 바탕이 칸 폭과 다르다 %f 대 %f"
+			% [str(row2[0]), (c2["bg"] as Control).size.x, mk2.size.x])
+		assert(is_equal_approx((c2["bg"] as Control).position.x, 0.0),
+			"%s: 칸 바탕이 왼쪽 끝에 안 붙었다: %f"
+			% [str(row2[0]), (c2["bg"] as Control).position.x])
+		var icx: float = (c2["icon"] as Control).position.x
+		assert(is_equal_approx(icx, (mk2.size.x - 48.0) * 0.5),
+			"%s: 아이콘이 칸 가운데가 아니다: %f" % [str(row2[0]), icx])
 	xs.sort()
 	assert(is_equal_approx(xs[0], 0.0), "첫 탭이 왼쪽 끝에 안 붙었다: %f" % xs[0])
 	for i in range(1, xs.size()):
