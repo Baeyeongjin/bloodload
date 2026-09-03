@@ -2718,8 +2718,7 @@ const STEP_H := 40.0
 func _build_growth(root: Control) -> void:
 	# 탭바가 꽉 차서 새 탭으로 못 낸다. 성장 창 안에서 나눈다 —
 	# 스탯도 스킬도 혈맥도 "무엇을 키울까"라서 자리가 맞다.
-	var modes := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"],
-		["pact", "혈맹"], ["relic", "유물"], ["prestige", "회귀"]]
+	var modes := GROWTH_MODES
 	var mode_w := (CONTENT_W - 12.0 * float(modes.size() - 1)) / float(modes.size())
 	# 성장은 **내 피를 다루는 곳**이라 전용 세트를 뽑았다(sets/blood_*).
 	# 켬/끔 그림이 따로 없어 밝기로 가른다 — 켠 쪽만 제 색이고 나머지는 눌린다.
@@ -2748,6 +2747,7 @@ func _build_growth(root: Control) -> void:
 		gdot.visible = false
 		root.add_child(gdot)
 		_growth_mode_dots[mode] = gdot
+	_relayout_growth()
 
 	_stat_view = Control.new()
 	_stat_view.size = Vector2(PANEL_W, PANEL_H)
@@ -2797,7 +2797,52 @@ func _build_growth(root: Control) -> void:
 	_set_growth_mode("stat")
 
 
+# 성장 소탭 목록. 자리를 다시 잡으려면 순서를 아는 곳이 하나 있어야 한다 —
+# 예전엔 빌더 안 지역 변수라 밖에서 못 읽었다.
+const GROWTH_MODES := [["stat", "스탯"], ["skill", "스킬"], ["trait", "혈맥"],
+	["pact", "혈맹"], ["relic", "유물"], ["prestige", "회귀"]]
+
+var _growth_open_n := -1
+
+
+# 열린 소탭끼리 폭을 나눈다. 회귀(200구간)·유물(100)이 첫 화면에서 눌리던
+# 자리다 — 눌러 봐야 "200구간까지 가면 열린다"는 회색 판을 본다.
+func _relayout_growth() -> void:
+	var open: Array = []
+	for row in GROWTH_MODES:
+		if _growth_mode_open(str(row[0])):
+			open.append(str(row[0]))
+	if open.size() == _growth_open_n:
+		return
+	_growth_open_n = open.size()
+	var mw := (CONTENT_W - 12.0 * float(maxi(1, open.size() - 1))) 		/ float(maxi(1, open.size()))
+	for row in GROWTH_MODES:
+		var k := str(row[0])
+		if not _growth_mode_buttons.has(k):
+			continue
+		var i := open.find(k)
+		var on := i >= 0
+		var x := PAD + float(maxi(i, 0)) * (mw + 12.0)
+		var mb: Control = _growth_mode_buttons[k]
+		mb.visible = on
+		mb.position.x = x
+		mb.size.x = mw
+		if _growth_mode_labels.has(k):
+			var ml: Control = _growth_mode_labels[k]
+			ml.visible = on
+			ml.position.x = x
+			ml.size.x = mw
+		if _growth_mode_dots.has(k):
+			var gd: Control = _growth_mode_dots[k]
+			gd.position.x = x + mw - 12.0
+			if not on:
+				gd.visible = false
+
+
 func _set_growth_mode(mode: String) -> void:
+	# 잠긴 소탭이 골라져 있으면 스탯으로 되돌린다(옛 저장본·개발 플래그 대비).
+	if not _growth_mode_open(mode):
+		mode = "stat"
 	_growth_mode = mode
 	_stat_view.visible = mode == "stat"
 	_skill_view.visible = mode == "skill"
@@ -6991,6 +7036,51 @@ const TABS := [["growth", "tab_growth", "성장"], ["gear", "tab_gear", "장비"
 	["summon", "tab_battle", "소환"],
 	["raid", "tab_raid", "던전"], ["shop", "shop", "상점"]]
 
+# ── 탭 진도 잠금 (2026-09-02) ─────────────────────────────────────────────
+# 첫 실행에 일곱 탭이 전부 서 있었다. 그중 넷은 **열면 회색 문구뿐인 방**이다 —
+# 펫은 10구간, 던전은 15구간, 장비는 아직 아무것도 안 뽑아서 빈 판이다.
+# 반대로 그것들이 실제로 열리는 순간에는 아무 알림도 없었다. "처음부터 다 보이는데
+# 언제 열렸는지는 모른다"가 제일 나쁜 조합이라, 양쪽을 같이 고친다.
+#
+# **문턱은 새로 정하지 않는다.** 각 시스템이 이미 가진 상수를 그대로 읽는다 —
+# 그래야 그 상수를 바꿀 때 탭바가 저절로 따라온다.
+#
+# 성장·사냥·소환·상점은 처음부터다. 근거:
+#   성장  부팅 기본 탭이고 공격력 훈련이 1구간(StatDefs "unlock": 1)
+#   사냥  판이 없는 탭 — 전투 화면 그 자체다
+#   소환  **첫 뽑기가 무료**라(free_pull_date) 보석 30을 모을 필요가 없다
+#   상점  첫 상품(시간 왜곡)이 1구간이다
+# 장비만 구간이 아니라 **가진 게 있나**로 연다. 드랍이 없어서(소환이 유일한
+# 획득처) 구간으로 열면 여전히 빈 판을 보게 된다.
+func _tab_open(name: String) -> bool:
+	match name:
+		"gear": return not gear_inventory.is_empty()
+		"pet": return best_stage >= PetDefs.PET_OPEN
+		"raid": return best_stage >= _raid_first_open()
+	return true
+
+
+# 던전 탭의 문턱 = 가장 먼저 열리는 재화 던전(제련의 성소 15). 표에서 뽑으므로
+# 던전을 추가·조정해도 이 줄이 안 낡는다.
+func _raid_first_open() -> int:
+	var lo := 9999
+	for k in RaidDefs.RAIDS:
+		lo = mini(lo, RaidDefs.open_stage(str(k)))
+	return lo
+
+
+# 성장 소탭도 같은 규칙. 여기는 대부분 **구간 상수가 없고 재화가 문턱**이라,
+# 그 재화가 나오는 곳의 구간을 읽는다(혈정=미궁 35 · 인장=계약의 제단 40).
+func _growth_mode_open(mode: String) -> bool:
+	match mode:
+		"skill": return not skill_owned.is_empty()
+		"trait": return best_stage >= DungeonDefs.OPEN_STAGE
+		"pact": return best_stage >= RaidDefs.open_stage("pact")
+		"relic": return best_stage >= RelicDefs.OPEN_STAGE
+		"prestige": return best_stage >= PrestigeDefs.OPEN_STAGE
+	return true
+
+
 # 붉은 알림 점을 다는 탭. **도감은 뺐다** — 눌러서 올릴 게 없고 처치가 알아서 쌓인다.
 # 누를 게 없는 곳에 점이 붙으면 점 자체가 "눌러도 소용없는 것"으로 학습된다.
 # 던전은 "오늘 표가 남아 있다"에 켠다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
@@ -7002,6 +7092,8 @@ const TAB_DOT_AT := Vector2(42.0, 2.0)   # 아이콘(48,6)의 왼쪽 위 모서�
 func _build_tabbar() -> void:
 	# 칸 폭은 탭 수가 정한다 — 36유닛(화면 폭)을 고르게 나눈다. 5탭이면 7.2유닛.
 	# 아이콘·점 자리도 칸 폭에서 계산한다: 상수로 두면 탭을 넣을 때마다 어긋난다.
+	# **일곱 개를 다 만들고 자리는 _relayout_tabs 가 다시 잡는다** — 잠긴 탭은
+	# 숨기고 남은 것끼리 폭을 나눠 갖는다(빈칸을 남기면 눌러도 안 되는 자리가 된다).
 	var w := 36.0 / float(TABS.size())
 	var cell := Grid.uv(w, 6)
 	var icon_x := (cell.x - 48.0) * 0.5
@@ -7041,6 +7133,9 @@ func _build_tabbar() -> void:
 			dot.visible = false
 			_nav_root.add_child(dot)
 			_tab_dots[name] = dot
+		_tab_cells[name] = {"btn": b, "marker": marker,
+			"dot": _tab_dots.get(name)}
+	_relayout_tabs()
 	# 던전 전투 하단(사장님: 수동 조작이 없으니 빈 바닥이 그대로 드러났다) —
 	# 어둠을 깔고 **판 정보 카드**(어디서 뭘 하는 중인가)를 세운다.
 	# ── 전장 게시판 (사장님 승인 2026-08-18: 안 C + 스킬 줄) ──────────────
@@ -10285,7 +10380,72 @@ func _refresh_quests() -> void:
 		_quest_dot.visible = any or _attend_claimable() 			or _achieve_claimable() or _pass_claimable()
 
 
+# 지금 열려 있는 것들의 **이름**. 구간을 넘을 때 앞뒤로 한 번씩 불러 새로 생긴
+# 이름을 배너에 적는다(군림을 세는 unlocked_count 와 같은 문법).
+func _open_names() -> Array:
+	var out: Array = []
+	for row in TABS:
+		if _tab_open(str(row[0])):
+			out.append(str(row[2]))
+	for row in GROWTH_MODES:
+		if _growth_mode_open(str(row[0])):
+			out.append(str(row[1]))
+	return out
+
+
+# 열린 탭만 남기고 폭을 다시 나눈다. 알약을 오른쪽부터 다시 붙이는
+# _refresh_currency_visibility 와 같은 문법이다 — 새 개념이 아니다.
+var _tab_cells := {}
+var _tab_open_n := -1
+
+
+func _relayout_tabs() -> void:
+	var open: Array = []
+	for row in TABS:
+		if _tab_open(str(row[0])):
+			open.append(str(row[0]))
+	if open.size() == _tab_open_n:
+		return          # 안 바뀌었으면 노드를 안 건드린다(매 프레임 도는 자리다)
+	_tab_open_n = open.size()
+	var w := 36.0 / float(maxi(1, open.size()))
+	var cell := Grid.uv(w, 6)
+	var icon_x := (cell.x - 48.0) * 0.5
+	for row in TABS:
+		var name := str(row[0])
+		if not _tab_cells.has(name):
+			continue
+		var c: Dictionary = _tab_cells[name]
+		var i := open.find(name)
+		var on := i >= 0
+		(c["btn"] as Control).visible = on
+		(c["marker"] as Control).visible = on
+		if c["dot"] != null:
+			# 점은 _refresh_tab_dots 가 켜고 끈다 — 여기서는 자리만 옮긴다.
+			(c["dot"] as Control).position = Grid.uv(maxi(i, 0) * w, 50.0) \
+				+ Vector2(icon_x - 6.0, 2.0)
+		if not on:
+			continue
+		(c["btn"] as Control).position = Grid.uv(i * w, 50.0)
+		(c["btn"] as Control).size = cell
+		var mk := c["marker"] as Control
+		mk.position = Grid.uv(i * w, 50.0)
+		mk.size = cell
+		for ch in mk.get_children():
+			if ch is Label:
+				(ch as Control).size.x = cell.x
+			elif ch is TextureRect and (ch as Control).size.x > 40.0:
+				(ch as Control).position.x = icon_x     # 아이콘(48)만 다시 가운데로
+			elif ch is TextureRect:
+				(ch as Control).size = cell             # 칸 바탕(tab_cell)
+
+
 func _select_tab(name: String) -> void:
+	# **잠긴 탭으로는 못 간다.** 개발 플래그·보상 팝업·복귀 등 _select_tab 을
+	# 부르는 자리가 서른 곳이 넘어서, 각 호출부에 가드를 심으면 하나는 빠뜨린다.
+	# 문 하나에서 막는다. 되돌아갈 곳은 성장 탭이다(부팅 기본값이자 전투 진입이
+	# 이미 쓰는 자리 — "home" 은 _panels 에 키가 없어 판을 못 띄운다).
+	if not _tab_open(name):
+		name = "growth"
 	var switched := _tab != name
 	_tab = name
 	if switched and name in FULL_TABS:
@@ -10521,6 +10681,10 @@ func _tab_todo(tab: String) -> bool:
 
 
 func _refresh_tab_dots() -> void:
+	# 탭·소탭이 새로 열렸는지 여기서 같이 본다 — 둘 다 열린 개수가 안 바뀌면
+	# 노드를 안 건드리고 바로 빠진다(매 프레임 도는 자리라 그 가드가 필요하다).
+	_relayout_tabs()
+	_relayout_growth()
 	for key in _tab_dots:
 		_tab_dots[key].visible = _tab_todo(key)
 	for key in _growth_mode_dots:
@@ -15642,10 +15806,17 @@ func _advance_stage() -> void:
 				lines.append("첫 격파 — 보석 +%d · %s +%d" % [int(prize["gem"]),
 					str(TicketDefs.INFO[kind]["short"]), int(prize["n"])])
 			var mastery0 := MasteryDefs.unlocked_count(best_stage)
+			# **무엇이 새로 열리는지 세어 둔다.** 여태 알림이 군림 하나뿐이라
+			# 펫(10)·던전(15)·혈맥(35)·혈맹(40)·유물(100)·혈전(100)·회귀(200)가
+			# 전부 조용히 열렸다 — 방치형에서 자리를 비운 사이 열리면 영영 모른다.
+			var opened := _open_names()
 			best_stage = next_stage
 			if MasteryDefs.unlocked_count(best_stage) > mastery0:
 				var r: Dictionary = MasteryDefs.RANKS[mastery0]
 				lines.append("%s — %s" % [str(r["name"]), str(r["desc"])])
+			for nm in _open_names():
+				if not (nm in opened):
+					lines.append("%s 이(가) 열렸다" % nm)
 			if not lines.is_empty():
 				_show_clear("돌파!", "\n".join(lines))
 		stage = next_stage
