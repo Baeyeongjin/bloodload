@@ -4971,6 +4971,12 @@ func _refresh_gear_detail() -> void:
 		Color(0.62, 0.88, 0.70), 306.0, 24.0)
 	owned.text = "보유  %s +%.1f%%" % [GearDefs.STAT_NAME[stat],
 		GearDefs.collection_rate(item) * 100.0]
+	# 무기 특성 — 스킬의 rule_text 와 같은 이유로 적는다: 안 적으면 없는 규칙이다.
+	var wt := GearDefs.trait_of(item)
+	if wt != "":
+		var tl := _panel_label(_gear_detail, Vector2(234.0, 142.0), Type.SIZE_SMALL,
+			Color(0.98, 0.86, 0.56), 306.0, 18.0)
+		tl.text = "특성  " + GearDefs.trait_text(wt)
 	var owned_key := "gear:" + _gear_selected_key
 	var shards := int(gacha_shards.get(owned_key, 0))
 	var highest := GachaDefs.rarity_index(str(item["rarity"])) >= GachaDefs.RARITIES.size() - 1
@@ -11274,10 +11280,19 @@ func _mastery_cleave(hit_already: Foe) -> void:
 		16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
 
 
+# 낀 무기의 특성. 빈 문자열이면 없다. _oath_val 과 같은 문법.
+func _weapon_trait() -> String:
+	return GearDefs.trait_of(equipped.get("weapon", {}))
+
+
 func _cleave_swing(hit_already: Foe) -> void:
 	# 박쥐 폭풍(계약) — 가호 없이도 평타가 광역이 된다.
-	if (_summon_t <= 0.0 or _summon_cleave.is_empty()) \
-			and _oath_val("cleave") <= 0.0:
+	# **무기 특성 cleave 도 여기로 온다**(2026-09-02). 다만 상시라서 상한을 둔다 —
+	# 버프 둘(불멸의 심장·박쥐 폭풍)은 상한이 없어야 무기보다 값이 나간다.
+	var buffed := (_summon_t > 0.0 and not _summon_cleave.is_empty()) \
+		or _oath_val("cleave") > 0.0
+	var wcap := GearDefs.CLEAVE_EXTRA if _weapon_trait() == "cleave" else 0
+	if not buffed and wcap <= 0:
 		return
 	var rest: Array[Foe] = []
 	for f in _aoe_targets():
@@ -11285,6 +11300,11 @@ func _cleave_swing(hit_already: Foe) -> void:
 			rest.append(f)
 	if rest.is_empty():
 		return
+	if not buffed:
+		# 가까운 순으로 상한만큼 — "앞의 둘"이어야 읽힌다.
+		rest.sort_custom(func(a: Foe, b: Foe) -> bool:
+			return a.position.x < b.position.x)
+		rest = rest.slice(0, wcap)
 	var mid := 0.0
 	for f in rest:
 		f.take_damage(_combat_damage(f))
@@ -11296,6 +11316,36 @@ func _cleave_swing(hit_already: Foe) -> void:
 		16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
 
 
+# 평타가 꽂힌 직후 무기 특성이 하는 일. cleave 는 _cleave_swing 이 맡는다.
+# 보스·중간보스 제외는 넉백·처형과 같은 줄이다.
+func _weapon_on_hit(t: Foe) -> void:
+	var wt := _weapon_trait()
+	if wt == "" or not is_instance_valid(t):
+		return
+	var big := t.is_boss or t.is_midboss
+	match wt:
+		"exec":
+			if not t.dying and not big and t.hp <= t.max_hp * GearDefs.EXEC_AT:
+				t.take_damage(t.hp)
+		"stun":
+			if not t.dying and not big:
+				t.stun(GearDefs.STUN_SEC)
+		"chain":
+			# **처치하면 남은 타격이 다음 놈에게 넘어간다.** 죽였을 때만이고,
+			# 한 스윙에 한 번만 — 넘어간 타격이 또 죽여도 더는 안 넘어간다
+			# (그러면 한 스윙이 줄을 통째로 쓸어 cleave 가 무의미해진다).
+			if t.dying:
+				var nxt: Foe = null
+				var best := INF
+				for f in _aoe_targets():
+					if f != t and not f.dying and f.position.x < best:
+						best = f.position.x
+						nxt = f
+				if nxt != null:
+					nxt.take_damage(_combat_damage(nxt))
+					_anim_fx("fx_cleave", nxt.position + Vector2(0, -28), 18.0, 2.0)
+
+
 func _tick_hero_attack(delta: float, foes: Array) -> void:
 	if _hero_hit_t >= 0.0:
 		_hero_hit_t -= delta
@@ -11303,6 +11353,7 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 			_hero_hit_t = -1.0
 			if _can_hit_foe(_pending_target):
 				_pending_target.take_damage(_combat_damage(_pending_target))
+				_weapon_on_hit(_pending_target)
 				_anim_fx("fx_cleave", _pending_target.position + Vector2(0, -28), 18.0, 2.0)
 				_cleave_swing(_pending_target)
 				# 군림 III — 3연격 마무리는 불멸의 심장과 같은 검기로 광역이 된다.

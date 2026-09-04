@@ -84,6 +84,63 @@ static func icon_pool(slot: String) -> Array:
 	return out
 
 
+# ── 무기 특성 (2026-09-02 사장님: "무기별 특수 능력") ─────────────────────
+# CATALOG 은 등급마다 네 줄이고 promote 가 아이콘의 등급 내 **인덱스**(lane)를
+# 다음 등급의 같은 인덱스로 넘긴다 — 커먼에서 신화까지 이어지는 세로줄 넷이
+# 이미 있다. 그 줄이 무기 계열이고, 특성은 줄에 붙는다. **새 열이 없다.**
+#
+# 넷 다 **숫자가 아니라 규칙**이다. 물량 던전이 "공격력을 무한대로 올려도 못
+# 깨는" 판이었던 이유가 마리당 고정비(시체 대기·임팩트)라서, 숫자를 키우는
+# 특성은 그 판에서 아무것도 못 한다. 규칙만이 고정비를 건너뛴다.
+#
+#   cleave  휘두르면 앞의 둘까지 같이 벤다. 상시 광역이라 상한(2)을 둔다 —
+#           안 두면 불멸의 심장·박쥐 폭풍(상한 없음)의 값어치가 통째로 사라진다
+#   stun    맞은 놈이 잠깐 얼어붙는다(공격 못 함). 보스는 안 걸린다
+#   exec    체력 10% 아래는 한 번에 끝낸다. 처형 문턱 훅이 이미 있는 자리다
+#   chain   **처치하면 남은 타격이 다음 놈에게 넘어간다** — 한 스윙에 둘.
+#           사장님 픽 "처치하면 즉시 다음 타"를 그 말 그대로 만든 것이다.
+#           시체 대기를 건너뛰는 식으로 만들면 지금 숫자로는 이득이 0 이라
+#           (이동이 늘 대기보다 길다) 이렇게 갔다
+#
+# **공속은 없다.** attack_interval 은 이미 유물·펫·계약 세 나눗셈 축이라 넷째는
+# 곱연산 예산 위반이고, 물량 판 시간의 대부분이 스윙이 아니라 고정비다.
+#
+# 방어구·장신구에는 안 붙인다. 세 슬롯이 같은 lane 구조를 쓰지만 특성은 **무기의
+# 것**이다 — 셋 다 붙이면 규칙이 열둘이 되고 아무도 못 외운다.
+const WEAPON_TRAIT := ["cleave", "stun", "exec", "chain"]
+const TRAIT_TEXT := {
+	"cleave": "휘두르면 앞의 둘까지 같이 벤다",
+	"stun": "맞은 놈이 잠깐 얼어붙는다",
+	"exec": "체력 10% 아래는 한 번에 끝낸다",
+	"chain": "처치하면 남은 타격이 다음 놈에게 넘어간다",
+}
+const CLEAVE_EXTRA := 2        # cleave 가 표적 말고 더 베는 수
+const EXEC_AT := 0.10          # exec 문턱 (최대 체력 비율)
+const STUN_SEC := 0.45
+const STUN_LOCK := 1.5         # 한 놈에게 다시 걸리기까지 — 버티기 판 무피해 루프 방지
+
+
+# 등급 안에서 몇 번째 줄인가. 저장본이 icon 을 들고 있으므로 이 함수만으로
+# 되찾는다 — 세이브 마이그레이션이 필요 없다.
+static func lane_of(item: Dictionary) -> int:
+	var current := items_of(str(item.get("slot", "weapon")),
+		str(item.get("rarity", "common")))
+	for i in current.size():
+		if str(current[i][0]) == str(item.get("icon", "")):
+			return i
+	return 0
+
+
+static func trait_of(item: Dictionary) -> String:
+	if item.is_empty() or str(item.get("slot", "")) != "weapon":
+		return ""
+	return WEAPON_TRAIT[lane_of(item) % WEAPON_TRAIT.size()]
+
+
+static func trait_text(key: String) -> String:
+	return str(TRAIT_TEXT.get(key, ""))
+
+
 static func items_of(slot: String, rarity_key: String) -> Array:
 	return CATALOG.get(slot, {}).get(rarity_key, [])
 
@@ -251,12 +308,7 @@ static func promote(item: Dictionary) -> bool:
 		return false
 	var old_rarity: Dictionary = GachaDefs.RARITIES[index]
 	var next_rarity: Dictionary = GachaDefs.RARITIES[index + 1]
-	var current := items_of(str(item.get("slot", "weapon")), str(old_rarity["key"]))
-	var lane := 0
-	for i in current.size():
-		if str(current[i][0]) == str(item.get("icon", "")):
-			lane = i
-			break
+	var lane := lane_of(item)
 	var next_items := items_of(str(item.get("slot", "weapon")), str(next_rarity["key"]))
 	if next_items.is_empty():
 		return false

@@ -1,0 +1,155 @@
+extends SceneTree
+
+# 무기 특성 4종 (사장님 2026-09-02: "무기별 특수 능력").
+#   1) 표 — 줄(lane) 넷이 서로 다른 특성이고, 모든 무기가 하나를 갖고, 다른 슬롯엔 없다
+#   2) 승급이 줄을 지키는가 — 커먼 낡은 검을 신화까지 올려도 같은 특성이어야 한다
+#   3) 넷이 **실제 전투에** 붙는가 — 표만 맞고 훅이 없으면 없는 규칙이다
+#
+# 씬 테스트다 — 반드시 APPDATA 격리로 돌린다(docs/CHECKS.md).
+
+func _init() -> void:
+	create_timer(120.0).timeout.connect(func() -> void:
+		push_error("안 끝났다")
+		quit(1))
+
+	# ── 1) 표 ─────────────────────────────────────────────────────────────
+	assert(GearDefs.WEAPON_TRAIT.size() == 4, "특성이 넷이 아니다")
+	var seen := {}
+	for t in GearDefs.WEAPON_TRAIT:
+		assert(not seen.has(t), "특성이 겹친다: %s" % t)
+		seen[str(t)] = true
+		assert(GearDefs.trait_text(str(t)) != "",
+			"%s 에 설명이 없다 — 안 적으면 없는 규칙이다" % t)
+	for r in GachaDefs.RARITIES:
+		var items: Array = GearDefs.items_of("weapon", str(r["key"]))
+		assert(items.size() == 4, "%s 무기가 네 줄이 아니다: %d" % [r["key"], items.size()])
+		var lanes := {}
+		for i in items.size():
+			var it := {"slot": "weapon", "rarity": str(r["key"]), "icon": str(items[i][0])}
+			var wt := GearDefs.trait_of(it)
+			assert(wt != "", "%s %s 에 특성이 없다" % [r["key"], items[i][1]])
+			lanes[wt] = true
+		assert(lanes.size() == 4, "%s 등급 안에서 특성이 겹친다" % r["key"])
+	# 방어구·장신구에는 안 붙는다 — 셋 다 붙이면 규칙이 열둘이 된다.
+	for slot in ["armor", "trinket"]:
+		var it2 := {"slot": slot, "rarity": "common",
+			"icon": str(GearDefs.items_of(slot, "common")[0][0])}
+		assert(GearDefs.trait_of(it2) == "", "%s 에 특성이 붙었다" % slot)
+
+	# ── 2) 승급이 줄을 지킨다 ─────────────────────────────────────────────
+	var w := GearDefs.make("weapon", 1, GachaDefs.RARITIES[0])
+	var t0 := GearDefs.trait_of(w)
+	for i in GachaDefs.RARITIES.size() - 1:
+		assert(GearDefs.promote(w), "승급이 안 된다")
+		assert(GearDefs.trait_of(w) == t0,
+			"승급하니 특성이 바뀌었다: %s -> %s (%s)" % [t0, GearDefs.trait_of(w), w["rarity"]])
+
+	# ── 3) 전투에 붙는가 ──────────────────────────────────────────────────
+	var scene: Node = load("res://Main.tscn").instantiate()
+	root.add_child(scene)
+	await process_frame
+	await process_frame
+	scene.stage = 1
+	scene._restart_stage("측정")
+	var wait := 0.0
+	while wait < 20.0:
+		await process_frame
+		wait += scene.get_process_delta_time()
+		if scene._phase == "fight" and (scene._aoe_targets() as Array).size() >= 3:
+			break
+	assert(scene._phase == "fight", "20초 안에 전투가 안 열렸다")
+
+	# 특정 줄의 무기를 끼우는 헬퍼 — 표에서 그 특성의 아이콘을 찾아 넣는다.
+	var equip := func(trait_key: String) -> void:
+		for it3 in GearDefs.items_of("weapon", "common"):
+			var cand := {"slot": "weapon", "rarity": "common", "icon": str(it3[0]),
+				"name": str(it3[1]), "stat": "damage", "base": 1.0, "lv": 0}
+			if GearDefs.trait_of(cand) == trait_key:
+				scene.equipped["weapon"] = cand
+				return
+		assert(false, "%s 무기를 표에서 못 찾았다" % trait_key)
+	var live := func() -> Array:
+		var out: Array = []
+		for f in scene.get_tree().get_nodes_in_group("foes"):
+			if is_instance_valid(f) and not f.dying:
+				out.append(f)
+		out.sort_custom(func(a: Foe, b: Foe) -> bool: return a.position.x < b.position.x)
+		return out
+
+	# cleave — 표적 말고 앞의 둘만 더 맞는다(상한). 특성 없으면 아무도 안 맞는다.
+	var foes: Array = live.call()
+	assert(foes.size() >= 3, "몹이 셋 미만이다: %d" % foes.size())
+	for f in foes:
+		f.max_hp = 1e9
+		f.hp = 1e9
+	scene._summon_t = 0.0
+	scene.oath_fx_t = 0.0        # 계약 버프(박쥐 폭풍)도 끈다 — 상한 없는 광역이 섞이면 못 잰다
+	scene.equipped.erase("weapon")
+	scene._cleave_swing(foes[0])
+	assert(is_equal_approx(foes[1].hp, 1e9), "특성 없는데 광역이 났다")
+	equip.call("cleave")
+	scene._cleave_swing(foes[0])
+	var hit := 0
+	for f in foes:
+		if f != foes[0] and f.hp < 1e9:
+			hit += 1
+	assert(hit == mini(GearDefs.CLEAVE_EXTRA, foes.size() - 1),
+		"cleave 가 %d 마리를 더 벴다 (상한 %d)" % [hit, GearDefs.CLEAVE_EXTRA])
+
+	# exec — 문턱 아래는 한 번에, 위는 아니다. 보스는 안 걸린다.
+	equip.call("exec")
+	var tgt: Foe = foes[0]
+	tgt.hp = tgt.max_hp * (GearDefs.EXEC_AT + 0.05)
+	scene._weapon_on_hit(tgt)
+	assert(not tgt.dying, "문턱 위인데 처형됐다")
+	tgt.hp = tgt.max_hp * (GearDefs.EXEC_AT - 0.02)
+	scene._weapon_on_hit(tgt)
+	assert(tgt.dying, "문턱 아래인데 처형이 안 됐다")
+	var boss: Foe = foes[1]
+	boss.is_boss = true
+	boss.hp = boss.max_hp * 0.01
+	scene._weapon_on_hit(boss)
+	assert(not boss.dying, "보스가 처형됐다")
+	boss.is_boss = false
+
+	# stun — 걸리면 공격 시계가 안 돈다. 잠금 중엔 다시 안 걸린다. 보스는 면역.
+	equip.call("stun")
+	var st: Foe = foes[1]
+	st.hp = st.max_hp
+	st.combat_active = true
+	st.engaged = true
+	scene._weapon_on_hit(st)
+	assert(st.stun_t > 0.0, "기절이 안 걸렸다")
+	var lock0: float = st.stun_lock
+	st.stun_t = 0.0
+	scene._weapon_on_hit(st)
+	assert(is_equal_approx(st.stun_lock, lock0), "잠금 중인데 또 걸렸다 — 무피해 루프가 된다")
+	boss.is_boss = true
+	boss.stun_t = 0.0
+	boss.stun_lock = 0.0
+	scene._weapon_on_hit(boss)
+	assert(boss.stun_t <= 0.0, "보스가 기절했다")
+	boss.is_boss = false
+	# 얼어 있는 동안 _tick_attack 이 아무것도 안 한다(쿨다운도 보존).
+	st.stun_t = 1.0
+	var cd0: float = st._attack_cd
+	st._tick_attack(0.5)
+	assert(is_equal_approx(st._attack_cd, cd0), "기절 중에 공격 시계가 돌았다")
+
+	# chain — 죽였을 때만 다음 놈이 맞고, 안 죽였으면 안 넘어간다.
+	equip.call("chain")
+	foes = live.call()
+	assert(foes.size() >= 2, "chain 을 잴 몹이 둘 미만이다")
+	var a: Foe = foes[0]
+	var b: Foe = foes[1]
+	b.hp = 1e9
+	b.max_hp = 1e9
+	a.hp = 1e9
+	scene._weapon_on_hit(a)          # 안 죽였다
+	assert(is_equal_approx(b.hp, 1e9), "안 죽였는데 다음 놈이 맞았다")
+	a.take_damage(a.hp)              # 죽였다
+	scene._weapon_on_hit(a)
+	assert(b.hp < 1e9, "죽였는데 다음 놈에게 안 넘어갔다")
+
+	print("WeaponTraitCheck OK  (표 4줄 · 승급이 줄을 지킴 · 광역/처형/기절/연쇄 실전)")
+	quit(0)

@@ -30,6 +30,12 @@ var body_scale := 1.0      # 영웅 표시 크기 대비 종별 크기
 var combat_active := false # Main이 교전 중이며 영웅이 살아 있을 때만 true
 var hero_x := 0.0          # Main 이 매 프레임 넘겨 준다. 닿을 때만 휘두르는 근거
 var engaged := false       # 순차 교전 — 영웅과 서로 때리는 단 한 마리만 true (Main 이 정한다)
+# 기절(무기 특성 stun, 2026-09-02). 얼어 있는 동안 공격도 애니도 멈춘다 —
+# 표시는 **멈춘 포즈** 그 자체다(도형 오버레이 금지, 몸 색은 회차·미궁 틴트가
+# 이미 쓴다). stun_lock 은 다시 걸리기까지의 시간 — 이게 없으면 버티기 판에서
+# 교전 몹이 영영 얼어 피해 0 루프가 된다.
+var stun_t := 0.0
+var stun_lock := 0.0
 
 var _walk_frames: Array = []
 var _attack_frames: Array = []
@@ -193,6 +199,22 @@ func set_combat_active(active: bool) -> void:
 		_echo_hit_t = -1.0
 
 
+# 잠깐 얼린다. 예고·2연격 예약을 끄는 세 줄은 set_combat_active(false) 가 이미
+# 쓰는 그 문법이고, 쿨다운은 같은 이유로 보존한다.
+func stun(sec: float) -> void:
+	if stun_lock > 0.0 or dying or is_boss or is_midboss:
+		return
+	stun_t = sec
+	stun_lock = sec + STUN_LOCK_AFTER
+	_attack_anim = -1.0
+	_impact_sent = false
+	_tell_t = -1.0
+	_echo_hit_t = -1.0
+
+
+const STUN_LOCK_AFTER := 1.5
+
+
 func set_visual_frozen(frozen: bool) -> void:
 	_visual_frozen = frozen
 
@@ -228,7 +250,10 @@ func notify_pushed() -> void:
 
 
 func _process(delta: float) -> void:
-	if not _visual_frozen:
+	stun_lock = maxf(0.0, stun_lock - delta)
+	if stun_t > 0.0:
+		stun_t -= delta
+	if not _visual_frozen and stun_t <= 0.0:
 		_anim_t += delta
 		_pushed_t = maxf(0.0, _pushed_t - delta)
 		_hit_t = maxf(0.0, _hit_t - delta)
@@ -331,7 +356,7 @@ func telling() -> bool:
 
 
 func _tick_attack(delta: float) -> void:
-	if not combat_active:
+	if not combat_active or stun_t > 0.0:
 		return
 	# **교전 몹만 휘두른다**(순차 교전). 나머지는 제 칸에서 기다린다 — 여럿이
 	# 한꺼번에 때리면 방치형의 "한 놈씩 나와서 싸운다" 리듬이 사라진다.
