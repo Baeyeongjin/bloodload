@@ -17638,6 +17638,7 @@ var _pet_cells: Array[Dictionary] = []
 var _petgear_cells: Array[Dictionary] = []
 var _trip_cells: Array[Dictionary] = []
 var _feed_cells: Array[Dictionary] = []
+var _pet_pick: Control          # 강화 판의 "동행 고르기" 창
 var _trip_ui := {}
 var _trip_sel := ""
 var _pet_detail := {}
@@ -17820,7 +17821,7 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 		btn.pressed.connect(func() -> void: on_pick.call(idx))
 		pane.add_child(btn)
 		_pet_hover(btn, cell_frame)
-		cells.append({"art": art, "star": star, "mark": mark})
+		cells.append({"art": art, "star": star, "mark": mark, "btn": btn})
 
 
 func _pet_art(i: int) -> Control:
@@ -18012,59 +18013,94 @@ func _pet_build_gear(root: Control) -> void:
 	_petgear_detail["equip"] = eq
 
 
-# 강화 판 — 보유 판과 같은 격자를 쓴다(사장님 2026-09-04: "이 화면에서 펫 골라
-# 강화"). 전에는 보유 판에서 고르고 강화 판으로 건너와야 했다 — 두 판이 같은
-# _pet_sel 을 보므로 격자만 얹으면 된다. 아래 상세는 보유 판과 같은 틀(왼쪽
-# 글·오른쪽 버튼 열)이고 게이지가 먹이 대 다음 레벨 비용이다.
+# 강화 판 — 화면은 예전 그대로 두고(사장님 2026-09-04: "아까 화면 동일하게"),
+# **고르는 일만 창 하나로 뺐다.** 격자를 판에 눌러 넣었더니 큰 그림과 게이지가
+# 밀려서 강화 판이 강화 판으로 안 읽혔다. 이제 [동행 고르기]가 격자 창을 띄우고,
+# 고르면 창이 닫히며 그 자리에서 바로 강화한다 — 보유 판을 거칠 일이 없다.
 func _pet_build_feed(root: Control) -> void:
-	_pet_build_grid(root, PetDefs.PETS.size(), _feed_cells,
-		func(i: int) -> void:
-			_pet_sel = str(PetDefs.PETS[i]["id"])
-			_refresh_pet(),
-		_pet_art)
-	root.add_child(Ui.set_card(NEST, Vector2(PAD, PET_DETAIL_Y),
-		Vector2(CONTENT_W, 156.0)))
-	_pet_feed_ui["name"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 14.0),
-		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W - 170.0, 22.0)
-	_pet_feed_ui["stat"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 44.0),
-		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), CONTENT_W - 170.0, 16.0)
+	root.add_child(Ui.set_body(NEST, Vector2(PAD, PET_GRID_Y),
+		Vector2(CONTENT_W, 404.0)))
+	var art := TextureRect.new()
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	art.size = Vector2(96.0, 96.0)
+	art.position = Vector2(PAD + (CONTENT_W - 96.0) * 0.5, PET_GRID_Y + 28.0)
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(art)
+	_pet_feed_ui["art"] = art
+	_pet_feed_ui["name"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 134.0),
+		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W, 22.0)
+	_pet_feed_ui["name"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pet_feed_ui["stat"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 164.0),
+		Type.SIZE_SMALL, Color(0.98, 0.86, 0.56), CONTENT_W, 16.0)
+	_pet_feed_ui["stat"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 게이지 — 가진 먹이 대 다음 레벨 비용. 차면 버튼이 산다.
 	var track := ColorRect.new()
 	track.color = Color(0.16, 0.12, 0.11)
-	track.position = Vector2(PAD + 18.0, PET_DETAIL_Y + 70.0)
-	track.size = Vector2(230.0, 10.0)
+	track.position = Vector2(PAD + 64.0, PET_GRID_Y + 206.0)
+	track.size = Vector2(CONTENT_W - 128.0, 14.0)
 	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(track)
 	var fill := ColorRect.new()
 	fill.color = Color(0.62, 0.42, 0.14)
 	fill.position = track.position
-	fill.size = Vector2(0.0, 10.0)
+	fill.size = Vector2(0.0, 14.0)
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fill)
 	_pet_feed_ui["fill"] = fill
-	_pet_feed_ui["cost"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 88.0),
-		Type.SIZE_SMALL, Color(0.82, 0.78, 0.76), CONTENT_W - 170.0, 16.0)
-	_pet_feed_ui["note"] = _panel_label(root, Vector2(PAD + 18.0, PET_DETAIL_Y + 112.0),
-		Type.SIZE_SMALL, Color(0.72, 0.70, 0.74), CONTENT_W - 170.0, 16.0)
-	var one := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 18.0),
-		Vector2(120.0, 40.0), "강화 시도")
+	_pet_feed_ui["cost"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 228.0),
+		Type.SIZE_SMALL, Color(0.82, 0.78, 0.76), CONTENT_W, 16.0)
+	_pet_feed_ui["cost"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var one := _pet_btn(root, Vector2(PAD + 64.0, PET_GRID_Y + 268.0),
+		Vector2(190.0, 44.0), "강화 시도")
 	one["btn"].pressed.connect(func() -> void: _pet_feed(_pet_sel))
 	_pet_feed_ui["one"] = one
-	var ten := _pet_btn(root, Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 66.0),
-		Vector2(120.0, 40.0), "x10")
+	var ten := _pet_btn(root,
+		Vector2(PAD + CONTENT_W - 64.0 - 190.0, PET_GRID_Y + 268.0),
+		Vector2(190.0, 44.0), "x10")
 	ten["btn"].pressed.connect(func() -> void:
 		for i in 10:
 			if not _pet_feed(_pet_sel):
 				break)
 	_pet_feed_ui["ten"] = ten
+	_pet_feed_ui["note"] = _panel_label(root, Vector2(PAD, PET_GRID_Y + 336.0),
+		Type.SIZE_SMALL, Color(0.72, 0.70, 0.74), CONTENT_W, 16.0)
+	_pet_feed_ui["note"].horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var pick := _pet_btn(root,
+		Vector2(PAD + (CONTENT_W - 220.0) * 0.5, PET_GRID_Y + 356.0),
+		Vector2(220.0, 40.0), "동행 고르기")
+	pick["btn"].pressed.connect(func() -> void:
+		_pet_pick.visible = true
+		_refresh_pet())
+	_pet_feed_ui["pick"] = pick
+	_pet_build_pick(root)
 
 
-# 강화 판에서 고른 펫의 격자 그림 — 강화 성공·실패 연출이 흔드는 대상.
-func _feed_sel_art() -> TextureRect:
-	for i in _feed_cells.size():
-		if str(PetDefs.PETS[i]["id"]) == _pet_sel:
-			return _feed_cells[i]["art"] as TextureRect
-	return null
+# 고르기 창 — 보유 판과 같은 격자다. 판 전체를 덮어야 뒤의 버튼이 안 눌린다.
+func _pet_build_pick(root: Control) -> void:
+	_pet_pick = Control.new()
+	_pet_pick.visible = false
+	_pet_pick.z_index = 6
+	root.add_child(_pet_pick)
+	var dim := ColorRect.new()
+	dim.color = Color(0.04, 0.03, 0.05, 0.90)
+	dim.position = Vector2.ZERO
+	dim.size = Vector2(PANEL_W, PANEL_FULL_H)
+	_pet_pick.add_child(dim)
+	var head := _panel_label(_pet_pick, Vector2(PAD, PET_GRID_Y - 34.0),
+		Type.SIZE_MID, Color(0.96, 0.92, 0.88), CONTENT_W, 22.0)
+	head.text = "강화할 동행을 고른다"
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pet_build_grid(_pet_pick, PetDefs.PETS.size(), _feed_cells,
+		func(i: int) -> void:
+			_pet_sel = str(PetDefs.PETS[i]["id"])
+			_pet_pick.visible = false
+			_refresh_pet(),
+		_pet_art)
+	var close := _pet_btn(_pet_pick,
+		Vector2(PAD + (CONTENT_W - 220.0) * 0.5, PET_GRID_Y + PET_GRID_H + 20.0),
+		Vector2(220.0, 40.0), "닫기")
+	close["btn"].pressed.connect(func() -> void: _pet_pick.visible = false)
 
 
 # 소환 판 — 펫권(kind="pet")과 장비권(kind="petgear")이 같은 문법을 쓴다.
@@ -18254,28 +18290,29 @@ func _refresh_pet_feed() -> void:
 	var got := pets_got.has(_pet_sel)
 	var star := _pet_star(_pet_sel)
 	var lv := _pet_lv(_pet_sel)
-	var rar := GachaDefs.rarity(str(d["rarity"]))
+	var frames := Assets.frames(PetDefs.icon_dir(_pet_sel))
+	_pet_feed_ui["art"].texture = frames[0] if not frames.is_empty() else null
+	_pet_feed_ui["art"].modulate = Color(1, 1, 1, 1) if got \
+		else Color(0.10, 0.09, 0.11, 0.9)
 	_pet_feed_ui["name"].text = "%s  %d성 %d레벨" % [str(d["name"]), star, lv] \
-		if got else "%s  ·  ???" % str(rar["name"])
-	_pet_feed_ui["name"].add_theme_color_override("font_color",
-		rar["col"] if got else Color(0.60, 0.58, 0.62))
+		if got else "아직 못 만난 동행이다"
 	_pet_feed_ui["stat"].text = "%s +%d%%  ·  수집 x%.2f" % [
 		TitleDefs.stat_name(str(d["stat"])),
 		int(round(PetDefs.bonus(_pet_sel, str(d["stat"]), lv, star) * 100.0)),
-		PetDefs.growth_mult(lv, maxi(1, star))] if got else "소환에서 만난다"
+		PetDefs.growth_mult(lv, maxi(1, star))] if got else ""
 	var capped := got and lv >= PetDefs.lv_cap(star)
 	var cost := PetDefs.feed_cost(lv)
-	_pet_feed_ui["fill"].size.x = 230.0 \
+	_pet_feed_ui["fill"].size.x = (CONTENT_W - 128.0) \
 		* ((1.0 if capped else clampf(feed / maxf(1.0, cost), 0.0, 1.0)) \
 		if got else 0.0)
 	_pet_feed_ui["cost"].text = ("승급하면 더 클 수 있다" if capped \
-		else "다음 레벨  먹이 %s  ·  성공 %d%%" % [_n(cost, true),
-		int(round(PetDefs.feed_chance(lv) * 100.0))]) if got else ""
-	_pet_feed_ui["note"].text = "보유 먹이 %s  ·  야수 우리(%d구간)가 준다" \
-		% [_n(feed), RaidDefs.open_stage("hunt")]
+		else "다음 레벨  먹이 %s  ·  성공 %d%%  ·  보유 %s" % [_n(cost, true),
+		int(round(PetDefs.feed_chance(lv) * 100.0)), _n(feed)]) if got else ""
 	_pet_btn_enable(_pet_feed_ui["one"], got and not capped and feed >= cost)
 	_pet_btn_enable(_pet_feed_ui["ten"],
 		not _pet_feed_ui["one"]["btn"].disabled)
+	_pet_feed_ui["note"].text = "먹이는 야수 우리(%d구간)가 준다" \
+		% RaidDefs.open_stage("hunt")
 
 
 func _refresh_pet_roll() -> void:
@@ -19035,9 +19072,7 @@ func _show_pet_results(rows: Array) -> void:
 func _pet_feed_fail_fx() -> void:
 	if _pet_feed_ui.is_empty() or not is_inside_tree():
 		return
-	var art: TextureRect = _feed_sel_art()
-	if art == null:
-		return
+	var art: TextureRect = _pet_feed_ui["art"]
 	art.pivot_offset = art.size * 0.5
 	art.modulate = Color(0.55, 0.45, 0.5)
 	var base_x := art.position.x
@@ -19046,7 +19081,7 @@ func _pet_feed_fail_fx() -> void:
 		tw.tween_property(art, "position:x", base_x + off, 0.05)
 	tw.parallel().tween_property(art, "modulate", Color(1, 1, 1), 0.4)
 	var pop := _panel_label(_pet_roots["feed"],
-		Vector2(PAD, PET_DETAIL_Y - 24.0), Type.SIZE_MID,
+		Vector2(PAD, PET_GRID_Y + 96.0), Type.SIZE_MID,
 		Color(0.72, 0.62, 0.66), CONTENT_W, 24.0)
 	pop.text = "실패"
 	pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -19061,7 +19096,7 @@ func _pet_feed_fail_fx() -> void:
 func _pet_feed_fx(new_lv: int) -> void:
 	if _pet_feed_ui.is_empty() or not is_inside_tree():
 		return
-	var art: TextureRect = _feed_sel_art()
+	var art: TextureRect = _pet_feed_ui["art"]
 	if art == null or not art.visible:
 		return
 	art.pivot_offset = art.size * 0.5
@@ -19072,7 +19107,7 @@ func _pet_feed_fx(new_lv: int) -> void:
 	tw.tween_property(art, "scale", Vector2.ONE, 0.3) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	var pop := _panel_label(_pet_roots["feed"],
-		Vector2(PAD, PET_DETAIL_Y - 24.0), Type.SIZE_MID,
+		Vector2(PAD, PET_GRID_Y + 96.0), Type.SIZE_MID,
 		Color(0.98, 0.86, 0.46), CONTENT_W, 24.0)
 	pop.text = "+%d레벨" % new_lv
 	pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

@@ -261,13 +261,23 @@ func _init() -> void:
 	assert(absf(allb.position.x + allb.size.x * 0.5
 		- (scene.PAD + scene.CONTENT_W * 0.5)) < 1.0,
 		"모두 보내기가 가운데가 아니다: x=%.0f" % allb.position.x)
-	# 강화 판이 고른 펫을 그대로 본다 — 보유 판을 거치지 않아도 된다.
-	scene._pet_sel = got
+	# 강화 판에서 바로 고른다 — 고르기 창이 격자를 들고, 고르면 닫히며 그 펫이
+	# 강화 대상이 된다. 보유 판을 거칠 일이 없다.
 	scene._pet_set_mode("feed")
+	assert(not scene._pet_pick.visible, "고르기 창이 처음부터 떠 있다")
+	scene._pet_feed_ui["pick"]["btn"].pressed.emit()
+	assert(scene._pet_pick.visible, "고르기 버튼이 창을 안 연다")
+	var pick_i := 0
+	for pi in PetDefs.PETS.size():
+		if str(PetDefs.PETS[pi]["id"]) == got:
+			pick_i = pi
+			break
+	scene._feed_cells[pick_i]["btn"].pressed.emit()
+	assert(not scene._pet_pick.visible, "고르고도 창이 안 닫힌다")
+	assert(scene._pet_sel == got, "고른 펫이 안 잡혔다: %s" % scene._pet_sel)
 	assert(scene._pet_feed_ui["name"].text.begins_with(
 		str(PetDefs.of(got)["name"])),
 		"강화 판이 고른 펫을 안 보여준다: %s" % scene._pet_feed_ui["name"].text)
-	assert(scene._feed_sel_art() != null, "고른 펫의 격자 그림을 못 찾는다")
 
 	# ── 먹이 지급 경로 ─────────────────────────────────────────────────────
 	var f0: float = scene.feed
