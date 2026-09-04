@@ -245,13 +245,29 @@ func _init() -> void:
 	scene.pets_got = keep_got
 	scene.pet_worn = keep_worn
 
-	# ── 모두 받기 — 통화별 합산, 그릇 전부 비움 ───────────────────────────
-	scene.pet_bank[got] = 50.0
-	scene.pet_bank[other] = 30.0
-	var c0: float = scene.crystal
-	scene._pet_collect_all()
-	assert(float(scene.pet_bank.get(got, 0.0)) < 1.0 		and float(scene.pet_bank.get(other, 0.0)) < 1.0, "그릇이 안 비었다")
-	assert(scene.crystal > c0 or scene.sigil > 0.0 		or scene.feed > 0.0, "모두 받기가 지갑에 안 들어왔다")
+	# ── 펫 판 배치 (사장님 2026-09-04) ────────────────────────────────────
+	# 강화 판에서 바로 고른다 · 보유 판 "모두 받기"는 없다 · 원정 "모두 보내기"는
+	# 카드 아래 가운데. 자리는 사장님이 그림으로 지정한 것이라 숫자로 못 박는다.
+	scene.best_stage = maxi(int(scene.best_stage), PetDefs.PET_OPEN)
+	scene._relayout_tabs()
+	scene._select_tab("pet")
+	assert(not scene._pet_roots.is_empty(), "펫 판이 안 지어졌다")
+	assert(scene._feed_cells.size() == PetDefs.PETS.size(),
+		"강화 판에 격자가 없다: %d" % scene._feed_cells.size())
+	assert(not scene._pet_detail.has("all"), "보유 판 모두 받기가 남았다")
+	var allb: Control = scene._trip_ui["all"]["btn"]
+	assert(allb.position.y >= scene.PET_DETAIL_Y + 156.0,
+		"모두 보내기가 카드 아래가 아니다: y=%.0f" % allb.position.y)
+	assert(absf(allb.position.x + allb.size.x * 0.5
+		- (scene.PAD + scene.CONTENT_W * 0.5)) < 1.0,
+		"모두 보내기가 가운데가 아니다: x=%.0f" % allb.position.x)
+	# 강화 판이 고른 펫을 그대로 본다 — 보유 판을 거치지 않아도 된다.
+	scene._pet_sel = got
+	scene._pet_set_mode("feed")
+	assert(scene._pet_feed_ui["name"].text.begins_with(
+		str(PetDefs.of(got)["name"])),
+		"강화 판이 고른 펫을 안 보여준다: %s" % scene._pet_feed_ui["name"].text)
+	assert(scene._feed_sel_art() != null, "고른 펫의 격자 그림을 못 찾는다")
 
 	# ── 먹이 지급 경로 ─────────────────────────────────────────────────────
 	var f0: float = scene.feed
