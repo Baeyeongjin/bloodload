@@ -219,5 +219,51 @@ func _init() -> void:
 	scene._raid_sweep("blood")
 	assert(is_equal_approx(scene.gold, g1), "표가 0인데 소탕이 됐다")
 
-	print("RaidCheck OK")
+	# ── 버티기 처치 보너스 (사장님 2026-09-02: "세지면 뭐라도 되게") ────────
+	# 표: 0 에서 0, 상한에서 MAX, 그 위는 안 는다.
+	assert(is_equal_approx(RaidDefs.endure_bonus(0), 0.0), "처치 0 인데 보너스가 있다")
+	assert(is_equal_approx(RaidDefs.endure_bonus(RaidDefs.ENDURE_BONUS_KILLS / 2),
+		RaidDefs.ENDURE_BONUS_MAX * 0.5), "절반 처치가 절반 보너스가 아니다")
+	assert(is_equal_approx(RaidDefs.endure_bonus(RaidDefs.ENDURE_BONUS_KILLS * 10),
+		RaidDefs.ENDURE_BONUS_MAX), "상한이 없다 — 인장이 무한히 는다")
+	# 상한 처치 수는 공속 안 키운 영웅도 90초에 닿아야 한다(마리당 최소 주기).
+	var M := load("res://Main.gd")
+	var per: float = M.ATTACK_SWING * 0.759 		+ maxf(RaidDefs.engage_pause("pact", M.ENGAGE_PAUSE),
+			RaidDefs.foe_gap("pact", M.FOE_GAP) / M.TRAVEL_SPEED)
+	assert(RaidDefs.ENDURE_TIME / per >= float(RaidDefs.ENDURE_BONUS_KILLS),
+		"상한 처치 수(%d)가 90초 상한(%.0f)보다 크다 — 아무도 못 닿는다"
+		% [RaidDefs.ENDURE_BONUS_KILLS, RaidDefs.ENDURE_TIME / per])
+
+	# 실전: 싸워서 깬 버티기 뭉치에 얹힌다. 소탕엔 안 얹힌다.
+	while scene._fade_t > 0.0:
+		await process_frame
+	scene.best_stage = 500
+	scene.raid_on = "pact"
+	scene.raid_best["pact"] = 3
+	scene._raid_roll_day()
+	scene.raid_left["pact"] = 3
+	scene._raid_again = ""
+	scene._raid_repeat = false
+	scene.kills = RaidDefs.ENDURE_BONUS_KILLS
+	scene.sigil = 0.0
+	scene._fade_t = 0.0
+	var base_gain: float = scene._raid_gain("pact", 4)
+	scene._advance_stage()
+	assert(is_equal_approx(scene.sigil, base_gain * (1.0 + RaidDefs.ENDURE_BONUS_MAX)),
+		"버티기 뭉치에 처치 보너스가 안 얹혔다: %.1f (기본 %.1f)" % [scene.sigil, base_gain])
+	assert("처치" in scene._clear_sub.text, "배너에 처치 근거가 없다: %s" % scene._clear_sub.text)
+	# 물량 판(swarm)은 안 얹힌다 — 거긴 100마리가 판정 그 자체다.
+	while scene._fade_t > 0.0 or scene.raid_on != "":
+		await process_frame
+	scene.raid_on = "blood"
+	scene.raid_best["blood"] = 3
+	scene.raid_left["blood"] = 3
+	scene.kills = 999
+	scene.gold = 0.0
+	scene._fade_t = 0.0
+	var base_blood: float = scene._raid_gain("blood", 4)
+	scene._advance_stage()
+	assert(is_equal_approx(scene.gold, base_blood), "물량 판에 처치 보너스가 얹혔다")
+
+	print("RaidCheck OK  (표 · 입장 · 소탕 · 버티기 처치 보너스)")
 	quit()

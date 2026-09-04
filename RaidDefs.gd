@@ -109,6 +109,23 @@ const SWARM_PAUSE := 0.18
 
 
 # 이 판에서 시체를 얼마나 기다리나. 물량·버티기만 짧다.
+# ── 버티기 처치 보너스 (2026-09-02 사장님: "버티기도 세지면 뭐라도 되게") ──
+# 버티기는 처치가 판정이 아니라서 세져도 90초가 1프레임도 안 줄고, 몹이 잡졸이라
+# 동굴을 깨는 영웅은 죽을 수도 없다 — 강함이 어디에도 안 이어지는 90초였다.
+# 그 90초 동안 실제로 하고 있는 일(처치)을 인장으로 이어 준다.
+#
+# **상한이 있다.** 인장은 혈맹(합연산 %)을 사는 재화라 무한히 늘면 곡선이
+# 밀린다. 120마리(마리당 최소 주기 0.508초로 90초면 약 177마리라, 공속을
+# 안 키운 영웅도 닿는 자리)에 +50% 로 막는다. 기본 뭉치는 그대로다 — 지금
+# 깨는 사람이 손해 보는 일은 없고, 세지면 그 위에 얹힌다.
+const ENDURE_BONUS_KILLS := 120
+const ENDURE_BONUS_MAX := 0.5
+
+
+static func endure_bonus(k: int) -> float:
+	return ENDURE_BONUS_MAX * clampf(float(k) / float(ENDURE_BONUS_KILLS), 0.0, 1.0)
+
+
 static func engage_pause(kind: String, base: float) -> float:
 	return SWARM_PAUSE if goal(kind) in ["swarm", "endure"] else base
 

@@ -15961,6 +15961,11 @@ func _advance_stage() -> void:
 		var kind := raid_on
 		var n := _raid_stage()
 		var amount := _raid_gain(kind, n)
+		# 버티기는 처치 수가 뭉치를 키운다(RaidDefs.endure_bonus, 상한 +50%).
+		# 소탕(_raid_sweep)에는 안 붙는다 — 거기엔 처치가 없다.
+		var bonus := RaidDefs.endure_bonus(kills) \
+			if RaidDefs.goal(kind) == "endure" else 0.0
+		amount *= 1.0 + bonus
 		raid_best[kind] = n
 		raid_left[kind] = maxi(0, _raid_left(kind) - 1)   # 표는 격파에만 깎인다
 		match kind:
@@ -15968,9 +15973,11 @@ func _advance_stage() -> void:
 			"pact": sigil += amount
 			"hunt": feed += amount
 			"forge": whet += amount
-		_show_clear("클리어!", "%s  ·  %s +%s"
+		_show_clear("클리어!", "%s  ·  %s +%s%s"
 			% [RaidDefs.label(kind, n),
-			str(RaidDefs.RAIDS[kind]["currency"]), _n(amount)])
+			str(RaidDefs.RAIDS[kind]["currency"]), _n(amount),
+			("  (처치 %d · +%d%%)" % [kills, int(round(bonus * 100.0))])
+				if bonus > 0.0 else ""])
 		raid_on = ""
 		_quest_bump("raid")   # 주간 임무(재화 던전 격파)가 센다
 		_boss_cut_clear()     # 수호자 판이면 컷신 띠가 떠 있을 수 있다
@@ -16721,7 +16728,8 @@ func _refresh_hud() -> void:
 				# 시계를 진행도로 쓰고, 한 일(처치 수)을 문구가 적는다.
 				var lim := maxf(1.0, _c_time_limit())
 				ratio = clampf(1.0 - _boss_time / lim, 0.0, 1.0)
-				prog = "버티는 중  ·  처치 %d" % kills
+				prog = "버티는 중  ·  처치 %d  ·  인장 +%d%%" % [kills,
+					int(round(RaidDefs.endure_bonus(kills) * 100.0))]
 			"slay": prog = "수호자 %d / %d" % [kills, need]
 			_: prog = "처치 %d / %d" % [kills, need]
 	_lbl_prog.text = lone.display_name if lone else prog
