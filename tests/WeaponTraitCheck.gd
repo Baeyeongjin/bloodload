@@ -200,6 +200,41 @@ func _init() -> void:
 	var ar := GearDefs.make("armor", 5, GachaDefs.RARITIES[0])
 	assert(GearDefs.next_lane_spec(ar).is_empty(), "방어구에 재련이 붙었다")
 
+	# ── 5) 상세 카드 — 글자끼리 안 겹친다 (사장님 2026-09-04 스크린샷) ────
+	# 특성 줄을 오른쪽 칸 y142(높이 18)에 끼워 넣었더니 자원 첫 줄(y146)과
+	# 14px 겹쳐 **둘 다** 못 읽었다. 좌표를 손으로 박는 카드라 줄을 하나 더
+	# 늘리면 또 난다 — 쌍마다 사각형이 안 물리는지 통째로 잰다.
+	scene._gear_selected_key = k0
+	scene._refresh_gear_detail()
+	var labels: Array = []
+	for ch in scene._gear_detail.get_children():
+		# _refresh_gear_detail 은 queue_free 로 옛 글자를 치운다 — 같은 프레임에는
+		# 아직 붙어 있어서 자기 자신과 겹친 것으로 잡힌다.
+		if ch is Label and not ch.is_queued_for_deletion() and str(ch.text) != "":
+			labels.append(ch)
+	assert(labels.size() >= 6, "상세 카드에 글자가 안 그려졌다: %d" % labels.size())
+	var trait_line := ""
+	for ia in labels.size():
+		var la: Label = labels[ia]
+		if str(la.text).begins_with("특성"):
+			trait_line = str(la.text)
+		for ib in range(ia + 1, labels.size()):
+			var lb: Label = labels[ib]
+			assert(not Rect2(la.position, la.size).intersects(
+					Rect2(lb.position, lb.size)),
+				"상세 카드 글자가 겹친다: \"%s\" %s <-> \"%s\" %s"
+				% [la.text, la.position, lb.text, lb.position])
+	assert(trait_line != "", "무기인데 특성 줄이 없다")
+	# 문구가 잘리지 않는가 — 전폭 줄(532px)로 옮긴 이유다. 제일 긴 연쇄 문구가
+	# 옛 306px 칸보다 길다는 것을 폰트로 직접 잰다.
+	var longest := 0.0
+	for tk in GearDefs.WEAPON_TRAIT:
+		var fnt := ThemeDB.fallback_font
+		longest = maxf(longest, fnt.get_string_size("특성  "
+			+ GearDefs.trait_text(str(tk)),
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, Type.SIZE_SMALL).x)
+	assert(longest < 532.0, "제일 긴 특성 문구가 전폭 줄에도 안 들어간다: %.0fpx" % longest)
+
 	# **뒷정리.** 재련이 _save_game 을 타서 특성 무기가 저장본에 남는다. 그러면
 	# 다음 검사(AoeCheck)가 스킬 이펙트를 세는 프레임에 평타 특성 이펙트가 끼어
 	# 빨개진다 — 실제로 났다. 검사는 자기가 어질러 놓은 것을 치운다(PrestigeCheck 규칙).

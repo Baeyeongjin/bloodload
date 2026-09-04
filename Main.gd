@@ -4972,11 +4972,11 @@ func _refresh_gear_detail() -> void:
 	owned.text = "보유  %s +%.1f%%" % [GearDefs.STAT_NAME[stat],
 		GearDefs.collection_rate(item) * 100.0]
 	# 무기 특성 — 스킬의 rule_text 와 같은 이유로 적는다: 안 적으면 없는 규칙이다.
+	# **아래 전폭 줄에 적는다**(사장님 2026-09-04 스크린샷). 오른쪽 칸(y 18~228)은
+	# 자원 다섯 칸이 146~220 을 이미 다 쓰고 있어서, 142 에 끼워 넣은 특성 줄이
+	# 조각·성공 줄과 14px 겹쳐 **둘 다** 못 읽었다. 전폭 줄은 532px 라 제일 긴
+	# 문구(연쇄 324px)도 들어간다 — 306px 칸에서는 그것도 잘리고 있었다.
 	var wt := GearDefs.trait_of(item)
-	if wt != "":
-		var tl := _panel_label(_gear_detail, Vector2(234.0, 142.0), Type.SIZE_SMALL,
-			Color(0.98, 0.86, 0.56), 306.0, 18.0)
-		tl.text = "특성  " + GearDefs.trait_text(wt)
 	var owned_key := "gear:" + _gear_selected_key
 	var shards := int(gacha_shards.get(owned_key, 0))
 	var highest := GachaDefs.rarity_index(str(item["rarity"])) >= GachaDefs.RARITIES.size() - 1
@@ -5001,9 +5001,13 @@ func _refresh_gear_detail() -> void:
 			Type.SIZE_SMALL, resource_values[i][1], 148.0, 22.0)
 		resource.text = resource_values[i][0]
 		resource.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 자리를 내준 안내 문구는 위 두 줄(장착/보유)이 이미 하는 말이다 — 물건마다
+	# 다른 특성이 매번 같은 안내보다 읽을 값이 있다.
 	var material := _panel_label(_gear_detail, Vector2(22.0, 232.0), Type.SIZE_SMALL,
-		Color(0.72, 0.72, 0.78), 532.0, 24.0)
-	material.text = "장착은 전투 효과 · 보관만 해도 보유 효과 적용"
+		Color(0.98, 0.86, 0.56) if wt != "" else Color(0.72, 0.72, 0.78),
+		532.0, 24.0)
+	material.text = ("특성  " + GearDefs.trait_text(wt)) if wt != "" \
+		else "장착은 전투 효과 · 보관만 해도 보유 효과 적용"
 	material.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var equipped_now := str(equipped.get(str(item["slot"]), {}).get("inventory_key", "")) \
 		== _gear_selected_key
@@ -7808,6 +7812,16 @@ func _build_raids(root: Control) -> void:
 		Ui.hover_pop(mb)
 		mb.pressed.connect(func() -> void: _raid_set_mode(mode))
 		root.add_child(mb)
+		# 알약 정중앙 문양이 밝은 빨강이라(gate_tab_on.png) **고른** 소탭에서
+		# 글자 사이로 비쳐 알림 점처럼 읽혔다(사장님 스크린샷 — 진짜 점은 이제
+		# 오른쪽 위 모서리에 따로 선다). 외곽선으로는 글자 사이 틈을 못 막아서
+		# 글자 뒤에 어두운 판을 깐다. 안 고른 알약은 원래 어두워 티가 안 난다.
+		var mp := ColorRect.new()
+		mp.color = Color(0.10, 0.05, 0.07, 0.72)
+		mp.position = Vector2(mb.position.x + 5.0, 240.0)
+		mp.size = Vector2(mw - 10.0, 20.0)
+		mp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(mp)
 		var ml := _panel_label(root, Vector2(mb.position.x, 239.0),
 			Type.SIZE_MID, Color(1.0, 0.97, 0.92), mw, 22.0)
 		ml.text = str(modes[i][1])
