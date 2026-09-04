@@ -98,6 +98,10 @@ func _init() -> void:
 	scene.pet_lv = {}
 	scene.pet_worn = ""
 	scene.gacha_shards = {}
+	# 천장을 비운다 — 뽑을 때마다 _mile_add 가 차고, 앞 검사가 남긴 값이면
+	# 이 뽑기 중에 상자가 터져 펫권을 되돌려 준다(그러면 아래 산수가 틀린다).
+	# 씬 검사는 저장본을 공유한다 — 재는 쪽이 축을 직접 비운다.
+	scene.mile_fill = 0.0
 	scene.tickets = {"pet": 3}
 	scene.best_stage = 1
 	assert(not scene._pet_roll(), "안 열린 구간인데 뽑혔다")

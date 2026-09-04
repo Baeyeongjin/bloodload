@@ -586,6 +586,8 @@ var _growth_mode_buttons := {}
 # 다 눌러 봐야 했다(사장님 2026-08-27: "빨간점 세세하게 다 표시해줘").
 var _growth_mode_dots := {}
 var _shop_mode_dots := {}
+var _raid_mode_dots := {}
+var _pet_mode_dots := {}
 var _oath_side_dot: TextureRect
 var _growth_mode_labels := {}   # 그림 탭이라 글자는 따로 얹는다
 var _stat_view: Control
@@ -4862,7 +4864,10 @@ func _gear_card(key: String, on_press: Callable) -> Control:
 	# 탭 점은 "이 탭에 뭔가 있다"까지만 말한다 — 스물넷을 눌러 보게 하지 않으려면
 	# 어느 칸인지도 말해야 한다. body 가 아니라 cell 에 붙인다: 장착 중이면
 	# body 를 통째로 어둡게 하는데 점까지 같이 죽으면 안 된다.
-	if _gear_can_level(key) or _gear_can_fuse(key):
+	# **조합은 빼고 레벨업만** (사장님 2026-09-04). 조각은 뽑을 때마다 쌓여서
+	# 조합 점은 늘 켜져 있었고, 늘 켜진 점은 없는 점과 같다. 레벨업은 연마석을
+	# 쓰는 순간 꺼진다 — 껐다 켜지는 것만 점이 될 자격이 있다.
+	if _gear_can_level(key):
 		var dot := Ui.icon("res://assets/ui/dot_alert.png",
 			Vector2(88.0, 4.0), 16.0)
 		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -7405,6 +7410,9 @@ var _dungeon_mastery: Array[Label] = []
 var _dungeon_badges: Array[TextureRect] = []
 var _dungeon_chips: Array[Label] = []
 var _raid_list: Control
+# 던전 소탭 다섯 — 빌더와 점이 같은 표를 본다. 표가 둘이면 하나가 낡는다.
+const RAID_MODES := [["maze", "미궁"], ["raid", "재화 던전"],
+	["boss", "주간 보스"], ["trial", "시련"], ["rush", "혈전"]]
 var _raid_mode_btns := {}
 # ── 시련 (TrialDefs) — 격파 수가 곧 영구 보너스다. 도전 중인 단계 = +1 ──
 var trial_stage := 0
@@ -7795,8 +7803,7 @@ func _build_raids(root: Control) -> void:
 	# [미궁][재화 던전][주간 보스] — 셋 다 "들어가서 도는 곳"이다. 성격은 다르다:
 	# 미궁은 기록(혈맥의 열쇠), 던전은 배급(하루 뭉치), 보스는 도전(못 죽여도 누적).
 	# 상점·소환과 같은 박쥐 알약 — 그림 버튼이라 글자는 라벨로 얹는다.
-	var modes := [["maze", "미궁"], ["raid", "재화 던전"], ["boss", "주간 보스"],
-		["trial", "시련"], ["rush", "혈전"]]
+	var modes := RAID_MODES
 	var mw := (CONTENT_W - 10.0 * 4.0) / 5.0
 	for i in modes.size():
 		var mode: String = modes[i][0]
@@ -7827,6 +7834,13 @@ func _build_raids(root: Control) -> void:
 		ml.text = str(modes[i][1])
 		ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(ml, 8)
+		# 소탭마다 점 (사장님 2026-09-04: "던전들도 클리어 안 한 거 있으면").
+		# 탭 점 하나로는 다섯 중 어디인지 못 말한다 — 성장·상점 소탭과 같은 자리.
+		var rdot := Ui.icon("res://assets/ui/dot_alert.png",
+			mb.position + Vector2(mw - 12.0, -4.0), 16.0)
+		rdot.visible = false
+		root.add_child(rdot)
+		_raid_mode_dots[mode] = rdot
 		_raid_mode_btns[mode] = mb
 	_raid_list = Control.new()
 	_raid_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -10766,6 +10780,16 @@ func _shop_mode_todo(mode: String) -> bool:
 					return true
 				if pactive and not pass_paid_got.has(i):
 					return true
+		"trade":
+			# **살 수 있는 것도 켠다** (사장님 2026-09-04: "구매 가능한 거 다").
+			# 하루 한도가 있어 자정에 돌아오고 사면 꺼진다 — 점의 원칙에 맞다.
+			# 광고 줄은 붙일 SDK 가 없어 눌리지 않으므로 뺀다(버튼과 같은 자).
+			for it in ShopDefs.ITEMS:
+				var sid := str(it["id"])
+				if ShopDefs.is_ad(sid) or best_stage < ShopDefs.open_stage(sid):
+					continue
+				if _shop_left(sid) > 0 and gem >= float(it["cost"]):
+					return true
 	return false
 
 
@@ -10791,6 +10815,10 @@ func _growth_mode_todo(mode: String) -> bool:
 		"trait":
 			for n in TraitDefs.NODES:
 				if _trait_steps(str(n["id"])) > 0:
+					return true
+			# 제련이 끝난 자리 — 받을 것이 있는 상태다(사장님 2026-09-04).
+			for bid in trait_bake:
+				if _bake_left(str(bid)) <= 0.0:
 					return true
 		"pact":
 			if _pact_steps(1) > 0 and sigil >= _pact_cost(1):
@@ -10820,72 +10848,99 @@ func _growth_todo() -> bool:
 	return false
 
 
+# 던전 소탭 하나의 "할 일". 탭 점은 이 다섯의 합이다 — 조건을 두 벌로 적으면
+# 반드시 한쪽이 낡는다(스킬 조각 점이 소환 탭에 남아 있던 사고가 그것).
+func _raid_mode_todo(mode: String) -> bool:
+	match mode:
+		"maze":
+			# **아직 안 뚫은 층이 열려 있다.** 상한까지 다 뚫었으면 안 켠다 —
+			# 제자리를 도는 건 첫 돌파 보상이 없어서 "받을 게 있다"가 아니다.
+			return raid_on == "" and not dungeon_on \
+				and dungeon_best < DungeonDefs.open_floors(best_stage)
+		"raid":
+			# 오늘 표가 남아 있다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
+			if raid_on != "" or dungeon_on:
+				return false
+			_raid_roll_day()
+			for kind in RaidDefs.RAIDS:
+				if best_stage >= RaidDefs.open_stage(str(kind)) \
+						and _raid_left(str(kind)) > 0:
+					return true
+		"boss":
+			# 받을 이정표가 있으면 켠다(도전 횟수로는 안 켠다: 매일 켜져 있으면
+			# 잔소리가 되고, 늘 켜진 점은 없는 점과 같다).
+			for i in EventDefs.MILESTONES.size():
+				if not boss_got.has(i) and boss_dmg >= _boss_need(i):
+					return true
+		"trial":
+			# 열린 단계가 남아 있으면 켠다. 격파하면 미궁이 다시 열 때까지 꺼진다.
+			return trial_stage < TrialDefs.max_stage() \
+				and dungeon_best >= TrialDefs.floor_need(trial_stage + 1)
+		"rush":
+			# 오늘 판이 남아 있으면 켠다 — 재화 던전 표와 같은 원칙이다.
+			return best_stage >= RushDefs.OPEN_STAGE and raid_on == "" \
+				and not dungeon_on \
+				and rush_date != Time.get_date_string_from_system()
+	return false
+
+
+# 펫 소탭 하나의 "할 일". 장비 소탭은 없다 — 장착은 언제나 가능해서 켜면
+# 안 꺼진다.
+func _pet_mode_todo(mode: String) -> bool:
+	match mode:
+		"own":
+			for id in pets_got:
+				if _pet_can_take(str(id)):
+					return true
+		"feed":
+			for id in pets_got:
+				if _pet_can_feed(str(id)):
+					return true
+		"trip":
+			# **도착만 본다.** "보낼 수 있다"도 넣어 봤는데, 칸이 넷인데 보낼 수
+			# 있는 5성이 둘뿐이면 영영 켜져 있다 — 늘 켜진 점은 없는 점이다.
+			# 도착은 받으면 꺼지므로 껐다 켜진다. 빈 칸은 [모두 보내기] 버튼이
+			# 살아 있는 것으로 이미 말한다.
+			for id in pets_got:
+				if is_equal_approx(_trip_left(str(id)), 0.0):
+					return true
+		"roll":
+			return int(tickets.get("pet", 0)) > 0
+		"rollgear":
+			return int(tickets.get("petgear", 0)) > 0
+	return false
+
+
 func _tab_todo(tab: String) -> bool:
 	match tab:
 		"growth":
 			return _growth_todo()
 		"gear":
-			# **레벨업도 켠다** (사장님 2026-08-26). 연마석이 생긴 뒤로 장비는
-			# 조합만이 아니라 올릴 수도 있는데 점은 조합만 보고 있었다.
+			# 칸 점과 **같은 자**를 쓴다(사장님 2026-09-04: 보관함 점은 레벨업만).
+			# 다르면 "탭은 켜졌는데 눌러 보니 아무 칸도 안 켜진" 자리가 생긴다.
 			for key in gear_inventory:
-				if _gear_can_level(str(key)) or _gear_can_fuse(str(key)):
+				if _gear_can_level(str(key)):
 					return true
 		"raid":
-			# 오늘 표가 남아 있다 — 자정에 사라지는 것이라 점의 원칙에 맞다.
-			if raid_on == "" and not dungeon_on:
-				_raid_roll_day()
-				for kind in RaidDefs.RAIDS:
-					if best_stage >= RaidDefs.open_stage(str(kind)) \
-							and _raid_left(str(kind)) > 0:
-						return true
-			# 주간 보스 — 받을 이정표가 있으면 켠다(도전 횟수로는 안 켠다: 매일
-			# 켜져 있으면 잔소리가 되고, 늘 켜진 점은 없는 점과 같다).
-			for i in EventDefs.MILESTONES.size():
-				if not boss_got.has(i) \
-						and boss_dmg >= _boss_need(i):
+			for rm in RAID_MODES:
+				if _raid_mode_todo(str(rm[0])):
 					return true
-			# 시련 — 열린 단계가 남아 있으면 켠다. 격파하면 꺼진다(미궁이 다시
-			# 열 때까지) — "받을 보상이 존재하면 알림"(사장님 2026-08-18).
-			if trial_stage < TrialDefs.max_stage() \
-					and dungeon_best >= TrialDefs.floor_need(trial_stage + 1):
-				return true
-			# 혈전 — 오늘 판이 남아 있으면 켠다. 자정에 돌아오는 것이라
-			# 재화 던전 표와 같은 원칙이다.
-			if best_stage >= RushDefs.OPEN_STAGE and raid_on == "" \
-					and not dungeon_on \
-					and rush_date != Time.get_date_string_from_system():
-				return true
-			# 미궁 — **아직 안 뚫은 층이 열려 있다**(사장님 2026-08-26:
-			# "진행 가능한 던전"). 상한까지 다 뚫었으면 안 켠다 — 제자리를
-			# 도는 건 첫 돌파 보상이 없어서 "받을 게 있다"가 아니다.
-			if raid_on == "" and not dungeon_on 					and dungeon_best < DungeonDefs.open_floors(best_stage):
-				return true
 		"pet":
-			# 소환권·다 모인 먹이·물어온 재화 — 전부 "쓰기만 하면 되는" 것들이다.
-			if int(tickets.get("pet", 0)) > 0 \
-					or int(tickets.get("petgear", 0)) > 0:
-				return true
-			# pet_bank 는 **펫 탭을 열 때만** 갱신된다(_pet_tick 의 호출처가 셋뿐이고
-			# 전부 펫 화면이다). 그래서 한 번 걷고 나면 저장된 값이 0 에 머물러
-			# 점이 다시는 안 켜졌다. accrue 는 순수 함수라 여기서는 값을 쓰지 않고
-			# 지금 쌓였을 양만 재 본다.
-			var pet_h := 0.0 if pet_at <= 0.0 \
-				else maxf(0.0, (Time.get_unix_time_from_system() - pet_at) / 3600.0)
-			for id in pets_got:
-				var plv := _pet_lv(str(id))
-				if plv < PetDefs.lv_cap(_pet_star(str(id))) \
-						and feed >= PetDefs.feed_cost(plv):
-					return true
-				if is_equal_approx(_trip_left(str(id)), 0.0):
-					return true
-				if PetDefs.accrue(str(id), float(pet_bank.get(id, 0.0)), pet_h,
-						plv, _pet_star(str(id))) >= 1.0:
+			for pm in PET_TABS:
+				if _pet_mode_todo(str(pm[0])):
 					return true
 		"shop":
-			return _shop_mode_todo("book") or _shop_mode_todo("pass")
+			return _shop_mode_todo("book") or _shop_mode_todo("pass") \
+				or _shop_mode_todo("trade")
 		"summon":
 			if free_pull_date != Time.get_date_string_from_system():
 				return true
+			# 소환권을 들고 있으면 켠다 (사장님 2026-09-04) — 쓰기만 하면 되는
+			# 것이고 쓰면 꺼진다. 보석으로는 안 켠다: 보석은 상점에도 쓰는
+			# 재화라 부자가 되면 영영 켜져 있게 된다.
+			for tk in TicketDefs.KINDS:
+				if int(tickets.get(str(tk), 0)) > 0:
+					return true
 			# 스킬 조각 조건은 여기 없다 — 스킬 화면이 성장 탭에 살아서
 			# _growth_mode_todo("skill") 이 본다. 여기 남겨 두면 소환 탭이
 			# 엉뚱하게 켜진다(실제로 그랬다 — 2026-08-27 정비에서 옮김).
@@ -10903,6 +10958,10 @@ func _refresh_tab_dots() -> void:
 		(_growth_mode_dots[key] as CanvasItem).visible = _growth_mode_todo(str(key))
 	for key in _shop_mode_dots:
 		(_shop_mode_dots[key] as CanvasItem).visible = _shop_mode_todo(str(key))
+	for key in _raid_mode_dots:
+		(_raid_mode_dots[key] as CanvasItem).visible = _raid_mode_todo(str(key))
+	for key in _pet_mode_dots:
+		(_pet_mode_dots[key] as CanvasItem).visible = _pet_mode_todo(str(key))
 	# 계약 옆줄 — **카드가 상한에 꽉 찼을 때**만 켠다. 한 장 이상으로 켜면
 	# 40분마다 켜지는 잔소리다("늘 켜진 점은 없는 점"). 꽉 참 = 자연 충전이
 	# 낭비되는 상태라 지금 뽑는 게 실제로 이득인 순간이다. 수집 보상이
@@ -17757,6 +17816,11 @@ func _build_pet(root: Control) -> void:
 		tl.text = str(PET_TABS[i][1])
 		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(tl, 5)
+		var pdot := Ui.icon("res://assets/ui/dot_alert.png",
+			tp + Vector2(tw - 12.0, -4.0), 16.0)
+		pdot.visible = false
+		root.add_child(pdot)
+		_pet_mode_dots[mode] = pdot
 		var tb := Ui.button("", tp, Vector2(tw, 36.0), Type.SIZE_SMALL)
 		tb.modulate = Color(1, 1, 1, 0)
 		tb.pressed.connect(func() -> void: _pet_set_mode(mode))
@@ -17825,6 +17889,11 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 			Color(0.55, 0.95, 0.62), PET_CELL, 14.0)
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		mark.visible = false
+		# 칸마다 점 — 스물다섯 칸에서 어느 놈을 먹일 수 있는지 말해 준다.
+		var dot := Ui.icon("res://assets/ui/dot_alert.png",
+			Vector2(cx + PET_CELL - 22.0, cy + 4.0), 16.0)
+		dot.visible = false
+		pane.add_child(dot)
 		var idx := i
 		# 호버는 **액자를 직접 잡는다.** 자식 순서로 세다가 표식 라벨이 끼면서
 		# 한 칸 밀려 펫 그림을 집었고, 호버가 끝날 때 그림의 실루엣 어둠을
@@ -17835,7 +17904,8 @@ func _pet_build_grid(root: Control, count: int, cells: Array[Dictionary],
 		btn.pressed.connect(func() -> void: on_pick.call(idx))
 		pane.add_child(btn)
 		_pet_hover(btn, cell_frame)
-		cells.append({"art": art, "star": star, "mark": mark, "btn": btn})
+		cells.append({"art": art, "star": star, "mark": mark, "btn": btn,
+			"dot": dot})
 
 
 func _pet_art(i: int) -> Control:
@@ -17966,6 +18036,10 @@ func _refresh_pet_trip() -> void:
 		# 못 보내는 칸(5성인데 장비가 없거나 장비도 5성)은 별 자리에 이유를 쓴다.
 		_trip_cells[i]["star"].text = "" if not got \
 			else ("" if left >= 0.0 or not _trip_prize(id).is_empty() else "보낼 곳 없음")
+		# 소탭 점과 같은 자 — 도착한 칸만 켠다.
+		if _trip_cells[i].has("dot"):
+			(_trip_cells[i]["dot"] as CanvasItem).visible = \
+				got and is_equal_approx(left, 0.0)
 	var sel := _trip_sel
 	var p := PetDefs.of(sel)
 	var left_sel := _trip_left(sel)
@@ -18198,7 +18272,9 @@ func _refresh_pet() -> void:
 	if _petgear_sel == "":
 		_petgear_sel = str(PetDefs.GEAR[0]["id"])
 	# 격자 — 못 만난 것은 실루엣. 빈 칸이 보여야 데려오고 싶다.
-	_pet_paint_cells(_pet_cells)
+	# 보유 판은 먹이와 받기 둘 다 여기서 한다.
+	_pet_paint_cells(_pet_cells, func(id: String) -> bool:
+		return _pet_can_feed(id) or _pet_can_take(id))
 	for i in _petgear_cells.size():
 		var gid := str(PetDefs.GEAR[i]["id"])
 		var ggot := int(pet_gear_got.get(gid, 0)) > 0
@@ -18220,8 +18296,28 @@ func _refresh_pet() -> void:
 	_refresh_pet_roll()
 
 
-# 펫 격자 칠하기 — 보유·강화 판이 같은 칸 문법을 쓴다.
-func _pet_paint_cells(cells: Array[Dictionary]) -> void:
+# 이 동행을 지금 먹일 수 있는가 — 강화 버튼과 **같은 자**를 쓴다.
+func _pet_can_feed(id: String) -> bool:
+	if not pets_got.has(id):
+		return false
+	var lv := _pet_lv(id)
+	return lv < PetDefs.lv_cap(_pet_star(id)) and feed >= PetDefs.feed_cost(lv)
+
+
+# 이 동행의 그릇에 받을 게 찼는가. **저장된 값을 안 믿는다** — pet_bank 는 펫
+# 탭을 열 때만 갱신되므로(_pet_tick 호출처가 전부 펫 화면) 한 번 걷고 나면 0 에
+# 머물러 점이 다시는 안 켜졌다. accrue 는 순수 함수라 지금 쌓였을 양만 재 본다.
+func _pet_can_take(id: String) -> bool:
+	if not pets_got.has(id):
+		return false
+	var h := 0.0 if pet_at <= 0.0 \
+		else maxf(0.0, (Time.get_unix_time_from_system() - pet_at) / 3600.0)
+	return PetDefs.accrue(id, float(pet_bank.get(id, 0.0)), h,
+		_pet_lv(id), _pet_star(id)) >= 1.0
+
+
+# 펫 격자 칠하기 — 보유·강화 판이 같은 칸 문법을 쓴다. 점 규칙만 판마다 다르다.
+func _pet_paint_cells(cells: Array[Dictionary], dot_of: Callable) -> void:
 	for i in cells.size():
 		var id := str(PetDefs.PETS[i]["id"])
 		var got := pets_got.has(id)
@@ -18231,6 +18327,8 @@ func _pet_paint_cells(cells: Array[Dictionary]) -> void:
 		cells[i]["star"].text = ("%d성" % _pet_star(id)) if got else ""
 		cells[i]["mark"].visible = pet_worn == id
 		cells[i]["mark"].text = "동행 중"
+		if cells[i].has("dot"):
+			(cells[i]["dot"] as CanvasItem).visible = bool(dot_of.call(id))
 
 
 func _refresh_pet_own() -> void:
@@ -18299,7 +18397,7 @@ func _refresh_pet_gear() -> void:
 func _refresh_pet_feed() -> void:
 	if _pet_feed_ui.is_empty():
 		return
-	_pet_paint_cells(_feed_cells)
+	_pet_paint_cells(_feed_cells, _pet_can_feed)
 	var d := PetDefs.of(_pet_sel)
 	var got := pets_got.has(_pet_sel)
 	var star := _pet_star(_pet_sel)

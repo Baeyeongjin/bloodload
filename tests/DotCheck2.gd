@@ -33,6 +33,10 @@ func _init() -> void:
 	scene.skill_owned = {"strike_common": 1}
 	scene.gacha_shards = {"skill:strike_common": 9999}
 	scene.free_pull_date = Time.get_date_string_from_system()   # 무료 소환은 끔
+	# 소환권도 비운다 — 2026-09-04 부터 권을 들고 있으면 소환 탭이 켜진다.
+	# 여기서 재는 건 "**조각이** 소환 탭을 켜는가"라 다른 축은 꺼 둬야 한다.
+	# (씬 검사는 저장본을 공유해서 앞 검사가 남긴 권이 그대로 들어온다.)
+	scene.tickets = {}
 	assert(scene._growth_mode_todo("skill"), "조각이 충분한데 스킬 소탭이 안 켜진다")
 	assert(scene._tab_todo("growth"), "스킬 조각이 성장 탭 점을 안 켠다")
 	assert(not scene._tab_todo("summon"),
@@ -50,10 +54,14 @@ func _init() -> void:
 	assert(scene._tab_todo("growth") == any,
 		"성장 탭 점(%s)과 소탭 합(%s)이 다르다 — 조건이 두 벌이 됐다"
 		% [scene._tab_todo("growth"), any])
-	# 상점도 같은 규칙 — book·pass 둘의 합이다.
-	assert(scene._tab_todo("shop") == (scene._shop_mode_todo("book")
-		or scene._shop_mode_todo("pass")),
-		"상점 탭 점과 소탭 합이 다르다")
+	# 상점도 같은 규칙 — **화면에 있는 소탭 전부**의 합이다. 이름을 손으로
+	# 적어 두면 갈래를 늘릴 때 여기가 낡는다(2026-09-04 교환 갈래에서 그랬다).
+	var sany := false
+	for k in scene._shop_mode_dots:
+		if scene._shop_mode_todo(str(k)):
+			sany = true
+	assert(scene._tab_todo("shop") == sany,
+		"상점 탭 점(%s)과 소탭 합(%s)이 다르다" % [scene._tab_todo("shop"), sany])
 
 	# ── 4) 계약 옆줄 — 꽉 찼을 때만 ───────────────────────────────────────
 	scene.oath_cards = 1

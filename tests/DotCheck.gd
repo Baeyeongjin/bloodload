@@ -187,6 +187,82 @@ func _init() -> void:
 		scene.achieve_got = {}
 		assert(scene._achieve_claimable(), "받을 업적이 있는데 점이 안 켜진다")
 
+	# ── 7) 보관함 점 = 레벨업만 (사장님 2026-09-04) ───────────────────────
+	# 조각은 뽑을 때마다 쌓여 조합 점이 안 꺼졌다. 칸 점과 탭 점이 같은 자를
+	# 쓰는지도 여기서 잠근다 — 다르면 "탭은 켜졌는데 켜진 칸이 없는" 자리가 난다.
+	_broke(scene)
+	var fit: Dictionary = GearDefs.make("weapon", 1, GachaDefs.rarity("common"))
+	var fkey := str(fit["icon"])
+	fit["lv"] = 0
+	scene.gear_inventory = {fkey: fit}
+	scene.gacha_shards = {"gear:" + fkey: GearDefs.FUSE_SHARDS}
+	scene.whet = 0.0
+	assert(scene._gear_can_fuse(fkey), "준비가 틀렸다 — 조합이 돼야 한다")
+	assert(not scene._tab_todo("gear"),
+		"조합만 되는데 장비 점이 켜졌다 — 조각은 늘 쌓여서 안 꺼진다")
+	scene.whet = GearDefs.upgrade_cost(fit)
+	assert(scene._gear_can_level(fkey), "준비가 틀렸다 — 레벨업이 돼야 한다")
+	assert(scene._tab_todo("gear"), "레벨업이 되는데 장비 점이 안 켜진다")
+
+	# ── 8) 던전 — 소탭 다섯이 각각 자기 것만 켠다 ─────────────────────────
+	_broke(scene)
+	scene.best_stage = DungeonDefs.OPEN_STAGE + 40
+	scene.dungeon_best = 0
+	assert(scene._raid_mode_todo("maze"),
+		"안 뚫은 층이 있는데 미궁 소탭 점이 안 켜진다")
+	for m in scene.RAID_MODES:
+		if str(m[0]) != "maze":
+			assert(not scene._raid_mode_todo(str(m[0])),
+				"미궁만 열었는데 %s 소탭 점이 켜졌다" % str(m[0]))
+	assert(scene._tab_todo("raid"), "소탭이 켜졌는데 던전 탭 점이 안 켜진다")
+	# 다 뚫으면 다섯이 다 꺼지고 탭 점도 꺼진다 — 탭 점은 소탭의 합이다.
+	scene.dungeon_best = DungeonDefs.open_floors(scene.best_stage)
+	assert(not scene._raid_mode_todo("maze"), "다 뚫었는데 미궁 점이 켜져 있다")
+	assert(not scene._tab_todo("raid"), "다섯이 다 꺼졌는데 던전 탭 점이 켜졌다")
+	# 시련만 열면 시련 소탭만 켜진다 — 점이 어디인지를 말해야 소탭이 의미가 있다.
+	scene.trial_stage = 0
+	assert(scene._raid_mode_todo("trial"), "시련이 열렸는데 시련 점이 안 켜진다")
+	assert(not scene._raid_mode_todo("maze"), "시련이 미궁 점을 켰다")
+	assert(scene._tab_todo("raid"), "시련이 켜졌는데 던전 탭 점이 안 켜진다")
+
+	# ── 9) 펫 — 먹이면 강화 소탭만 (사장님: "펫도 강화 가능한 거 빨간점") ──
+	_broke(scene)
+	scene.best_stage = PetDefs.PET_OPEN
+	var pid := str(PetDefs.PETS[0]["id"])
+	scene.pets_got = {pid: 1}
+	for pm in scene.PET_TABS:
+		assert(not scene._pet_mode_todo(str(pm[0])),
+			"빈손인데 펫 %s 소탭 점이 켜졌다" % str(pm[0]))
+	assert(not scene._tab_todo("pet"), "빈손인데 펫 탭 점이 켜졌다")
+	scene.feed = PetDefs.feed_cost(scene._pet_lv(pid))
+	assert(scene._pet_can_feed(pid), "먹이가 찼는데 강화가 안 된다")
+	assert(scene._pet_mode_todo("feed"), "먹이가 찼는데 강화 소탭 점이 안 켜진다")
+	assert(not scene._pet_mode_todo("own"), "먹이가 보유 소탭 점까지 켰다")
+	assert(scene._tab_todo("pet"), "펫 소탭이 켜졌는데 펫 탭 점이 안 켜진다")
+	# 못 만난 동행은 안 켠다 — 실루엣 칸에 점이 뜨면 만난 줄 안다.
+	scene.pets_got = {}
+	assert(not scene._pet_can_feed(pid), "못 만난 동행을 먹일 수 있다")
+
+	# ── 10) 소환권 · 상점 교환 · 혈맥 제련 (사장님: "구매나 받기 가능한 거 다") ─
+	_broke(scene)
+	assert(not scene._tab_todo("summon"), "빈손인데 소환 점이 켜졌다")
+	scene.tickets = {str(TicketDefs.KINDS[0]): 1}
+	assert(scene._tab_todo("summon"), "소환권이 있는데 소환 점이 안 켜진다")
+
+	_broke(scene)
+	assert(not scene._shop_mode_todo("trade"), "빈손인데 교환 점이 켜졌다")
+	scene.best_stage = 9999
+	scene.gem = 100000.0
+	assert(scene._shop_mode_todo("trade"), "살 수 있는데 교환 점이 안 켜진다")
+	assert(scene._tab_todo("shop"), "교환이 켜졌는데 상점 탭 점이 안 켜진다")
+
+	_broke(scene)
+	assert(not scene._growth_mode_todo("trait"), "빈손인데 혈맥 점이 켜졌다")
+	scene.trait_bake = {"x": [Time.get_unix_time_from_system() - 10.0, "rare"]}
+	assert(scene._growth_mode_todo("trait"), "제련이 끝났는데 혈맥 점이 안 켜진다")
+	scene.trait_bake = {"x": [Time.get_unix_time_from_system() + 9999.0, "rare"]}
+	assert(not scene._growth_mode_todo("trait"), "제련 중인데 혈맥 점이 켜졌다")
+
 	print("DotCheck OK")
 	quit(0)
 
@@ -216,3 +292,23 @@ func _broke(scene: Node) -> void:
 	scene.dungeon_best = 0
 	scene.raid_on = ""
 	scene.dungeon_on = false
+	# 새 점 갈래들(2026-09-04)도 여기서 끈다 — "한 축만 켜는지"를 재려면
+	# 나머지가 전부 꺼져 있어야 한다. 날짜 축은 **오늘로 박는다**: 안 박으면
+	# 자정에 스스로 켜져서 검사가 날짜에 따라 빨개진다.
+	scene.tickets = {}
+	scene.trait_bake = {}
+	scene.shop_used = {}
+	scene.pets_got = {}
+	scene.pet_bank = {}
+	scene.pet_trip = {}
+	scene.pet_lv = {}
+	scene.pet_at = Time.get_unix_time_from_system()
+	scene.boss_dmg = 0.0
+	scene.boss_got = {}
+	scene.trial_stage = TrialDefs.max_stage()
+	var today := Time.get_date_string_from_system()
+	scene.raid_date = today
+	scene.rush_date = today
+	scene.free_pull_date = today
+	for k in RaidDefs.RAIDS:
+		scene.raid_left[str(k)] = 0
