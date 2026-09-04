@@ -466,6 +466,10 @@ func _axes(game) -> Dictionary:
 		# 보유 합산은 합연산 괄호에 들어가서 dps 에는 반영되지만 축 표에서는
 		# 안 보인다 — 행을 따로 세워야 "어디서 온 힘인지"를 표가 적는다.
 		"펫 보유": 1.0 + PetDefs.owned_bonus(game.pets_got),
+		# 펫 장비도 행을 세운다 — 표에 없으면 그 축이 0 이어도 아무도 모른다.
+		# 실제로 이 프로브는 장비를 **뽑기만 하고 안 채우고** 있었고(2026-09-02),
+		# 그래서 gather -> power 로 바꾼 변경이 곡선에 아예 안 잡혔다.
+		"펫 장비": 1.0 + game._pet_gear_value(game.pet_worn, "power"),
 	}
 
 
@@ -661,6 +665,23 @@ static func _pet_day(game, day: int, raid_mult: float) -> void:
 		# 강화는 동행에게 몰아준다 — 실제 유저의 최적 행동이다.
 		while game._pet_feed(best_pet):
 			pass
+		# **장비도 채운다** (2026-09-02). 예전엔 뽑기만 하고 가방에 뒀는데,
+		# 그러면 펫 장비가 곡선에 아예 안 잡힌다 — 강화를 동행에게 몰아주는
+		# 것과 같은 이유로 실제 유저는 제일 센 것을 끼운다. 펫 장비가 전부
+		# 전투 효과가 되면서(gather -> power) 이 누락이 실측을 깎게 됐다.
+		var best_gear := ""
+		var best_gv := 0.0
+		for gid in game.pet_gear_got:
+			var g := PetDefs.gear_of(str(gid))
+			if g.is_empty():
+				continue
+			var gv := float(g["value"]) * PetDefs.star_mult(
+				clampi(int(game.pet_gear_got[gid]), 1, PetDefs.MAX_STAR))
+			if gv > best_gv:
+				best_gv = gv
+				best_gear = str(gid)
+		if best_gear != "" and str(game.pet_gear_worn.get(best_pet, "")) != best_gear:
+			game._pet_equip_gear(best_pet, best_gear)
 	# 수집 — 물어온 재화를 받는다.
 	for id in game.pets_got:
 		var amt := PetDefs.accrue(str(id), 0.0, 7.0, game._pet_lv(str(id)),
