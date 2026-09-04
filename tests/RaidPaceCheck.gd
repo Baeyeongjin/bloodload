@@ -61,5 +61,42 @@ func _init() -> void:
 	# 단일 강적은 **한 마리**다 — 여섯이 서면 각자 보스 체력이라 판이 안 끝난다.
 	assert(RaidDefs.wave_size("forge", 6) == 1, "성소에 수호자가 여럿 선다")
 
-	print("RaidPaceCheck OK")
+	# ── 이 판이 시간 안에 깰 수 있는가 (2026-09-02) ──────────────────────
+	# **이게 없어서 물량 판이 수학적으로 불가능한 채로 나갔다.** 설계 때 쓴
+	# 모델이 시체 대기와 임팩트 지연을 빼먹어 38% 낙관이었고(주석의
+	# "0.49초 x 100 = 49초"), 실제로는 60초에 88.5마리라 요구 100마리를
+	# **공격력을 무한대로 올려도** 못 넘겼다. 사장님이 체감으로 찾았다.
+	#
+	# 마리당 최소 주기 = 임팩트 지연 + max(시체 대기, 간격 / 전진속도).
+	# 앞뒤 둘은 **병렬**이다 — 몹이 죽는 순간 전진이 시작되고 대기도 같이 흐른다.
+	var M := load("res://Main.gd")
+	var impact: float = M.ATTACK_SWING * 0.759   # 3연격 임팩트 프레임 평균(실측)
+	for kind in RaidDefs.RAIDS:
+		var k := str(kind)
+		if RaidDefs.goal(k) != "swarm":
+			continue
+		var gap: float = RaidDefs.foe_gap(k, M.FOE_GAP)
+		var pause: float = RaidDefs.engage_pause(k, M.ENGAGE_PAUSE)
+		var per: float = impact + maxf(pause, gap / M.TRAVEL_SPEED)
+		var cap: float = RaidDefs.time_limit(k) / per
+		var need: float = float(RaidDefs.kills_needed(k))
+		# **한 방 컷이어도** 이만큼이 상한이다. 여유가 없으면 그 판은
+		# 성장으로 못 여는 판이다.
+		assert(cap >= need * 1.10,
+			"%s: 한 방 컷 상한 %.1f마리인데 요구가 %.0f마리다 (마리당 %.3f초) — 여유 10%% 미만"
+			% [k, cap, need, per])
+	# **간격이 실제로 레버인가.** 시체 대기가 간격보다 크면 간격을 아무리
+	# 좁혀도 한 마리도 안 는다 — 예전에 그 상태였다.
+	for kind2 in RaidDefs.RAIDS:
+		var k2 := str(kind2)
+		if RaidDefs.goal(k2) != "swarm":
+			continue
+		var gap2: float = RaidDefs.foe_gap(k2, M.FOE_GAP)
+		assert(gap2 / M.TRAVEL_SPEED > RaidDefs.engage_pause(k2, M.ENGAGE_PAUSE),
+			"%s: 시체 대기가 이동보다 길다 — 간격을 좁혀도 아무 일도 안 일어난다" % k2)
+	# 본편은 안 건드린다 — 그 박자에 수입 곡선이 걸려 있다.
+	assert(is_equal_approx(RaidDefs.engage_pause("forge", M.ENGAGE_PAUSE),
+		M.ENGAGE_PAUSE), "단일 강적 판까지 대기를 줄였다")
+
+	print("RaidPaceCheck OK  (판 시간 · 물량 상한 · 간격이 레버인가)")
 	quit()

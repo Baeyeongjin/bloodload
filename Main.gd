@@ -11228,7 +11228,7 @@ func _tick_engage(foes: Array) -> void:
 	# 부드럽게 하려는 것이지 전투를 느리게 하려는 게 아니다 — 시체가
 	# 무너지는 동안 영웅은 다음 놈에게 간다(2026-08-25).
 	if is_instance_valid(_engaged) and _engaged.dying \
-			and _engaged.dying_t < ENGAGE_PAUSE:
+			and _engaged.dying_t < _c_engage_pause():
 		return
 	_engaged = null
 	var best := INF
@@ -13232,6 +13232,14 @@ func _wave_size(_at_stage: int) -> int:
 	if _c_is_raid():
 		return RaidDefs.wave_size(raid_on, MAX_FOES)
 	return MAX_FOES
+
+
+# 시체를 얼마나 기다리나. **"지금 어디인가" 허브에 속하는 값이다** — 판마다
+# 다르고, 호출부마다 if 를 심으면 하나를 빠뜨린다(이 저장소가 여러 번 밟은 부류).
+func _c_engage_pause() -> float:
+	if _c_is_raid():
+		return RaidDefs.engage_pause(raid_on, ENGAGE_PAUSE)
+	return ENGAGE_PAUSE
 
 
 # 줄 간격. 물량 던전만 좁힌다 — 여기서만 "한 마리당 달리는 시간"이 판정이다.
@@ -16590,8 +16598,13 @@ func _refresh_hud() -> void:
 	if raid_on != "" and raid_on != "boss":
 		match RaidDefs.goal(raid_on):
 			"endure":
-				prog = "버티는 중"
-				ratio = 1.0
+				# **진행바가 90초 내내 꽉 차 있었다.** 처치가 판정이 아니라
+				# ratio 를 1.0 으로 박아 뒀는데, 그러면 화면이 "아무 일도 안
+				# 일어나는 90초"가 된다 — 실제로는 백 마리 넘게 잡고 있다.
+				# 시계를 진행도로 쓰고, 한 일(처치 수)을 문구가 적는다.
+				var lim := maxf(1.0, _c_time_limit())
+				ratio = clampf(1.0 - _boss_time / lim, 0.0, 1.0)
+				prog = "버티는 중  ·  처치 %d" % kills
 			"slay": prog = "수호자 %d / %d" % [kills, need]
 			_: prog = "처치 %d / %d" % [kills, need]
 	_lbl_prog.text = lone.display_name if lone else prog
