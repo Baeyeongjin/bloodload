@@ -151,5 +151,54 @@ func _init() -> void:
 	scene._weapon_on_hit(a)
 	assert(b.hp < 1e9, "죽였는데 다음 놈에게 안 넘어갔다")
 
-	print("WeaponTraitCheck OK  (표 4줄 · 승급이 줄을 지킴 · 광역/처형/기절/연쇄 실전)")
+	# ── 4) 재련 — 줄만 바꾼다 (사장님 2026-09-02) ─────────────────────────
+	# "어느 줄이 나오냐"가 뽑기 운이 되지 않게 하는 길. 등급·레벨·조각·장착이
+	# 따라가야 하고, 보관함 키(icon)가 바뀌므로 옮기기가 새면 무기가 사라진다.
+	var rw := GearDefs.make("weapon", 5, GachaDefs.RARITIES[1])   # 언커먼
+	rw["lv"] = 7
+	rw["copies"] = 2
+	var k0 := str(rw["icon"])
+	scene.gear_inventory = {k0: rw}
+	scene.gacha_shards = {"gear:" + k0: 3}
+	scene.equipped["weapon"] = rw.duplicate(true)
+	scene.equipped["weapon"]["inventory_key"] = k0
+	scene._gear_selected_key = k0
+	var tr0 := GearDefs.trait_of(rw)
+	var cost := GearDefs.reforge_cost(rw)
+	assert(cost > 0.0, "재련 값이 0 이다")
+	# 값은 레벨에 비례하지 않는다 — 오래 키운 무기가 제일 못 고치면 안 된다.
+	var rw_hi := rw.duplicate(true)
+	rw_hi["lv"] = 60
+	assert(is_equal_approx(GearDefs.reforge_cost(rw_hi), cost),
+		"재련 값이 레벨에 비례한다")
+	# 연마석이 모자라면 아무 일도 없다.
+	scene.whet = cost - 1.0
+	scene._reforge_selected()
+	assert(scene.gear_inventory.has(k0) and scene._gear_selected_key == k0,
+		"연마석이 모자란데 재련됐다")
+	# 되면: 줄이 다음으로, 키·조각·장착이 따라간다, 등급·레벨·묶음 그대로.
+	scene.whet = cost
+	scene._reforge_selected()
+	var k1: String = scene._gear_selected_key
+	assert(k1 != k0, "재련했는데 키가 그대로다")
+	assert(is_equal_approx(scene.whet, 0.0), "연마석이 안 깎였다")
+	assert(not scene.gear_inventory.has(k0), "옛 줄이 보관함에 남았다 — 무기가 둘이 됐다")
+	var moved: Dictionary = scene.gear_inventory[k1]
+	assert(GearDefs.trait_of(moved) != tr0, "줄이 안 바뀌었다")
+	assert(str(moved["rarity"]) == "uncommon" and int(moved["lv"]) == 7
+		and int(moved["copies"]) == 2, "등급·레벨·묶음이 안 따라왔다")
+	assert(int(scene.gacha_shards.get("gear:" + k1, 0)) == 3
+		and not scene.gacha_shards.has("gear:" + k0), "조각이 안 따라왔다")
+	assert(str(scene.equipped["weapon"].get("inventory_key", "")) == k1
+		and str(scene.equipped["weapon"]["icon"]) == k1, "장착본이 옛 줄을 가리킨다")
+	# 네 번 돌면 제자리 — 어디든 세 번 안에 닿는다.
+	scene.whet = cost * 3.0
+	for i in 3:
+		scene._reforge_selected()
+	assert(scene._gear_selected_key == k0, "네 번 돌았는데 제자리가 아니다: %s" % scene._gear_selected_key)
+	# 무기가 아니면 재련이 없다.
+	var ar := GearDefs.make("armor", 5, GachaDefs.RARITIES[0])
+	assert(GearDefs.next_lane_spec(ar).is_empty(), "방어구에 재련이 붙었다")
+
+	print("WeaponTraitCheck OK  (표 4줄 · 승급이 줄을 지킴 · 광역/처형/기절/연쇄 실전 · 재련)")
 	quit(0)

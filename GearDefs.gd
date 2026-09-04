@@ -141,6 +141,34 @@ static func trait_text(key: String) -> String:
 	return str(TRAIT_TEXT.get(key, ""))
 
 
+# ── 재련 — 줄만 바꾼다 (2026-09-02 사장님: "줄만 바꾸는 재련도") ──────────
+# 특성이 줄에 붙으면서 "어느 줄이 나오냐"가 뽑기 운이 됐다 — make() 가 줄을
+# 완전 무작위로 고른다. 그 불만이 등급에서 줄로 옮겨가지 않게, 줄만 바꾸는
+# 길을 둔다. 등급·레벨·조각은 그대로고 **다음 줄로 한 칸** 돈다 — 넷 중
+# 고르게 하지 않는 이유는 버튼이 하나면 되고, 최대 세 번이면 어디든 닿아서다.
+#
+# 값은 연마석이다. 제련의 성소가 주는 재화라 "재련"이 그 자리다. 등급에만
+# 비례하고 **레벨에는 안 비례한다** — 만렙 무기의 줄을 고치는 데 만렙 값을
+# 물리면 정작 고쳐야 할 무기(오래 키운 것)가 제일 못 고친다.
+const REFORGE_MULT := 3.0      # 커먼 0렙 레벨업 값의 세 배
+
+
+static func reforge_cost(item: Dictionary) -> float:
+	var i := clampi(GachaDefs.rarity_index(str(item.get("rarity", "common"))),
+		0, RARITY.size() - 1)
+	return ceilf(25.0 * REFORGE_MULT * float(RARITY[i]["power"]))
+
+
+# 다음 줄의 [icon, name]. 무기가 아니거나 표가 비면 빈 배열.
+static func next_lane_spec(item: Dictionary) -> Array:
+	if str(item.get("slot", "")) != "weapon":
+		return []
+	var pool := items_of("weapon", str(item.get("rarity", "common")))
+	if pool.is_empty():
+		return []
+	return pool[(lane_of(item) + 1) % pool.size()]
+
+
 static func items_of(slot: String, rarity_key: String) -> Array:
 	return CATALOG.get(slot, {}).get(rarity_key, [])
 

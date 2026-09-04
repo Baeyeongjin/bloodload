@@ -5020,6 +5020,23 @@ func _refresh_gear_detail() -> void:
 	synth_button.disabled = whet < up_cost0
 	synth_button.pressed.connect(_level_up_selected)
 	_gear_detail.add_child(synth_button)
+	# 재련 — 무기만. 줄(특성)을 다음으로 한 칸 돌린다. 되돌릴 수 없으니 묻는다.
+	var nspec: Array = GearDefs.next_lane_spec(item)
+	if not nspec.is_empty():
+		var rcost := GearDefs.reforge_cost(item)
+		var reforge := Ui.button("재련", Vector2(238.0, 264.0),
+			Vector2(100.0, 44.0), Type.SIZE_SMALL)
+		Ui.cost_icon(reforge, "res://assets/items/gem.png", 16)
+		reforge.disabled = whet < rcost
+		var cur_t := GearDefs.trait_text(GearDefs.trait_of(item))
+		var nxt_t := GearDefs.trait_text(GearDefs.trait_of(
+			{"slot": "weapon", "rarity": str(item.get("rarity", "common")),
+			"icon": str(nspec[0])}))
+		reforge.pressed.connect(func() -> void:
+			_ask("%s → %s\n\n%s\n→ %s\n\n연마석 %s · 등급·레벨·조각은 그대로"
+				% [str(item["name"]), str(nspec[1]), cur_t, nxt_t, _n(rcost, true)],
+				_reforge_selected, "재련", "재련"))
+		_gear_detail.add_child(reforge)
 	var close := Ui.button("닫기", Vector2(454.0, 264.0),
 		Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _gear_detail.visible = false)
@@ -5059,6 +5076,55 @@ func _level_up_selected() -> void:
 		eq["inventory_key"] = _gear_selected_key
 		equipped[slot] = eq
 	_apply_hp_growth(old_max)
+	_refresh_gear_slots()
+	_refresh_gear_inventory()
+	_refresh_gear_detail()
+	_refresh_hud()
+	_save_game()
+
+
+# 재련 — 고른 무기의 줄을 다음 줄로. 등급·레벨·조각·장착은 그대로 따라간다.
+# 보관함 키가 icon 이라 **키가 바뀐다** — 승급(_synthesize_selected)이 이미
+# 하는 옮기기를 그대로 한다. 다만 승급과 달리 옛 종을 남기지 않는다: 이건
+# 새 등급이 생기는 게 아니라 같은 무기가 모양을 바꾸는 것이다.
+func _reforge_selected() -> void:
+	var old_key := _gear_selected_key
+	var item: Dictionary = gear_inventory.get(old_key, {})
+	var spec: Array = GearDefs.next_lane_spec(item)
+	if spec.is_empty():
+		return
+	var cost := GearDefs.reforge_cost(item)
+	if whet < cost:
+		return
+	var new_key := str(spec[0])
+	if new_key == old_key:
+		return
+	whet -= cost
+	gear_inventory.erase(old_key)
+	item["icon"] = new_key
+	item["name"] = str(spec[1])
+	var slot := str(item["slot"])
+	var was_equipped := str(equipped.get(slot, {}).get("inventory_key", "")) == old_key
+	# 조각도 따라간다 — 조각은 "이 무기의 것"이지 "이 줄의 것"이 아니다.
+	var old_sh := "gear:" + old_key
+	var new_sh := "gear:" + new_key
+	var sh := int(gacha_shards.get(old_sh, 0))
+	gacha_shards.erase(old_sh)
+	if gear_inventory.has(new_key):
+		# 그 줄을 이미 갖고 있으면 한 묶음으로 합친다(승급과 같은 규칙).
+		var existing: Dictionary = gear_inventory[new_key]
+		existing["copies"] = int(existing.get("copies", 1)) + int(item.get("copies", 1))
+		existing["lv"] = maxi(int(existing.get("lv", 0)), int(item.get("lv", 0)))
+		item = existing
+	else:
+		gear_inventory[new_key] = item
+	gacha_shards[new_sh] = int(gacha_shards.get(new_sh, 0)) + sh
+	gacha_owned[new_sh] = true
+	if was_equipped:
+		var eq := item.duplicate(true)
+		eq["inventory_key"] = new_key
+		equipped[slot] = eq
+	_gear_selected_key = new_key
 	_refresh_gear_slots()
 	_refresh_gear_inventory()
 	_refresh_gear_detail()
