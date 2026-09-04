@@ -13479,8 +13479,14 @@ func _c_enemy_power() -> float:
 		# 혈전 — 최고 구간보다 조금 아래서 출발해 층마다 세진다(RushDefs).
 		return StageDefs.enemy_power(RushDefs.eq_stage(rush_floor, best_stage))
 	if raid_on != "":
-		return StageDefs.enemy_power(
+		var base := StageDefs.enemy_power(
 			RaidDefs.eq_stage(_raid_stage(), raid_on, best_stage))
+		# 버티기는 시간이 갈수록 새로 서는 놈이 세진다(RaidDefs.endure_ramp).
+		# _boss_time 은 제한 시간에서 내려오는 시계라 경과 = 1 - 남은/전체.
+		if RaidDefs.goal(raid_on) == "endure":
+			var lim := maxf(1.0, RaidDefs.ENDURE_TIME)
+			return base * RaidDefs.endure_ramp(1.0 - _boss_time / lim)
+		return base
 	return StageDefs.enemy_power(DungeonDefs.eq_stage(dungeon_floor)) if dungeon_on \
 		else StageDefs.enemy_power(stage)
 

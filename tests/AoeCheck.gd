@@ -58,6 +58,11 @@ func _init() -> void:
 	# 옛 검사를 그대로 두면 규칙을 지킨 코드가 실패한다 — 실제로 그렇게 걸렸다.
 	scene._skill_action = ""
 	scene._skill_cd.clear()
+	# **무기를 벗긴다.** 여기서 세는 건 스킬(파)의 이펙트인데, 무기 특성(2026-09-02
+	# cleave·chain)이 평타에 이펙트를 하나 더 얹는다. 앞 검사가 남긴 저장본에 그런
+	# 무기가 끼어 있으면 같은 프레임에 평타가 꽂혀 "이펙트가 2개"로 엉뚱하게
+	# 빨개진다 — 실제로 한 번 났다. 스킬 검사에 장비는 변수가 아니어야 한다.
+	scene.equipped.erase("weapon")
 	var fx_before := _count_fx(scene)
 	scene._skill_target = targets[0]
 	scene._resolve_skill("wave_epic")

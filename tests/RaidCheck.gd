@@ -265,5 +265,33 @@ func _init() -> void:
 	scene._advance_stage()
 	assert(is_equal_approx(scene.gold, base_blood), "물량 판에 처치 보너스가 얹혔다")
 
-	print("RaidCheck OK  (표 · 입장 · 소탕 · 버티기 처치 보너스)")
+	# ── 버티기 램프 (사장님 2026-09-02: "몹이 시간 따라 세지는 것도") ───────
+	assert(is_equal_approx(RaidDefs.endure_ramp(0.0), 1.0), "시작부터 세다")
+	assert(is_equal_approx(RaidDefs.endure_ramp(1.0), 1.0 + RaidDefs.ENDURE_RAMP),
+		"끝 배수가 표와 다르다")
+	assert(is_equal_approx(RaidDefs.endure_ramp(5.0), RaidDefs.endure_ramp(1.0)),
+		"경과가 1 을 넘으면 계속 센다 — 시계가 음수로 새면 폭주한다")
+	# 실전: 세기 허브가 남은 시간을 읽는다. 물량 판은 안 는다.
+	while scene._fade_t > 0.0 or scene.raid_on != "":
+		await process_frame
+	scene.raid_on = "pact"
+	scene.raid_best["pact"] = 3
+	scene._boss_time = RaidDefs.ENDURE_TIME          # 막 시작
+	var p0: float = scene._c_enemy_power()
+	scene._boss_time = 0.0                           # 끝
+	var p1: float = scene._c_enemy_power()
+	assert(p1 > p0 * (1.0 + RaidDefs.ENDURE_RAMP) * 0.999
+		and p1 < p0 * (1.0 + RaidDefs.ENDURE_RAMP) * 1.001,
+		"버티기 끝 세기가 x%.2f 여야 하는데 x%.2f" % [1.0 + RaidDefs.ENDURE_RAMP, p1 / p0])
+	scene.raid_on = "blood"
+	scene.raid_best["blood"] = 3
+	scene._boss_time = RaidDefs.TIME_LIMIT
+	var q0: float = scene._c_enemy_power()
+	scene._boss_time = 0.0
+	assert(is_equal_approx(scene._c_enemy_power(), q0), "물량 판 몹이 시간 따라 셌다")
+	scene.raid_on = ""
+	# 판 문구가 규칙을 말한다 — 안 적으면 없는 규칙이다.
+	assert("세진다" in RaidDefs.goal_line("pact"), "버티기 문구에 램프가 없다")
+
+	print("RaidCheck OK  (표 · 입장 · 소탕 · 버티기 처치 보너스 · 램프)")
 	quit()

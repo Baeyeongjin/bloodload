@@ -200,5 +200,12 @@ func _init() -> void:
 	var ar := GearDefs.make("armor", 5, GachaDefs.RARITIES[0])
 	assert(GearDefs.next_lane_spec(ar).is_empty(), "방어구에 재련이 붙었다")
 
+	# **뒷정리.** 재련이 _save_game 을 타서 특성 무기가 저장본에 남는다. 그러면
+	# 다음 검사(AoeCheck)가 스킬 이펙트를 세는 프레임에 평타 특성 이펙트가 끼어
+	# 빨개진다 — 실제로 났다. 검사는 자기가 어질러 놓은 것을 치운다(PrestigeCheck 규칙).
+	scene.equipped.erase("weapon")
+	scene.gear_inventory = {}
+	scene._save_game()
+
 	print("WeaponTraitCheck OK  (표 4줄 · 승급이 줄을 지킴 · 광역/처형/기절/연쇄 실전 · 재련)")
 	quit(0)

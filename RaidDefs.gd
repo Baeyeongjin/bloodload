@@ -48,7 +48,7 @@ const RAIDS := {
 		"goal_text": "수호자 %d마리 격파",
 		"icon": "res://assets/ui/raid_essence.png"},
 	"pact": {"name": "계약의 제단", "currency": "인장", "goal": "endure",
-		"goal_text": "%d초를 버틴다",
+		"goal_text": "%d초를 버틴다 — 갈수록 세진다",
 		"icon": "res://assets/ui/raid_pact.png"},
 	# 펫 먹이(사장님 2026-08-18, PET_DESIGN v2). 이름 후보 중 "야수 우리" 채택 —
 	# 바꾸려면 이 한 줄이다. goal 은 swarm 재사용(사냥 테마와 맞고, 새 규칙을
@@ -120,6 +120,21 @@ const SWARM_PAUSE := 0.18
 # 깨는 사람이 손해 보는 일은 없고, 세지면 그 위에 얹힌다.
 const ENDURE_BONUS_KILLS := 120
 const ENDURE_BONUS_MAX := 0.5
+
+# ── 버티기 램프 (2026-09-02 사장님: "몹이 시간 따라 세지는 것도") ──────────
+# 처치 보너스만으로는 "강하면 더 받는" 것이지 "약하면 못 깨는" 것이 아니었다 —
+# 잡졸(hp x0.25)이라 동굴을 깨는 영웅은 죽을 수가 없었다. 시간이 갈수록 새로
+# 서는 놈이 세진다: 끝에 x(1 + RAMP). 이미 서 있는 놈은 그대로다(스폰 때 굳는다).
+#
+# 1.5 → 끝에 x2.5. 잡졸 배수 0.25 위에 곱하므로 끝 몹도 본편 몹의 0.6배 —
+# 동굴을 깨는 영웅은 여전히 안 죽고, 그 경계에 있는 영웅만 뒷 30초에서 위험해진다.
+# 죽으면 빈손인 규칙은 그대로다(다른 재화 던전과 같은 규칙).
+const ENDURE_RAMP := 1.5
+
+
+# 경과 비율(0=시작, 1=끝)에 따른 세기 배수.
+static func endure_ramp(frac: float) -> float:
+	return 1.0 + ENDURE_RAMP * clampf(frac, 0.0, 1.0)
 
 
 static func endure_bonus(k: int) -> float:
