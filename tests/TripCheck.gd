@@ -191,5 +191,43 @@ func _init() -> void:
 	assert(scene._trip_prize("nightwing").is_empty(),
 		"로스터가 다 끝났는데도 뭘 파 온다 — 미보유 조각이 새고 있다")
 
-	print("TripCheck OK")
+	# ── 모두 보내기 (사장님 2026-09-02) ──────────────────────────────────
+	# 칸이 2~4개인데 한 마리씩 고르려면 격자 스물다섯 칸을 훑어야 했다.
+	scene.pet_trip = {}
+	scene.best_stage = PetDefs.TRIP_OPEN
+	scene.pets_got = {}
+	scene.pet_gear_worn = {}
+	# 보낼 수 있는 펫을 넉넉히 쥐어 준다(별 5 미만이면 제 조각을 판다).
+	for p2 in PetDefs.PETS:
+		scene.pets_got[str(p2["id"])] = 1
+	var slots: int = PetDefs.trip_slots(scene.pets_got.size())
+	assert(slots >= 2, "파견 칸이 없다")
+	assert(scene._trip_can_send_any(), "보낼 수 있는데 버튼이 꺼져 있다")
+	scene._trip_send_all()
+	# **칸을 넘겨 보내지 않는다.** 여기가 새면 원정이 무한이 된다.
+	assert(scene.pet_trip.size() == slots,
+		"칸 %d 인데 %d 마리를 보냈다" % [slots, scene.pet_trip.size()])
+	# 꽉 찼으면 버튼이 꺼진다 — 버튼과 동작이 **같은 자**를 써야 "눌러도 아무
+	# 일 없는" 자리가 안 생긴다.
+	assert(not scene._trip_can_send_any(), "꽉 찼는데 버튼이 켜져 있다")
+	var before: int = scene.pet_trip.size()
+	scene._trip_send_all()
+	assert(scene.pet_trip.size() == before, "꽉 찬 뒤에도 더 보냈다")
+
+	# 문턱 아래에서는 한 마리도 안 나간다.
+	scene.pet_trip = {}
+	scene.best_stage = PetDefs.TRIP_OPEN - 1
+	assert(not scene._trip_can_send_any(), "%d구간 전인데 버튼이 켜져 있다"
+		% PetDefs.TRIP_OPEN)
+	scene._trip_send_all()
+	assert(scene.pet_trip.is_empty(), "문턱 전인데 원정이 나갔다")
+
+	# 이미 나간 펫은 두 번 안 보낸다.
+	scene.best_stage = PetDefs.TRIP_OPEN
+	scene._trip_send_all()
+	var out_ids: Array = scene.pet_trip.keys().duplicate()
+	scene._trip_send_all()
+	assert(scene.pet_trip.keys() == out_ids, "같은 펫을 또 보냈다")
+
+	print("TripCheck OK  (원정 표·심부름·모두 보내기)")
 	quit(0)

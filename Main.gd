@@ -17778,6 +17778,12 @@ func _pet_build_trip(root: Control) -> void:
 		Vector2(120.0, 40.0), "받기")
 	take["btn"].pressed.connect(func() -> void: _trip_claim(_trip_sel))
 	_trip_ui["take"] = take
+	# 모두 보내기 — 둥지의 "모두 받기"와 같은 자리(카드 아래쪽), 같은 크기.
+	var all_go := _pet_btn(root,
+		Vector2(PAD + CONTENT_W - 138.0, PET_DETAIL_Y + 122.0),
+		Vector2(120.0, 32.0), "모두 보내기")
+	all_go["btn"].pressed.connect(_trip_send_all)
+	_trip_ui["all"] = all_go
 
 
 func _pet_trip_art(i: int) -> Control:
@@ -17832,6 +17838,8 @@ func _refresh_pet_trip() -> void:
 	var can_go := pets_got.has(sel) and left_sel < 0.0 and not prize.is_empty() 		and pet_trip.size() < slots and best_stage >= PetDefs.TRIP_OPEN
 	_pet_btn_enable(_trip_ui["go"], can_go)
 	_pet_btn_enable(_trip_ui["take"], is_equal_approx(left_sel, 0.0))
+	if _trip_ui.has("all"):
+		_pet_btn_enable(_trip_ui["all"], _trip_can_send_any())
 
 
 func _pet_build_gear(root: Control) -> void:
@@ -18538,6 +18546,46 @@ func _trip_send(id: String) -> void:
 		+ PetDefs.trip_hours(str(prize["rarity"])) * 3600.0, str(prize["key"])]
 	_save_game()
 	_refresh_pet()
+
+
+# 빈 칸을 한 번에 채운다 (사장님 2026-09-02). 칸이 2~4개인데 한 마리씩 골라
+# 보내려면 격자에서 스물다섯 칸을 훑어야 했다 — 둥지의 "모두 받기"와 같은 이유다.
+#
+# **새 규칙을 안 만든다.** _trip_send 를 그대로 돌리므로 문턱(구간·칸 수·이미
+# 나간 펫·보낼 곳 없음)은 그 함수가 이미 쥔 것 그대로다. 여기서 다시 판정하면
+# 두 곳이 갈려서 "버튼은 켜졌는데 아무 일도 안 하는" 자리가 생긴다.
+#
+# 순서는 **표 순서**(PETS)다 — 등급 순으로 고르면 좋아 보이지만, 원정 시간은
+# 나올 조각의 등급이 정하므로(전설이 16시간) 귀한 것부터 보내면 칸이 오래
+# 잠긴다. 무엇을 먼저 보낼지는 골라 보내는 사람이 정하는 게 맞다.
+func _trip_send_all() -> void:
+	var sent := 0
+	for p in PetDefs.PETS:
+		if pet_trip.size() >= PetDefs.trip_slots(pets_got.size()):
+			break
+		var id := str(p["id"])
+		if pet_trip.has(id):
+			continue
+		var before := pet_trip.size()
+		_trip_send(id)
+		if pet_trip.size() > before:
+			sent += 1
+	if sent > 0:
+		_refresh_pet()
+
+
+# 지금 한 마리라도 보낼 수 있는가. 버튼과 _trip_send 가 **같은 자**를 쓰게
+# 하려고 실제로 굴려 보지 않고 조건만 되짚는다(_gear_can_level 과 같은 규칙).
+func _trip_can_send_any() -> bool:
+	if best_stage < PetDefs.TRIP_OPEN:
+		return false
+	if pet_trip.size() >= PetDefs.trip_slots(pets_got.size()):
+		return false
+	for p in PetDefs.PETS:
+		var id := str(p["id"])
+		if not pet_trip.has(id) and not _trip_prize(id).is_empty():
+			return true
+	return false
 
 
 func _trip_claim(id: String) -> void:
