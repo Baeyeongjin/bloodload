@@ -284,7 +284,10 @@ const TRACK_CAP := 10
 
 
 static func scroll(pos: Vector2, size: Vector2, horizontal := false) -> ScrollContainer:
-	var s := ScrollContainer.new()
+	# **TouchScroll 이다** — 손가락으로 끌어 넘기려면 _input 에서 잡아야 한다.
+	# 목록 칸이 전부 버튼이라 기본 ScrollContainer 의 _gui_input 까지 터치가
+	# 안 온다(사장님 2026-09-10: "손가락으로 슬라이드해서 올릴수있게").
+	var s := TouchScroll.new()
 	s.position = Grid.pxv(pos)
 	s.size = Grid.pxv(size)
 	s.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if horizontal \

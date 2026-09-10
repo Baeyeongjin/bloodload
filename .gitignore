@@ -49,3 +49,6 @@ android/
 # 새면 남이 우리 이름으로 앱을 낼 수 있다. 따로 백업해 둘 것.
 *.keystore
 *.jks
+
+# Netlify CLI 가 만드는 링크 정보(사이트 id). 로컬 것이다.
+.netlify/
