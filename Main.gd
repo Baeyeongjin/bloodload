@@ -11673,15 +11673,16 @@ func _step_for(key: String) -> int:
 # 꾹 누르면 이어서 눌린다. 레벨업은 수십 번 눌러야 하는 자리라 손이 아프다.
 #
 # 첫 발동은 `pressed` 가 한다 — 짧게 누르면 한 번이고, 여기는 손대지 않는다.
-# 길게 물고 있으면 HOLD_DELAY 뒤부터 HOLD_RATE 마다 다시 부른다.
+# 길게 물고 있으면 HOLD_DELAY(0.28초) 뒤부터 HOLD_RATE(0.06초) 마다 다시
+# 부른다 — 초당 열여섯 번이다(사장님 2026-09-10: "좀더 줄여도될듯").
 # **점점 빨라지지는 않는다**: 가속을 넣으면 손을 떼는 순간 스무 번이 지나가고,
 # 그건 되돌릴 수 없는 소비다.
 #
 # 끝내는 자가 셋인 이유 — 터치에서는 `button_up` 이 안 오는 길이 있다
 # (끌어서 판을 넘기면 TouchScroll 이 뗌을 삼킨다). 그래서 틱마다 **실제로
 # 아직 누르고 있는지**를 다시 묻는다. 이게 없으면 타이머가 영영 돈다.
-const HOLD_DELAY := 0.45
-const HOLD_RATE := 0.10
+const HOLD_DELAY := 0.28
+const HOLD_RATE := 0.06
 
 
 func _hold_repeat(btn: Button, act: Callable) -> void:
