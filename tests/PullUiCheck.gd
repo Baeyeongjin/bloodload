@@ -211,5 +211,23 @@ func _init() -> void:
 		"성공했는데 등급 천장이 안 지워졌다")
 	scene._bulk_view.visible = false
 
+	# ── 확률 문구 (사장님 2026-09-10: "0%면 소수점까지 보여줘야 하지 않아") ──
+	# **0 이 아닌 값이 "0%" 로 보이면 거짓말이다.** 한 자리로 반올림하면 0.04%
+	# 같은 값이 0 이 되어 "열렸는데 안 나온다"로 읽힌다.
+	assert(scene._rate_text(0.04) == "0.04%",
+		"0.1%% 미만이 뭉개진다: %s" % scene._rate_text(0.04))
+	assert(scene._rate_text(0.09) == "0.09%",
+		"0.1%% 미만이 뭉개진다: %s" % scene._rate_text(0.09))
+	# 흔한 값은 짧게 — 소수점이 늘 붙으면 표가 지저분해진다.
+	assert(scene._rate_text(50.0) == "50%",
+		"정수 확률에 소수점이 붙었다: %s" % scene._rate_text(50.0))
+	assert(scene._rate_text(1.5) == "1.5%",
+		"한 자리가 사라졌다: %s" % scene._rate_text(1.5))
+	# 진짜 0 은 여기까지 오지 않는다 — 호출부가 "-" 로 적거나 줄에서 뺀다.
+	# 신화가 그 자리다(2026-09-10 부터 어느 뽑기에도 안 나온다).
+	var mi := GachaDefs.rarity_index("mythic")
+	assert(is_equal_approx(GachaDefs.rates(GachaDefs.LEVEL_MAX)[mi], 0.0),
+		"신화가 뽑기 확률을 갖고 있다")
+
 	print("PullUiCheck OK")
 	quit(0)

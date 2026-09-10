@@ -5834,6 +5834,18 @@ func _build_rates_table(root: Control) -> void:
 	_rates_scroll = sc
 
 
+# 화면에 적는 확률 한 조각. **두 곳(확률표·소환 줄)이 같은 자를 쓴다** — 따로
+# 적어 두면 한쪽만 낡는다.
+#
+# 0.1% 미만은 **두 자리로 적는다.** 한 자리로 반올림하면 0 이 아닌 값이 "0%"가
+# 되어 "열렸는데 안 나온다"는 거짓말이 된다(진짜 0 인 칸은 호출부가 아예 "-"로
+# 적거나 줄에서 빼므로, 여기 오는 값은 언제나 양수다).
+static func _rate_text(v: float) -> String:
+	if v < 0.1:
+		return "%.2f%%" % v
+	return ("%.1f" % v).trim_suffix(".0") + "%"
+
+
 func _refresh_rates_table() -> void:
 	if not _rates_view or not _rates_view.visible:
 		return
@@ -5852,7 +5864,7 @@ func _refresh_rates_table() -> void:
 				cell.text = "-"      # 아직 안 열린 칸. 0% 로 적으면 "열렸는데 안 나온다"로 읽힌다
 				cell.add_theme_color_override("font_color", Color(0.40, 0.39, 0.44))
 				continue
-			cell.text = ("%.1f" % col_rates[r]).trim_suffix(".0") + "%"
+			cell.text = _rate_text(col_rates[r])
 			cell.add_theme_color_override("font_color",
 				Color(1.0, 0.92, 0.72) if c == lv else Color(0.80, 0.78, 0.84))
 	# 열 때 지금 레벨이 보이는 자리로 굴려 둔다 — 매번 왼쪽 끝부터 밀게 하지 않는다.
@@ -6967,8 +6979,8 @@ func _refresh_gacha() -> void:
 		# 확률이 0인 칸(안 열렸거나 그 소환에 없는 등급)은 줄에서 뺀다.
 		if r[i] <= 0.0:
 			continue
-		parts.append("%s %s%%" % [str(GachaDefs.RARITIES[i]["name"]),
-			("%.1f" % r[i]).trim_suffix(".0")])
+		parts.append("%s %s" % [str(GachaDefs.RARITIES[i]["name"]),
+			_rate_text(r[i])])
 	# 두 줄로 반씩 나눈다. 3개씩 고정으로 자르면 4개일 때 아랫줄에 하나만 남는다.
 	# 가운뎃점 구분자는 만렙 확률(소수점 한 자리)에서 8px 넘친다 — 공백 두 칸으로 쓴다.
 	var half := (parts.size() + 1) / 2
