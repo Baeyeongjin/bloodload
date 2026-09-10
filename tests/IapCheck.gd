@@ -203,5 +203,53 @@ func _init() -> void:
 	assert(float(raid_ltd["reward"].get("raid_pass", 0.0)) > 0.0,
 		"던전 특가가 입장권을 안 준다")
 
+	# ── 되풀이 꾸러미 (사장님 2026-09-10: "주간 월간 일간 패키지") ────────
+	# 셋째 갈래다 — PACKS 는 계정당 1회, SUBS 는 기간 동안 매일, 이건 주기마다.
+	assert(IapDefs.CYCLES.size() == 3, "꾸러미가 3종이 아니다")
+	var seen_days := {}
+	for cy in IapDefs.CYCLES:
+		var cid := str(cy["id"])
+		assert(int(cy["days"]) > 0, "%s 의 주기가 0 이다" % cid)
+		assert(not seen_days.has(int(cy["days"])), "주기가 겹친다: %s" % cid)
+		seen_days[int(cy["days"])] = true
+		assert(int(cy["value"]) >= 100, "가치 배지가 100%% 미만이다: %s" % cid)
+		# **파는 것이 소환권과 입장권이다**(사장님 지정).
+		var has_ticket := false
+		for k in cy["reward"]:
+			assert(float(cy["reward"][k]) > 0.0, "%s 의 %s 가 0 이다" % [cid, k])
+			if TicketDefs.kind_of(str(k)) != "":
+				has_ticket = true
+		assert(has_ticket, "%s 에 소환권이 없다" % cid)
+		assert(float(cy["reward"].get("raid_pass", 0.0)) > 0.0,
+			"%s 에 던전 입장권이 없다" % cid)
+		# 주기가 길수록 하루치가 싸야 한다 — 아니면 긴 것을 살 이유가 없다.
+		assert(not IapDefs.cycle_of(cid).is_empty(), "cycle_of 가 못 찾는다: %s" % cid)
+
+	# 실제 구매. 소환권과 표가 둘 다 들어온다.
+	scene.iap_cycle = {}
+	scene.tickets = {}
+	scene._raid_roll_day()
+	var day_id := str(IapDefs.CYCLES[0]["id"])
+	var rk9 := str(RaidDefs.RAIDS.keys()[0])
+	var raid0: int = scene._raid_left(rk9)
+	assert(scene._iap_buy(day_id), "일일 꾸러미를 못 산다")
+	var tk_sum := 0
+	for tk in scene.tickets:
+		tk_sum += int(scene.tickets[tk])
+	assert(tk_sum > 0, "꾸러미를 샀는데 소환권이 없다")
+	assert(scene._raid_left(rk9) > raid0, "꾸러미를 샀는데 표가 안 늘었다")
+	# **주기가 안 돌면 못 산다.**
+	assert(not scene._iap_buy(day_id), "같은 날 두 번 샀다")
+	assert(scene._cycle_left(day_id) > 0, "남은 날이 0 이다")
+	# 주기가 돌면 다시 산다.
+	scene.iap_cycle[day_id] = "2000-01-01"
+	assert(scene._cycle_left(day_id) == 0, "옛날에 샀는데 아직 남았다")
+	assert(scene._iap_buy(day_id), "주기가 돌았는데 못 산다")
+	# 월간은 하루 지나도 안 돌아온다 — 주기가 실제로 길다.
+	var mon_id := str(IapDefs.CYCLES[2]["id"])
+	scene.iap_cycle[mon_id] = Time.get_date_string_from_system()
+	assert(scene._cycle_left(mon_id) >= 29,
+		"월간 주기가 짧다: %d일" % scene._cycle_left(mon_id))
+
 	print("IapCheck OK")
 	quit()

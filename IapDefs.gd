@@ -162,6 +162,44 @@ static func limited_of(id: String) -> Dictionary:
 	return {}
 
 
+# ── 되풀이 꾸러미 (2026-09-10 사장님: "주간 월간 일간 패키지 소환권이랑
+# 던전 입장권 팔면 좋겠어") ─────────────────────────────────────────────────
+# 셋째 갈래다. PACKS 는 **구간이 열어 주는 계정당 1회**, SUBS 는 **기간 동안
+# 매일**, 이건 **주기마다 다시 사는 것**이다 — 상점에도 "오늘 할 일"이 생긴다.
+#
+# 주기는 **산 날로부터 N일**이다(달력 주·달이 아니라). 월요일이나 1일에 맞추면
+# 늦게 시작한 사람이 첫 주기를 손해 보고, 시차·기기 시계까지 걸린다.
+#
+# 파는 것은 소환권과 던전 입장권 — 둘 다 **자정이면 어차피 도는 것**이라
+# 여기서도 파는 것은 시간이다. 주기가 길수록 하루치가 싸진다(가치 200 -> 280).
+const CYCLES := [
+	{"id": "cyc_day", "name": "일일 꾸러미", "days": 1, "price": 1100, "value": 200,
+		"desc": "소환권 2장 · 던전 입장권 1회",
+		"reward": {"ticket_weapon": 1.0, "ticket_skill": 1.0, "raid_pass": 1.0}},
+	{"id": "cyc_week", "name": "주간 꾸러미", "days": 7, "price": 5500, "value": 240,
+		"desc": "소환권 16장 · 던전 입장권 5회",
+		"reward": {"ticket_weapon": 4.0, "ticket_armor": 4.0,
+			"ticket_trinket": 4.0, "ticket_skill": 4.0, "raid_pass": 5.0}},
+	{"id": "cyc_month", "name": "월간 꾸러미", "days": 30, "price": 16000,
+		"value": 280, "desc": "소환권 40장 · 던전 입장권 15회 · 보석 1000",
+		"reward": {"ticket_weapon": 10.0, "ticket_armor": 10.0,
+			"ticket_trinket": 10.0, "ticket_skill": 10.0, "raid_pass": 15.0,
+			"gem": 1000.0}},
+]
+
+
+static func cycle_of(id: String) -> Dictionary:
+	for x in CYCLES:
+		if str(x["id"]) == id:
+			return x
+	return {}
+
+
+static func cycle_days(id: String) -> int:
+	var c := cycle_of(id)
+	return int(c["days"]) if not c.is_empty() else 0
+
+
 # ── 보석 충전 ───────────────────────────────────────────────────────────────
 # 첫 구매 x2 는 **한 번뿐**이다 — 상시 배수는 정가를 거짓말로 만든다.
 const GEMS := [

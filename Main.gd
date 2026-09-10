@@ -7929,6 +7929,8 @@ var iap_bought := {}        # 1회성 팩 id -> true
 # 오늘의 특가를 산 날짜. **하루에 파는 것은 limited_today 가 고른 하나뿐**이라
 # 날짜 하나로 족하다 — id 별로 쌓으면 저장이 날마다 늘어난다.
 var iap_ltd_date := ""
+var iap_cycle := {}         # 되풀이 꾸러미 id -> 마지막으로 산 날짜
+var _cycle_rows: Array = []
 var _ltd_card := {}         # 오늘의 특가 카드. 산 뒤에 잠그려면 참조가 필요하다
 var iap_first_buy := false  # 첫 구매 2배를 이미 썼는가
 var iap_daily_date := ""    # 구독 일일 지급을 오늘 줬는가
@@ -10008,6 +10010,33 @@ func _build_shop_packs(view: Control) -> void:
 		# 눌러도 아무 일도 안 났다. 형제 카드는 전부 이어져 있다.
 		lc["btn"].pressed.connect(_iap_buy.bind(str(ltd["id"])))
 		top += SHOP_WCARD_H + 10.0
+	# 되풀이 꾸러미 — 성장 패키지 **위**다. 아래 성장팩은 구간이 열어 주는
+	# 상시 진열이라, 주기제가 그 밑에 깔리면 주기제로 안 읽힌다(오늘의 특가를
+	# 맨 위에 둔 것과 같은 이유).
+	_shop_ribbon(view, top + 4.0, "되풀이 꾸러미 — 주기마다 다시")
+	top += 67.0
+	_cycle_rows.clear()
+	for i in IapDefs.CYCLES.size():
+		var cy: Dictionary = IapDefs.CYCLES[i]
+		var cyy := top + float(i) * (SHOP_WCARD_H + 10.0)
+		var cyr: Dictionary = cy["reward"]
+		var cyicon := ""
+		var cypills: Array = []
+		for k in cyr:
+			if cyicon == "":
+				cyicon = _shop_kind_icon(str(k))
+			if cypills.size() < 3:
+				cypills.append([_shop_kind_icon(str(k)), _n(float(cyr[k]))])
+		var cyc_card := _shop_wcard(view, cyy, str(cy["name"]), cyicon,
+			int(cy["value"]))
+		for j in cypills.size():
+			_shop_pill(cyc_card["root"], Vector2(150.0 + float(j) * 114.0, 60.0),
+				str(cypills[j][0]), str(cypills[j][1]))
+		cyc_card["sub"].text = str(cy["desc"])
+		cyc_card["price"].text = IapDefs.price_text(int(cy["price"]))
+		cyc_card["btn"].pressed.connect(_iap_buy.bind(str(cy["id"])))
+		_cycle_rows.append(cyc_card)
+	top += float(IapDefs.CYCLES.size()) * (SHOP_WCARD_H + 10.0) + 4.0
 	_shop_ribbon(view, top + 4.0, "성장 패키지 — 계정당 1회")
 	top += 67.0
 	for i in IapDefs.PACKS.size():
@@ -10464,6 +10493,18 @@ func _shop_set_mode(mode: String) -> void:
 func _refresh_packs() -> void:
 	if _pack_rows.is_empty():
 		return
+	# 되풀이 꾸러미 — 주기가 안 돌았으면 잠그고 **언제 다시 오는지** 적는다.
+	# 값 자리를 비워 두면 "왜 안 눌리지"가 된다.
+	for ci in _cycle_rows.size():
+		var cy2: Dictionary = IapDefs.CYCLES[ci]
+		var cid := str(cy2["id"])
+		var cleft := _cycle_left(cid)
+		var crow: Dictionary = _cycle_rows[ci]
+		crow["btn"].disabled = not IapDefs.DEV_FREE or cleft > 0
+		crow["root"].modulate = Color(1, 1, 1) if cleft <= 0 \
+			else Color(0.5, 0.47, 0.52)
+		crow["price"].text = ("%d일 뒤" % cleft) if cleft > 0 \
+			else IapDefs.price_text(int(cy2["price"]))
 	# 오늘의 특가 — 산 뒤에는 잠근다. 안 잠그면 버튼이 켜진 채로 남아서
 	# "눌러도 아무 일이 없는" 자리가 된다(그게 이 판의 원래 버그였다).
 	if not _ltd_card.is_empty():
@@ -10497,7 +10538,27 @@ func _refresh_packs() -> void:
 # 팩·구독·보석이 저마다 지급 코드를 갖고 있으면 SDK 가 붙을 때 세 곳을 잇게
 # 되고, 그중 하나를 빠뜨리면 돈은 받고 물건은 안 주는 사고가 된다.
 # 반환값은 "실제로 팔렸나" — 이미 산 1회성 팩은 false 다.
+# 되풀이 꾸러미의 남은 날. 0 이면 지금 살 수 있다. **산 날로부터** 센다 —
+# 달력 주·달에 맞추면 늦게 시작한 사람이 첫 주기를 손해 본다.
+func _cycle_left(id: String) -> int:
+	var last := str(iap_cycle.get(id, ""))
+	if last == "":
+		return 0
+	var a := Time.get_unix_time_from_datetime_string(last)
+	var b := Time.get_unix_time_from_datetime_string(
+		Time.get_date_string_from_system())
+	return int(maxf(0.0, float(IapDefs.cycle_days(id)) - (b - a) / 86400.0))
+
+
 func _iap_buy(id: String) -> bool:
+	var cyc := IapDefs.cycle_of(id)
+	if not cyc.is_empty():
+		if _cycle_left(id) > 0:
+			return false
+		iap_cycle[id] = Time.get_date_string_from_system()
+		_iap_grant(cyc["reward"], str(cyc["name"]))
+		_iap_after()
+		return true
 	# 오늘의 특가 — pack/sub/GEMS 셋 중 어디에도 안 걸려서 여기까지 오면
 	# 그대로 false 로 떨어지던 자리다(limited_of 호출부가 0건이었다).
 	var ltd := IapDefs.limited_of(id)
@@ -17544,6 +17605,7 @@ func _save_game_inner() -> void:
 	cfg.set_value("iap", "subs", iap_subs)
 	cfg.set_value("iap", "bought", iap_bought)
 	cfg.set_value("iap", "ltd_date", iap_ltd_date)
+	cfg.set_value("iap", "cycle", iap_cycle)
 	cfg.set_value("iap", "first_buy", iap_first_buy)
 	cfg.set_value("iap", "daily_date", iap_daily_date)
 	cfg.set_value("pass", "points", pass_points)
@@ -17676,6 +17738,7 @@ func _load_game() -> void:
 	iap_subs = cfg.get_value("iap", "subs", {})
 	iap_bought = cfg.get_value("iap", "bought", {})
 	iap_ltd_date = str(cfg.get_value("iap", "ltd_date", ""))
+	iap_cycle = cfg.get_value("iap", "cycle", {})
 	iap_first_buy = bool(cfg.get_value("iap", "first_buy", false))
 	iap_daily_date = str(cfg.get_value("iap", "daily_date", ""))
 	pass_points = maxi(0, int(cfg.get_value("pass", "points", 0)))
