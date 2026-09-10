@@ -15,15 +15,15 @@ extends RefCounted
 
 # stage 를 **돌파**하면 열린다 (best_stage > stage — 기록은 다음 구간을 가리킨다).
 const RANKS := [
-	{"key": "slot", "stage": 50, "name": "군림 I — 일곱 번째 손",
-		"desc": "스킬 칸 6 → 7"},
-	{"key": "execute", "stage": 100, "name": "군림 II — 왕의 선고",
-		"desc": "처형 문턱 15% → 20%"},
-	{"key": "cleave3", "stage": 200, "name": "군림 III — 파도베기",
+	{"key": "slot", "stage": 50, "name": "군림 I - 일곱 번째 손",
+		"desc": "스킬 칸 6 » 7"},
+	{"key": "execute", "stage": 100, "name": "군림 II - 왕의 선고",
+		"desc": "처형 문턱 15% » 20%"},
+	{"key": "cleave3", "stage": 200, "name": "군림 III - 파도베기",
 		"desc": "3연격 마무리가 광역"},
-	{"key": "hours", "stage": 300, "name": "군림 IV — 긴 군림",
+	{"key": "hours", "stage": 300, "name": "군림 IV - 긴 군림",
 		"desc": "방치 상한 +4시간"},
-	{"key": "sweep2", "stage": 450, "name": "군림 V — 수확",
+	{"key": "sweep2", "stage": 450, "name": "군림 V - 수확",
 		"desc": "미궁 소탕 2배속"},
 ]
 

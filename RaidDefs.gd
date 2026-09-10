@@ -48,7 +48,7 @@ const RAIDS := {
 		"goal_text": "수호자 %d마리 격파",
 		"icon": "res://assets/ui/raid_essence.png"},
 	"pact": {"name": "계약의 제단", "currency": "인장", "goal": "endure",
-		"goal_text": "%d초를 버틴다 — 갈수록 세진다",
+		"goal_text": "%d초를 버틴다 - 갈수록 세진다",
 		"icon": "res://assets/ui/raid_pact.png"},
 	# 펫 먹이(사장님 2026-08-18, PET_DESIGN v2). 이름 후보 중 "야수 우리" 채택 —
 	# 바꾸려면 이 한 줄이다. goal 은 swarm 재사용(사냥 테마와 맞고, 새 규칙을

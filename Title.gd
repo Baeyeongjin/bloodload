@@ -240,7 +240,7 @@ func _process(delta: float) -> void:
 		ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
 			# **여기서 멈추면 유저는 영영 못 들어간다.** 스레드 로딩이 안 되면
 			# 곧장 씬을 바꾼다 — 그쪽은 동기 로딩이라 느릴 뿐 열리기는 한다.
-			push_error("Main.tscn 스레드 로딩 실패 — 동기 전환")
+			push_error("Main.tscn 스레드 로딩 실패 - 동기 전환")
 			_done = true
 			get_tree().change_scene_to_file(MAIN)
 			return

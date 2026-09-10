@@ -2331,7 +2331,7 @@ func _preset_card(kind: String, n: int) -> Control:
 	if icons.is_empty():
 		var empty_lbl := _dlg_label(card, Vector2(52.0, 52.0), Type.SIZE_SMALL,
 			Color(0.55, 0.52, 0.58), 300.0, 20.0)
-		empty_lbl.text = "비어 있음 — 지금 낀 것을 [저장]으로 담는다"
+		empty_lbl.text = "비어 있음 - 지금 낀 것을 [저장]으로 담는다"
 	else:
 		for i in mini(icons.size(), 9):
 			var frame := Ui.icon("res://assets/ui/slot_common.png",
@@ -2465,7 +2465,7 @@ func _show_info() -> void:
 			["치명타 확률", "%d%%" % crit_pct],
 			["치명타 피해", "x%.2f" % critdmg],
 		]],
-		["배수 — 어디서 오는 힘인가", [
+		["배수 - 어디서 오는 힘인가", [
 			["혈맥 (공격)", "x%.2f" % _trait_mult("attack")],
 			["핏빛 회귀", "x%.2f" % _prestige_mult()],
 			["시련", "x%.2f" % TrialDefs.mult(trial_stage)],
@@ -2583,13 +2583,13 @@ func _show_currency(key: String) -> void:
 	var c: Dictionary = CURRENCY_INFO.get(key, {})
 	if c.is_empty():
 		return
-	var body := "얻는 곳 — %s\n\n쓰는 곳 — %s" % [str(c["get"]), str(c["spend"])]
+	var body := "얻는 곳 - %s\n\n쓰는 곳 - %s" % [str(c["get"]), str(c["spend"])]
 	var tab := str(c["tab"])
 	var mode := str(c["mode"])
 	# 잠긴 탭으로는 안 보낸다. 대신 **아직 잠겼다**고 적는다 — 이동 버튼이
 	# 성장 탭으로 튕기면 "왜 엉뚱한 데로 갔지"가 된다.
 	if tab != "" and tab != "quest" and not _tab_open(tab):
-		_ask(body + "\n\n(아직 잠겨 있다 — 구간을 더 밀면 열린다)",
+		_ask(body + "\n\n(아직 잠겨 있다 - 구간을 더 밀면 열린다)",
 			Callable(), str(c["name"]), "")
 		return
 	if tab == "":
@@ -3364,14 +3364,14 @@ func _build_prestige_view(root: Control) -> void:
 	_pr_btn.position = bx
 	# **한 번 더 묻는다.** 되돌릴 수 없는 일은 확인 창을 지난다(공용 _confirm).
 	_pr_btn.pressed.connect(func() -> void:
-		_ask("%d구간을 접고 혈흔 %d 을 받습니다.\n\n잃는 것 — 구간 · 스탯 레벨 · 혈액\n남는 것 — 장비 · 스킬 · 유물 · 미궁 기록\n도감 · 칭호 · 혈맹 · 혈맥 · 혈정 · 인장\n\n되돌릴 수 없습니다."
+		_ask("%d구간을 접고 혈흔 %d 을 받습니다.\n\n잃는 것 - 구간 · 스탯 레벨 · 혈액\n남는 것 - 장비 · 스킬 · 유물 · 미궁 기록\n도감 · 칭호 · 혈맹 · 혈맥 · 혈정 · 인장\n\n되돌릴 수 없습니다."
 			% [best_stage, PrestigeDefs.marks_for(best_stage, prestige_peak)],
 			_prestige_do))
 	# ── 군림 각인 — 혈흔을 쓰는 유일한 자리 ───────────────────────────────
 	var ly := top + 168.0
 	var lt := _panel_label(_prestige_view, Vector2(PAD, ly), Type.SIZE_SMALL,
 		Color(0.92, 0.82, 0.62), CONTENT_W, 18.0)
-	lt.text = "군림 각인 — 회귀해도 안 꺼진다"
+	lt.text = "군림 각인 - 회귀해도 안 꺼진다"
 	_shop_outline(lt, 5)
 	var sc := Ui.scroll(Vector2(PAD, ly + 24.0),
 		Vector2(CONTENT_W, PANEL_H - (ly + 24.0) - 8.0))
@@ -3423,7 +3423,7 @@ func _prestige_buy(key: String) -> void:
 	var before := _prestige_mult()
 	var after := PrestigeDefs.power_mult(maxi(0,
 		prestige_marks - PrestigeDefs.spent(prestige_keeps) - cost))
-	_ask("혈흔 %d 을 새겨 이 군림을 영구히 남깁니다.\n\n공격 x%.2f → x%.2f\n\n되돌릴 수 없습니다."
+	_ask("혈흔 %d 을 새겨 이 군림을 영구히 남깁니다.\n\n공격 x%.2f » x%.2f\n\n되돌릴 수 없습니다."
 		% [cost, before, after],
 		func() -> void:
 			prestige_keeps[key] = true
@@ -3633,7 +3633,7 @@ func _refresh_pact() -> void:
 		return
 	_pact_sigil.text = _n(sigil)
 	var st := PactDefs.stars(pact_lv)
-	_pact_stars.text = "%s%s" % ["★".repeat(st), "☆".repeat(PactDefs.STAR_MAX - st)]
+	_pact_stars.text = "%s%s" % ["*".repeat(st), "-".repeat(PactDefs.STAR_MAX - st)]
 	# **"Lv." 금지** — 이 블랙레터 폰트에서 "LD" 로 읽힌다(3318줄 주석의 그 함정을
 	# 여기서 다시 밟았다: 화면에 "LD.168" 로 나왔다). 한글 단위가 항상 안전하다.
 	_pact_level.text = "%d레벨" % pact_lv
@@ -4170,7 +4170,7 @@ func _skill_unknown_card(rarity: Dictionary, shape := "") -> Control:
 		var mythic_name := SkillDefs.name_of(SkillDefs.mythic_key(shape))
 		why.pressed.connect(func() -> void:
 			var p2 := SkillDefs.mythic_progress(shape, skill_owned)
-			_skill_info.text = "%s 레전더리를 만렙(%d)까지 올리면 신화 %s을 얻는다 — 지금 %d" \
+			_skill_info.text = "%s 레전더리를 만렙(%d)까지 올리면 신화 %s을 얻는다 - 지금 %d" \
 				% [shape_name, int(p2[1]), mythic_name, int(p2[0])])
 		cell.add_child(why)
 		cell.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -4309,7 +4309,7 @@ func _combo_text() -> String:
 	if spread > 0.0:
 		parts.append("전 스탯 +%d%%" % int(spread * 100.0))
 	if parts.is_empty():
-		return "조합 없음 — 같은 형태를 모으거나 네 형태를 다 갖추면 보너스"
+		return "조합 없음 - 같은 형태를 모으거나 네 형태를 다 갖추면 보너스"
 	return "조합  " + "  ·  ".join(parts)
 
 
@@ -5376,7 +5376,7 @@ func _refresh_gear_detail() -> void:
 	owned.text = "보유  %s +%.2f%%" % [GearDefs.STAT_NAME[stat],
 		GearDefs.collection_rate(item) * 100.0]
 	if not capped:
-		owned.text += " → +%.2f%%" % (GearDefs.collection_rate(next_item) * 100.0)
+		owned.text += " » +%.2f%%" % (GearDefs.collection_rate(next_item) * 100.0)
 	# 무기 특성 — 스킬의 rule_text 와 같은 이유로 적는다: 안 적으면 없는 규칙이다.
 	# **아래 전폭 줄에 적는다**(사장님 2026-09-04 스크린샷). 오른쪽 칸(y 18~228)은
 	# 자원 다섯 칸이 146~220 을 이미 다 쓰고 있어서, 142 에 끼워 넣은 특성 줄이
@@ -5449,7 +5449,7 @@ func _refresh_gear_detail() -> void:
 	elif whet < up_cost0:
 		upgrade_hint.text = "연마석 %s 부족 · 제련의 성소에서 획득" % _n(up_cost0 - whet, true)
 	else:
-		upgrade_hint.text = "%d → %d레벨 · 장착·보유 효과가 함께 상승" % [int(item.get("lv", 0)), int(next_item["lv"])]
+		upgrade_hint.text = "%d » %d레벨 · 장착·보유 효과가 함께 상승" % [int(item.get("lv", 0)), int(next_item["lv"])]
 
 
 # 장착 중인 장비는 분해하지 않는다 — 지금 입고 있는 걸 녹이면 전투력이 말없이 떨어진다.
@@ -6244,7 +6244,7 @@ func _refresh_skill_detail() -> void:
 			else "조각 %d / %d" % [shards, cost], Color(0.82, 0.80, 0.86)],
 		["장착 중" if skill_equipped.has(key) else "미장착", col],
 		["조합 %d / %d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
-		["최고 등급" if next.is_empty() else "→ " + SkillDefs.name_of(next), col],
+		["최고 등급" if next.is_empty() else "» " + SkillDefs.name_of(next), col],
 	]
 	for i in rows.size():
 		var r := _panel_label(_skill_detail,
@@ -6372,7 +6372,7 @@ func _claim_chest() -> void:
 	if chest_crystal > 0.0:
 		entries.append({"icon": "res://assets/ui/res_crystal.png",
 			"label": _n(chest_crystal), "sub": "혈정 · 지급됨"})
-	_show_reward("방치 보상 — %d분" % int(chest_minutes), entries)
+	_show_reward("방치 보상 - %d분" % int(chest_minutes), entries)
 	if _reward_hint:
 		var summary: Array[String] = []
 		if chest_stages > 0:
@@ -6658,7 +6658,7 @@ func _check_mythic() -> void:
 		gacha_owned["skill:" + mk] = true
 		if skill_auto_equip:
 			_auto_equip_skills()
-		_show_clear("신화 해금!", "%s — %s 헌신의 증표"
+		_show_clear("신화 해금!", "%s - %s 헌신의 증표"
 			% [SkillDefs.name_of(mk), str(SkillDefs.SHAPES[shape]["name"])])
 	_refresh_skills()
 
@@ -7019,7 +7019,7 @@ func _refresh_gacha() -> void:
 		else Vector2(88.0, 369.0)
 	_gacha_place.text = "핏빛 대장간" if forge else "달의 제단"
 	_gacha_line.text = "좋은 재료가 들어왔다. 골라 봐라." if forge \
-		else "운명의 조각이 떨리고 있어요…"
+		else "운명의 조각이 떨리고 있어요..."
 	for kind in ["weapon", "armor", "trinket", "skill", "relic"]:
 		_gacha_buttons[kind].set_pressed_no_signal(_gacha_kind == kind)
 		var lbl: Label = _gacha_kind_labels[kind]
@@ -7455,7 +7455,7 @@ func _refresh_titles() -> void:
 		var conds: Array = t["conds"]
 		var cond_str := ""
 		for c in conds:
-			cond_str += "%s %s   " % ["✓" if TitleDefs.cond_met(c, state) else "─",
+			cond_str += "%s %s   " % ["O" if TitleDefs.cond_met(c, state) else "-",
 				TitleDefs.cond_text(c)]
 		_title_names[i].text = str(t["name"]) \
 			+ ("  · 장착" if title_worn == str(t["id"]) else "")
@@ -7545,7 +7545,7 @@ func _refresh_status() -> void:
 		var rate := FoeTiers.codex_bonus(codex_knowledge, stat)
 		if rate > 0.0:
 			now.append("%s +%d%%" % [FoeTiers.codex_stat_name(stat), int(rate * 100.0)])
-	_status_now.text = "지금 받는 것 —  %s" % ("  ·  ".join(now) if not now.is_empty()
+	_status_now.text = "지금 받는 것 -  %s" % ("  ·  ".join(now) if not now.is_empty()
 		else "아직 없음")
 	for row in _status_rows:
 		var done: bool = codex_knowledge >= int(row["need"])
@@ -8123,7 +8123,7 @@ func _claim_pass_all() -> void:
 		_grant_reward(str(k), float(sums[k]))
 		entries.append({"icon": _shop_kind_icon(str(k)),
 			"label": "+%s" % _n(float(sums[k])), "sub": _reward_name(str(k))})
-	_show_reward("성장 패스 — 일괄 수령", entries)
+	_show_reward("성장 패스 - 일괄 수령", entries)
 	_refresh_currency_visibility()
 	_refresh_hud()
 	_refresh_pass()
@@ -8227,7 +8227,7 @@ func _build_dungeon(root: Control) -> void:
 		Vector2(MAZE_W + 16.0, CONTENT_BOTTOM - 178.0))
 	var mt := _panel_label(root, Vector2(PAD + 12.0, 190.0), Type.SIZE_SMALL,
 		Color(1.0, 0.86, 0.55), MAZE_W - 24.0, 18.0)
-	mt.text = "군림 — 구간을 넘으면 스스로 열린다"
+	mt.text = "군림 - 구간을 넘으면 스스로 열린다"
 	_shop_outline(mt, 6)
 	for i in MasteryDefs.RANKS.size():
 		# 배지(badge_mastery, 사장님 선택 A) — 색은 해금 여부가 정한다(_refresh).
@@ -8367,7 +8367,7 @@ func _raid_set_mode(mode: String) -> void:
 			_raid_line.text = "오늘의 사냥감이 기다린다."
 		"boss":
 			_raid_place.text = "제물의 제단"
-			_raid_line.text = "이번 주의 제물은… 강하다."
+			_raid_line.text = "이번 주의 제물은... 강하다."
 		"trial":
 			_raid_place.text = "고대 유적지"
 			_raid_line.text = "물러날 줄 아는 것도 실력이지."
@@ -8592,7 +8592,7 @@ func _build_trial_panel(root: Control) -> void:
 	_shop_outline(r1, 5)
 	var r2 := _panel_label(root, Vector2(PAD + 18.0, 272.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.74), CONTENT_W - 36.0, 16.0)
-	r2.text = "실패해도 잃는 것은 없다 — 미궁을 오르면 다음 단계가 열린다"
+	r2.text = "실패해도 잃는 것은 없다 - 미궁을 오르면 다음 단계가 열린다"
 	_shop_outline(r2, 5)
 	_refresh_trial()
 
@@ -8667,11 +8667,11 @@ func _build_rush_panel(root: Control) -> void:
 		Vector2(CONTENT_W + 16.0, 96.0))
 	var r1 := _panel_label(root, Vector2(PAD + 18.0, 244.0), Type.SIZE_SMALL,
 		Color(0.86, 0.84, 0.86), CONTENT_W - 36.0, 16.0)
-	r1.text = "층마다 보상 — 쓰러져도 받은 것은 그대로"
+	r1.text = "층마다 보상 - 쓰러져도 받은 것은 그대로"
 	_shop_outline(r1, 5)
 	var r2 := _panel_label(root, Vector2(PAD + 18.0, 272.0), Type.SIZE_SMALL,
 		Color(0.72, 0.70, 0.74), CONTENT_W - 36.0, 16.0)
-	r2.text = "하루 한 판 — %d층마다 보석과 소환권" % RushDefs.MILESTONE
+	r2.text = "하루 한 판 - %d층마다 보석과 소환권" % RushDefs.MILESTONE
 	_shop_outline(r2, 5)
 	_refresh_rush()
 
@@ -8693,7 +8693,7 @@ func _refresh_rush() -> void:
 	if locked:
 		_rush_ui["sub"].text = "%d구간을 넘으면 열린다" % RushDefs.OPEN_STAGE
 	elif used:
-		_rush_ui["sub"].text = "오늘 판을 다 썼다 — 자정에 돌아온다"
+		_rush_ui["sub"].text = "오늘 판을 다 썼다 - 자정에 돌아온다"
 	else:
 		_rush_ui["sub"].text = "하루 한 판  ·  %d층마다 보석·소환권" % RushDefs.MILESTONE
 	if raid_on == "rush":
@@ -9098,7 +9098,7 @@ func _build_raid_list(root: Control) -> void:
 		# 2026-08-14). 거기서 목표·보상·단계를 보고 도전을 누른다.
 		eb.pressed.connect(func() -> void:
 			if raid_on == kind:
-				_raid_exit("이탈 — 빈손")
+				_raid_exit("이탈 - 빈손")
 				_refresh_dungeon()
 			else:
 				_raid_detail_open(kind))
@@ -9132,7 +9132,7 @@ func _refresh_dungeon() -> void:
 	# _build_dungeon 이 이 함수를 먼저 부르므로(재화 던전 줄은 그 뒤에 선다)
 	# 아직 없을 수 있다 — 그때는 _build_raid_list 끝의 호출이 채운다.
 	if _raid_head:
-		_raid_head.text = "하루 %d판 — 표는 격파할 때만 깎인다" \
+		_raid_head.text = "하루 %d판 - 표는 격파할 때만 깎인다" \
 			% (RaidDefs.TRIES_PER_DAY + IapDefs.raid_bonus_tries(iap_subs))
 	for kind in _raid_btn:
 		var n := int(raid_best.get(kind, 0)) + 1
@@ -9171,7 +9171,7 @@ func _refresh_dungeon() -> void:
 	_gate_btn_dim(_dungeon_btn_tex, _dungeon_btn_lbl, false)
 	if dungeon_on:
 		_dungeon_info.text = "%s 도전 중" % DungeonDefs.label(dungeon_floor)
-		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 밖으로 나온다 — 기록은 남는다"
+		_dungeon_sub.text = "쓰러지거나 시간을 넘기면 밖으로 나온다 - 기록은 남는다"
 		_dungeon_btn_lbl.text = "돌아가기"
 		return
 	var next := clampi(dungeon_best + 1, 1, open)
@@ -9973,7 +9973,7 @@ func _build_shop_packs(view: Control) -> void:
 		if _flash_left(fid) <= 0.0 or flash_bought.has(fid):
 			continue
 		if ftop == 0.0:
-			_shop_ribbon(view, 0.0, "달성 세일 — 24시간")
+			_shop_ribbon(view, 0.0, "달성 세일 - 24시간")
 			ftop = 63.0
 		var fr: Dictionary = f["reward"]
 		var ficon := ""
@@ -10002,7 +10002,7 @@ func _build_shop_packs(view: Control) -> void:
 		ftop += 4.0
 	# 오늘의 특가가 맨 위다 — 아래 성장팩은 구간이 열어 주는 상시 진열이라
 	# **기간제가 그 밑에 깔리면 기간제로 안 읽힌다**(사장님 2026-08-20).
-	_shop_ribbon(view, ftop, "오늘의 특가 — 자정까지")
+	_shop_ribbon(view, ftop, "오늘의 특가 - 자정까지")
 	var ltd := IapDefs.limited_today(Time.get_date_string_from_system())
 	var top := ftop + 63.0
 	if not ltd.is_empty():
@@ -10031,7 +10031,7 @@ func _build_shop_packs(view: Control) -> void:
 	# 되풀이 꾸러미 — 성장 패키지 **위**다. 아래 성장팩은 구간이 열어 주는
 	# 상시 진열이라, 주기제가 그 밑에 깔리면 주기제로 안 읽힌다(오늘의 특가를
 	# 맨 위에 둔 것과 같은 이유).
-	_shop_ribbon(view, top + 4.0, "되풀이 꾸러미 — 주기마다 다시")
+	_shop_ribbon(view, top + 4.0, "되풀이 꾸러미 - 주기마다 다시")
 	top += 67.0
 	_cycle_rows.clear()
 	for i in IapDefs.CYCLES.size():
@@ -10055,7 +10055,7 @@ func _build_shop_packs(view: Control) -> void:
 		cyc_card["btn"].pressed.connect(_iap_buy.bind(str(cy["id"])))
 		_cycle_rows.append(cyc_card)
 	top += float(IapDefs.CYCLES.size()) * (SHOP_WCARD_H + 10.0) + 4.0
-	_shop_ribbon(view, top + 4.0, "성장 패키지 — 계정당 1회")
+	_shop_ribbon(view, top + 4.0, "성장 패키지 - 계정당 1회")
 	top += 67.0
 	for i in IapDefs.PACKS.size():
 		var it: Dictionary = IapDefs.PACKS[i]
@@ -10086,7 +10086,7 @@ func _build_shop_packs(view: Control) -> void:
 
 # 정기: 구독 카드 + 보석 충전(등급마다 그림이 다르다 — 레퍼런스 충전소 문법).
 func _build_shop_subs(view: Control) -> void:
-	_shop_ribbon(view, 0.0, "정기 구독 — 최고 효율")
+	_shop_ribbon(view, 0.0, "정기 구독 - 최고 효율")
 	var y := 63.0
 	for i in IapDefs.SUBS.size():
 		var it: Dictionary = IapDefs.SUBS[i]
@@ -10107,7 +10107,7 @@ func _build_shop_subs(view: Control) -> void:
 		card["btn"].disabled = not IapDefs.DEV_FREE
 		card["btn"].pressed.connect(_iap_buy.bind(str(it["id"])))
 		y += SHOP_WCARD_H + 10.0
-	_shop_ribbon(view, y + 4.0, "보석 충전 — 첫 구매 2배")
+	_shop_ribbon(view, y + 4.0, "보석 충전 - 첫 구매 2배")
 	y += 67.0
 	var gem_art := ["gem_cluster", "gem_pouch", "gem_barrel", "gem_chest"]
 	for i in IapDefs.GEMS.size():
@@ -10177,7 +10177,7 @@ var _pass_all_btn: Button
 # 계약의 서 — 카드를 **쓴 횟수**로 차는 30칸. 성장 패스와 같은 트랙 문법이라
 # 판을 통째로 복제한다(사장님 승인 설계 7-6). 유료 줄은 성장 패스 구독이 연다.
 func _build_shop_book(view: Control) -> void:
-	_shop_ribbon(view, 0.0, "계약의 서 — 굴린 만큼 차오른다")
+	_shop_ribbon(view, 0.0, "계약의 서 - 굴린 만큼 차오른다")
 	_book_head = _panel_label(view, Vector2(0.0, 62.0), Type.SIZE_MID,
 		Color(0.98, 0.72, 0.66), SHOP_LIST_W, 24.0)
 	_book_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -10326,7 +10326,7 @@ func _claim_book_all() -> void:
 		_grant_reward(str(k), float(got[k]))
 		rows.append({"icon": "res://assets/ui/%s.png" % _reward_icon(str(k)),
 			"label": "%s +%s" % [_reward_name(str(k)), _n(float(got[k]))]})
-	_show_reward("계약의 서 — 일괄 수령", rows)
+	_show_reward("계약의 서 - 일괄 수령", rows)
 	_refresh_currency_visibility()
 	_save_game()
 	_refresh_book()
@@ -10334,7 +10334,7 @@ func _claim_book_all() -> void:
 
 
 func _build_shop_pass(view: Control) -> void:
-	_shop_ribbon(view, 0.0, "성장 패스 — 임무를 채우면 오른다")
+	_shop_ribbon(view, 0.0, "성장 패스 - 임무를 채우면 오른다")
 	# 머리: 지금 단계와 다음 단계까지의 게이지. 트랙이 길어 위에 요약이 필요하다.
 	_pass_head = _panel_label(view, Vector2(0.0, 62.0), Type.SIZE_MID,
 		Color(0.98, 0.90, 0.70), SHOP_LIST_W, 24.0)
@@ -10488,14 +10488,14 @@ func _shop_set_mode(mode: String) -> void:
 	if mode == "book":
 		_refresh_book()
 	match mode:
-		"pack": _shop_line.text = "귀한 손님이군요… 좋은 것만 꺼내 왔어요."
+		"pack": _shop_line.text = "귀한 손님이군요... 좋은 것만 꺼내 왔어요."
 		"sub":
 			_shop_line.text = "매일 들러 주시는 분께는 값을 맞춰 드려요."
 			_refresh_subs()
 		"pass": _shop_line.text = "부지런한 분께는 매일 몫이 쌓이지요."
-		"book": _shop_line.text = "운을 굴리는 분께는… 이 서(書)가 어울리죠."
+		"book": _shop_line.text = "운을 굴리는 분께는... 이 계약서가 어울리죠."
 		"trade": _shop_line.text = "보석이라면 무엇이든 바꿔 드리죠."
-		"wear": _shop_line.text = "옷이 날개랬죠… 군주님껜 더더욱."
+		"wear": _shop_line.text = "옷이 날개랬죠... 군주님껜 더더욱."
 	if mode == "trade":
 		_refresh_shop()
 	elif mode == "wear":
@@ -10536,7 +10536,7 @@ func _refresh_packs() -> void:
 		if ltd_got:
 			_ltd_card["price"].text = "오늘 구입함"
 		elif stale:
-			_ltd_card["price"].text = "자정이 지났다 — 상점을 다시 열면 온다"
+			_ltd_card["price"].text = "자정이 지났다 - 상점을 다시 열면 온다"
 	for i in IapDefs.PACKS.size():
 		var it: Dictionary = IapDefs.PACKS[i]
 		var id := str(it["id"])
@@ -10663,7 +10663,7 @@ func _iap_daily_grant(force := false) -> void:
 		var daily: Dictionary = sub["daily"]
 		if daily.is_empty():
 			continue
-		_iap_grant(daily, "%s — 오늘의 몫" % str(sub["name"]))
+		_iap_grant(daily, "%s - 오늘의 몫" % str(sub["name"]))
 
 
 func _iap_after() -> void:
@@ -10870,7 +10870,7 @@ func _attend_build(root: Control) -> void:
 		root.add_child(done)
 		var mark := _panel_label(root, Vector2(cx, cy + 24.0), Type.NATIVE * 2,
 			DUTY_RED, ATTEND_CELL, 26.0)
-		mark.text = "✓"
+		mark.text = "O"
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		mark.visible = false
 		_art_set_base(frame, Color.WHITE)   # 호버가 이 색을 지우지 않게
@@ -10959,7 +10959,7 @@ func _refresh_boon() -> void:
 	for i in rows.size():
 		var e: Dictionary = BoonDefs.BOONS[i]
 		var here := str(e["id"]) == str(b["id"])
-		rows[i].text = "%s%s — %s" % ["▶ " if here else "   ",
+		rows[i].text = "%s%s - %s" % ["» " if here else "   ",
 			str(e["name"]), str(e["text"])]
 		rows[i].add_theme_color_override("font_color",
 			DUTY_RED if here else DUTY_DIM)
@@ -11032,7 +11032,7 @@ func _refresh_achieve() -> void:
 		var got := int(achieve_got.get(kind, 0))
 		var step: Dictionary = AchieveDefs.at(kind, got)
 		if step.is_empty():
-			row["name"].text = "%s — 완주" % str(t["name"])
+			row["name"].text = "%s - 완주" % str(t["name"])
 			row["prog"].text = ""
 			row["fill"].size.x = QUEST_BAR_W
 			_row_claim_state(row, "done", 0)
@@ -12437,7 +12437,7 @@ func _tick_hero_state(delta: float) -> void:
 				return
 			# 재화 던전도 마찬가지 — 표는 이미 썼고, 빈손으로 나온다.
 			if raid_on != "":
-				_raid_exit("던전에서 쓰러짐 — 빈손")
+				_raid_exit("던전에서 쓰러짐 - 빈손")
 				return
 			_restart_stage("쓰러짐")
 		return
@@ -13854,7 +13854,7 @@ func _kill_hero() -> void:
 	if _immortal_cd <= 0.0 and skill_equipped.has("ward_mythic"):
 		_immortal_cd = float(SkillDefs.rule_of("ward_mythic").get("revive", 300.0))
 		hero_hp = max_hp()
-		_show_clear("영겁의 성혈", "죽음을 한 번 물렀다 — 완전 회복")
+		_show_clear("영겁의 성혈", "죽음을 한 번 물렀다 - 완전 회복")
 		return
 	_record_boss_attempt("쓰러짐")
 	_hero_dead = true
@@ -14333,7 +14333,7 @@ func _oath_codex_build(root: Control) -> void:
 	var parts := PackedStringArray()
 	for e in OathDefs.ENGRAVES:
 		parts.append(str(e["name"]))
-	eng.text = "각인 6종 — " + " · ".join(parts)
+	eng.text = "각인 6종 - " + " · ".join(parts)
 
 
 func _refresh_oath_codex() -> void:
@@ -14583,7 +14583,7 @@ func _build_oath_view() -> void:
 	_oath_main.add_child(ad_art)
 	var ad := _panel_label(_oath_main, Vector2(x, top + 616.0), Type.SIZE_SMALL,
 		Color(0.66, 0.62, 0.66), w, 18.0)
-	ad.text = "[광고] 카드 1장  ·  하루 3회 — 준비 중"
+	ad.text = "[광고] 카드 1장  ·  하루 3회 - 준비 중"
 	ad.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# ── 수집 탭 — 카드 4×3 진열 + 수집 보상 이정표 한 줄 ──────────────────
 	var ghead := _panel_label(_oath_col, Vector2(x, top + 108.0),
@@ -14683,7 +14683,7 @@ func _refresh_oath() -> void:
 				parts.append(_oath_fx_short(str(k), float(oath_fx[k])))
 			var left := int(ceil(oath_fx_t))
 			var clock := "%d:%02d" % [left / 60, left % 60] if left >= 60 				else "%d초" % left
-			_oath_buff_lbl.text = "◈ %s  ·  %s  ·  %s" 				% [oath_fx_name, " ".join(parts), clock]
+			_oath_buff_lbl.text = "%s  ·  %s  ·  %s" 				% [oath_fx_name, " ".join(parts), clock]
 			# 10초 남으면 붉게 — 끝나는 걸 눈으로 알아야 다음 장을 준비한다.
 			_oath_buff_lbl.add_theme_color_override("font_color",
 				Color(1.0, 0.45, 0.42) if oath_fx_t <= 10.0
@@ -14721,7 +14721,7 @@ func _refresh_oath() -> void:
 		* clampf(float(oath_gold_pity) / float(OathDefs.PITY_GOLD), 0.0, 1.0)
 	_oath_ui["gpity_num"].text = "%d / %d" % [oath_gold_pity, OathDefs.PITY_GOLD]
 	_oath_ui["vow"].text = "피의 서약  %s   혈액 10%% 를 걸고 등급을 민다" \
-		% ("● 켬" if oath_vow else "○ 끔")
+		% ("켬" if oath_vow else "끔")
 	_oath_ui["vow"].add_theme_color_override("font_color",
 		OATH_RED if oath_vow else OATH_DIM)
 	_art_set_base(_oath_ui["vow_art"] as Control,
@@ -14760,10 +14760,10 @@ func _refresh_oath() -> void:
 	var nx := _oath_col_next()
 	var ready := not nx.is_empty() and have >= int(nx["need"])
 	if nx.is_empty():
-		_oath_ui["col_rw_lbl"].text = "수집 보상 — 전부 받았다"
+		_oath_ui["col_rw_lbl"].text = "수집 보상 - 전부 받았다"
 	else:
 		var rr: Dictionary = nx["reward"]
-		_oath_ui["col_rw_lbl"].text = "수집 보상 — %d종: %s %s" % [int(nx["need"]),
+		_oath_ui["col_rw_lbl"].text = "수집 보상 - %d종: %s %s" % [int(nx["need"]),
 			_reward_name(str(rr["kind"])), _n(float(rr["amount"]))]
 	(_oath_ui["col_rw_btn"] as Button).disabled = not ready
 	_art_set_base(_oath_ui["col_rw_art"] as Control,
@@ -14810,7 +14810,7 @@ func _oath_col_claim() -> void:
 	oath_col_got += 1
 	var r: Dictionary = nx["reward"]
 	_grant_reward(str(r["kind"]), float(r["amount"]))
-	_show_reward("수집 보상 — %d종 달성" % int(nx["need"]),
+	_show_reward("수집 보상 - %d종 달성" % int(nx["need"]),
 		[{"icon": "res://assets/ui/%s.png" % _reward_icon(str(r["kind"])),
 		"label": "%s +%s" % [_reward_name(str(r["kind"])), _n(float(r["amount"]))]}])
 	_save_game()
@@ -15199,13 +15199,13 @@ func _oath_show_pick(got: Array, back_col := Color(0.9, 0.3, 0.3)) -> void:
 	bspin.tween_property(back, "rotation_degrees", 360.0, 60.0).from(0.0)
 	var head := _panel_label(_oath_reveal, Vector2(0.0, 40.0), Type.SIZE_MID,
 		Color(0.98, 0.82, 0.46), Grid.BG.x, 28.0)
-	head.text = "%d장을 뽑았다 — 하나를 골라 건다" % got.size()
+	head.text = "%d장을 뽑았다 - 하나를 골라 건다" % got.size()
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_outline(head, 8)
 	if oath_fx_t > 0.0:
 		var cur := _panel_label(_oath_reveal, Vector2(0.0, 72.0),
 			Type.SIZE_SMALL, Color(0.72, 0.86, 0.72), Grid.BG.x, 18.0)
-		cur.text = "지금: %s  %d초 남음  →  고르면 바뀐다" \
+		cur.text = "지금: %s  %d초 남음  »  고르면 바뀐다" \
 			% [oath_fx_name, int(oath_fx_t)]
 		cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 5 x 2 격자. 카드마다 **셀 하나에 묶는다** — 그림·테두리·글자가 따로 놀면
@@ -15277,7 +15277,7 @@ func _oath_show_pick(got: Array, back_col := Color(0.9, 0.3, 0.3)) -> void:
 	_oath_reveal.add_child(sk_art)
 	var sk_lbl := _panel_label(_oath_reveal, Vector2(88.0, Grid.BG.y - 137.0),
 		Type.SIZE_SMALL, OATH_INK, Grid.BG.x - 176.0, 20.0)
-	sk_lbl.text = "안 걸고 닫기 — 수집에는 이미 남았다"
+	sk_lbl.text = "안 걸고 닫기 - 수집에는 이미 남았다"
 	sk_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var skip := Ui.button("", Vector2(88.0, Grid.BG.y - 150.0),
 		Vector2(Grid.BG.x - 176.0, 44.0), Type.SIZE_SMALL)
@@ -15329,7 +15329,7 @@ func _oath_confirm_pick(r: Dictionary, got: Array) -> void:
 	if live:
 		var cur := _panel_label(layer, Vector2(24.0, mid.y + 110.0),
 			Type.SIZE_SMALL, Color(0.72, 0.86, 0.72), Grid.BG.x - 48.0, 18.0)
-		cur.text = "지금: %s  %d초 남음  →  바꾸면 사라진다" \
+		cur.text = "지금: %s  %d초 남음  »  바꾸면 사라진다" \
 			% [oath_fx_name, int(oath_fx_t)]
 		cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_shop_outline(cur, 5)
@@ -15588,13 +15588,13 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 	if oath_fx_t > 0.0:
 		var cur := _panel_label(panel, Vector2(px, py + 128.0), Type.SIZE_SMALL,
 			Color(0.72, 0.86, 0.72), pw, 16.0)
-		cur.text = "지금: %s  %d초 남음  →  바꾸면 사라진다" 			% [oath_fx_name, int(oath_fx_t)]
+		cur.text = "지금: %s  %d초 남음  »  바꾸면 사라진다" 			% [oath_fx_name, int(oath_fx_t)]
 		cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 서약 정산 줄 — 걸었으면 결과가 보여야 도박이다.
 	if bool(r.get("vow", false)):
 		var vw := _panel_label(panel, Vector2(px, py + 146.0), Type.SIZE_SMALL,
 			OATH_RED, pw, 16.0)
-		vw.text = "피의 서약 — 판돈이 등급을 밀었다"
+		vw.text = "피의 서약 - 판돈이 등급을 밀었다"
 		vw.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 버튼 둘 — 전용 세트 줄 + 투명 판정(판의 버튼 문법 그대로).
 	var by := py + 168.0
@@ -15644,7 +15644,7 @@ func _oath_result(rcol: Color, rarity: String, r: Dictionary) -> void:
 		panel.add_child(keep_art)
 		var keep_lbl := _panel_label(panel, Vector2(px, by + 63.0),
 			Type.SIZE_SMALL, OATH_INK, pw, 18.0)
-		keep_lbl.text = "지금 것 유지 — 뽑은 계약은 수집에 남는다"
+		keep_lbl.text = "지금 것 유지 - 뽑은 계약은 수집에 남는다"
 		keep_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var keep := Ui.button("", Vector2(px, by + 54.0), Vector2(pw, 36.0),
 			Type.SIZE_SMALL)
@@ -15942,7 +15942,7 @@ func _rush_exit(reason: String) -> void:
 	raid_on = ""
 	var floors := rush_floor - 1
 	rush_floor = 0
-	_show_clear("혈전 종료", "%s — %d층 격파  ·  최고 %d층"
+	_show_clear("혈전 종료", "%s - %d층 격파  ·  최고 %d층"
 		% [reason, floors, rush_best])
 	# 여운 — 재화 던전·시련과 같은 규칙(사장님 2026-08-25).
 	var go := func() -> void:
@@ -16168,7 +16168,7 @@ func _boss_attempt_text() -> String:
 	var line := "%s · 남은 체력 %.0f%% · 최고 %.0f%%" % [str(_boss_attempt["reason"]),
 		ceilf(float(_boss_attempt["last"]) - 0.000001), ceilf(float(_boss_attempt["best"]) - 0.000001)]
 	if int(_boss_attempt["count"]) > 1:
-		line = "%s · 지난 %.0f%% → 이번 %.0f%% 남음" % [str(_boss_attempt["reason"]),
+		line = "%s · 지난 %.0f%% » 이번 %.0f%% 남음" % [str(_boss_attempt["reason"]),
 			ceilf(float(_boss_attempt["previous"]) - 0.000001), ceilf(float(_boss_attempt["last"]) - 0.000001)]
 	return line + ("\n보스 편성·공격력 강화로 다시 도전해 보세요" \
 		if str(_boss_attempt["reason"]) == "시간 초과" \
@@ -16225,7 +16225,7 @@ func _gate_exit_pressed() -> void:
 	elif raid_on == "rush":
 		_rush_exit("중단")
 	elif raid_on != "":
-		_raid_exit("던전 중단 — 빈손")
+		_raid_exit("던전 중단 - 빈손")
 
 
 # 나오면 **들어온 그 페이지**로 돌려보낸다 (사장님, 레퍼런스 문법).
@@ -16606,7 +16606,7 @@ func _advance_stage() -> void:
 		var old_max := max_hp()
 		trial_stage += 1
 		_apply_hp_growth(old_max)
-		_trial_exit("시련 %d단계 격파 — 공격·체력 +%d%%" % [trial_stage,
+		_trial_exit("시련 %d단계 격파 - 공격·체력 +%d%%" % [trial_stage,
 			int(round(TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))], true)
 		return
 	# ── 혈전: 층 보상을 즉시 주고 다음 보스를 세운다 ───────────────────────
@@ -16621,7 +16621,7 @@ func _advance_stage() -> void:
 			_grant_reward("gem", RushDefs.MILESTONE_GEM)
 			var tk := RushDefs.milestone_ticket(fl)
 			_grant_reward(tk, 1.0)
-			line += "\n이정표 — 보석 +%d · %s +1" % [int(RushDefs.MILESTONE_GEM),
+			line += "\n이정표 - 보석 +%d · %s +1" % [int(RushDefs.MILESTONE_GEM),
 				TicketDefs.short_of(TicketDefs.kind_of(tk))]
 		if fl == 1:
 			# **판은 첫 격파에 쓴다** — 들어갔다 그냥 나오면 안 쓴 것이다
@@ -16764,7 +16764,7 @@ func _advance_stage() -> void:
 				gem += float(prize["gem"])
 				var kind := str(prize["kind"])
 				tickets[kind] = int(tickets.get(kind, 0)) + int(prize["n"])
-				lines.append("첫 격파 — 보석 +%d · %s +%d" % [int(prize["gem"]),
+				lines.append("첫 격파 - 보석 +%d · %s +%d" % [int(prize["gem"]),
 					str(TicketDefs.INFO[kind]["short"]), int(prize["n"])])
 			var mastery0 := MasteryDefs.unlocked_count(best_stage)
 			# **무엇이 새로 열리는지 세어 둔다.** 여태 알림이 군림 하나뿐이라
@@ -16774,7 +16774,7 @@ func _advance_stage() -> void:
 			best_stage = next_stage
 			if MasteryDefs.unlocked_count(best_stage) > mastery0:
 				var r: Dictionary = MasteryDefs.RANKS[mastery0]
-				lines.append("%s — %s" % [str(r["name"]), str(r["desc"])])
+				lines.append("%s - %s" % [str(r["name"]), str(r["desc"])])
 			for nm in _open_names():
 				if not (nm in opened):
 					lines.append("%s 이(가) 열렸다" % nm)
@@ -16819,7 +16819,7 @@ func _tick_boss_timer(delta: float) -> bool:
 		if RaidDefs.goal(raid_on) == "endure":
 			_advance_stage()
 		else:
-			_raid_exit("시간 초과 — 빈손")
+			_raid_exit("시간 초과 - 빈손")
 		return true
 	_record_boss_attempt("시간 초과")
 	_restart_stage("시간 초과")
@@ -17280,7 +17280,7 @@ const POWER_TOAST_TIME := 1.8
 static func power_toast(now: float, gain: float) -> String:
 	if gain <= 0.0:
 		return ""
-	return "전투력 %s  ▲%s" % [_n(now), _n(gain)]
+	return "전투력 %s  +%s" % [_n(now), _n(gain)]
 
 
 # **전투력이 오르면 무조건 뜬다.** 예전엔 오프라인·장비 알림과 같은 줄을 써서
@@ -17348,7 +17348,7 @@ func _power_band_show(now: float, gain: float) -> void:
 	if _power_band == null:
 		return
 	_power_num.text = _n(now)
-	_power_up.text = "▲ %s" % _n(gain) if gain > 0.0 else ""
+	_power_up.text = "+ %s" % _n(gain) if gain > 0.0 else ""
 	var fresh := not _power_band.visible
 	_power_band.visible = true
 	var t := _power_band.create_tween()
@@ -18746,7 +18746,7 @@ func _refresh_pet_trip() -> void:
 		_trip_ui["state"].text = "돌아오기까지 %s" % _trip_text(left_sel)
 	elif prize.is_empty():
 		_trip_ui["prize"].text = "보낼 곳이 없다"
-		_trip_ui["state"].text = "5성이 된 동행은 제 장비의 조각을 판다 — 장비를 채워 주면 다시 나간다"
+		_trip_ui["state"].text = "5성이 된 동행은 제 장비의 조각을 판다 - 장비를 채워 주면 다시 나간다"
 	else:
 		_trip_ui["prize"].text = "%s 조각 1개" % str(prize["name"])
 		_trip_ui["state"].text = "%.0f시간 걸린다" \
@@ -19136,7 +19136,7 @@ func _refresh_pet_roll() -> void:
 			dust.append("%s %d/%d" % [str(GachaDefs.rarity(str(rk))["name"]),
 				n, PetDefs.FUSE_DUST])
 		_pet_dust_lbl.text = ("조각  " + "  ·  ".join(dust)) if dust.size() > 0 \
-			else "5성 동행의 중복은 조각이 된다 — %d개면 윗급 하나" \
+			else "5성 동행의 중복은 조각이 된다 - %d개면 윗급 하나" \
 			% PetDefs.FUSE_DUST
 	for kind in _pet_roll_ui:
 		var ui: Dictionary = _pet_roll_ui[kind]
