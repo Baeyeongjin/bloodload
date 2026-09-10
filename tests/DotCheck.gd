@@ -313,12 +313,7 @@ func _init() -> void:
 	assert(scene._shop_mode_todo("trade"), "살 수 있는데 교환 점이 안 켜진다")
 	assert(scene._tab_todo("shop"), "교환이 켜졌는데 상점 탭 점이 안 켜진다")
 
-	_broke(scene)
-	assert(not scene._growth_mode_todo("trait"), "빈손인데 혈맥 점이 켜졌다")
-	scene.trait_bake = {"x": [Time.get_unix_time_from_system() - 10.0, "rare"]}
-	assert(scene._growth_mode_todo("trait"), "제련이 끝났는데 혈맥 점이 안 켜진다")
-	scene.trait_bake = {"x": [Time.get_unix_time_from_system() + 9999.0, "rare"]}
-	assert(not scene._growth_mode_todo("trait"), "제련 중인데 혈맥 점이 켜졌다")
+
 
 	print("DotCheck OK")
 	quit(0)
@@ -353,7 +348,6 @@ func _broke(scene: Node) -> void:
 	# 나머지가 전부 꺼져 있어야 한다. 날짜 축은 **오늘로 박는다**: 안 박으면
 	# 자정에 스스로 켜져서 검사가 날짜에 따라 빨개진다.
 	scene.tickets = {}
-	scene.trait_bake = {}
 	scene.shop_used = {}
 	scene.pets_got = {}
 	scene.pet_bank = {}

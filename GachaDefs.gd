@@ -20,9 +20,16 @@ const RARITIES := [
 		"col": Color(0.45, 0.62, 1.0)},
 	{"key": "epic", "name": "에픽", "power": 3.2, "weight": 5.0, "unlock": 0,
 		"col": Color(0.72, 0.45, 0.95)},
-	{"key": "legend", "name": "레전더리", "power": 5.5, "weight": 0.9, "unlock": 2,
+	# 신화가 뽑기에서 빠지면서 그 몫(0.1)을 여기가 받는다 — **공개 확률의 합은
+	# 100 이어야 한다**(GearTest 가 그것부터 잰다). 바로 아래 등급이 받는 것이
+	# 자연스럽고, 뽑기의 끝이 레전더리가 됐으니 끝값이 조금 두꺼워지는 것도 맞다.
+	{"key": "legend", "name": "레전더리", "power": 5.5, "weight": 1.0, "unlock": 2,
 		"col": Color(1.0, 0.62, 0.22)},
-	{"key": "mythic", "name": "신화", "power": 9.0, "weight": 0.1, "unlock": 5,
+	# **뽑기에서는 안 나온다**(사장님 2026-09-10). weight 0 — 신화 장비는
+	# 레전더리를 만렙까지 올려 **조합으로만** 만든다. 그게 최종 사다리인데
+	# 뽑기에서도 떨어지면 그 사다리를 걸을 이유가 없다.
+	# (스킬은 SKILL_TOP_INDEX 가 이미 막고 있고, 유물에는 신화 등급이 없다.)
+	{"key": "mythic", "name": "신화", "power": 9.0, "weight": 0.0, "unlock": 5,
 		"col": Color(1.0, 0.28, 0.38)},
 ]
 

@@ -11,9 +11,9 @@ func _init() -> void:
 	create_timer(20.0).timeout.connect(func() -> void:
 		push_error("테스트가 안 끝났다 — assert 실패로 멈춘 것이다")
 		quit(1))
-	# 굴림 검사를 **결정론으로** 만든다. 만렙 신화는 0.192%(0.25/130)라 2000연에
-	# 한 번도 안 나올 확률이 2.1% 다 — 시드를 안 고정하면 50번에 한 번씩 그냥 깨지고,
-	# 그때마다 없는 버그를 코드에서 찾게 된다. 굴림 경로는 그대로 지난다.
+	# 굴림 검사를 **결정론으로** 만든다. 확률 굴림을 그대로 지나면서도 결과가
+	# 매번 같아야, 실패했을 때 코드에서 원인을 찾을 수 있다(시드를 안 고정하면
+	# 희귀 등급이 안 나온 것만으로 몇 번에 한 번씩 그냥 깨진다).
 	seed(20260804)
 	assert(GachaDefs.RARITIES.size() == 6)
 	var total_weight := 0.0
@@ -54,12 +54,14 @@ func _init() -> void:
 	# 헛돌고, 그동안 100연 보장이 실질적으로 없는 셈이 된다.
 	assert(GachaDefs.level_total(legend_lv) <= 100,
 		"전설 해금이 천장 한 바퀴보다 늦다: 누적 %d회" % GachaDefs.level_total(legend_lv))
-	# 열린 뒤에는 실제로 나온다.
+	# 열린 뒤에는 실제로 나온다. **레전더리가 뽑기의 끝이다**(2026-09-10) —
+	# 신화 장비는 레전더리 만렙을 찍고 조합으로만 만든다.
 	var late := GachaDefs.pull(2000, 0, GachaDefs.LEVEL_MAX)
 	var seen := {}
 	for key in late["rarities"]:
 		seen[str(key)] = true
-	assert(seen.has("mythic"), "만렙인데 2000연에 신화가 한 번도 없다")
+	assert(seen.has("legend"), "만렙인데 2000연에 레전더리가 한 번도 없다")
+	assert(not seen.has("mythic"), "장비 뽑기에서 신화가 나왔다")
 
 	# 소환 레벨 — 시작은 1레벨이고, 뽑을수록 오르고, 오를수록 레어 이상이 잘 나온다.
 	assert(GachaDefs.level(0) == GachaDefs.LEVEL_MIN, "처음이 1레벨이 아니다")
@@ -98,26 +100,29 @@ func _init() -> void:
 	var lv0 := GachaDefs.rates(GachaDefs.LEVEL_MIN)
 	var lv_max := GachaDefs.rates(GachaDefs.LEVEL_MAX)
 	assert(lv_max[0] < lv0[0], "레벨을 올렸는데 커먼이 줄지 않는다")
-	for i in range(GachaDefs.RARE_INDEX, GachaDefs.RARITIES.size()):
+	# 신화는 뽑기 밖이라 언제나 0 이다 — 늘어날 몫 자체가 없다(2026-09-10).
+	for i in range(GachaDefs.RARE_INDEX, GachaDefs.SKILL_TOP_INDEX + 1):
 		assert(lv_max[i] > lv0[i], "레벨을 올렸는데 상위 등급이 늘지 않는다")
-	# 스킬 소환은 커먼~레전더리 5단계다(형태 4 x 등급 5 = 20종). 신화는 굴리지 않고
-	# 그 몫이 나머지에 비율대로 넘어가야 한다 — 합은 여전히 100이어야 한다.
-	# 만렙에서 검사한다: 1레벨은 레전더리가 아직 잠겨 있어 신화 배제 효과가 안 보인다.
+	# **신화는 어느 뽑기에도 안 나온다**(사장님 2026-09-10). 스킬은 예전부터
+	# SKILL_TOP_INDEX 로 막혀 있었고, 장비도 weight 0 으로 같아졌다 — 신화 장비는
+	# 레전더리 만렙을 찍고 조합으로만 만든다. 그래서 두 풀의 확률이 이제 같다.
 	var sk := GachaDefs.rates(GachaDefs.LEVEL_MAX, true)
+	var gear_rates := GachaDefs.rates(GachaDefs.LEVEL_MAX)
 	for i in range(GachaDefs.SKILL_TOP_INDEX + 1, GachaDefs.RARITIES.size()):
 		assert(is_equal_approx(sk[i], 0.0), "스킬 소환에 신화가 남아 있다")
+		assert(is_equal_approx(gear_rates[i], 0.0), "장비 소환에 신화가 남아 있다")
 	var sk_sum := 0.0
 	for v in sk:
 		sk_sum += float(v)
 	assert(is_equal_approx(sk_sum, 100.0), "스킬 확률 합이 100이 아니다")
-	# 신화 몫이 넘어왔으니 남은 등급은 장비 소환보다 확률이 높아야 한다.
-	var gear_rates := GachaDefs.rates(GachaDefs.LEVEL_MAX)
 	for i in GachaDefs.SKILL_TOP_INDEX + 1:
-		assert(sk[i] > gear_rates[i], "신화 몫이 다른 등급으로 안 넘어갔다")
-	# 실제 굴림에도 신화가 안 나와야 한다.
-	for key in GachaDefs.pull(500, 0, GachaDefs.LEVEL_MAX, true)["rarities"]:
-		assert(GachaDefs.rarity_index(str(key)) <= GachaDefs.SKILL_TOP_INDEX,
-			"스킬 소환에서 신화가 나왔다")
+		assert(is_equal_approx(sk[i], gear_rates[i]),
+			"장비와 스킬 확률이 갈렸다 — 둘 다 레전더리가 끝이어야 한다")
+	# 실제 굴림에도 신화가 안 나와야 한다 — **장비 풀도** 본다.
+	for pool in [true, false]:
+		for key in GachaDefs.pull(500, 0, GachaDefs.LEVEL_MAX, pool)["rarities"]:
+			assert(GachaDefs.rarity_index(str(key)) <= GachaDefs.SKILL_TOP_INDEX,
+				"소환에서 신화가 나왔다 (스킬 풀=%s)" % pool)
 	# 스킬 아이콘은 5등급 x 4형태 = 20장이 다 있어야 한다. 하나 빠지면 빈 칸이 된다.
 	for i in GachaDefs.SKILL_TOP_INDEX + 1:
 		for shape in ["strike", "wave", "field", "ward"]:
