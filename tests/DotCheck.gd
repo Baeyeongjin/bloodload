@@ -130,6 +130,44 @@ func _init() -> void:
 	assert(scene._bulk_candidates().has(nkey),
 		"레전더리 만렙인데 조합 후보에 없다")
 
+	# ── 모두 조합이 **끝까지** 간다 (사장님 2026-09-10) ────────────────────
+	# 예전엔 종마다 한 번이라 조각이 남아도 멈췄다. 천장을 채워 두면 확정
+	# 성공이라 결과가 결정적이다 — 확률에 기대면 이 검사가 가끔 빨개진다.
+	var bc: Dictionary = GearDefs.make("weapon", 1, GachaDefs.rarity("common"))
+	var bkey := str(bc["icon"])
+	scene.gear_inventory = {bkey: bc}
+	scene.gacha_shards = {"gear:" + bkey: GearDefs.FUSE_SHARDS * 4}
+	scene.fuse_pity = {}
+	for rr in GachaDefs.RARITIES:
+		scene.fuse_pity[str(rr["key"])] = 999
+	scene._bulk_kind = "gear"
+	scene._bulk_tab = "all"
+	scene._bulk_upto = "rare"
+	scene._bulk_selected = {bkey: true}
+	scene._do_bulk()
+	# 조각 12개면 커먼 -> 언커먼 -> 레어. 한 바퀴만 돌면 언커먼에서 멈춘다.
+	var top_ri := -1
+	for k9 in scene.gear_inventory:
+		top_ri = maxi(top_ri, GachaDefs.rarity_index(
+			str(scene.gear_inventory[k9].get("rarity", "common"))))
+	assert(top_ri >= GachaDefs.rarity_index("rare"),
+		"조각이 남았는데 레어까지 안 올라갔다 — 한 바퀴만 돌았다 (최고 %d)" % top_ri)
+	# **상한을 넘지 않는다** — "레어까지"면 레어는 만들고 에픽은 안 만든다.
+	assert(top_ri == GachaDefs.rarity_index("rare"),
+		"상한이 레어인데 그 위가 생겼다 (최고 %d)" % top_ri)
+	# 상한 알약이 화면에 있다.
+	assert(scene._bulk_upto_tabs.size() == 5,
+		"상한 알약이 %d개다 (5개여야)" % scene._bulk_upto_tabs.size())
+
+	# **뒷정리.** _do_bulk 가 _save_game 을 탄다 — 조합해 둔 장비가 저장본에
+	# 남으면 다음 검사가 엉뚱한 보관함으로 시작한다(2026-09-02 에 세 번 났다).
+	scene.gear_inventory = {}
+	scene.gacha_shards = {}
+	scene.fuse_pity = {}
+	scene._bulk_selected.clear()
+	scene._bulk_upto = ""
+	scene._save_game()
+
 	# ── 4) 던전 — 안 뚫은 미궁 층이 열려 있으면 켜진다 ────────────────────
 	_broke(scene)
 	scene.best_stage = DungeonDefs.OPEN_STAGE + 40
