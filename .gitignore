@@ -27,6 +27,16 @@ Bloodlord.exe
 Bloodlord.console.exe
 Bloodlord.zip
 Bloodlord.pck
+# 웹 export 부산물. 루트로 뽑으면 아이콘 png 가 **게임 리소스로 임포트**되어
+# (.import 가 생긴다) pck 에 딸려 들어간다 — 그래서 tools/deploy_web.sh 는
+# build/web/ 으로만 뽑는다.
+Bloodlord.html
+Bloodlord.js
+Bloodlord.wasm
+Bloodlord.icon.png*
+Bloodlord.apple-touch-icon.png*
+Bloodlord.png*
+Bloodlord.audio.*.js
 build/
 *.apk
 *.aab
