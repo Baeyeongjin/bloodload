@@ -80,7 +80,7 @@ static func button(text: String, pos: Vector2, size: Vector2,
 	b.clip_text = true
 	b.add_theme_font_size_override("font_size", font_size)
 	# 외곽선은 글자 크기에 맞춘다. 작은 글자에 5px을 두르면 획이 다 메워진다.
-	b.add_theme_constant_override("outline_size", 5 if font_size >= Type.SIZE_BODY else 3)
+	b.add_theme_constant_override("outline_size", 2 if font_size >= Type.SIZE_TITLE else 1)
 	b.add_theme_color_override("font_outline_color", Color(0.02, 0.01, 0.03, 1.0))
 	b.add_theme_color_override("font_color", Color(0.92, 0.86, 0.86))
 	b.add_theme_color_override("font_disabled_color", Color(0.45, 0.40, 0.42))
@@ -89,25 +89,25 @@ static func button(text: String, pos: Vector2, size: Vector2,
 	for state in ["hover", "pressed", "focus"]:
 		b.add_theme_stylebox_override(state,
 			_nine("res://assets/ui/btn_hover.png", BTN_ART, 10, 5))
-	# 눌림 반응 — 누르는 동안 살짝 움츠린다. 스타일박스 색만 바뀌면 "눌렸나?"가
-	# 애매하다(사장님: 밋밋함). 트윈 없이 스냅으로 — 픽셀 게임은 스냅이 어울린다.
+	# 호버와 누름이 같은 트윈을 교체해서 연타해도 크기가 튀지 않는다.
 	b.pivot_offset = Grid.pxv(size) * 0.5
-	b.button_down.connect(func() -> void: b.scale = Vector2(0.93, 0.93))
-	b.button_up.connect(func() -> void: b.scale = Vector2.ONE)
+	b.button_down.connect(func() -> void: _pop_to(b, 0.97))
+	b.button_up.connect(func() -> void:
+		_pop_to(b, HOVER_SCALE if not b.disabled and b.is_hovered() else 1.0))
 	hover_pop(b)
 	return b
 
 
-# 마우스가 올라가면 **살짝 부푼다** (사장님 2026-08-14: 전 버튼에 호버 반응).
-# 눌림(0.93)과 반대 방향이라 둘이 안 싸운다: 올라감 1.04 -> 누름 0.93 -> 뗌 1.04.
-# 트윈은 **한 번에 하나만** 돈다 — 빠르게 들락거리면 트윈이 겹쳐 크기가 튄다.
-const HOVER_SCALE := 1.04
-const HOVER_TIME := 0.07
+# 트윈은 한 번에 하나만 돈다.
+const HOVER_SCALE := 1.025
+const HOVER_TIME := 0.11
 static func hover_pop(c: Control) -> void:
 	if c.pivot_offset == Vector2.ZERO:
 		c.pivot_offset = c.size * 0.5
 	c.mouse_entered.connect(func() -> void:
 		if c is BaseButton and (c as BaseButton).disabled:
+			return
+		if c is BaseButton and (c as BaseButton).is_pressed():
 			return
 		_pop_to(c, HOVER_SCALE))
 	c.mouse_exited.connect(func() -> void: _pop_to(c, 1.0))
@@ -260,14 +260,14 @@ static func _bar_fill_tex(col: Color) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-# 도트 폰트가 없으므로 외곽선을 두껍게 줘서 배경 위에서 읽히게 한다.
+# 작은 한글 획을 살리고, 배경 위에서도 읽히는 얇은 외곽선.
 static func label(text: String, pos: Vector2, size_px: int, col: Color) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.position = Grid.pxv(pos)
 	l.add_theme_font_size_override("font_size", size_px)
 	l.add_theme_color_override("font_color", col)
-	l.add_theme_constant_override("outline_size", 5)
+	l.add_theme_constant_override("outline_size", 2 if size_px >= Type.SIZE_TITLE else 1)
 	l.add_theme_color_override("font_outline_color", Color(0.02, 0.01, 0.03, 1.0))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
@@ -524,15 +524,41 @@ static func pop_in(node: Control) -> void:
 		return
 	node.set_meta("pop_in", true)
 	node.visibility_changed.connect(func() -> void:
+		if node.has_meta("pop_tw"):
+			var old: Variant = node.get_meta("pop_tw")
+			if old is Tween and (old as Tween).is_valid():
+				(old as Tween).kill()
 		if not node.visible or not node.is_inside_tree():
+			node.scale = Vector2.ONE
+			node.modulate.a = 1.0
 			return
 		node.pivot_offset = node.size * 0.5
 		node.modulate.a = 0.0
 		node.scale = Vector2(0.92, 0.92)
 		var tw := node.create_tween().set_parallel()
+		node.set_meta("pop_tw", tw)
 		tw.tween_property(node, "modulate:a", 1.0, 0.10)
 		tw.tween_property(node, "scale", Vector2.ONE, 0.16) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+
+
+# 실제 보상/강화 성공에만 짧게 반응한다. 재호출은 진행 중인 강조를 교체한다.
+static func pulse(node: Control, color: Color) -> void:
+	if node == null or not node.is_inside_tree():
+		return
+	if node.has_meta("pulse_tw"):
+		var old: Variant = node.get_meta("pulse_tw")
+		if old is Tween and (old as Tween).is_valid():
+			(old as Tween).kill()
+	if not node.has_meta("pulse_base"):
+		node.set_meta("pulse_base", node.self_modulate)
+	var base: Color = node.get_meta("pulse_base")
+	var tw := node.create_tween()
+	node.set_meta("pulse_tw", tw)
+	tw.tween_property(node, "self_modulate", color, 0.08)
+	tw.tween_property(node, "self_modulate", base, 0.34).set_trans(Tween.TRANS_QUAD) \
+		.set_ease(Tween.EASE_OUT)
+	tw.tween_callback(func() -> void: node.remove_meta("pulse_base"))
 
 
 # ── 임무판(duty, 양피지) · 도감(tome, 가죽책) 세트 ─────────────────────────

@@ -151,9 +151,7 @@ func _init() -> void:
 	scene._weapon_on_hit(a)
 	assert(b.hp < 1e9, "죽였는데 다음 놈에게 안 넘어갔다")
 
-	# ── 4) 재련 — 줄만 바꾼다 (사장님 2026-09-02) ─────────────────────────
-	# "어느 줄이 나오냐"가 뽑기 운이 되지 않게 하는 길. 등급·레벨·조각·장착이
-	# 따라가야 하고, 보관함 키(icon)가 바뀌므로 옮기기가 새면 무기가 사라진다.
+	# ── 4) 재련 제거 — 기존 무기와 특성·성장 기능은 보존 ────────────────
 	var rw := GearDefs.make("weapon", 5, GachaDefs.RARITIES[1])   # 언커먼
 	rw["lv"] = 7
 	rw["copies"] = 2
@@ -163,42 +161,7 @@ func _init() -> void:
 	scene.equipped["weapon"] = rw.duplicate(true)
 	scene.equipped["weapon"]["inventory_key"] = k0
 	scene._gear_selected_key = k0
-	var tr0 := GearDefs.trait_of(rw)
-	var cost := GearDefs.reforge_cost(rw)
-	assert(cost > 0.0, "재련 값이 0 이다")
-	# 값은 레벨에 비례하지 않는다 — 오래 키운 무기가 제일 못 고치면 안 된다.
-	var rw_hi := rw.duplicate(true)
-	rw_hi["lv"] = 60
-	assert(is_equal_approx(GearDefs.reforge_cost(rw_hi), cost),
-		"재련 값이 레벨에 비례한다")
-	# 연마석이 모자라면 아무 일도 없다.
-	scene.whet = cost - 1.0
-	scene._reforge_selected()
-	assert(scene.gear_inventory.has(k0) and scene._gear_selected_key == k0,
-		"연마석이 모자란데 재련됐다")
-	# 되면: 줄이 다음으로, 키·조각·장착이 따라간다, 등급·레벨·묶음 그대로.
-	scene.whet = cost
-	scene._reforge_selected()
-	var k1: String = scene._gear_selected_key
-	assert(k1 != k0, "재련했는데 키가 그대로다")
-	assert(is_equal_approx(scene.whet, 0.0), "연마석이 안 깎였다")
-	assert(not scene.gear_inventory.has(k0), "옛 줄이 보관함에 남았다 — 무기가 둘이 됐다")
-	var moved: Dictionary = scene.gear_inventory[k1]
-	assert(GearDefs.trait_of(moved) != tr0, "줄이 안 바뀌었다")
-	assert(str(moved["rarity"]) == "uncommon" and int(moved["lv"]) == 7
-		and int(moved["copies"]) == 2, "등급·레벨·묶음이 안 따라왔다")
-	assert(int(scene.gacha_shards.get("gear:" + k1, 0)) == 3
-		and not scene.gacha_shards.has("gear:" + k0), "조각이 안 따라왔다")
-	assert(str(scene.equipped["weapon"].get("inventory_key", "")) == k1
-		and str(scene.equipped["weapon"]["icon"]) == k1, "장착본이 옛 줄을 가리킨다")
-	# 네 번 돌면 제자리 — 어디든 세 번 안에 닿는다.
-	scene.whet = cost * 3.0
-	for i in 3:
-		scene._reforge_selected()
-	assert(scene._gear_selected_key == k0, "네 번 돌았는데 제자리가 아니다: %s" % scene._gear_selected_key)
-	# 무기가 아니면 재련이 없다.
-	var ar := GearDefs.make("armor", 5, GachaDefs.RARITIES[0])
-	assert(GearDefs.next_lane_spec(ar).is_empty(), "방어구에 재련이 붙었다")
+	assert(not scene.has_method("_reforge_selected"), "재련 실행 함수가 남았다")
 
 	# ── 5) 상세 카드 — 글자끼리 안 겹친다 (사장님 2026-09-04 스크린샷) ────
 	# 특성 줄을 오른쪽 칸 y142(높이 18)에 끼워 넣었더니 자원 첫 줄(y146)과
@@ -208,6 +171,8 @@ func _init() -> void:
 	scene._refresh_gear_detail()
 	var labels: Array = []
 	for ch in scene._gear_detail.get_children():
+		if ch is Button and not ch.is_queued_for_deletion():
+			assert(str(ch.text) != "재련", "상세 카드에 재련 버튼이 남았다")
 		# _refresh_gear_detail 은 queue_free 로 옛 글자를 치운다 — 같은 프레임에는
 		# 아직 붙어 있어서 자기 자신과 겹친 것으로 잡힌다.
 		if ch is Label and not ch.is_queued_for_deletion() and str(ch.text) != "":
@@ -235,12 +200,10 @@ func _init() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, Type.SIZE_SMALL).x)
 	assert(longest < 532.0, "제일 긴 특성 문구가 전폭 줄에도 안 들어간다: %.0fpx" % longest)
 
-	# **뒷정리.** 재련이 _save_game 을 타서 특성 무기가 저장본에 남는다. 그러면
-	# 다음 검사(AoeCheck)가 스킬 이펙트를 세는 프레임에 평타 특성 이펙트가 끼어
-	# 빨개진다 — 실제로 났다. 검사는 자기가 어질러 놓은 것을 치운다(PrestigeCheck 규칙).
+	# 다음 검사에 평타 특성 이펙트가 섞이지 않도록 임시 장비를 정리한다.
 	scene.equipped.erase("weapon")
 	scene.gear_inventory = {}
 	scene._save_game()
 
-	print("WeaponTraitCheck OK  (표 4줄 · 승급이 줄을 지킴 · 광역/처형/기절/연쇄 실전 · 재련)")
+	print("WeaponTraitCheck OK  (표 4줄 · 승급이 줄을 지킴 · 광역/처형/기절/연쇄 실전 · 재련 제거)")
 	quit(0)

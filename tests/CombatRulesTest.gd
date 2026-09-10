@@ -88,7 +88,7 @@ func _init() -> void:
 			% [Grid.BG_SRC.y, int(main.VIEW_BOTTOM)])
 		# 지면 아래는 위젯(상자·가이드)이 앉을 만큼 남아야 한다. 안 남으면 위젯이
 		# 다시 몹 몸통을 덮는다 — 화면에서는 "UI 가 캐릭터를 가리네"로만 보인다.
-		assert(float((Grid.BG_SRC.y - StageDefs.GROUND_ROW) * 2) >= float(main.WIDGET_BAND),
+		assert(float((Grid.BG_SRC.y - StageDefs.GROUND_ROW) * 2) - main.FOOTING_DEPTH >= float(main.WIDGET_BAND),
 			"지면(%d행) 아래가 위젯 띠(%d)보다 얕다"
 			% [StageDefs.GROUND_ROW, int(main.WIDGET_BAND)])
 		# 배경 파일이 실제로 그 규격인지 본다. 짧은 그림을 하나 끼워 넣으면 그 막에서만
@@ -369,9 +369,19 @@ func _init() -> void:
 	boss.free()
 	reaction.free()
 
+	# 일반 타격이 전투 전체의 포즈를 얼려 중간 동작을 생략하면 안 된다.
+	game._hero = Sprite2D.new()
+	game._play("attack")
+	var before_hit_pose: Texture2D = game._hero.texture
+	var before_hit_clock: float = game._hero_anim
 	game.on_foe_hit(null, 1.0)
-	assert(is_equal_approx(game._visual_hitstop_t, game.HITSTOP_DUR),
-		"전투 시각 히트스톱이 시작되지 않았다")
+	assert(game._hero.texture == before_hit_pose, "일반 타격이 재생 중인 자세를 강제로 바꿨다")
+	game._tick_motion(game._motion_duration * 0.5)
+	assert(game._hero_anim > before_hit_clock, "일반 타격이 모션 시계를 멈췄다")
+	assert(game._hero.texture != before_hit_pose, "일반 타격 후 포즈가 멈춰 있다")
+	game._hero.free()
+	game._hero = null
+	game._play("idle")
 	# 사거리는 **실제 경로**(_motion_reach)로 잰다. 예전엔 frame_reach 를 직접 부르며
 	# 프레임 번호 3 을 적어 뒀는데, 그러면 타격 지점이 비율로 바뀐 걸 이 검사가 못 본다.
 	var attack_reach: float = game._motion_reach("attack")
@@ -386,11 +396,8 @@ func _init() -> void:
 	assert(attack_reach >= 40.0,
 		"attack 사거리가 40 미만이다: %.1f — 여백 캔버스로 크게 휘두르는 그림인지 확인할 것"
 		% attack_reach)
-	# **피해는 무기가 가장 뻗은 순간에 들어가야 한다.** heavy 를 한 번 폐기한 이유가
-	# 그것이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로 보였다.
-	# 고정 비율(IMPACT_RATIO)로는 안 된다: 생성 결과가 프롬프트의 프레임 지시를 안
-	# 지킨다(2026-08-06 실측 — 프레임 4 를 명시했는데 attack f2, heavy f1 에 극단).
-	# 그래서 _impact_frame 이 그림에서 읽는다. 여기서 검사하는 것은 둘이다.
+	# 접촉 시각은 칼날 자세의 마커를 쓰고, 사거리는 전체 스윙의 외곽을 유지한다.
+	# 마커와 재생 프레임의 동기화는 HeroMotionCheck가 검사한다.
 	# **무기가 뻗는 모션만 본다.** 걷기·대시는 다리가 좌우로 벌어져서 폭이 그대로인데도
 	# 자세는 크게 바뀐다(실측: 방향 고정 walk 은 폭 4px 인데 실루엣 18% 변화).
 	# 실루엣 변화율은 픽셀을 전수 훑어야 해서 GDScript 로는 너무 느리다 —
@@ -410,12 +417,10 @@ func _init() -> void:
 		assert(hi - lo >= 10.0,
 			"%s 의 무기 뻗음 변화가 %.0f 화면px 뿐이다 — 여백 캔버스로 뽑을 것"
 			% [motion, hi - lo])
-		# 2. 코드가 그 최대 프레임을 임팩트로 쓰고 있어야 한다.
-		if motion in ["attack", "heavy"]:
-			var impact: int = game._impact_frame(motion)
-			assert(is_equal_approx(reaches[impact], hi),
-				"%s 임팩트(프레임%d)가 최대 뻗음이 아니다: %.0f (최대 %.0f)"
-				% [motion, impact, reaches[impact], hi])
+		# 2. 접촉 자세를 고쳐도 기존 전체 스윙의 사거리는 줄어들면 안 된다.
+		# 끝에 남은 검기까지 포함한 최대 bbox는 실제 칼날의 접촉 시각과 다르다.
+		assert(is_equal_approx(game._motion_reach(motion), hi),
+			"%s 접촉 시각을 바꾸면서 전투 사거리가 달라졌다" % motion)
 	# heavy 18 -> 28 (2026-08-05 재생성). 예전 그림은 **임팩트 프레임이 애니메이션에서
 	# 가장 오므린 순간**이었다 — 칼을 뒤로 뺀 자세에 피해가 들어가 "안 맞았는데 맞았다"로
 	# 보였다. 사거리 판정은 max(사거리, BODY_HALF)=30 이라 그대로지만 손맛이 달라진다.

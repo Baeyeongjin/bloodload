@@ -19,9 +19,10 @@ func _init() -> void:
 		quit(1))
 
 	var scene: Node = load("res://Main.tscn").instantiate()
+	scene.save_muted = true
 	root.add_child(scene)
-	await process_frame
-	await process_frame
+	while not scene.is_node_ready() or not scene.is_processing():
+		await process_frame
 
 	# ── 5) 칸 수 맞추기 (먼저 본다 — 아래가 전부 인덱스로 접근한다) ─────────
 	assert(scene.skill_presets.size() == scene.PRESETS,
@@ -126,11 +127,12 @@ func _init() -> void:
 	assert(scene._preset_name("skill", 0) == "보스용", "지은 이름이 안 나온다")
 	scene.preset_names["skill:0"] = ""
 	assert(scene._preset_name("skill", 0) == "프리셋 1", "빈 이름이 기본으로 안 돌아온다")
-	# 화면을 열면 카드 여섯 장이 선다 (스킬 3 + 장비 3).
+	# 추천 두 장과 저장 슬롯 여섯 장은 별개다. 저장 슬롯 수는 그대로다.
 	scene._open_presets()
+	await process_frame
 	assert(scene._preset_view.visible, "열었는데 안 보인다")
-	assert(scene._preset_body.get_child_count() == scene.PRESETS * 2,
-		"카드가 %d 장이다 (6 이어야)" % scene._preset_body.get_child_count())
+	assert(scene._preset_body.get_child_count() == scene.PRESETS * 2 + 2,
+		"추천 2 + 저장 6 카드가 아니다: %d" % scene._preset_body.get_child_count())
 
 	print("PresetCheck OK  (스킬·장비 각각 3벌 · 자동 꺼짐 · 없어진 것 견딤)")
 	quit(0)

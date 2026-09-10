@@ -1,6 +1,68 @@
 class_name Foe
 extends Node2D
 
+# Display art never replaces the logical clips used by damage or body metrics.
+const PIXEL_PILOT_ROOT := "res://assets/anim/pixel_pilot/"
+# User requested all original images restored on 2026-09-09.
+static var pixel_motion_pilot := false
+
+
+static func pixel_pilot_frames(actor: String, motion: String) -> Array:
+	return Assets.frames("%s%s/%s" % [PIXEL_PILOT_ROOT, actor, motion])
+
+
+static func pixel_pilot_ready(actor: String) -> bool:
+	if not pixel_motion_pilot:
+		return false
+	var hero := not SkinDefs.of(actor).is_empty()
+	if not hero and not FoeTiers.TIERS.has(actor) and actor not in ["boss_1", "boss_2", "boss_3", "boss_4", "boss_5"]:
+		return false
+	var required := ["walk", "dash", "attack", "special"]
+	if hero:
+		required.append_array(["idle", "attack2", "heavy", "hurt", "death"])
+	for motion in required:
+		if pixel_pilot_frames(actor, motion).size() < 6:
+			return false
+	return true
+
+
+static func portrait_path(actor: String, original: String) -> String:
+	var portrait := "%s%s/portrait.png" % [PIXEL_PILOT_ROOT, actor]
+	return portrait if pixel_pilot_ready(actor) and ResourceLoader.exists(portrait) else original
+
+
+# Keep the original contact timestamp: source contact pose becomes pilot pose 3.
+static func pixel_pilot_index(frame: int, count: int, target_count: int, contact := -1) -> int:
+	if count <= 1 or target_count <= 1:
+		return 0
+	frame = clampi(frame, 0, count - 1)
+	if contact < 0:
+		return mini(target_count - 1, int(float(frame) * target_count / count))
+	contact = clampi(contact, 0, count - 1)
+	var hit := mini(3, target_count - 1)
+	if frame <= contact:
+		return hit if contact == 0 else int(float(frame) * hit / contact)
+	return hit + roundi(float(frame - contact) * (target_count - 1 - hit) / maxi(1, count - 1 - contact))
+
+
+# Display time is independent of the old clip's integer frame boundaries.
+# Pose 3 begins at the unchanged damage timestamp; each side has even spacing.
+static func pixel_pilot_time_index(at: float, duration: float, count: int, contact := -1.0, first := 0) -> int:
+	if count <= 1 or duration <= 0.0:
+		return 0
+	at = clampf(at, 0.0, duration)
+	if contact <= 0.0 or contact >= duration:
+		return mini(count - 1, int(at / duration * count + 0.000001))
+	var hit := mini(3, count - 1)
+	first = clampi(first, 0, hit)
+	if at < contact:
+		return mini(hit - 1, first + int(at / contact * (hit - first) + 0.000001))
+	return mini(count - 1, hit + int((at - contact) / (duration - contact) * (count - hit) + 0.000001))
+
+
+static func is_pixel_pilot_texture(tex: Texture2D) -> bool:
+	return tex != null and tex.resource_path.begins_with(PIXEL_PILOT_ROOT)
+
 # 방치형 몹. arrow-rpg의 Enemy(600줄)에서 방치형에 필요한 것만 남겼다 —
 # 추격 AI·행동 타입·특수공격·실제 좌표 넉백이 전부 빠진다.
 #
@@ -41,6 +103,7 @@ var _walk_frames: Array = []
 var _attack_frames: Array = []
 var _special_frames: Array = []   # 특수 패턴 전용 모션. 없으면 평타로 떨어진다
 var _attack_dir := ""             # 임팩트 프레임을 그림에서 읽으려면 경로가 필요하다
+var _pixel_art_key := ""          # Dedicated boss appearance; combat key stays unchanged.
 var _special_dir := ""
 var _sprite: Texture2D = null
 var _anim_t := 0.0
@@ -50,6 +113,13 @@ var _pushed_t := 0.0
 var _flash_t := 0.0
 var _hit_t := 0.0
 var _visual_frozen := false
+var _frozen_texture: Texture2D
+var _frozen_offset := Vector2.ZERO
+var _shown_texture: Texture2D
+var _shown_offset := Vector2.ZERO
+var _death_texture: Texture2D
+var _death_offset := Vector2.ZERO
+var _dash_pose := false
 var _attack_cd := 0.0
 var _swing_n := 0          # 몇 번째 스윙인가 — 특수 패턴 주기를 센다
 var _tell_t := -1.0        # 특수 패턴 예고 남은 시간 (-1 = 예고 중 아님)
@@ -114,6 +184,7 @@ func setup(tier: Dictionary, power: float, stage_gold: float, boss: bool = false
 	# walk 과 **같은 키**를 쓴다. 보스는 anim_key(boss_1~5)로 전용 자산이 따로 있고,
 	# 없으면 Assets.frames 가 빈 배열을 주므로 원본 몹 attack 으로 떨어진다.
 	var anim_key := str(tier.get("anim_key", key))
+	_pixel_art_key = anim_key
 	_attack_dir = "res://assets/anim/%s_attack" % anim_key
 	_attack_frames = Assets.frames(_attack_dir)
 	if _attack_frames.is_empty():
@@ -185,18 +256,30 @@ func attack_interval() -> float:
 func set_combat_active(active: bool) -> void:
 	combat_active = active
 	if not active:
-		# 사망·부활 중에는 공격 프레임도 멈춘다. 쿨다운은 보존해 부활 직후
-		# 전원이 동시에 첫 프레임부터 치는 현상을 막는다.
-		_attack_anim = -1.0
-		_impact_sent = false
-		# **예고와 2연격 예약도 같이 끈다.** `_tick_attack` 이 맨 위에서
-		# `if not combat_active: return` 으로 빠져나가 이 둘은 줄지 않는데,
-		# `_draw_attack_tell` 은 `combat_active` 를 안 본다 — 그래서 영웅이 누워
-		# 있는 `Main.REVIVE_TIME`(1.2초) 내내 발밑 띠가 **반쯤 찬 채로 얼어붙고**,
-		# 부활하자마자 남은 몫(0.1초 같은 것)만 지나 특수가 꽂힌다. 피할 창이 없다.
-		# 쿨다운(`_attack_cd`)은 위 주석대로 그대로 둔다 — 그건 보존이 맞다.
-		_tell_t = -1.0
-		_echo_hit_t = -1.0
+		_cancel_attack()
+
+
+func _cancel_attack() -> void:
+	if _move_tw and _move_tw.is_valid():
+		_move_tw.kill()
+	if _airborne:
+		position.y = _ground_y
+	stop_x = position.x
+	_airborne = false
+	_dash_pose = false
+	_home_x = INF
+	_attack_anim = -1.0
+	_impact_sent = false
+	_tell_t = -1.0
+	_echo_hit_t = -1.0
+	_meteor_t = -1.0
+	if is_instance_valid(_meteor_fx):
+		_meteor_fx.queue_free()
+	_meteor_fx = null
+	_special_x = INF
+	_special_hits = 0
+	_combo_followup = false
+	special_swing = false
 
 
 # 잠깐 얼린다. 예고·2연격 예약을 끄는 세 줄은 set_combat_active(false) 가 이미
@@ -206,29 +289,24 @@ func stun(sec: float) -> void:
 		return
 	stun_t = sec
 	stun_lock = sec + STUN_LOCK_AFTER
-	_attack_anim = -1.0
-	_impact_sent = false
-	_tell_t = -1.0
-	_echo_hit_t = -1.0
+	_cancel_attack()
 
 
 const STUN_LOCK_AFTER := 1.5
 
 
 func set_visual_frozen(frozen: bool) -> void:
+	if frozen and not _visual_frozen:
+		_frozen_texture = _pose_texture()
+		_frozen_offset = _motion_offset()
 	_visual_frozen = frozen
 
 
 func _die() -> void:
+	_death_texture = _shown_texture if _shown_texture != null else _pose_texture()
+	_death_offset = _shown_offset if _shown_texture != null else _motion_offset()
 	dying = true
-	# **이동 트윈을 같이 끊는다.** 안 끊으면 시체가 복귀 트윈을 마저 타고 원래
-	# 칸으로 스르륵 돌아가고, 공중에서 죽으면 뜬 채로 사라진다. 돌진이 4px 이던
-	# 동안은 둘 다 안 보였다 — 거리를 준 지금부터 보인다.
-	if _move_tw and _move_tw.is_valid():
-		_move_tw.kill()
-	if _airborne:
-		position.y = _ground_y
-		_airborne = false
+	_cancel_attack()
 	remove_from_group("foes")
 	# **시체는 세상에 실려야 한다.** "foes" 에서 빼는 건 표적 선정이 시체를
 	# 고르면 안 되기 때문인데, 그 바람에 `Main._advance_world` 도 시체를 못 밀어서
@@ -301,6 +379,12 @@ var _home_x := INF             # 대시 전에 서 있던 자리 — 스윙이 �
 var _airborne := false         # 점프 중 — 걷기 대신 웅크림 프레임을 그린다
 var _ground_y := 0.0           # 뛰기 전 발 높이 — 공중에서 죽으면 여기로 되돌린다
 var _move_tw: Tween            # 움직임 트윈 — 죽을 때 같이 멎어야 한다
+var _special_x := INF          # 예고한 지점: 돌진 중에도 영웅을 다시 추적하지 않는다.
+var _special_hits := 0
+var _combo_followup := false
+const METEOR_FALL := 0.60
+var _meteor_t := -1.0
+var _meteor_fx: Node2D
 # [개발 도구] `--tell` 이 켠다. 매 스윙을 특수로 만들어 **예고판을 화면에 고정**한다.
 # 왜 필요한가: 예고는 0.85초고 주기는 세 스윙마다라, 캡처 시각을 맞추는 것이 사실상
 # 도박이다 — 실제로 6장을 흩뿌려 찍고 한 장도 못 잡았다(2026-08-06). 판 크기·기울기·
@@ -314,16 +398,32 @@ func attack_mult() -> float:
 
 # 이 스윙에서 피해가 들어갈 시각.
 #
-# **내려찍기(특수)만 그림에서 읽는다.** 고정 비율(`IMPACT_RATIO`)은 생성기가 극단을
+# **내려찍기(특수)는 그림에서 읽는다.** 고정 비율(`IMPACT_RATIO`)은 생성기가 극단을
 # 어디에 두든 늘 43% 지점에 피해를 넣는다. 슬라임 실측(2026-08-06): 가장 납작한
 # 프레임은 f6(높이 20)인데 비율은 f4(높이 26)를 가리켰다 — 몸이 가장 곧추선, 즉
 # **가장 오므린 순간**이다. 08-05 에 영웅 `heavy` 를 폐기한 이유와 같은 증상이다.
 #
-# 평타는 **안 건드린다.** 지금 타이밍이 틀렸다는 근거가 없고, 몹 22종의 평타 박자를
-# 한꺼번에 흔들 이유가 없다. 고칠 근거가 생기면 그때 같은 방식으로 옮긴다.
+# 평타는 원래 비율을 유지한다. 원본 오크 9프레임만 확대 확인한 접촉 자세를 쓴다:
+# f3은 몽둥이가 머리 뒤에 있고, 실제 앞으로 내리치는 자세는 f6이다.
+# Original clips reviewed pose by pose; body height is not a sword/cast marker.
+const SPECIAL_CONTACT := {"boss_1": 7, "boss_2": 4, "boss_3": 4,
+	"boss_4": 4, "boss_5": 7, "sanctum_guardian": 6,
+	"ruin_warden": 6, "drowned_king": 5, "blood_queen": 5,
+	"bone_choir": 4, "butcher": 7, "plague_hag": 7,
+	"crystal_golem": 6, "vine_colossus": 7, "bloodmoon_avatar": 6,
+	"usurper": 6, "wraith_knight": 5, "frost_golem": 6,
+	"eye_mass": 6, "dark_knight": 6}
+
+
 func _impact_at() -> float:
+	if not special_swing and _attack_dir == "res://assets/anim/orc_attack" \
+			and _attack_frames.size() == 9:
+		return attack_dur() * 6.5 / 9.0
 	if not (special_swing and not _special_frames.is_empty()) or _special_dir == "":
 		return attack_dur() * IMPACT_RATIO
+	var clip := _special_dir.get_file().trim_suffix("_special")
+	if SPECIAL_CONTACT.has(clip):
+		return attack_dur() * (float(SPECIAL_CONTACT[clip]) + 0.5) / float(_special_frames.size())
 	var peak := Assets.slam_peak_frame(_special_dir)
 	return attack_dur() * (float(peak) + 0.5) / float(_special_frames.size())
 
@@ -355,154 +455,172 @@ func telling() -> bool:
 	return _tell_t >= 0.0
 
 
+# A committed pattern owns its destination until recovery has finished.
+func special_center_x() -> float:
+	return position.x if is_inf(_special_x) else _special_x
+
+
+func pattern_active() -> bool:
+	return special_swing and (telling() or swinging() or _meteor_t >= 0.0
+		or (_move_tw != null and _move_tw.is_valid()))
+
+
+func _lock_special_target() -> void:
+	_special_x = position.x
+	_ground_y = position.y
+	_special_hits = 0
+	match str(_sp[4]):
+		"dash", "jump":
+			_special_x = hero_x + body_half() + 26.0
+		"meteor":
+			_special_x = hero_x
+
+
+func _emit_attack_impact() -> void:
+	if _impact_sent or dying or not combat_active or not engaged:
+		return
+	_impact_sent = true
+	var main := get_parent()
+	if special_swing and str(_sp[4]) == "meteor":
+		_meteor_t = METEOR_FALL
+		if main and main.has_method("on_foe_meteor"):
+			_meteor_fx = main.on_foe_meteor(self)
+	else:
+		if special_swing:
+			_special_hits += 1
+		if main and main.has_method("on_foe_attack"):
+			main.on_foe_attack(self)
+
+
 func _tick_attack(delta: float) -> void:
-	if not combat_active or stun_t > 0.0:
+	if dying or not combat_active or stun_t > 0.0 or not engaged:
 		return
-	# **교전 몹만 휘두른다**(순차 교전). 나머지는 제 칸에서 기다린다 — 여럿이
-	# 한꺼번에 때리면 방치형의 "한 놈씩 나와서 싸운다" 리듬이 사라진다.
-	# 쿨다운도 여기서 같이 멈춘다: 기다리는 동안 돌려 두면 교전이 넘어오는 순간
-	# 밀린 쿨다운이 음수로 쌓여 연타가 터진다.
-	if not engaged:
-		return
-	# **사거리 검사보다 먼저** 돌린다. 아래 검사에 걸려 빠져나가면 예고가 멈춘 채로
-	# 굳어서 보스가 영영 안 친다.
-	# 2연격의 두 번째 타 — 스윙 애니가 끝난 뒤에도 도착해야 하므로 스윙 밖에서
-	# 센다. 죽은 영웅·전투 이탈은 on_foe_attack 쪽 가드가 거른다.
-	if _echo_hit_t >= 0.0:
-		_echo_hit_t -= delta
-		if _echo_hit_t <= 0.0:
-			_echo_hit_t = -1.0
-			var main2 := get_parent()
-			if main2 and main2.has_method("on_foe_attack"):
-				main2.on_foe_attack(self)
+	# The projectile and its damage share this clock; sprite lifetime cannot cancel a hit.
+	if _meteor_t >= 0.0:
+		_meteor_t = maxf(0.0, _meteor_t - delta)
+		if is_instance_valid(_meteor_fx):
+			var fall := pow(1.0 - _meteor_t / METEOR_FALL, 2.0)
+			_meteor_fx.position = Vector2(special_center_x() + 40.0 * (1.0 - fall),
+				lerpf(_ground_y - 270.0, _ground_y - 16.0, fall)).round()
+		if _meteor_t <= 0.0:
+			_meteor_t = -1.0
+			if is_instance_valid(_meteor_fx):
+				_meteor_fx.queue_free()
+			_meteor_fx = null
+			_special_hits += 1
+			var main := get_parent()
+			if main and main.has_method("on_foe_attack"):
+				main.on_foe_attack(self)
+			if dying or not combat_active:
+				return
 	if _tell_t >= 0.0:
 		_tell_t -= delta
 		if _tell_t <= 0.0:
 			_tell_t = -1.0
-			# 움직이는 패턴은 이동이 먼저다 — 스윙은 도착해서 시작한다.
-			# 이동 중에는 _attack_anim 이 -1 이라 아래 스윙 틱이 조용히 쉰다.
 			var mv := str(_sp[4]) if special_swing else ""
-			if mv == "dash" or mv == "jump":
+			if mv in ["dash", "jump"]:
 				_special_move(mv)
-				return
-			_attack_anim = 0.0
-			_impact_sent = false
+			else:
+				_attack_anim = 0.0
+				_impact_sent = false
 		return
-	# **닿지 않으면 아예 안 휘두른다.** 스윙을 시작해 놓고 임팩트 때 빠지면 모션은
-	# 나가는데 피해가 0이라, 화면에서는 공격이 나갔다 안 나갔다 하는 것으로 보인다.
-	# 시작할 때 재고, 임팩트 때 또 잰다 — 그 사이에 영웅이 대시로 빠져나갔으면
-	# 그때는 진짜로 피한 것이고, 그건 남겨 둬야 대시가 회피 수단이 된다.
-	if _attack_anim < 0.0 and absf(hero_x - position.x) > reach():
+	# Moving windup advances on the movement tween, once. No cooldown can start here.
+	if _dash_pose or _airborne:
 		return
 	if _attack_anim >= 0.0:
-		_attack_anim += delta
+		var speed := 1.5 if _combo_followup else 1.0
+		_attack_anim += delta * speed
 		if not _impact_sent and _attack_anim >= _impact_at():
-			_impact_sent = true
-			var main := get_parent()
-			if special_swing and str(_sp[4]) == "meteor":
-				# 캐스팅 — 때리는 건 하늘에서 떨어지는 쪽이다.
-				if main and main.has_method("on_foe_meteor"):
-					main.on_foe_meteor(self)
-			elif main and main.has_method("on_foe_attack"):
-				main.on_foe_attack(self)
-			if special_swing and int(_sp[3]) > 1:
-				_echo_hit_t = 0.35
+			_emit_attack_impact()
+		if dying or not combat_active:
+			return
 		if _attack_anim >= attack_dur():
-			_attack_anim = -1.0
+			# A second hit has a second complete swing, instead of damage in an idle pose.
+			if special_swing and _special_hits < int(_sp[3]) and str(_sp[4]) != "meteor":
+				_attack_anim = 0.0
+				_impact_sent = false
+				_combo_followup = true
+			else:
+				_attack_anim = -1.0
+		return
+	if _meteor_t >= 0.0 or (_move_tw != null and _move_tw.is_valid()):
+		return
+	if absf(hero_x - position.x) > reach():
 		return
 	_attack_cd -= delta
 	if _attack_cd <= 0.0:
 		_attack_cd += attack_interval()
 		_swing_n += 1
-		special_swing = (is_boss or is_midboss) \
-			and (force_special or _swing_n % SPECIAL_EVERY == 0)
+		special_swing = (is_boss or is_midboss) and (force_special or _swing_n % SPECIAL_EVERY == 0)
+		_special_hits = 0
+		_combo_followup = false
+		_special_x = INF
 		if special_swing:
-			_tell_t = float(_sp[0])   # 멈춰서 예고부터. 스윙은 그 뒤에 나간다
+			_lock_special_target()
+			_tell_t = float(_sp[0])
 			return
 		_attack_anim = 0.0
 		_impact_sent = false
 
 
-# 움직이는 특수 패턴의 이동부. 트윈은 **자기 소속**이다 — Main 소속이면 몹이
-# 먼저 죽었을 때 freed 노드를 계속 만진다(다시 굴리기 크래시의 자리).
-#
-#   dash: 영웅 앞까지 미끄러져 벤 뒤, 스윙이 끝나면 서 있던 자리로 스르륵.
-#   jump: 떠올라 영웅 자리에 떨어지며 벤다. 착지가 곧 임팩트라 복귀는 없다 —
-#         내려찍은 자리가 새 자리다.
+# Existing source frames advance during flight. Arrival is the contact pose,
+# not the beginning of another windup. Recovery cannot overlap a new attack.
 func _special_move(mv: String) -> void:
 	if _move_tw and _move_tw.is_valid():
 		_move_tw.kill()
+	if is_inf(_special_x):
+		_lock_special_target()
 	_move_tw = create_tween()
-	var main := get_parent()
-	var hx: float = main.hero_x if main and "hero_x" in main else position.x
-	# 몸 반폭만큼 떨어져 선다 — 겹치면 스윙이 몸 안에서 나간다.
-	var at := hx + body_half() + 26.0
-	# **뒤로 뺐다가 들어간다.** 목표점(at)은 영웅 몸통 바로 바깥인데 영웅이 이미
-	# 거기 붙어 서 있다 — `at - position.x` 가 -4.0 이고 몸반폭이 상쇄되므로
-	# 몹 크기·스킨과 무관하게 늘 4px 이다(실측 확인). 2026-08-25 사장님의
-	# "대시가 안 읽힌다"는 잔상이 모자란 게 아니라 이것이었다.
+	_attack_anim = 0.0
+	_impact_sent = false
+	var at := special_center_x()
 	var back := position.x + LUNGE_BACK
+	var contact := _impact_at()
 	if mv == "dash":
-		if _home_x == INF:
-			_home_x = position.x
-		# 잔상 — 출발 자리와 길 중간에 반투명 몸이 남았다 사라진다. 이게 없으면
-		# 순간이동으로 보인다(사장님: 대시가 안 읽힌다).
-		if main and main.has_method("_dash_ghost"):
-			main._dash_ghost(self)
-		# 예고처럼 반 박자 물러선 뒤 들어간다 — 물러섬이 있어야 돌진이 읽힌다.
-		_move_tw.tween_property(self, "position:x", back, 0.12) \
-			.set_trans(Tween.TRANS_SINE)
-		_move_tw.parallel().tween_property(self, "stop_x", back, 0.12) \
-			.set_trans(Tween.TRANS_SINE)
-		_move_tw.tween_property(self, "position:x", at, 0.14) \
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		# **표식도 몸과 같이 옮긴다.** `Main._foe_arrived` 는 position.x 와 stop_x 가
-		# 붙어 있을 때만 참이라, 몸만 옮기면 대시가 도는 내내 영웅의 평타도 격도
-		# 광역도 통째로 사라진다 — 몸은 코앞에 와 있는데 표식만 원래 칸에 남아서다.
-		# **아래 점프가 착지 콜백에서 하는 바로 그 일**을 이동 중에도 하는 것뿐이다
-		# (2026-08-25 에 점프만 고치고 이 형제를 남겼다).
-		# 곡선을 똑같이 줘야 중간에 안 벌어진다 — 선형으로 두면 QUAD_OUT 과
-		# 어긋나서 `absf(position.x - stop_x) <= 1.0` 이 도중에 다시 거짓이 된다.
-		_move_tw.parallel().tween_property(self, "stop_x", at, 0.14) \
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_move_tw.parallel().tween_callback(func() -> void:
-			var m2 := get_parent()
-			if m2 and m2.has_method("_dash_ghost"):
-				m2._dash_ghost(self)).set_delay(0.07)
-		_move_tw.tween_callback(func() -> void:
-			_attack_anim = 0.0
-			_impact_sent = false)
-		# 복귀는 스윙이 끝날 시간에 — 벤 모습을 보여 준 뒤 물러난다.
-		_move_tw.tween_interval(attack_dur() + 0.1)
-		_move_tw.tween_property(self, "position:x", _home_x, 0.35) \
-			.set_trans(Tween.TRANS_SINE)
-		_move_tw.parallel().tween_property(self, "stop_x", _home_x, 0.35) \
-			.set_trans(Tween.TRANS_SINE)
+		_dash_pose = true
+		_home_x = position.x
+		_move_tw.tween_method(_move_x, position.x, back, 0.16).set_trans(Tween.TRANS_SINE)
+		_move_tw.parallel().tween_property(self, "_attack_anim", contact * 0.40, 0.16)
+		_move_tw.tween_callback(_leave_dash_ghost)
+		_move_tw.tween_method(_move_x, back, at, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_move_tw.parallel().tween_property(self, "_attack_anim", contact, 0.18)
+		_move_tw.parallel().tween_callback(_leave_dash_ghost).set_delay(0.08)
+		_move_tw.tween_callback(_land_special)
+		_move_tw.tween_interval(maxf(0.16, attack_dur() - contact) + 0.10)
+		_move_tw.tween_method(_move_x, at, _home_x, 0.26).set_trans(Tween.TRANS_SINE)
 		_move_tw.tween_callback(func() -> void: _home_x = INF)
-	else:   # jump
-		# 공중에서는 걷기 대신 웅크림 프레임(_draw 의 _airborne 분기) — 걷는
-		# 그림으로 떠다니면 점프가 아니라 미끄럼이다(사장님: "점프 어색").
+	else:
 		_airborne = true
-		_ground_y = position.y      # 공중에서 죽으면 여기로 되돌린다(_die)
-		# **떠오르며 뒤로, 내려오며 앞으로.** 대시와 같은 이유다 — 내려찍을 거리가
-		# 있어야 "영웅 자리에 떨어진다"가 그림이 된다. 예전엔 가로로 4px 갔다.
-		_move_tw.tween_property(self, "position:y", position.y - 120.0, 0.20) \
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_move_tw.parallel().tween_property(self, "position:x", back, 0.20) \
-			.set_trans(Tween.TRANS_SINE)
-		_move_tw.tween_property(self, "position:y", position.y, 0.12) \
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		_move_tw.parallel().tween_property(self, "position:x", at, 0.12) \
-			.set_trans(Tween.TRANS_SINE)
-		_move_tw.tween_callback(func() -> void:
-			_airborne = false
-			_attack_anim = 0.0
-			_impact_sent = false
-			# **내려선 자리가 새 제자리다.** 대시는 원래 칸으로 돌아오지만
-			# 점프는 뛰어든 곳에 남는다 — stop_x 를 안 옮기면 Main._foe_arrived
-			# 가 영영 거짓이 되어 영웅이 그 몹을 다시는 못 때린다
-			# (사장님 2026-08-25: "보스가 점프공격하고나서 캐릭터 공격을 멈춤").
-			stop_x = position.x)
+		_ground_y = position.y
+		_move_tw.tween_property(self, "position:y", _ground_y - 96.0, 0.24).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_move_tw.parallel().tween_method(_move_x, position.x, back, 0.24).set_trans(Tween.TRANS_SINE)
+		_move_tw.parallel().tween_property(self, "_attack_anim", contact * 0.55, 0.24)
+		_move_tw.tween_property(self, "position:y", _ground_y, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_move_tw.parallel().tween_method(_move_x, back, at, 0.16).set_trans(Tween.TRANS_SINE)
+		_move_tw.parallel().tween_property(self, "_attack_anim", contact, 0.16)
+		_move_tw.tween_callback(_land_special)
+
+
+func _move_x(value: float) -> void:
+	position.x = value
+	stop_x = value
+
+
+func _leave_dash_ghost() -> void:
+	var main := get_parent()
+	if main and main.has_method("_dash_ghost"):
+		main._dash_ghost(self)
+
+
+func _land_special() -> void:
+	_airborne = false
+	_dash_pose = false
+	position.y = _ground_y
+	stop_x = position.x
+	_attack_anim = _impact_at()
+	# A hero hitstop must not hide the boss's own contact behind a cached windup.
+	set_visual_frozen(false)
+	_emit_attack_impact()
 
 
 # 그림자 반지름. Main 이 발밑에 깔아 준다.
@@ -553,6 +671,8 @@ var _art_base := -1.0
 func _art_ratio(tex: Texture2D) -> float:
 	if tex == null:
 		return 1.0
+	if is_pixel_pilot_texture(tex):
+		return float(tex.get_width()) / 32.0
 	if _art_base < 0.0:
 		_art_base = float(tex.get_width())
 		if not _walk_frames.is_empty():
@@ -595,7 +715,89 @@ func head_y() -> float:
 # 맞으면 **온 길 쪽으로** 밀린다. 부호를 고정하면 왼쪽에서 온 몹이 맞을 때
 # 영웅 쪽으로 파고들어 때린 게 아니라 달려든 것처럼 보인다.
 func hit_offset() -> float:
-	return HIT_KNOCKBACK * clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0) * float(-face)
+	var t := clampf(_hit_t / HIT_REACT_DUR, 0.0, 1.0)
+	return roundf(HIT_KNOCKBACK * t * t * (3.0 - 2.0 * t)) * float(-face)
+
+
+# 원본 프레임을 같은 간격으로 재생한다. 프레임 번호에 이징을 걸면 첫 자세를
+# 오래 붙잡고 중간 동작을 건너뛰어 보스가 멈췄다가 튀는 것처럼 보인다.
+# 특수 공격의 첫 준비 자세는 예고/이동에서 이미 보여 줬으므로 되감지 않는다.
+func _attack_frame_at(at: float, count: int) -> int:
+	if count <= 1:
+		return 0
+	var contact := clampi(int(_impact_at() * count / attack_dur() + 0.00001), 0, count - 1)
+	var start := mini(1, maxi(0, contact - 1)) if special_swing else 0
+	return clampi(int(at * count / attack_dur() + 0.00001), start, count - 1)
+
+
+# 그림만 고른다. 히트스톱 중에도 전투 시계는 흐르므로 화면의 포즈를 따로 잡아
+# 두었다가 풀 때 현재 시각으로 복귀한다. 별도 시계를 누적하면 타격과 어긋난다.
+func _pose_texture() -> Texture2D:
+	if dying:
+		return _pixel_pilot_texture(_death_texture, "idle", 0, 1)
+	if _visual_frozen and _frozen_texture != null:
+		return _pixel_pilot_texture(_frozen_texture, "idle", 0, 1)
+	var frames := _special_frames if special_swing and not _special_frames.is_empty() else _attack_frames
+	# The original fallback still controls timing, even when it has no special art.
+	var motion := "special" if special_swing else "attack"
+	if (telling() or ((_airborne or _dash_pose) and _attack_anim < 0.0)) and not frames.is_empty():
+		var contact := clampi(int(_impact_at() * frames.size() / attack_dur() + 0.00001), 0, frames.size() - 1)
+		var prepare := mini(1, maxi(0, contact - 1))
+		if telling():
+			var t := clampf(1.0 - _tell_t / float(_sp[0]), 0.0, 1.0)
+			prepare = mini(prepare, int(t * 2.0))
+		return _pixel_pilot_texture(frames[prepare], motion, prepare, frames.size())
+	if _attack_anim >= 0.0 and not frames.is_empty():
+		var frame := _attack_frame_at(_attack_anim, frames.size())
+		return _pixel_pilot_texture(frames[frame], motion, frame, frames.size())
+	if not _walk_frames.is_empty():
+		var frame := int(_anim_t * 8.0) % _walk_frames.size() if _pushed_t > 0.0 else 0
+		return _pixel_pilot_texture(_walk_frames[frame], "walk", frame, _walk_frames.size())
+	return _pixel_pilot_texture(_sprite, "idle", 0, 1)
+
+
+func _pixel_pilot_texture(source: Texture2D, motion: String, frame: int, count: int) -> Texture2D:
+	var actor := _pixel_art_key if pixel_pilot_ready(_pixel_art_key) else key
+	if not pixel_pilot_ready(actor) or is_pixel_pilot_texture(source):
+		return source
+	if _dash_pose and _move_tw != null and _move_tw.is_valid():
+		var dash := pixel_pilot_frames(actor, "dash")
+		if not dash.is_empty():
+			# The existing move takes 0.12s to load and 0.14s to lunge.
+			return dash[pixel_pilot_time_index(_move_tw.get_total_elapsed_time(), 0.26, dash.size(), 0.12)]
+	var frames := pixel_pilot_frames(actor, motion)
+	if frames.is_empty():
+		return pixel_pilot_frames(actor, "walk")[0]
+	if motion in ["attack", "special"]:
+		# Original prepare 0/1 both mapped to pilot 0, erasing the entire tell.
+		if telling():
+			var progress := clampf(1.0 - _tell_t / float(_sp[0]), 0.0, 1.0)
+			return frames[mini(1, int(progress * 2.0))]
+		if _airborne or _dash_pose:
+			return frames[1]
+		if _attack_anim >= 0.0:
+			return frames[pixel_pilot_time_index(_attack_anim, attack_dur(), frames.size(), _impact_at(), 1 if special_swing else 0)]
+	if motion == "walk":
+		return frames[int(_anim_t * 8.0) % frames.size() if _pushed_t > 0.0 else 0]
+	return frames[pixel_pilot_index(frame, count, frames.size())]
+
+
+# Pilot action sheets use a fixed exclusive footline at 48 on a 64px canvas.
+# Using the lowest opaque pixel would pull an airborne foot/low weapon to ground.
+func _display_bottom_gap(tex: Texture2D) -> float:
+	if is_pixel_pilot_texture(tex):
+		return 16.0 if tex.get_height() == 64 else 0.0
+	return Assets.bottom_gap(tex)
+
+
+func _motion_offset() -> Vector2:
+	if dying:
+		return _death_offset
+	if _visual_frozen:
+		return _frozen_offset
+	# 몸의 전진과 회수는 원본 그림과 실제 이동 트윈이 담당한다. 접촉 순간에
+	# 별도 오프셋을 반전하면 한 프레임에 잡몹 7px, 보스 16px가 순간이동했다.
+	return Vector2(hit_offset(), 0.0)
 
 
 # 이 몹의 공격이 닿는 거리. 영웅이 이 밖으로 나가면 헛친다 — 대시로 피할 여지가
@@ -626,14 +828,27 @@ const TELL_SKEW := 12.0        # 윗변을 옆으로 미는 양 = 바닥 기울�
 
 
 func _draw_attack_tell() -> void:
-	if dying or _tell_t < 0.0:
+	if dying or not special_swing or not combat_active:
 		return
-	var t := clampf(1.0 - _tell_t / float(_sp[0]), 0.0, 1.0)
+	var pending := telling() or _dash_pose or _airborne or _meteor_t >= 0.0 \
+		or (_attack_anim >= 0.0 and not _impact_sent)
+	if not pending:
+		return
+	var t := clampf(1.0 - _tell_t / float(_sp[0]), 0.0, 1.0) if telling() else 1.0
+	if _meteor_t >= 0.0:
+		t = 1.0 - _meteor_t / METEOR_FALL
 	var r := reach()
-	# **테두리만 그린다**(사장님 2026-08-20: "범위만 나오도록"). 채움이
-	# 차오르는 판은 통째로 빨개져 소음이 컸다. 남은 시간은 테두리 밝기가
-	# 말한다 — 임팩트가 가까울수록 진해진다.
-	_tell_outline(r, Color(1.0, 0.40, 0.30, 0.35 + 0.55 * t))
+	var theme := FoeTiers.slam_theme(key)
+	var core: Color = theme[1]
+	# Outline only. Moving the actor cannot lift or drag its promised ground range.
+	draw_set_transform(Vector2(special_center_x() - position.x, _ground_y - position.y))
+	_tell_outline(r, Color(1.0, 0.35, 0.25, 0.40 + 0.40 * t))
+	var edge := _tell_points(r)
+	draw_line(edge[0], edge[0].lerp(edge[1], t), Color(core.r, core.g, core.b, 0.95), 2.0)
+	# A small center notch distinguishes a locked landing from a moving caster.
+	draw_line(Vector2(-5, -7), Vector2(0, -2), core, 2.0)
+	draw_line(Vector2(0, -2), Vector2(5, -7), core, 2.0)
+	draw_set_transform(Vector2.ZERO)
 
 
 func _tell_points(half: float) -> PackedVector2Array:
@@ -657,6 +872,11 @@ func _tell_outline(half: float, col: Color) -> void:
 
 func _draw() -> void:
 	_draw_attack_tell()
+	var tex := _pose_texture()
+	var pose_offset := _motion_offset()
+	if not dying:
+		_shown_texture = tex
+		_shown_offset = pose_offset
 	# 원점이 발밑이다. 가운데 정렬로 그리면 크기가 다른 몹끼리 발 높이가 어긋나
 	# 다 같이 떠 있는 것처럼 보인다.
 	var w := _size()
@@ -667,7 +887,7 @@ func _draw() -> void:
 	# 아니면 늘린 만큼 픽셀이 깨진다 — 맞은 티는 밀림(2px)과 흰 점멸이 낸다.
 	# 왼쪽에서 나온 몹은 오른쪽을 보므로 통째로 뒤집는다. 그림을 따로 뽑지 않고
 	# 좌우 반전으로 끝낸다 — 도트라 반전해도 어색한 곳이 없다.
-	draw_set_transform(Vector2(hit_offset(), 0.0), 0.0, Vector2(float(-face), 1.0))
+	draw_set_transform(pose_offset, 0.0, Vector2(float(-face), 1.0))
 	if dying:
 		# 죽음. 예전엔 제자리 스쿼시뿐이라 "사라졌다"에 가까웠다 — 맞아서 죽었다는
 		# 인과가 안 보였다. **맞은 쪽으로 날아가면서 무너진다.**
@@ -688,7 +908,7 @@ func _draw() -> void:
 			# 같이 걸려 "빨려 들어갔다"로 보인다.
 			# ponytail: 지면 라인에서 정말 잘리려면 클립 마스크가 필요하다.
 			# 페이드로 충분히 읽히면 안 붙인다.
-			draw_set_transform(Vector2(0.0, w * 0.6 * ease_out), 0.0,
+			draw_set_transform(_death_offset + Vector2(0.0, w * 0.6 * ease_out), 0.0,
 				Vector2(float(-face), 1.0))
 			wsc = 1.0 - 0.25 * f
 			hsc = 1.0 - 0.30 * f
@@ -698,7 +918,7 @@ func _draw() -> void:
 			# 보인다(그 규칙은 피해가 아니라 체력 비율이 정한다).
 			# 아래 tint 가 같이 걸려 붉게 물든다.
 			draw_set_transform(
-				Vector2(float(face) * DIE_FLY * 0.35 * ease_out,
+				_death_offset + Vector2(float(face) * DIE_FLY * 0.35 * ease_out,
 					DIE_DROP * 0.5 * f * f),
 				deg_to_rad(float(face) * 55.0 * ease_out),
 				Vector2(float(-face), 1.0))
@@ -709,7 +929,7 @@ func _draw() -> void:
 			# 회전을 ease_out 에 묶으면 초반에 다 돌아 버려 뒤가 뻣뻣했다 —
 			# 각도는 f 를 그대로 따라가 마지막 프레임에서 완전히 눕는다.
 			draw_set_transform(
-				Vector2(float(-face) * DIE_FLY * ease_out,
+				_death_offset + Vector2(float(-face) * DIE_FLY * ease_out,
 					-DIE_HOP * sin(f * PI) + DIE_DROP * f * f),
 				deg_to_rad(float(-face) * DIE_SPIN * f),
 				Vector2(float(-face), 1.0))
@@ -722,33 +942,8 @@ func _draw() -> void:
 			wsc = 1.0 + 0.55 * melt
 			hsc = 1.0 - 0.80 * melt
 		alpha = 1.0 - fade * fade
-	var tex: Texture2D = _sprite
-	if not dying and _airborne and not _special_frames.is_empty():
-		# 점프 중 — 웅크린 채 난다. 프레임 1(도약 직후)이 그 그림이다.
-		tex = _special_frames[mini(1, _special_frames.size() - 1)]
-	elif not dying and _attack_anim >= 0.0 and not _attack_frames.is_empty():
-		# 특수 스윙은 전용 모션이 있으면 그걸 쓴다. **없으면 평타로 조용히 떨어진다** —
-		# 보스 5종 중 일부만 전용 모션이 붙어 있어도 나머지가 안 깨진다.
-		var frames := _special_frames if special_swing and not _special_frames.is_empty() \
-			else _attack_frames
-		var attack_i := mini(int(_attack_anim * float(frames.size()) / attack_dur()),
-			frames.size() - 1)
-		tex = frames[attack_i]
-	elif not dying and not _walk_frames.is_empty():
-		# 밀리는 중에만 걷는다. 서 있으면 첫 프레임(선 자세)에 고정 —
-		# 맞닿은 순간 멈추는 것이 "붙었다"의 신호다.
-		tex = _walk_frames[int(_anim_t * 8.0) % _walk_frames.size()] \
-			if _pushed_t > 0.0 else _walk_frames[0]
-		if _pushed_t <= 0.0:
-			# **서 있는 숨.** 프레임을 안 넘기고 몸만 눌렀다 폈다 한다(사장님:
-			# "가만히 있을 때 모션"). 걷기 그림 22종에 idle 을 새로 뽑는 대신
-			# 코드 한 줄로 — 도트 게임의 대기 모션이 원래 이 스쿼시다.
-			# 보스는 느리고 크게(위압), 잡몹은 빠르고 얕게.
-			var period := 2.2 if is_boss or is_midboss else 1.5
-			var amp := 0.05 if is_boss or is_midboss else 0.03
-			var breathe := sin(_anim_t * TAU / period)
-			hsc *= 1.0 + amp * breathe
-			wsc *= 1.0 - amp * 0.6 * breathe
+	# Preserve the original pixel grid while standing. Continuously stretching
+	# a 32px body by 3–5% redistributes its rows and makes the outline shimmer.
 	if tex:
 		# **발밑은 캔버스가 아니라 그림의 아래끝이다.** 캔버스 아래끝을 지면에 붙이면
 		# 그림이 캔버스 안에서 떠 있는 만큼 몹이 공중에 뜬다 — 거미가 그랬다.
@@ -757,7 +952,7 @@ func _draw() -> void:
 		# **상자는 그 모션의 캔버스 비율만큼 키운다.** 여백 있는 모션도 몸 크기가
 		# 유지된다. 아래 체력 바는 w 를 그대로 써야 모션마다 폭이 안 튄다.
 		var dw := w * _art_ratio(tex)
-		var drop := Assets.bottom_gap(tex) \
+		var drop := _display_bottom_gap(tex) \
 			* (dw * hsc / float(maxi(1, tex.get_height())))
 		# 몹은 왼쪽(플레이어)을 본다. 원본이 왼쪽 향함이라 그대로 그린다.
 		# 처형당한 놈은 **붉게 물들며** 무너진다. 자세만으로는 죽음 종류가 셋이라

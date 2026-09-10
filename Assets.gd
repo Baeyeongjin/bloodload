@@ -96,9 +96,8 @@ static func frames(dir_path: String) -> Array:
 	var i := 0
 	while i < 32:
 		var p := "%s/%d.png" % [dir_path, i]
-		# 소스 PNG가 지워지고 .import만 남은 경우 ResourceLoader.exists()가 true를
-		# 반환할 수 있다. 원본도 함께 확인해 고아 임포트 로딩 오류를 막는다.
-		if FileAccess.file_exists(p) and ResourceLoader.exists(p):
+		# 내보낸 PCK에는 원본 PNG 대신 임포트된 텍스처가 들어간다.
+		if ResourceLoader.exists(p):
 			arr.append(load(p))
 			i += 1
 		else:

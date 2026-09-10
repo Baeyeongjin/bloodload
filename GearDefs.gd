@@ -23,48 +23,48 @@ const SLOT_STAT := {"weapon": "damage", "armor": "tough", "trinket": "critdmg"}
 
 const CATALOG := {
 	"weapon": {
-		"common": [["gw_sword_worn", "낡은 검"], ["gw_hammer_iron", "철 망치"],
-			["gw_axe_broad", "벌목 도끼"], ["gw_crossbow", "낡은 석궁"]],
+		"common": [["gw_sword_worn", "낡은 검"], ["gw_hammer_iron", "검은 여행 망토"],
+			["gw_axe_broad", "청동 전투도끼"], ["gw_crossbow", "녹옥 지팡이"]],
 		"uncommon": [["gw_sword_steel", "강철 검"], ["gw_spear_blue", "푸른 창"],
-			["gw_dart_jade", "비취 표창"], ["gw_boomerang", "사냥 부메랑"]],
-		"rare": [["gw_sword_azure", "청명검"], ["gw_blade_rose", "장미 칼날"],
-			["gw_cane_serpent", "독사 단장"], ["gw_staff_emerald", "에메랄드 지팡이"]],
-		"epic": [["gw_blade_crimson", "핏빛 칼날"], ["gw_whip_crimson", "혈편 채찍"],
-			["gw_scythe_purple", "망령 낫"], ["gw_cane_dark", "암야 단장"]],
-		"legend": [["gw_axe_gold", "황금 전투도끼"], ["gw_glaive_gold", "태양 언월도"],
-			["gw_hammer_rune", "룬 파쇄망치"], ["gw_torch_flame", "영겁의 성화"]],
-		"mythic": [["gw_coffin_blade", "관통 장송검"], ["gw_lantern_rod", "혼등 지팡이"],
-			["gw_scythe_green", "종말의 낫"], ["gw_staff_bone", "시조의 뼈지팡이"]],
+			["gw_dart_jade", "가시 사슬갑"], ["gw_boomerang", "뱀눈 보주"]],
+		"rare": [["gw_sword_azure", "해골 지팡이"], ["gw_blade_rose", "청록 혼등"],
+			["gw_cane_serpent", "자수정 보주"], ["gw_staff_emerald", "비취 화살"]],
+		"epic": [["gw_blade_crimson", "핏빛 단검"], ["gw_whip_crimson", "핏빛 채찍"],
+			["gw_scythe_purple", "여명의 십자가"], ["gw_cane_dark", "암야 지팡이"]],
+		"legend": [["gw_axe_gold", "태양의 황금 가면"], ["gw_glaive_gold", "태양 석궁"],
+			["gw_hammer_rune", "진홍 성배"], ["gw_torch_flame", "빙하의 장검"]],
+		"mythic": [["gw_coffin_blade", "장송 지팡이"], ["gw_lantern_rod", "시조의 채찍"],
+			["gw_scythe_green", "종말의 해골 인장"], ["gw_staff_bone", "시조의 뼈지팡이"]],
 	},
 	"armor": {
 		"common": [["ga_leather_vest_worn", "낡은 가죽 조끼"],
 			["ga_chainmail_rusted", "녹슨 사슬 갑옷"], ["ga_guard_cuirass", "경비병 흉갑"],
 			["ga_apprentice_robe", "수습생 로브"]],
-		"uncommon": [["ga_hunter_coat", "사냥꾼 코트"], ["ga_graveguard_mail", "묘지 경비갑"],
-			["ga_vampire_leathers", "흡혈귀 가죽옷"], ["ga_bone_pauldrons", "뼈 견갑옷"]],
-		"rare": [["gear_plate", "흑철 판금"], ["gear_scale", "자수정 비늘갑"],
+		"uncommon": [["ga_hunter_coat", "사냥꾼 망토"], ["ga_graveguard_mail", "묘지기의 갑옷"],
+			["ga_vampire_leathers", "흡혈귀 가죽옷"], ["ga_bone_pauldrons", "뼈 견갑"]],
+		"rare": [["gear_plate", "흑철 판금갑"], ["gear_scale", "자수정 비늘갑"],
 			["ga_frost_plate", "서리 기사 갑옷"], ["ga_blood_cuirass", "핏빛 흉갑"]],
 		"epic": [["gear_cloak", "진홍 망토"], ["gear_robe", "심연 로브"],
-			["ga_spectral_armor", "망령 갑옷"], ["ga_fallen_paladin", "타락 성기사 갑옷"]],
-		"legend": [["ga_dragon_scale", "용비늘 갑주"], ["ga_abyss_raiment", "심연의 예복"],
+			["ga_spectral_armor", "망령 갑옷"], ["ga_fallen_paladin", "타락한 성기사 갑옷"]],
+		"legend": [["ga_dragon_scale", "용비늘 갑주"], ["ga_abyss_raiment", "심연의 망토"],
 			["ga_inferno_plate", "지옥불 갑주"], ["ga_eclipse_mantle", "월식 망토"]],
-		"mythic": [["ga_primordial_vampire", "시조 흡혈귀 갑주"],
-			["ga_void_lord_plate", "공허 군주 판금"], ["ga_apocalypse_dragon", "종말의 용갑"],
+		"mythic": [["ga_primordial_vampire", "시조의 검은 망토"],
+			["ga_void_lord_plate", "공허 군주의 갑주"], ["ga_apocalypse_dragon", "종말의 용갑"],
 			["ga_immortal_shroud", "불멸자의 장례복"]],
 	},
 	"trinket": {
-		"common": [["gt_coin_gold", "낡은 금화"], ["gt_potion_azure", "푸른 물약"],
-			["gt_flask_toxic", "독 플라스크"], ["gt_skull_jade", "비취 해골"]],
-		"uncommon": [["gt_amulet_blood", "피의 부적"], ["gt_ring_fire", "불꽃 반지"],
-			["gt_ring_skull", "해골 반지"], ["gt_snowflake", "서리 결정"]],
-		"rare": [["gt_chalice", "은빛 성배"], ["gt_cross_holy", "성스러운 십자가"],
-			["gt_mask_gold", "황금 가면"], ["gt_sigil_gold", "태양 인장"]],
-		"epic": [["gt_crown_thorn", "가시 왕관"], ["gt_orb_dark", "암흑 구슬"],
-			["gt_orb_violet", "보랏빛 구슬"], ["gt_tome_arcane", "비전 마도서"]],
-		"legend": [["gt_comet", "혜성 조각"], ["gt_dragon_fire", "용의 불씨"],
+		"common": [["gt_coin_gold", "낡은 금화"], ["gt_potion_azure", "불꽃 지팡이"],
+			["gt_flask_toxic", "독기 서린 단검"], ["gt_skull_jade", "비취 해골"]],
+		"uncommon": [["gt_amulet_blood", "검은 전투장갑"], ["gt_ring_fire", "불꽃 반지"],
+			["gt_ring_skull", "서리 뼈장식"], ["gt_snowflake", "서리 결정"]],
+		"rare": [["gt_chalice", "푸른 물약병"], ["gt_cross_holy", "보랏빛 혼불"],
+			["gt_mask_gold", "불타는 유성"], ["gt_sigil_gold", "황금 날개 인장"]],
+		"epic": [["gt_crown_thorn", "서리별 부적"], ["gt_orb_dark", "진홍 전투장갑"],
+			["gt_orb_violet", "황금 봉인환"], ["gt_tome_arcane", "비전의 서리 문양"]],
+		"legend": [["gt_comet", "핏빛 룬석"], ["gt_dragon_fire", "용의 불씨"],
 			["gt_eclipse", "월식의 눈"], ["gt_sun_medal", "태양 훈장"]],
-		"mythic": [["gt_ring_void", "공허 반지"], ["gt_snow_sigil", "영원의 설인장"],
-			["gt_wings_pale", "창백한 날개"], ["gt_wisp_violet", "시조의 혼불"]],
+		"mythic": [["gt_ring_void", "공허 반지"], ["gt_snow_sigil", "영원의 서리 인장"],
+			["gt_wings_pale", "시조의 붉은 단검"], ["gt_wisp_violet", "시조의 빙결창"]],
 	},
 }
 
@@ -139,34 +139,6 @@ static func trait_of(item: Dictionary) -> String:
 
 static func trait_text(key: String) -> String:
 	return str(TRAIT_TEXT.get(key, ""))
-
-
-# ── 재련 — 줄만 바꾼다 (2026-09-02 사장님: "줄만 바꾸는 재련도") ──────────
-# 특성이 줄에 붙으면서 "어느 줄이 나오냐"가 뽑기 운이 됐다 — make() 가 줄을
-# 완전 무작위로 고른다. 그 불만이 등급에서 줄로 옮겨가지 않게, 줄만 바꾸는
-# 길을 둔다. 등급·레벨·조각은 그대로고 **다음 줄로 한 칸** 돈다 — 넷 중
-# 고르게 하지 않는 이유는 버튼이 하나면 되고, 최대 세 번이면 어디든 닿아서다.
-#
-# 값은 연마석이다. 제련의 성소가 주는 재화라 "재련"이 그 자리다. 등급에만
-# 비례하고 **레벨에는 안 비례한다** — 만렙 무기의 줄을 고치는 데 만렙 값을
-# 물리면 정작 고쳐야 할 무기(오래 키운 것)가 제일 못 고친다.
-const REFORGE_MULT := 3.0      # 커먼 0렙 레벨업 값의 세 배
-
-
-static func reforge_cost(item: Dictionary) -> float:
-	var i := clampi(GachaDefs.rarity_index(str(item.get("rarity", "common"))),
-		0, RARITY.size() - 1)
-	return ceilf(25.0 * REFORGE_MULT * float(RARITY[i]["power"]))
-
-
-# 다음 줄의 [icon, name]. 무기가 아니거나 표가 비면 빈 배열.
-static func next_lane_spec(item: Dictionary) -> Array:
-	if str(item.get("slot", "")) != "weapon":
-		return []
-	var pool := items_of("weapon", str(item.get("rarity", "common")))
-	if pool.is_empty():
-		return []
-	return pool[(lane_of(item) + 1) % pool.size()]
 
 
 static func items_of(slot: String, rarity_key: String) -> Array:
