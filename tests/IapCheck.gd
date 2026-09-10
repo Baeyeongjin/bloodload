@@ -122,11 +122,35 @@ func _init() -> void:
 		var lid := str(ltd["id"])
 		assert(not IapDefs.limited_of(lid).is_empty(),
 			"%s 를 limited_of 가 못 찾는다" % lid)
-		scene.iap_bought = {}
-		var g0: float = scene.gem
-		assert(scene._iap_buy(lid), "%s 를 못 산다 — _iap_buy 가 모르는 id 다" % lid)
-		assert(scene.gem > g0 or not ltd["reward"].has("gem"),
-			"%s 를 샀는데 보상이 안 들어왔다" % lid)
+
+	# ── 오늘의 특가는 **하루 1회** (사장님 2026-09-10 "구입이 안 되는 버그") ─
+	# 예전엔 iap_bought[id] 에 영구로 적어서 한 번 사면 영영 못 샀다. 그런데
+	# 이 검사는 살 때마다 iap_bought 를 비우고 있어서 **그 버그를 못 잡았다** —
+	# 전제를 편하게 만들면 검사가 실기를 안 닮는다.
+	var today := Time.get_date_string_from_system()
+	var ltd_now: Dictionary = IapDefs.limited_today(today)
+	assert(not ltd_now.is_empty(), "오늘의 특가가 비어 있다")
+	var lid_now := str(ltd_now["id"])
+	scene.iap_bought = {}
+	scene.iap_ltd_date = ""
+	var g0: float = scene.gem
+	assert(scene._iap_buy(lid_now), "오늘의 특가를 못 산다: %s" % lid_now)
+	assert(scene.gem > g0 or not ltd_now["reward"].has("gem"),
+		"샀는데 보상이 안 들어왔다: %s" % lid_now)
+	# 같은 날 두 번은 못 산다.
+	assert(not scene._iap_buy(lid_now), "같은 날 두 번 샀다")
+	# **날이 바뀌면 다시 산다** — 이게 "오늘의" 특가의 전부다.
+	scene.iap_ltd_date = "2000-01-01"
+	assert(scene._iap_buy(lid_now), "날이 바뀌었는데 못 산다 — 영구 1회로 잠겼다")
+	# 오늘 것이 아닌 특가는 안 판다(자정을 넘겨 카드가 낡은 경우).
+	if IapDefs.LIMITED.size() > 1:
+		var other := ""
+		for l9 in IapDefs.LIMITED:
+			if str(l9["id"]) != lid_now:
+				other = str(l9["id"])
+				break
+		scene.iap_ltd_date = ""
+		assert(not scene._iap_buy(other), "어제 카드로 샀다: %s" % other)
 
 	# **첫 구매 2배 라벨은 한 번 쓰면 사라져야 한다.** 지을 때 한 번 박히고
 	# 영영 안 바뀌던 동안, 33,000원 카드가 "첫 구매 7,000" 이라 적고 3,500 만

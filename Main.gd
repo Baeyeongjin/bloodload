@@ -7926,6 +7926,10 @@ var _dungeon_btn_lbl: Label
 # 결제 성공 콜백이 _iap_buy 를 부르면 된다. 지금은 개발 플래그로만 부른다.
 var iap_subs := {}          # 구독 id -> 만료 날짜 문자열
 var iap_bought := {}        # 1회성 팩 id -> true
+# 오늘의 특가를 산 날짜. **하루에 파는 것은 limited_today 가 고른 하나뿐**이라
+# 날짜 하나로 족하다 — id 별로 쌓으면 저장이 날마다 늘어난다.
+var iap_ltd_date := ""
+var _ltd_card := {}         # 오늘의 특가 카드. 산 뒤에 잠그려면 참조가 필요하다
 var iap_first_buy := false  # 첫 구매 2배를 이미 썼는가
 var iap_daily_date := ""    # 구독 일일 지급을 오늘 줬는가
 # 성장 패스 — 점수는 **임무를 채울 때만** 들어온다(PassDefs). 패스를 사도 할
@@ -9997,7 +10001,8 @@ func _build_shop_packs(view: Control) -> void:
 				str(lpills[j][0]), str(lpills[j][1]))
 		lc["sub"].text = str(ltd["desc"])
 		lc["price"].text = IapDefs.price_text(int(ltd["price"]))
-		lc["btn"].disabled = not IapDefs.DEV_FREE
+		lc["id"] = str(ltd["id"])
+		_ltd_card = lc
 		# **이 줄이 없었다**(2026-08-27). 카드·값·설명을 다 그리고 버튼도
 		# 켜 두면서 pressed 를 아무 데도 안 이었다 — 3,300원짜리 다섯 장이
 		# 눌러도 아무 일도 안 났다. 형제 카드는 전부 이어져 있다.
@@ -10459,6 +10464,20 @@ func _shop_set_mode(mode: String) -> void:
 func _refresh_packs() -> void:
 	if _pack_rows.is_empty():
 		return
+	# 오늘의 특가 — 산 뒤에는 잠근다. 안 잠그면 버튼이 켜진 채로 남아서
+	# "눌러도 아무 일이 없는" 자리가 된다(그게 이 판의 원래 버그였다).
+	if not _ltd_card.is_empty():
+		var today := Time.get_date_string_from_system()
+		var ltd_got := iap_ltd_date == today
+		var stale := str(_ltd_card.get("id", "")) \
+			!= str(IapDefs.limited_today(today).get("id", ""))
+		_ltd_card["btn"].disabled = not IapDefs.DEV_FREE or ltd_got or stale
+		_ltd_card["root"].modulate = Color(1, 1, 1) if not (ltd_got or stale) \
+			else Color(0.5, 0.47, 0.52)
+		if ltd_got:
+			_ltd_card["price"].text = "오늘 구입함"
+		elif stale:
+			_ltd_card["price"].text = "자정이 지났다 — 상점을 다시 열면 온다"
 	for i in IapDefs.PACKS.size():
 		var it: Dictionary = IapDefs.PACKS[i]
 		var id := str(it["id"])
@@ -10483,9 +10502,19 @@ func _iap_buy(id: String) -> bool:
 	# 그대로 false 로 떨어지던 자리다(limited_of 호출부가 0건이었다).
 	var ltd := IapDefs.limited_of(id)
 	if not ltd.is_empty():
-		if iap_bought.has(id):
+		# **오늘치만 막는다**(사장님 2026-09-10: "오늘의 특가 구입이 안 되는
+		# 버그"). 예전엔 iap_bought[id] 에 영구로 적어서, 하루가 지나 같은
+		# 특가가 돌아와도 영영 못 샀다 — 다섯 종을 한 번씩 사고 나면 그 판이
+		# 통째로 죽었고, **버튼은 켜진 채 눌러도 아무 일이 없었다.**
+		# 검사가 이걸 못 잡은 이유는 매번 iap_bought 를 비우고 샀기 때문이다.
+		var today := Time.get_date_string_from_system()
+		if iap_ltd_date == today:
 			return false
-		iap_bought[id] = true
+		# 자정을 넘기면 화면의 카드가 낡는다 — 그때 누르면 **어제 것**을 사게
+		# 된다. 오늘 것과 다르면 안 판다(화면은 아래에서 다시 열라고 말한다).
+		if str(IapDefs.limited_today(today).get("id", "")) != id:
+			return false
+		iap_ltd_date = today
 		_iap_grant(ltd["reward"], str(ltd["name"]))
 		_iap_after()
 		return true
@@ -17514,6 +17543,7 @@ func _save_game_inner() -> void:
 	cfg.set_value("record", "play_sec", int(play_sec))
 	cfg.set_value("iap", "subs", iap_subs)
 	cfg.set_value("iap", "bought", iap_bought)
+	cfg.set_value("iap", "ltd_date", iap_ltd_date)
 	cfg.set_value("iap", "first_buy", iap_first_buy)
 	cfg.set_value("iap", "daily_date", iap_daily_date)
 	cfg.set_value("pass", "points", pass_points)
@@ -17645,6 +17675,7 @@ func _load_game() -> void:
 	play_sec = float(maxi(0, int(cfg.get_value("record", "play_sec", 0))))
 	iap_subs = cfg.get_value("iap", "subs", {})
 	iap_bought = cfg.get_value("iap", "bought", {})
+	iap_ltd_date = str(cfg.get_value("iap", "ltd_date", ""))
 	iap_first_buy = bool(cfg.get_value("iap", "first_buy", false))
 	iap_daily_date = str(cfg.get_value("iap", "daily_date", ""))
 	pass_points = maxi(0, int(cfg.get_value("pass", "points", 0)))
