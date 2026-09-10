@@ -4061,6 +4061,7 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 		Vector2(btn_w, 48.0), Type.SIZE_SMALL)
 	Ui.cost_icon(b, "res://assets/ui/res_blood.png")
 	b.pressed.connect(func() -> void: _buy(key))
+	_hold_repeat(b, func() -> void: _buy(key))
 	row.add_child(b)
 	# 잠긴 행은 버튼 대신 조건을 보여 준다 — 감추면 목표가 안 되고, 보이면 이유가 된다.
 	var lock := _panel_label(row, Vector2(w - btn_w, 0.0), Type.SIZE_SMALL,
@@ -9200,6 +9201,7 @@ var achieve_got := {}
 var _achieve_root: Control
 var _achieve_rows: Array[Dictionary] = []
 var _quest_mode_btns := {}
+var _quest_mode_dots := {}
 var _quest_tab_art := {}
 var _quest_claim_all: Button
 var _quest_claim_art: Array[Control] = []
@@ -9287,6 +9289,21 @@ func _quest_claimable(id: String) -> bool:
 		and _quest_count(id) >= int(QuestDefs.of(id)["need"])
 
 
+# 받은 보상 한 줄. 낱개로 받으면 그 자리에서 창이 뜨고, [일괄 받기] 중이면
+# 모아 두었다가 마지막에 **한 창**으로 — 열 개가 줄줄이 뜨면 안 된다.
+var _claim_bulk := false
+var _claim_rows: Array = []
+
+
+func _claim_show(title: String, kind: String, amount: float) -> void:
+	var row := {"icon": "res://assets/ui/%s.png" % _reward_icon(kind),
+		"label": "%s +%s" % [_reward_name(kind), _n(amount)]}
+	if _claim_bulk:
+		_claim_rows.append(row)
+		return
+	_show_reward(title, [row])
+
+
 func _claim_quest(id: String) -> void:
 	if not _quest_claimable(id):
 		return
@@ -9295,6 +9312,10 @@ func _claim_quest(id: String) -> void:
 	quest_wprog["daily"] = int(quest_wprog.get("daily", 0)) + 1
 	var q := QuestDefs.of(id)
 	_grant_reward(str(q["reward"]), float(q["amount"]))
+	# **받은 것을 화면이 말한다**(사장님 2026-09-10: "보상받아도 안나오는거 있고").
+	# 업적·출석은 창을 띄우는데 일일·주간만 조용히 지급해서, 받았는지 아닌지가
+	# 줄 색으로만 남았다.
+	_claim_show("임무 완료", str(q["reward"]), float(q["amount"]))
 	# 성장 패스는 **이미 하는 행동에 얹는다** — 임무를 받는 순간 트랙이 오른다.
 	_pass_add(PassDefs.POINT_QUEST)
 	_refresh_currency_visibility()
@@ -9331,6 +9352,27 @@ func _attend_claimable() -> bool:
 	return attend_date != Time.get_date_string_from_system()
 
 
+# 임무판 소탭 하나의 "할 일". 대표 점(_quest_dot)은 이 다섯의 합이다.
+func _quest_mode_todo(mode: String) -> bool:
+	match mode:
+		"day":
+			for q in QuestDefs.QUESTS:
+				if _quest_claimable(str(q["id"])):
+					return true
+		"week":
+			for q in QuestDefs.WEEKLY:
+				if _wquest_claimable(str(q["id"])):
+					return true
+		"achieve":
+			return _achieve_claimable()
+		"attend":
+			return _attend_claimable()
+		"boon":
+			# 은총은 출석 일수가 여는 상시 효과라 "받을 것"이 없다.
+			return false
+	return false
+
+
 func _claim_attend() -> void:
 	if not _attend_claimable():
 		return
@@ -9359,6 +9401,7 @@ func _claim_wquest(id: String) -> void:
 	quest_wgot[id] = true
 	var q := QuestDefs.wof(id)
 	_grant_reward(str(q["reward"]), float(q["amount"]))
+	_claim_show("주간 임무 완료", str(q["reward"]), float(q["amount"]))
 	_pass_add(PassDefs.POINT_WEEKLY)
 	_refresh_currency_visibility()
 	_save_game()
@@ -9384,9 +9427,17 @@ const OATH_RED := Color(0.98, 0.46, 0.44)
 # **흰 글씨 + 검은 테두리**(사장님 2026-08-18). 짙은 갈색 잉크는 판과 대비가
 # 맞는데도 안 읽혔다 — 11px 도트 폰트는 획이 얇아서 색 대비만으로는 부족하고,
 # 검은 테두리가 글자를 배경에서 떼어 내야 보인다. 판이 밝든 어둡든 같은 규칙이다.
-const DUTY_INK := Color(0.99, 0.97, 0.95)      # 본문 — 흰색
-const DUTY_DIM := Color(0.84, 0.80, 0.76)      # 보조 — 조금 죽인 흰색
-const DUTY_RED := Color(0.98, 0.42, 0.40)      # 강조 — 밝은 핏빛
+# **양피지 위에는 잉크색이다**(사장님 2026-09-10: "가독성이 너무 떨어진다").
+# 흰색(0.99)이었는데 판 재질이 밝은 양피지라 글자가 바탕에 묻혔다 — 어두운
+# 배경을 전제로 고른 값이 아트가 바뀐 뒤에도 남아 있었다.
+# `_panel_label` 의 어두운 외곽선은 그대로 둔다: 같은 계열이라 글자가 살짝
+# 굵어질 뿐이고, 밝은 바탕에서는 그 굵기가 오히려 도움이 된다.
+const DUTY_INK := Color(0.16, 0.11, 0.08)      # 본문 — 짙은 잉크
+const DUTY_DIM := Color(0.42, 0.34, 0.28)      # 보조 — 흐린 잉크
+const DUTY_RED := Color(0.68, 0.13, 0.13)      # 강조 — 짙은 핏빛
+# 진행 바 채움은 **어두운 홈 위에** 올라간다 — 글씨와 반대라 밝아야 한다.
+# 둘이 한 상수를 나눠 쓰다가 글씨를 어둡게 하니 바까지 칙칙해졌다.
+const DUTY_BAR := Color(0.98, 0.42, 0.40)
 # 아래 게시판·알약과 겹쳐서 열 전체를 위로 올렸다(사장님 2026-08-18).
 const QUEST_BTN_AT := Vector2(508.0, 96.0)    # 오른쪽 가장자리, 상단바 아래
 const TITLE_BTN_AT := Vector2(508.0, 154.0)   # 그 바로 아래 — 같은 세로 줄
@@ -9545,6 +9596,14 @@ func _build_quests() -> void:
 		mb.pressed.connect(func() -> void: _quest_set_mode(mode))
 		_quest_view.add_child(mb)
 		_pet_hover(mb, off)
+		# 소탭마다 점 (사장님 2026-09-10: "받을수있는거 빨간색 알림 켜줘").
+		# 판 대표 점(_quest_dot)은 "이 판에 뭔가 있다"까지만 말한다 — 다섯 중
+		# 어디인지도 말해야 다섯 번 눌러 보지 않는다.
+		var qdot := Ui.icon("res://assets/ui/dot_alert.png",
+			tp + Vector2(tw - 12.0, -4.0), 16.0)
+		qdot.visible = false
+		_quest_view.add_child(qdot)
+		_quest_mode_dots[mode] = qdot
 		_quest_mode_btns[mode] = mb
 		_quest_tab_art[mode] = {"on": on, "off": off, "lbl": lbl}
 	_quest_day_root = Control.new()
@@ -9586,12 +9645,21 @@ func _build_quests() -> void:
 	# 남아 출석의 "오늘 받기" 위에 겹친다(실측 캡처).
 	_quest_claim_art = [cap_art, cap_lbl]
 	_quest_claim_all.pressed.connect(func() -> void:
+		_claim_bulk = true
+		_claim_rows = []
 		for q in QuestDefs.QUESTS:
 			_claim_quest(str(q["id"]))
 		for q in QuestDefs.WEEKLY:
 			_claim_wquest(str(q["id"]))
 		for t in AchieveDefs.TRACKS:
-			_claim_achieve(str(t["kind"])))
+			_claim_achieve(str(t["kind"]))
+		_claim_bulk = false
+		# 다섯 줄까지만 보여 준다 — 그 위는 한 줄에 안 들어가고 어차피 지갑에 있다.
+		if not _claim_rows.is_empty():
+			_show_reward("임무 정산",
+				_claim_rows.slice(0, mini(_claim_rows.size(), 5)))
+		_claim_rows = []
+		_refresh_quests())
 	_quest_view.add_child(_quest_claim_all)
 	_quest_set_mode("day")
 
@@ -10819,7 +10887,7 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		inner.add_child(track)
 		var fill := ColorRect.new()
-		fill.color = Color(0.62, 0.42, 0.14) if weekly else DUTY_RED
+		fill.color = Color(0.62, 0.42, 0.14) if weekly else DUTY_BAR
 		fill.position = track.position
 		fill.size = Vector2(0.0, 8.0)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -11093,7 +11161,10 @@ func _claim_achieve(kind: String) -> void:
 	if entries.is_empty():
 		return
 	achieve_got[kind] = got
-	_show_reward("업적 달성", entries)
+	if _claim_bulk:
+		_claim_rows.append_array(entries)
+	else:
+		_show_reward("업적 달성", entries)
 	if _achieve_rows.is_empty():
 		return   # 계측기 — 지급은 끝났다
 	_refresh_achieve()
@@ -11202,6 +11273,9 @@ func _refresh_quests() -> void:
 	# 패스) 점은 앞의 둘만 보고 있었다 — 출석이 안 찍혀 있어도, 업적이 넘겨져
 	# 있어도, 패스 단계가 열려 있어도 점이 안 켜졌다(사장님 2026-08-26:
 	# "모든 컨텐츠에서 ... 보상 있으면 알림"). 다섯을 다 본다.
+	for mkey in _quest_mode_dots:
+		(_quest_mode_dots[mkey] as CanvasItem).visible = \
+			_quest_mode_todo(str(mkey))
 	if _quest_dot:
 		_quest_dot.visible = any or _attend_claimable() 			or _achieve_claimable() or _pass_claimable()
 
@@ -11594,6 +11668,38 @@ func _step_for(key: String) -> int:
 	var st := StatDefs.of(key)
 	return clampi(Balance.max_steps(stat_lv(key), gold,
 		float(st.get("base", 10.0)), StatDefs.cost_exp(key)), 0, room)
+
+
+# 꾹 누르면 이어서 눌린다. 레벨업은 수십 번 눌러야 하는 자리라 손이 아프다.
+#
+# 첫 발동은 `pressed` 가 한다 — 짧게 누르면 한 번이고, 여기는 손대지 않는다.
+# 길게 물고 있으면 HOLD_DELAY 뒤부터 HOLD_RATE 마다 다시 부른다.
+# **점점 빨라지지는 않는다**: 가속을 넣으면 손을 떼는 순간 스무 번이 지나가고,
+# 그건 되돌릴 수 없는 소비다.
+#
+# 끝내는 자가 셋인 이유 — 터치에서는 `button_up` 이 안 오는 길이 있다
+# (끌어서 판을 넘기면 TouchScroll 이 뗌을 삼킨다). 그래서 틱마다 **실제로
+# 아직 누르고 있는지**를 다시 묻는다. 이게 없으면 타이머가 영영 돈다.
+const HOLD_DELAY := 0.45
+const HOLD_RATE := 0.10
+
+
+func _hold_repeat(btn: Button, act: Callable) -> void:
+	var t := Timer.new()
+	t.one_shot = false
+	btn.add_child(t)
+	t.timeout.connect(func() -> void:
+		t.wait_time = HOLD_RATE      # 첫 틱 뒤부터는 빠르게
+		if btn.disabled or not btn.is_visible_in_tree() \
+				or not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			t.stop()
+			return
+		act.call())
+	btn.button_down.connect(func() -> void:
+		t.stop()
+		t.start(HOLD_DELAY))
+	btn.button_up.connect(t.stop)
+	btn.mouse_exited.connect(t.stop)
 
 
 func _buy(key: String) -> void:
