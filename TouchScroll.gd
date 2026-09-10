@@ -31,6 +31,16 @@ func _sideways() -> bool:
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree():
 		return
+	# **같은 손짓이 두 벌로 온다.** `emulate_mouse_from_touch` 가 기본으로 켜져
+	# 있어서 ScreenTouch 뒤에 그것을 흉내낸 MouseButton 이 따라온다. 둘 다
+	# 처리하면 앞의 것이 세운 _moved 를 뒤의 것이 지워 버려서, 뗄 때를 못 삼키고
+	# **끌어 놓은 자리의 칸이 눌린다**(사장님 2026-09-10: "슬라이드 하다가
+	# 버튼이 계속 클릭이 되는데"). 흉내가 켜져 있으면 **마우스 쪽만 본다** —
+	# 데스크톱과 같은 길이라 갈래도 안 는다.
+	if Input.is_emulating_mouse_from_touch() \
+			and (event is InputEventScreenTouch
+			or event is InputEventScreenDrag):
+		return
 	var touch := event as InputEventScreenTouch
 	var click := event as InputEventMouseButton
 	if touch != null or (click != null

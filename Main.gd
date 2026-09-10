@@ -9996,7 +9996,10 @@ func _build_shop_packs(view: Control) -> void:
 		fc["sub"].text = "%s시간 남음 · 정가 %s" 			% [hrs, IapDefs.price_text(int(f["orig"]))]
 		fc["price"].text = IapDefs.price_text(int(f["price"]))
 		fc["btn"].disabled = not IapDefs.DEV_FREE
-		fc["btn"].pressed.connect(_flash_buy.bind(fid))
+		fc["btn"].pressed.connect(func() -> void:
+			_ask("%s\n\n%s 입니다." % [str(f["name"]),
+				IapDefs.price_text(int(f["price"]))],
+				func() -> void: _flash_buy(fid), "구매", "산다"))
 		ftop += SHOP_WCARD_H + 10.0
 	if ftop > 0.0:
 		ftop += 4.0
@@ -10026,7 +10029,8 @@ func _build_shop_packs(view: Control) -> void:
 		# **이 줄이 없었다**(2026-08-27). 카드·값·설명을 다 그리고 버튼도
 		# 켜 두면서 pressed 를 아무 데도 안 이었다 — 3,300원짜리 다섯 장이
 		# 눌러도 아무 일도 안 났다. 형제 카드는 전부 이어져 있다.
-		lc["btn"].pressed.connect(_iap_buy.bind(str(ltd["id"])))
+		lc["btn"].pressed.connect(_iap_ask.bind(str(ltd["id"]),
+			str(ltd["name"]), int(ltd["price"])))
 		top += SHOP_WCARD_H + 10.0
 	# 되풀이 꾸러미 — 성장 패키지 **위**다. 아래 성장팩은 구간이 열어 주는
 	# 상시 진열이라, 주기제가 그 밑에 깔리면 주기제로 안 읽힌다(오늘의 특가를
@@ -10052,7 +10056,8 @@ func _build_shop_packs(view: Control) -> void:
 				str(cypills[j][0]), str(cypills[j][1]))
 		cyc_card["sub"].text = str(cy["desc"])
 		cyc_card["price"].text = IapDefs.price_text(int(cy["price"]))
-		cyc_card["btn"].pressed.connect(_iap_buy.bind(str(cy["id"])))
+		cyc_card["btn"].pressed.connect(_iap_ask.bind(str(cy["id"]),
+			str(cy["name"]), int(cy["price"])))
 		_cycle_rows.append(cyc_card)
 	top += float(IapDefs.CYCLES.size()) * (SHOP_WCARD_H + 10.0) + 4.0
 	_shop_ribbon(view, top + 4.0, "성장 패키지 - 계정당 1회")
@@ -10460,6 +10465,28 @@ func _refresh_pass() -> void:
 	_pass_all_btn.disabled = not can_any
 
 
+# 구매 확인 (사장님 2026-09-10: "바로 클릭만하면 구매해져서"). 손가락으로
+# 목록을 넘기다 스치기만 해도 보석이 나가던 자리다.
+#
+# **사는 함수 자체는 안 건드린다** — 검사가 그것을 직접 부르는데 확인창을 그
+# 안에 넣으면 검사가 창을 눌러 줄 수 없다. 버튼이 부르는 자리에만 씌운다.
+func _shop_ask(id: String) -> void:
+	var it := ShopDefs.of(id)
+	if it.is_empty():
+		return
+	_ask("%s\n\n보석 %d 을 씁니다.\n오늘 %d / %d 남음"
+		% [str(it["name"]), int(it["cost"]), _shop_left(id),
+		int(it["per_day"])],
+		func() -> void: _shop_buy(id), "구매", "산다")
+
+
+# 캐시 상품도 같다. 지금은 결제 SDK 가 없어 눌리면 **즉시 지급**이라
+# (IapDefs.DEV_FREE) 1회성 팩이 실수 한 번에 사라진다.
+func _iap_ask(id: String, label: String, price: int) -> void:
+	_ask("%s\n\n%s 입니다." % [label, IapDefs.price_text(price)],
+		func() -> void: _iap_buy(id), "구매", "산다")
+
+
 # 교환: 원래 있던 판 — 보석으로 오늘치 배급을 앞당긴다. 카드 5장, 2열.
 func _build_shop_trade(view: Control) -> void:
 	for i in ShopDefs.ITEMS.size():
@@ -10469,7 +10496,7 @@ func _build_shop_trade(view: Control) -> void:
 			float(i / 2) * (SHOP_VCARD_H + 10.0))
 		var card := _shop_vcard(view, pos)
 		card["icon"].texture = Assets.tex(str(it["icon"]))
-		card["btn"].pressed.connect(func() -> void: _shop_buy(id))
+		card["btn"].pressed.connect(func() -> void: _shop_ask(id))
 		_shop_cards.append(card)
 	var rows := ceili(ShopDefs.ITEMS.size() / 2.0)
 	view.custom_minimum_size.y = float(rows) * (SHOP_VCARD_H + 10.0)
