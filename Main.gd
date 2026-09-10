@@ -8984,6 +8984,13 @@ func _grant_reward(kind: String, amount: float) -> void:
 		"whet": whet += amount
 		"oath_card": oath_cards += int(amount)     # 보관 상한을 넘겨 받는다
 		"oath_gold": oath_gold += int(amount)
+		"raid_pass":
+			# 재화 던전 표를 **하루 상한 위로** 올린다 — 산 판은 덤이지 상한
+			# 안이 아니다. 먼저 오늘 표를 굴려 두지 않으면, 자정을 넘긴 첫
+			# 구매가 곧바로 일일 배급에 덮여 사라진다.
+			_raid_roll_day()
+			for rp in RaidDefs.RAIDS:
+				raid_left[str(rp)] = _raid_left(str(rp)) + int(amount)
 		_:
 			# 소환권은 "ticket_<종류>" 로 온다 — 표에 종류가 늘어도 여기는 그대로다.
 			var tk := TicketDefs.kind_of(kind)
@@ -9000,6 +9007,7 @@ static func _reward_name(kind: String) -> String:
 		"whet": return "연마석"
 		"oath_card": return "계약 카드"
 		"oath_gold": return "황금 계약서"
+		"raid_pass": return "던전 입장권"
 	var tk := TicketDefs.kind_of(kind)
 	return TicketDefs.short_of(tk) if tk != "" else "보석"
 
@@ -9009,6 +9017,7 @@ static func _reward_icon(kind: String) -> String:
 		"crystal": return "res_crystal"
 		"sigil": return "res_sigil"
 		"oath_card", "oath_gold": return "side_oath"
+		"raid_pass": return "tab_raid"
 	return "res_gem"
 
 
@@ -9770,6 +9779,7 @@ func _shop_kind_icon(kind: String) -> String:
 		"gold": return "res://assets/ui/res_blood.png"
 		"whet": return "res://assets/items/gem.png"
 		"oath_card", "oath_gold": return "res://assets/ui/side_oath.png"
+		"raid_pass": return "res://assets/ui/tab_raid.png"
 	return "res://assets/ui/res_gem.png"
 
 
@@ -10590,10 +10600,9 @@ func _shop_buy(id: String) -> void:
 		"crystal": crystal += amt
 		"sigil": sigil += amt
 		"ticket":
-			# 오늘 표를 **하루 상한 위로** 올린다 — 산 판은 덤이지 상한 안이 아니다.
-			_raid_roll_day()
-			for k in RaidDefs.RAIDS:
-				raid_left[k] = _raid_left(str(k)) + 1
+			# 상점과 캐시 상품이 **같은 자**를 쓴다(_grant_reward "raid_pass").
+			# 두 벌로 적으면 한쪽만 낡는다 — 이 파일에 이미 여러 번 난 사고다.
+			_grant_reward("raid_pass", 1.0)
 		"warp":
 			# 방치 적립과 **같은 식**(blood_per_sec + 소탕 절반) — 요율이 다르면
 			# 이 상품이 방치의 시세표를 거짓말로 만든다. 지갑이 아니라 상자에

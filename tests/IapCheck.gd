@@ -154,5 +154,30 @@ func _init() -> void:
 			assert(float(pk["reward"][k]) > 0.0,
 				"%s 의 보상 '%s' 가 0 이다 — 아무 데도 안 나타난다" % [pk["id"], k])
 
+	# ── 던전 입장권 (사장님 2026-09-10: "캐시템에 재화 던전 입장권도") ────
+	# **상점과 캐시가 같은 자를 쓴다**(_grant_reward "raid_pass"). 두 벌로 적으면
+	# 한쪽만 낡는다.
+	scene._raid_roll_day()
+	var rk := str(RaidDefs.RAIDS.keys()[0])
+	var before: int = scene._raid_left(rk)
+	scene._grant_reward("raid_pass", 3.0)
+	assert(scene._raid_left(rk) == before + 3,
+		"입장권이 표를 안 올린다: %d -> %d" % [before, scene._raid_left(rk)])
+	# **모든 재화 던전에 붙는다** — 한 판만 오르면 "전부 +N판"이 거짓말이 된다.
+	for rk2 in RaidDefs.RAIDS:
+		assert(scene._raid_left(str(rk2)) >= 3,
+			"%s 표가 안 올랐다" % str(rk2))
+	# 이름·아이콘이 기본값("보석")으로 안 떨어진다 — 모르는 키면 그렇게 보인다.
+	assert(scene._reward_name("raid_pass") == "던전 입장권",
+		"입장권 이름이 없다: %s" % scene._reward_name("raid_pass"))
+	assert(scene._reward_icon("raid_pass") != "res_gem", "입장권 아이콘이 없다")
+	assert(FileAccess.file_exists(scene._shop_kind_icon("raid_pass")),
+		"입장권 아이콘 파일이 없다: %s" % scene._shop_kind_icon("raid_pass"))
+	# 표에 실제로 실렸는가.
+	var raid_ltd := IapDefs.limited_of("ltd_raid")
+	assert(not raid_ltd.is_empty(), "오늘의 던전 특가가 표에 없다")
+	assert(float(raid_ltd["reward"].get("raid_pass", 0.0)) > 0.0,
+		"던전 특가가 입장권을 안 준다")
+
 	print("IapCheck OK")
 	quit()
