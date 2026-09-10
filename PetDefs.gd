@@ -23,6 +23,39 @@ const PET_OPEN := 10          # 펫 소환이 열리는 구간
 const MAX_STAR := 5
 const SHARDS_PER_STAR := 4
 
+# ── 조합 (2026-09-10 사장님: "5성 찍은 것들은 조각이 생기고 조각으로 조합하면
+# 상위 펫") ─────────────────────────────────────────────────────────────────
+# 5성 뒤의 중복은 **통째로 버려지고 있었다** — 제일 공들인 펫의 중복이 아무것도
+# 아니었다. 이제 그 등급의 조각이 되고, 다섯이면 **한 등급 위 동행 하나**다.
+#
+# **조각은 등급 공용이다**(사장님 픽). 개체별로 쌓으면 어느 놈이 거듭 나오느냐는
+# 운에 좌우되고 조각이 스물다섯 칸으로 흩어진다. 등급 공용이면 "커먼 다섯을 다
+# 키우면 윗급이 열린다"는 목표가 선다.
+#
+# **확정이다**(사장님 픽). 5성 중복 자체가 드물어서 확률까지 붙이면 보상이 아니라
+# 벌이 된다 — 장비·스킬 조합의 확률+천장 문법을 여기에는 안 가져온다.
+const FUSE_DUST := 5
+
+
+# 조각 다섯으로 받을 동행. **안 가진 놈이 먼저다** — 있는 놈이 또 오면 별로
+# 들어가서 "윗급을 얻었다"가 아니게 된다. 최상위(전설)에서 다 가졌으면 줄 것이
+# 없으므로 "" 를 돌려주고, 그때는 조각도 안 쌓는다.
+static func fuse_target(rarity: String, got: Dictionary) -> String:
+	var i := RARITY_KEYS.find(rarity)
+	if i < 0:
+		return ""
+	var up := str(RARITY_KEYS[mini(i + 1, RARITY_KEYS.size() - 1)])
+	var pool := of_rarity(up)
+	var fresh: Array = []
+	for p in pool:
+		if not got.has(str(p["id"])):
+			fresh.append(p)
+	if not fresh.is_empty():
+		return str(fresh[randi() % fresh.size()]["id"])
+	if up == rarity:
+		return ""       # 전설을 다 모았다 — 더 갈 곳이 없다
+	return str(pool[randi() % pool.size()]["id"])
+
 # 레벨 — 먹이(전용 재화, 야수 우리가 준다). 상한은 승급이 연다:
 # 별 하나당 10레벨. 조각만으로도 먹이만으로도 끝까지 못 가는 게 의도다.
 const FEED_BASE := 40.0

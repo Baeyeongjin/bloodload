@@ -18294,6 +18294,7 @@ var _pet_detail := {}
 var _petgear_detail := {}
 var _pet_feed_ui := {}
 var _pet_roll_ui := {}
+var _pet_dust_lbl: Label        # 5성 중복 조각 진행도 (펫 소환 판)
 
 
 # 세트 그림 버튼 — 둥지 줄 + 글자 + 투명 판정 (상점 문법).
@@ -18794,6 +18795,15 @@ func _pet_build_roll(root: Control, kind: String) -> void:
 	rates.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	rates.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rates.size = Vector2(CONTENT_W - 40.0, 40.0)
+	# 조각 진행도 — **무엇이 쌓이는지 안 보이면 없는 규칙이다.** 확률 줄과
+	# 잔량 알약 사이가 비어 있어서 그 자리를 쓴다(펫 소환에만 붙는다).
+	if kind == "pet":
+		_pet_dust_lbl = _panel_label(root, Vector2(PAD + 20.0,
+			PET_GRID_Y + 210.0), Type.SIZE_SMALL, Color(0.86, 0.80, 0.62),
+			CONTENT_W - 40.0, 0.0)
+		_pet_dust_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_pet_dust_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_pet_dust_lbl.size = Vector2(CONTENT_W - 40.0, 40.0)
 	# 소환권 잔량 알약.
 	var pp := Vector2(PAD + (CONTENT_W - 180.0) * 0.5, PET_GRID_Y + 320.0)
 	root.add_child(Ui.set_pill(NEST, pp, Vector2(180.0, 34.0)))
@@ -19004,6 +19014,18 @@ func _refresh_pet_feed() -> void:
 
 
 func _refresh_pet_roll() -> void:
+	if _pet_dust_lbl != null:
+		# 쌓인 등급만 적는다 — 다섯 줄을 늘 띄우면 0 이 네 개다.
+		var dust := PackedStringArray()
+		for rk in PetDefs.RARITY_KEYS:
+			var n := int(gacha_shards.get("pet_dust:" + str(rk), 0))
+			if n <= 0:
+				continue
+			dust.append("%s %d/%d" % [str(GachaDefs.rarity(str(rk))["name"]),
+				n, PetDefs.FUSE_DUST])
+		_pet_dust_lbl.text = ("조각  " + "  ·  ".join(dust)) if dust.size() > 0 \
+			else "5성 동행의 중복은 조각이 된다 — %d개면 윗급 하나" \
+			% PetDefs.FUSE_DUST
 	for kind in _pet_roll_ui:
 		var ui: Dictionary = _pet_roll_ui[kind]
 		var have := int(tickets.get(kind, 0))
@@ -19223,7 +19245,7 @@ func _pet_roll(show := true) -> Dictionary:
 			sub = "조각 %d / %d" % [sh, PetDefs.SHARDS_PER_STAR]
 		gacha_shards[key] = sh
 	else:
-		sub = "이미 끝까지 컸다"
+		sub = _pet_dust_add(str(d["rarity"]))
 	var row := {"pet": true, "id": id, "name": str(d["name"]),
 		"rarity": str(d["rarity"]), "star": _pet_star(id), "sub": sub}
 	if show:
@@ -19273,11 +19295,39 @@ func _petgear_roll(show := true) -> Dictionary:
 # 조각 하나를 넣고 결과 문구를 돌려준다. 별이 차면 승급까지 한다.
 # 펫 소환·장비 소환·원정 셋이 같은 문법이라 한 곳에 둔다 — 세 벌로 두면
 # 승급 규칙을 고칠 때 한 곳을 빠뜨린다.
+# 5성 동행의 중복 — **그 등급의 조각**이 되고, 다섯이면 윗급 하나다.
+# (2026-09-10 사장님. 예전엔 통째로 버려졌다.)
+func _pet_dust_add(rarity: String) -> String:
+	if PetDefs.fuse_target(rarity, pets_got) == "":
+		return "이미 끝까지 컸다"      # 전설을 다 모았다
+	var key := "pet_dust:" + rarity
+	var n := int(gacha_shards.get(key, 0)) + 1
+	if n < PetDefs.FUSE_DUST:
+		gacha_shards[key] = n
+		return "조각 %d / %d" % [n, PetDefs.FUSE_DUST]
+	# **고르는 것은 쓰는 순간이다.** 쌓을 때 미리 정해 두면 그새 그 놈을 뽑았을
+	# 때 "안 가진 놈 우선"이 거짓말이 된다.
+	gacha_shards[key] = n - PetDefs.FUSE_DUST
+	var id := PetDefs.fuse_target(rarity, pets_got)
+	var nm := str(PetDefs.of(id).get("name", id))
+	if pets_got.has(id):
+		return "%s · %s" % [nm, _shard_add("pet:" + id)]
+	pets_got[id] = 1
+	pet_lv[id] = 1
+	pet_bank[id] = 0.0
+	if pet_worn == "":
+		pet_worn = id
+	return "%s 을(를) 얻었다" % nm
+
+
 func _shard_add(key: String) -> String:
 	var id := key.split(":")[1]
 	var box: Dictionary = pets_got if key.begins_with("pet:") else pet_gear_got
 	var star := clampi(int(box.get(id, 0)), 0, PetDefs.MAX_STAR)
 	if star >= PetDefs.MAX_STAR:
+		# 동행만 조각이 된다 — 장비는 갈 윗급이 없다.
+		if key.begins_with("pet:"):
+			return _pet_dust_add(str(PetDefs.of(id).get("rarity", "common")))
 		return "이미 끝까지 컸다"
 	var sh := int(gacha_shards.get(key, 0)) + 1
 	if sh >= PetDefs.SHARDS_PER_STAR:

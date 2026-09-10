@@ -283,6 +283,54 @@ func _init() -> void:
 		str(PetDefs.of(got)["name"])),
 		"강화 판이 고른 펫을 안 보여준다: %s" % scene._pet_feed_ui["name"].text)
 
+	# ── 조합: 5성 중복이 조각이 된다 (사장님 2026-09-10) ──────────────────
+	# 예전엔 통째로 버려졌다 — 제일 공들인 펫의 중복이 아무것도 아니었다.
+	# 표부터: 윗급을 고르고, 안 가진 놈을 먼저 준다.
+	var com0: Dictionary = PetDefs.of_rarity("common")[0]
+	var up_id := PetDefs.fuse_target("common", {})
+	assert(up_id != "", "커먼 조각이 줄 동행이 없다")
+	assert(str(PetDefs.of(up_id)["rarity"]) == "uncommon",
+		"커먼 조각이 언커먼을 안 준다: %s" % str(PetDefs.of(up_id)["rarity"]))
+	# 전설을 다 가졌으면 줄 것이 없다 — 그때는 조각도 안 쌓는다.
+	var all_leg := {}
+	for lp in PetDefs.of_rarity("legend"):
+		all_leg[str(lp["id"])] = PetDefs.MAX_STAR
+	assert(PetDefs.fuse_target("legend", all_leg) == "",
+		"전설을 다 모았는데 또 준다")
+	assert(PetDefs.fuse_target("legend", {}) != "", "전설 조각이 아무것도 안 준다")
+
+	# 실제 지급. 커먼 하나를 5성으로 두고 중복을 다섯 번 먹인다.
+	var cid := str(com0["id"])
+	scene.pets_got = {cid: PetDefs.MAX_STAR}
+	scene.pet_lv = {cid: 1}
+	scene.pet_bank = {}
+	scene.pet_worn = cid
+	scene.gacha_shards = {}
+	for i9 in PetDefs.FUSE_DUST - 1:
+		var msg: String = scene._shard_add("pet:" + cid)
+		assert("조각" in msg, "5성 중복이 조각이 안 됐다: %s" % msg)
+	assert(scene.pets_got.size() == 1, "조각이 덜 찼는데 동행이 늘었다")
+	var last: String = scene._shard_add("pet:" + cid)
+	assert(scene.pets_got.size() == 2,
+		"조각 %d개인데 동행이 안 왔다: %s" % [PetDefs.FUSE_DUST, last])
+	# 받은 놈은 **언커먼**이고 1레벨 1성으로 선다.
+	var got_up := ""
+	for k9 in scene.pets_got:
+		if str(k9) != cid:
+			got_up = str(k9)
+	assert(str(PetDefs.of(got_up)["rarity"]) == "uncommon",
+		"윗급이 아니다: %s" % str(PetDefs.of(got_up)["rarity"]))
+	assert(int(scene.pet_lv.get(got_up, 0)) == 1
+		and scene._pet_star(got_up) == 1, "새 동행이 1성 1레벨이 아니다")
+	# 조각은 다섯이 빠졌다.
+	assert(int(scene.gacha_shards.get("pet_dust:common", 0)) == 0,
+		"조각이 안 빠졌다: %d" % int(scene.gacha_shards.get("pet_dust:common", 0)))
+	# **장비는 조각이 안 된다** — 갈 윗급이 없다.
+	var g9 := str(PetDefs.GEAR[0]["id"])
+	scene.pet_gear_got = {g9: PetDefs.MAX_STAR}
+	assert(scene._shard_add("petgear:" + g9) == "이미 끝까지 컸다",
+		"5성 장비가 조각이 됐다")
+
 	# ── 먹이 지급 경로 ─────────────────────────────────────────────────────
 	var f0: float = scene.feed
 	scene._grant_reward("feed", 123.0)
