@@ -91,12 +91,22 @@ func _init() -> void:
 	scene.skill_owned = {"strike_legend": 7}
 	var lock_card: Control = scene._skill_unknown_card(
 		GachaDefs.rarity("mythic"), "strike")
+	# **조건과 진행도가 둘 다 적혀야 한다.** 숫자만 있으면 무엇을 하라는
+	# 말인지 모른다(사장님이 실제로 조건을 잊었다).
 	var lock_txt := ""
+	var lock_num := ""
 	for c in lock_card.get_children():
-		if c is Label and "레전더리" in (c as Label).text:
-			lock_txt = (c as Label).text
-	assert(lock_txt == "격 레전더리 7/%d" % SkillDefs.max_lv("strike_legend"),
-		"잠긴 카드 문구가 다르다: %s" % lock_txt)
+		if not (c is Label):
+			continue
+		var t9 := str((c as Label).text)
+		if "레전더리" in t9:
+			lock_txt = t9
+		elif "/" in t9:
+			lock_num = t9
+	assert(lock_txt == "레전더리 만렙 해제",
+		"잠긴 카드에 조건이 없다: %s" % lock_txt)
+	assert(lock_num == "7/%d" % SkillDefs.max_lv("strike_legend"),
+		"잠긴 카드 진행도가 다르다: %s" % lock_num)
 	# 커먼~레전더리 미획득 칸에는 잠김이 없다 — "뽑으면 나온다"가 맞는 말이다.
 	var open_card: Control = scene._skill_unknown_card(
 		GachaDefs.rarity("uncommon"), "strike")
@@ -178,6 +188,31 @@ func _init() -> void:
 		if scene.hero_hp > hp0:
 			break
 	assert(scene.hero_hp > hp0, "장판이 도는데 체력을 안 마신다")
+
+	# ── 신화 격이 다른 스킬을 굶기지 않는가 (사장님 2026-09-10) ───────────
+	# 송곳니는 처치하면 쿨이 그 자리에서 0 이 되는데, 고르는 규칙이 "먼저 적힌
+	# 것이 우선"이라 방치 전투처럼 처치가 끊이지 않으면 그것만 무한히 나갔다.
+	scene.skill_owned["wave_common"] = 1
+	var two: Array[String] = ["strike_mythic", "wave_common"]
+	scene.skill_equipped = two
+	scene._skill_cd = {"strike_mythic": 0.0, "wave_common": 0.0}
+	scene._skill_last = "strike_mythic"
+	var order: Array = scene._ready_skills()
+	assert(order.size() == 2, "준비된 스킬이 %d종이다 (2종이어야)" % order.size())
+	assert(str(order[0]["key"]) == "wave_common",
+		"직전에 쓴 신화가 또 1순위다 — 뒤 스킬이 영영 굶는다: %s"
+		% str(order[0]["key"]))
+	# **우선순위를 죽인 것은 아니다** — 다른 것이 준비 안 됐으면 그대로 나간다.
+	scene._skill_cd["wave_common"] = 9.0
+	var only: Array = scene._ready_skills()
+	assert(only.size() == 1 and str(only[0]["key"]) == "strike_mythic",
+		"혼자 준비됐는데 안 나간다")
+	# 양보는 한 번뿐이다 — 파가 나가면 다음엔 다시 격이 1순위다.
+	scene._skill_cd["wave_common"] = 0.0
+	scene._skill_last = "wave_common"
+	var back: Array = scene._ready_skills()
+	assert(str(back[0]["key"]) == "strike_mythic",
+		"양보가 한 번을 넘는다: %s" % str(back[0]["key"]))
 
 	# ── 게시판 스킬 칸이 등급을 보이는가 (2026-09-02) ─────────────────────
 	# 사장님: "스킬 등급 표시해주면 좋을듯". 성장 화면 칸은 이미 등급 색 틀을

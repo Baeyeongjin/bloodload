@@ -4153,13 +4153,14 @@ func _skill_unknown_card(rarity: Dictionary, shape := "") -> Control:
 	nm.text = "%s · 미획득" % str(rarity["name"])
 	# **잠김은 신화뿐이다**(2026-09-01 사장님 — 형태별 천장은 하루 만에 폐기).
 	# 커먼~레전더리 미획득 칸은 전부 "뽑으면 나온다"가 맞는 말이 됐다.
-	# 문구는 뭘 세는지 그대로: "격 레전더리 8/10". "숙련" 같은 은어는 금지 —
-	# 실제로 사장님이 못 알아들었다.
+	# **조건을 적는다**(사장님 2026-09-10: "레전더리 만렙이면 해제라고").
+	# 예전엔 "격 레전더리 8/10" 한 줄이라 숫자만 보이고 무엇을 하라는 말인지가
+	# 없었다 — 사장님이 조건을 잊었다. 이제 위가 진행도, 아래가 조건이다.
+	# 카드가 120x88 이라 두 줄이 한계다("숙련" 같은 은어는 여전히 금지).
 	if str(rarity["key"]) == "mythic" and shape != "":
 		var mp := SkillDefs.mythic_progress(shape, skill_owned)
-		q.text = "잠김"
-		nm.text = "%s 레전더리 %d/%d" % [str(SkillDefs.SHAPES[shape]["name"]),
-			int(mp[0]), int(mp[1])]
+		q.text = "%d/%d" % [int(mp[0]), int(mp[1])]
+		nm.text = "레전더리 만렙 해제"
 		# 누르면 안내 줄이 풀어 말한다 — 칸이 좁아 문장은 여기 못 싣는다.
 		var why := Button.new()
 		why.flat = true
@@ -12375,6 +12376,17 @@ func _ready_skills() -> Array[Dictionary]:
 		var data := _skill_data(str(key))
 		if not data.is_empty():
 			out.append(data)
+	# **직전에 쓴 것은 맨 뒤로 보낸다**(사장님 2026-09-10: "신화 스킬 착용하니
+	# 다른 스킬이 안 나감"). 혈신의 송곳니는 처치하면 쿨이 그 자리에서 0 이
+	# 되는데(RULES.reset_on_kill), 고르는 규칙이 "먼저 적힌 것이 우선"이라
+	# 방치 전투처럼 처치가 끊이지 않으면 **그것만 무한히 나가고 뒤 스킬은
+	# 영영 굶는다.** 우선순위는 그대로 두고 연속 발동만 양보시킨다 — 다른 것이
+	# 하나도 준비 안 됐으면 여전히 그것이 나간다.
+	if out.size() > 1 and _skill_last != "":
+		for i in out.size():
+			if str(out[i]["key"]) == _skill_last:
+				out.append(out.pop_at(i))
+				break
 	return out
 
 
@@ -12557,6 +12569,11 @@ func _auto_equip_skills() -> void:
 	skill_equipped = picked.slice(0, mini(picked.size(), _equip_cap()))
 
 
+# 직전에 시전한 스킬. 쿨이 0 으로 돌아오는 규칙(reset_on_kill) 때문에 한 스킬이
+# 발동을 독차지하는 것을 막는 데만 쓴다.
+var _skill_last := ""
+
+
 func _tick_skills(delta: float, foes: Array) -> void:
 	if not _hero_dead:
 		for key in _skill_cd:
@@ -12600,6 +12617,7 @@ func _tick_skills(delta: float, foes: Array) -> void:
 	if skill.is_empty():
 		return
 	_skill_action = str(skill["key"])
+	_skill_last = _skill_action
 	_skill_action_t = SKILL_DUR
 	_skill_hit_t = _impact_time(str(skill["motion"]), SKILL_DUR)
 	_skill_impact_sent = false
