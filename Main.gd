@@ -35,9 +35,10 @@ const SAVE_PATH := "user://bloodlord.cfg"
 #   800..896 탭바
 const VIEW_TOP := 96.0
 const VIEW_BOTTOM := 416.0
-# 발이 닿는 선. 배경마다 바닥 높이가 달라서 상수로 두면 캐릭터가 공중에 뜬다.
-# 배경은 항상 전투 띠에 딱 맞게 깔고(y = VIEW_TOP), 대신 이 값을 막마다 옮긴다.
-var ground_y := 442.0
+# 바닥 경계보다 6px 안쪽에 발을 놓아 길 위에 선다. 그림자·지면 VFX도 같은 선을 쓴다.
+const FOOTING_DEPTH := 6.0
+var ground_y := VIEW_BOTTOM - float(Grid.BG_SRC.y) * 2.0 \
+	+ float(StageDefs.GROUND_ROW) * 2.0 + FOOTING_DEPTH
 # 영웅의 앵커. **화면 가운데가 아니라 40% 자리다**(2026-08-06).
 #
 # 양방향 스폰이던 동안은 정중앙(288)이어야 했다 — 한쪽에 치우치면 반대쪽으로 갈 때만
@@ -338,6 +339,11 @@ var _pet_sprite: Sprite2D
 var _pet_anim_t := 0.0
 var _hero_frames: Array = []
 var _hero_anim := 0.0
+var _motion_duration := 0.85
+var _hero_loop_from := 0
+var _hero_trail_t := 0.0
+var _hero_trail_step := 0
+var _pending_motion := "attack"
 # 영웅 외형. 확장은 캐릭터 추가가 아니라 스킨이라, 이 값만 바꾸면 모션 전체가 갈린다.
 var skin := "valentino_1"
 # 산 스킨들 (id -> true). 기본 의상은 늘 보유다 — 표에 안 적는다.
@@ -394,7 +400,7 @@ var skill_equipped: Array[String] = []   # 장착 6칸. 순서가 곧 발동 우
 # 간다. 스킬은 키 목록, 장비는 slot -> inventory_key 다 — 장비 dict 를
 # 통째로 담으면 레벨을 올렸을 때 프리셋만 옛 수치로 굳는다.
 const PRESETS := 3
-var skill_presets: Array = []
+var skill_presets: Array = _preset_load([], [])
 # 프리셋 화면 — 전용 팝업 하나에 스킬 3장 + 장비 3장이 카드로 나열된다
 # (사장님 2026-09-01: 인라인 [저장][1][2][3] 줄은 "너무 불친절" — 철거했다.
 # 레퍼런스: 참고작의 프리셋 판. 카드마다 이름·저장·장착·미리보기).
@@ -404,7 +410,7 @@ var preset_names := {}          # "skill:0" -> 이름. 비어 있으면 "프리�
 # 이름 입력 판의 행선지. 비어 있으면 기존 동작(영웅 이름)이다 — 프리셋 이름
 # 변경이 같은 판을 빌려 쓴다(판을 하나 더 만들면 글자 수·정리 규칙이 갈라진다).
 var _name_target := Callable()
-var gear_presets: Array = []
+var gear_presets: Array = _preset_load([], {})
 # 켜 두면 새 스킬을 얻거나 레벨을 올릴 때마다 알아서 다시 낀다. 방치형에서
 # "더 센 걸 뽑았는데 안 끼고 있었다"는 플레이어 잘못이 아니라 UI 잘못이다.
 # 손으로 한 칸이라도 만지면 꺼진다 — 고른 걸 뒤에서 덮어쓰면 그게 더 나쁘다.
@@ -418,6 +424,8 @@ var _summon_t := 0.0
 var _summon_bonus := 0.0   # 시전 순간의 가호 배수. 버프 도중 장비를 바꿔도 유지된다
 var _summon_tint := 0.0    # 버프 도중 영웅을 붉게 물들이는 정도(RULES.tint)
 var _summon_cleave := ""   # 버프 도중 평타가 광역이 될 때 쓰는 이펙트(RULES.cleave)
+var _ward_aura: Node2D
+var _ward_aura_y := 0.0
 var _defer_stage_advance := false
 var _hud: CanvasLayer
 var _hud_root: Control   # 테마가 걸린 실제 부모
@@ -427,6 +435,8 @@ var _lbl_gem: Label
 var _lbl_prog: Label
 var _lbl_power: Label
 var _lbl_hero: Label
+var _hud_portrait: TextureRect
+var _hud_portrait_skin := ""
 var _lbl_life: Label
 var equipped := {}          # slot -> 장비 dict (없으면 키 없음)
 var gear_inventory := {}     # 뽑은 장비 icon -> 최고 등급 장비 + copies
@@ -471,6 +481,9 @@ var _goal_widget: Button
 var _chest_btn: Button
 var chest_gold := 0.0      # 방치 보상. 눌러서 받을 때까지 지갑에 안 들어간다
 var chest_minutes := 0.0
+var chest_exp := 0.0       # 적립 당시 시세. 수령 전 강화로 재계산하지 않는다.
+var chest_crystal := 0.0   # 이미 지갑에 지급한 혈정의 표시용 내역
+var chest_stages := 0      # 상자에 합쳐진 방치 동안 진행한 구간 수
 var _goal_widget_icon: TextureRect
 var _goal_widget_name: Label
 var _goal_widget_prog: Label
@@ -520,6 +533,11 @@ var _board: Control
 var _board_cells: Array = []     # 스킬 칸 7: {frame, icon, shade, num}
 var _board_pills: Array = []     # 알약 라벨 3
 var _board_btn: Button
+var _board_goal: Label
+var _board_tactic: Label
+var _board_build_btn: Button
+var _board_growth_btn: Button
+var _boss_attempt := {}         # 같은 구간의 이번 세션 도전 기록. 보상/저장은 바꾸지 않는다.
 var _board_prev_cd := {}         # 시전 감지(쿨다운이 0에서 만땅으로 튀는 순간)
 var _income_per_min := 0.0
 var _tab_dots := {}         # 탭 이름 -> 붉은 알림 점 (도감은 없다)
@@ -617,10 +635,8 @@ var _reward_title: Label
 var _reward_row: Control
 var _reward_panel: NinePatchRect
 var _reward_hint: Label
-var _visual_hitstop_t := 0.0
 var _combat_shake: Tween
 var _boss_pan_t := 0.0   # 보스 등장 연출이 도는 동안은 흔들림을 막는다
-const HITSTOP_DUR := 0.035
 
 
 # ── 스탯 ───────────────────────────────────────────────────────────────────
@@ -1296,9 +1312,14 @@ func _ready() -> void:
 				"label": "보석 +1.2k", "sub": "가이드 3개"}])
 		# [개발 도구] 방치 보상 상자를 띄운 채로 캡처한다.
 		if arg == "--chest" or arg == "--chest=open":
-			chest_gold = 12480.0
-			chest_minutes = 143.0
 			dungeon_best = 12          # 혈정 줄이 보이게
+			chest_gold = 0.0
+			chest_minutes = 0.0
+			chest_exp = 0.0
+			chest_crystal = 0.0
+			chest_stages = 4
+			_accrue_chest(143.0)
+			chest_gold = 12480.0
 			_refresh_chest()
 			if arg.ends_with("open"):
 				_claim_chest()
@@ -1584,7 +1605,21 @@ func _build_scene() -> void:
 # 5장을 9장으로 늘렸을 때 실제로 그랬다(10fps 면 0.5초 -> 0.9초).
 # 시간으로 두면 그림이 몇 장이든 리듬이 같다. IMPACT_RATIO 를 프레임 번호에서
 # 비율로 바꾼 것과 같은 이유다.
-const MOTION_CYCLE := {"idle": 0.85, "walk": 0.50, "dash": 0.60, "hurt": 0.36}
+const MOTION_CYCLE := {"idle": 0.85, "walk": 0.50, "dash": 0.30, "hurt": 0.22,
+	"death": 0.52}
+const VALENTINO_RUN_START := 0.09
+const VALENTINO_RUN_CYCLE := 0.40
+const SKILL_MOTIONS := ["heavy", "sweep", "cast", "ward"]
+const ACTION_TRAIL_SHADER := preload("res://shaders/action_trail.gdshader")
+const COMBAT_VFX := preload("res://CombatVfx.gd")
+
+
+func _hero_motion_dir(motion: String) -> String:
+	# The procedural v2 poses were rejected for their proportions and motion.
+	# Keep the original full-body drawings as the game source.
+	return "res://assets/anim/%s_%s" % [skin, motion]
+
+
 # 휘두르는 데 걸리는 시간. **공격 주기(0.60)와 분리한다.**
 #
 # 주기 전체에 9프레임을 늘려 재생하면 영웅이 늘 휘두르는 중이고, 피해가 0.257초
@@ -1594,7 +1629,8 @@ const MOTION_CYCLE := {"idle": 0.85, "walk": 0.50, "dash": 0.60, "hurt": 0.36}
 # **초당 타수는 그대로다.** 바뀌는 건 스윙 시작에서 피해까지의 지연뿐이라 DPS 도
 # 밸런스 표도 안 건드린다. 주기가 이보다 짧아지면(공격속도 만렙) 주기를 따른다.
 const ATTACK_SWING := 0.34
-const LOOPING := ["idle", "walk", "dash"]   # 나머지는 한 번 재생하고 idle 로 돌아간다
+const ACTION_RECOVERY := 0.09
+const LOOPING := ["idle", "walk", "dash"]
 
 
 func _play(motion: String, hold := 0.0) -> void:
@@ -1605,7 +1641,19 @@ func _play(motion: String, hold := 0.0) -> void:
 	_motion = motion
 	_motion_hold = hold
 	_hero_anim = 0.0
-	_hero_frames = Assets.frames("res://assets/anim/%s_%s" % [skin, motion])
+	_motion_duration = _attack_swing() if motion in COMBO_MOTIONS else (
+		SKILL_DUR if motion in SKILL_MOTIONS else float(MOTION_CYCLE.get(motion, 0.85)))
+	_hero_frames = Assets.frames(_hero_motion_dir(motion))
+	_hero_loop_from = 0
+	if motion == "dash" and _hero_frames.size() == 9:
+		_hero_loop_from = 3
+		if skin == "valentino_1":
+			# Keep the six original whole-body poses. The added closure held
+			# the upper body in pose 8 while only the legs changed.
+			_motion_duration = VALENTINO_RUN_START + VALENTINO_RUN_CYCLE
+		else:
+			_hero_frames = _hero_frames.duplicate()
+			_hero_frames.append_array(Assets.frames("res://assets/anim/%s_dash_bridge" % skin))
 	if _hero_frames.is_empty() and motion == "dash":
 		# 달리기 그림이 아직 없으면 걷기를 빠르게 돌린다. 보폭은 덜해도
 		# 멈춰 서서 순간이동하는 것보다 훨씬 낫다.
@@ -1613,8 +1661,44 @@ func _play(motion: String, hold := 0.0) -> void:
 	if _hero_frames.is_empty():
 		# 스킨에 그 모션이 없으면 idle 로 떨어진다 — 빈 화면보다 낫다.
 		_hero_frames = Assets.frames("res://assets/anim/%s_idle" % skin)
+	if _hero == null:
+		return
 	if _hero_frames.is_empty():
-		_hero.texture = Assets.tex("res://assets/hero/%s.png" % skin)
+		_display_hero_frame(Assets.tex("res://assets/hero/%s.png" % skin), 0)
+	else:
+		_display_hero_frame(_hero_frames[0], 0)
+
+
+func _display_hero_frame(source: Texture2D, frame: int, recovering := false, impact := false) -> void:
+	if not Foe.pixel_pilot_ready(skin):
+		_hero.texture = source
+		return
+	var idle := Foe.pixel_pilot_frames(skin, "idle")
+	if idle.is_empty():
+		idle = [Foe.pixel_pilot_frames(skin, "special")[0]]
+	var motion := str({"sweep": "attack", "cast": "special", "ward": "special"}.get(_motion, _motion))
+	var frames := Foe.pixel_pilot_frames(skin, motion)
+	if _motion == "attack3" and frames.is_empty():
+		frames = Foe.pixel_pilot_frames(skin, "heavy")
+	if recovering:
+		_hero.texture = frames.back() if frame > 0 and not frames.is_empty() else idle[0]
+		return
+	if _motion == "idle":
+		_hero.texture = idle[Foe.pixel_pilot_time_index(fposmod(_hero_anim, _motion_duration), _motion_duration, idle.size())]
+		return
+	if _motion == "dash":
+		# The separate dash is a prone burst/landing, not a running start.
+		# Ordinary travel uses one continuous upright stride from its first tick.
+		frames = Foe.pixel_pilot_frames(skin, "walk")
+		_hero.texture = frames[Foe.pixel_pilot_time_index(fposmod(_hero_anim, VALENTINO_RUN_CYCLE), VALENTINO_RUN_CYCLE, frames.size())]
+		return
+	if frames.is_empty():
+		# An unsupported optional action keeps the matching actor's ready pose.
+		_hero.texture = idle[0]
+		return
+	var contact := _impact_time(_motion, _motion_duration) if _motion in COMBO_MOTIONS or _motion in SKILL_MOTIONS else -1.0
+	var at := fposmod(_hero_anim, _motion_duration) if _motion in LOOPING else _hero_anim
+	_hero.texture = frames[mini(3, frames.size() - 1) if impact else Foe.pixel_pilot_time_index(at, _motion_duration, frames.size(), contact)]
 
 
 # 공격 모션은 공격 주기에 맞춰 재생 속도를 바꾼다. 고정 fps로 두면 공격속도를
@@ -1631,6 +1715,13 @@ func _attack_swing() -> float:
 # **있는 것만 쓴다.** `attack2`·`attack3` 자산이 없는 스킨은 자동으로 1연격이 된다
 # (영웅 스킨이 11종인데 모션이 다 갖춰진 건 `valentino_1` 뿐이다).
 const COMBO_MOTIONS := ["attack", "attack2", "attack3"]
+# Reviewed against the original sword poses. The widest late VFX pixel is
+# often a fading trail, so it is not a reliable contact marker.
+const HERO_CONTACT := {
+	"valentino_1": [5, 6, 5], "demon_king": [6, 6, 6], "dragon": [6, 5, 4],
+	"shadow": [4, 5, 5], "emperor": [6, 4, 5], "grim": [3, 4, 4],
+	"abyss": [5, 6, 4], "hawaii": [6, 4, 4], "pink": [5, 4, 4],
+}
 var _combo := 0
 var _combo_live: Array[String] = []   # 이 스킨에 실제로 있는 연격. 스킨이 바뀌면 비운다
 
@@ -1638,7 +1729,7 @@ var _combo_live: Array[String] = []   # 이 스킨에 실제로 있는 연격. �
 func _attack_motion() -> String:
 	if _combo_live.is_empty():
 		for m in COMBO_MOTIONS:
-			if not Assets.frames("res://assets/anim/%s_%s" % [skin, m]).is_empty():
+			if not Assets.frames(_hero_motion_dir(str(m))).is_empty():
 				_combo_live.append(str(m))
 		if _combo_live.is_empty():
 			_combo_live.append("attack")
@@ -1646,41 +1737,143 @@ func _attack_motion() -> String:
 
 
 func _motion_fps() -> float:
-	# 연격 전부가 평타 박자를 따른다 — `attack` 만 보면 2·3연격이 기본 주기(0.85초)로
-	# 돌아서 공격속도를 올려도 그림만 느려진다.
-	if _motion in COMBO_MOTIONS:
-		return float(_hero_frames.size()) / _attack_swing()
-	if _motion == "heavy" or _motion == "cast":
-		return float(_hero_frames.size()) / SKILL_DUR
-	var cycle := float(MOTION_CYCLE.get(_motion, 0.85))
-	return float(_hero_frames.size()) / maxf(0.05, cycle)
+	return float(_hero_frames.size()) / maxf(0.05, _motion_duration)
 
 
-func _tick_motion(delta: float) -> void:
-	if _hero_dead:
-		return
-	# **달리기는 실제로 움직일 때만 돈다.** `dash` 는 루프 모션이라(LOOPING) 아무도
-	# 안 끊으면 영원히 돌아간다 — 전진 구간에서 켜 둔 dash 가 전투로 넘어와도 그대로
-	# 남아서, 공격 쿨다운 내내 제자리에서 달렸다(실측: 전투 중 1261 프레임 = 24%).
-	#
-	# 전투 중에는 세상이 안 흐르므로(`_advance_world` 는 전진 구간에서만 돈다) 영웅이
-	# 제 자리에 있으면 화면에서 아무것도 안 움직인다. 모션을 켜는 자리가 여럿이라
-	# **재생을 관리하는 이 한 곳**에서 끊는다.
-	# (판정은 _tick_dash 로 옮겼다 — "목표점에 닿았나"가 아니라 **실제로 움직였나**를
-	# 본다. 목표점이 흔들리면(_clear_idle·넉백) 닿음 검사가 영영 안 맞아서
-	# 제자리 달리기가 남았다: 사장님 "만나면 가만히 있어야지".)
+func _hero_frame_index() -> int:
+	var n := _hero_frames.size()
+	if n <= 1:
+		return 0
+	if _motion == "dash" and skin == "valentino_1" and _hero_loop_from == 3 and n == 9:
+		# Startup is played once. Its frame count must not accelerate the
+		# repeat: previously the stride cycle was only 0.21 seconds long.
+		if _hero_anim < VALENTINO_RUN_START:
+			return mini(2, int(_hero_anim / VALENTINO_RUN_START * 3.0))
+		var stride := fposmod(_hero_anim - VALENTINO_RUN_START, VALENTINO_RUN_CYCLE)
+		return 3 + mini(5, int(stride / VALENTINO_RUN_CYCLE * 6.0 + 0.000001))
+	if _motion in LOOPING:
+		# The old dash includes a standing start in frames 0–2. Play that
+		# once, then keep the six stride poses cycling without standing up.
+		if _hero_loop_from > 0 and _hero_anim >= _motion_duration:
+			return _hero_loop_from + int((_hero_anim - _motion_duration) * _motion_fps()) % (n - _hero_loop_from)
+		return int(_hero_anim * _motion_fps()) % n
+	var p := clampf(_hero_anim / _motion_duration, 0.0, 1.0)
+	# Every authored in-between gets its full interval. Easing the frame
+	# index held anticipation too long and skipped poses in a 60 Hz render.
+	return mini(int(p * n + 0.000001), n - 1)
+
+
+func _pin_hero_impact(motion: String) -> void:
+	# 예약된 평타가 스킬 도중 맞아도 새 시전 자세를 덮지 않는다.
+	if _motion == motion and not _hero_frames.is_empty():
+		var frame := clampi(_impact_frame(motion), 0, _hero_frames.size() - 1)
+		_display_hero_frame(_hero_frames[frame], frame, false, true)
+
+
+func _hero_action_live() -> bool:
+	return _hero_hit_t >= 0.0 or _skill_action != ""
+
+
+func _tick_motion(delta: float, frozen := false) -> void:
+	# 정지는 그림만 잡는다. 시계까지 늦추면 피해가 준비 자세에서 발생한다.
 	_hero_anim += delta
-	if _hero_frames.size() > 0:
-		var i := int(_hero_anim * _motion_fps())
-		if _motion in LOOPING:
-			_hero.texture = _hero_frames[i % _hero_frames.size()]
-		else:
-			# 한 번만 재생하고 마지막 프레임에서 멈춘다 — 공격이 루프로 돌면 광란이 된다.
-			_hero.texture = _hero_frames[mini(i, _hero_frames.size() - 1)]
-	if _motion_hold > 0.0:
-		_motion_hold -= delta
-	elif not (_motion in LOOPING) and _hero_anim >= float(_hero_frames.size()) / _motion_fps():
+	_motion_hold = maxf(0.0, _motion_hold - delta)
+	if frozen and not _hero_dead:
+		return
+	# Keep the original recovery while dedicated return poses are reviewed.
+	# Reusing anticipation poses in reverse produced unnatural body turns.
+	if not _hero_dead and (_motion in COMBO_MOTIONS or _motion in SKILL_MOTIONS) \
+			and _hero_anim >= _motion_duration and _hero_frames.size() >= 2 \
+			and _hero_anim < _motion_duration + ACTION_RECOVERY:
+		var frame := 1 if _hero_anim - _motion_duration < ACTION_RECOVERY * 0.5 else 0
+		_display_hero_frame(_hero_frames[frame], frame, true)
+		return
+	if not _hero_frames.is_empty():
+		var frame := _hero_frame_index()
+		_display_hero_frame(_hero_frames[frame], frame)
+	if not _hero_dead and _motion_hold <= 0.0 and not (_motion in LOOPING) \
+			and _hero_anim >= _motion_duration:
 		_play("idle")
+
+
+func _hero_afterimage() -> void:
+	if _hero.texture == null or not _hero.visible:
+		return
+	var ghost := Sprite2D.new()
+	ghost.texture = _hero.texture
+	ghost.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ghost.position = (_hero.position - Vector2(float(hero_face) * 6.0, 0.0)).round()
+	ghost.offset = _hero.offset
+	ghost.scale = _hero.scale
+	ghost.flip_h = _hero.flip_h
+	var mat := ShaderMaterial.new()
+	mat.shader = ACTION_TRAIL_SHADER
+	ghost.material = mat
+	ghost.modulate = Color(1.0, 0.16, 0.36, 0.34) if _hero_trail_step % 2 == 0 \
+		else Color(0.66, 0.28, 1.0, 0.24)
+	_hero_trail_step += 1
+	ghost.z_index = 2
+	add_child(ghost)
+	ghost.add_to_group(WORLD_FX_GROUP)
+	var tw := ghost.create_tween().set_parallel()
+	tw.tween_property(ghost, "modulate:a", 0.0, 0.18).set_trans(Tween.TRANS_QUAD)
+	tw.chain().tween_callback(ghost.queue_free)
+
+
+func _tick_hero_trail(delta: float, frozen: bool) -> void:
+	_hero_trail_t = maxf(0.0, _hero_trail_t - delta)
+	if frozen or _hero_dead or _hero_trail_t > 0.0:
+		return
+	var moving := _motion == "dash" and (_phase == "advance" or absf(_dash_to - hero_x) > 1.0)
+	var striking := _motion == "attack3" or _motion in ["heavy", "sweep"]
+	if striking:
+		var contact := _impact_time(_motion, _motion_duration)
+		striking = absf(_hero_anim - contact) < minf(0.08, _motion_duration * 0.32)
+	if moving or striking:
+		_hero_afterimage()
+		_hero_trail_t = 0.060
+
+
+func _combo_fx(target: Foe, motion: String) -> void:
+	if Foe.pixel_pilot_ready(skin):
+		var kind := "slash2" if motion == "attack2" else ("slash3" if motion == "attack3" else "slash1")
+		_combat_vfx(kind, Vector2(hero_x, ground_y - 30.0), hero_face)
+		_combat_vfx("impact", Vector2(target.position.x, target.body_mid_y()), hero_face, 0.8)
+		return
+	var finisher := motion == "attack3"
+	var angle := 22.0 if motion == "attack2" else (-12.0 if finisher else -28.0)
+	var at := Vector2(target.position.x, target.body_mid_y())
+	_anim_fx("fx_cleave", at, 32.0, 2.5 if finisher else 2.0,
+		"burst", 1, 0.88, hero_face, 0.5, false, 1, 1, angle)
+	# 짧은 흰 칼날 + 붉은 가장자리. 빈 공간을 남겨 맞는 몬스터를 가리지 않는다.
+	var cut := Node2D.new()
+	cut.position = at.round()
+	cut.z_index = 4
+	add_child(cut)
+	cut.add_to_group(WORLD_FX_GROUP)
+	var reach := 42.0 if finisher else 32.0
+	var blade := PackedVector2Array()
+	for i in 13:
+		var a := lerpf(-1.25, 1.25, float(i) / 12.0)
+		var point := Vector2((cos(a) - 0.6) * reach, sin(a) * reach * 0.72)
+		point = point.rotated(deg_to_rad(angle))
+		point.x *= float(hero_face)
+		blade.append(point.snapped(Vector2(2, 2)))
+	cut.draw.connect(func() -> void:
+		cut.draw_polyline(blade, Color(0.95, 0.06, 0.27, 0.45), 8.0)
+		cut.draw_polyline(blade, Color(1.0, 0.30, 0.48, 0.9), 4.0)
+		cut.draw_polyline(blade, Color(1.0, 0.94, 0.83), 2.0))
+	var tw := cut.create_tween()
+	tw.tween_property(cut, "modulate:a", 0.0, 0.12 if finisher else 0.09) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(cut.queue_free)
+
+
+func _combat_vfx(kind: String, at: Vector2, face := 1, power := 1.0) -> Node2D:
+	var effect: Node2D = COMBAT_VFX.spawn(self, kind, at, face, power)
+	if effect != null:
+		effect.add_to_group(WORLD_FX_GROUP)
+	return effect
 
 
 # 전투 띠 위아래를 불투명하게 덮어 "게임 화면"과 "UI"를 갈라놓는다.
@@ -1970,10 +2163,10 @@ const PORTRAIT_X := LV_BADGE_AT.x + (LV_BADGE_SIZE.x - PORTRAIT) * 0.5
 
 
 func _build_portrait() -> void:
-	var face := Ui.icon("res://assets/ui/portrait_hero.png",
+	_hud_portrait = Ui.icon("res://assets/ui/portrait_hero.png",
 		Vector2(PORTRAIT_X + PORTRAIT * 0.16, 2.0 + PORTRAIT * 0.14), PORTRAIT * 0.68)
 	# 얼굴을 틀보다 먼저 붙여야 틀 테두리가 얼굴 위로 온다.
-	_hud_root.add_child(face)
+	_hud_root.add_child(_hud_portrait)
 	_hud_root.add_child(Ui.icon("res://assets/ui/portrait_frame.png",
 		Vector2(PORTRAIT_X, 2.0), PORTRAIT))
 	# 레벨 배지 — 레퍼런스처럼 **초상화 원 아래에 걸쳐** 놓는다.
@@ -2039,11 +2232,11 @@ func _build_preset_view() -> void:
 	_preset_view.add_child(Ui.panel(Vector2(24.0, 96.0), Vector2(528.0, 680.0)))
 	var title := _dlg_label(_preset_view, Vector2(24.0, 112.0), Type.SIZE_BODY,
 		Color(1.0, 0.88, 0.55), 528.0, 32.0)
-	title.text = "프리셋"
+	title.text = "추천 편성 · 프리셋"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var hint := _dlg_label(_preset_view, Vector2(24.0, 146.0), Type.SIZE_SMALL,
 		Color(0.72, 0.72, 0.80), 528.0, 20.0)
-	hint.text = "저장 = 지금 낀 것을 담는다  ·  장착하면 자동 장착이 꺼진다"
+	hint.text = "보유 스킬로 목적에 맞게 편성 · 장착 시 자동 장착 해제"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var sc := Ui.scroll(Vector2(40.0, 174.0), Vector2(496.0, 560.0))
 	_preset_view.add_child(sc)
@@ -2080,6 +2273,8 @@ func _preset_card(kind: String, n: int) -> Control:
 		Color(1.0, 0.92, 0.72), 200.0, 26.0)
 	nm.text = "%s%s" % ["스킬 · " if kind == "skill" else "장비 · ",
 		_preset_name(kind, n)]
+	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nm.clip_text = true
 	var save_btn := Ui.button("저장", Vector2(268.0, 10.0), Vector2(84.0, 30.0),
 		Type.SIZE_SMALL)
 	save_btn.pressed.connect(func() -> void:
@@ -2133,9 +2328,66 @@ func _refresh_preset_view() -> void:
 		return
 	for c in _preset_body.get_children():
 		c.queue_free()
+	for mode in ["hunt", "boss"]:
+		_preset_body.add_child(_recommendation_card(mode))
 	for kind in ["skill", "gear"]:
 		for n in PRESETS:
 			_preset_body.add_child(_preset_card(str(kind), n))
+
+
+func _recommendation_card(mode: String) -> Control:
+	var picked := SkillDefs.recommend(skill_owned, _equip_cap(), mode)
+	var card := Control.new()
+	card.custom_minimum_size = Vector2(456.0, 148.0)
+	card.add_child(Ui.panel(Vector2.ZERO, Vector2(456.0, 144.0)))
+	var title := _dlg_label(card, Vector2(20.0, 12.0), Type.SIZE_MID,
+		Color(1.0, 0.88, 0.55), 300.0, 24.0)
+	title.text = "무리 사냥" if mode == "hunt" else "보스 공략"
+	var note := _dlg_label(card, Vector2(20.0, 40.0), Type.SIZE_SMALL,
+		Color(0.80, 0.82, 0.88), 416.0, 20.0)
+	note.text = "광역 피해와 순환 · 여러 적을 함께 정리" if mode == "hunt" \
+		else "한 대상의 피해와 가호 · 보스에게 집중"
+	var use := Ui.button("장착", Vector2(348.0, 10.0), Vector2(88.0, 30.0), Type.SIZE_SMALL)
+	use.disabled = picked.is_empty()
+	use.pressed.connect(func() -> void: _apply_recommended_skills(mode))
+	card.add_child(use)
+	if picked.is_empty():
+		var empty := _dlg_label(card, Vector2(20.0, 78.0), Type.SIZE_SMALL,
+			Color(0.65, 0.62, 0.68), 416.0, 22.0)
+		empty.text = "스킬을 얻으면 추천 편성이 열립니다"
+	for i in picked.size():
+		var key := picked[i]
+		var at := Vector2(22.0 + float(i) * 58.0, 70.0)
+		var frame := Ui.icon("res://assets/ui/slot_common.png", at, 48.0)
+		frame.modulate = Color(SkillDefs.rarity_of(key)["col"])
+		card.add_child(frame)
+		var icon := Ui.icon(SkillDefs.icon_path(key), at + Vector2(6.0, 6.0), 36.0)
+		icon.mouse_filter = Control.MOUSE_FILTER_STOP
+		icon.tooltip_text = "%s · %d레벨\n%s" % [SkillDefs.name_of(key),
+			int(skill_owned[key]), SkillDefs.rule_text(key)]
+		card.add_child(icon)
+	var footer := _dlg_label(card, Vector2(20.0, 119.0), Type.SIZE_SMALL,
+		Color(0.68, 0.76, 0.67), 416.0, 18.0)
+	footer.text = "레벨·재사용 시간·조합을 반영한 추천"
+	return card
+
+
+func _apply_recommended_skills(mode: String) -> bool:
+	if mode not in ["hunt", "boss"]:
+		return false
+	var picked := SkillDefs.recommend(skill_owned, _equip_cap(), mode)
+	if picked.is_empty():
+		return false
+	skill_auto_equip = false
+	skill_equipped = picked
+	_refresh_skills()
+	_refresh_board()
+	if _preset_view:
+		_preset_view.visible = false
+	_show_clear("사냥 편성 적용" if mode == "hunt" else "보스 편성 적용",
+		"보유 스킬 %d개 장착 · 현재 쿨다운은 유지됩니다" % picked.size())
+	_save_game()
+	return true
 
 
 func _name_apply() -> void:
@@ -2269,7 +2521,7 @@ const DLG_H := 248.0
 # 표는 **수급의 주된 곳 하나**만 적는다. 전부 적으면 목록이 되고 목록은 안 읽힌다.
 const CURRENCY_INFO := {
 	"gold": {"name": "혈액", "icon": "res://assets/ui/res_blood.png",
-		"get": "몹을 잡으면 계속 들어온다. 목돈은 던전의 혈액의 동굴에서 나온다.",
+		"get": "시간이 지나면 혈액이 쌓인다. 목돈은 던전의 혈액의 동굴에서 나온다.",
 		"spend": "성장 탭 [스탯]에서 훈련에 쓴다.",
 		"tab": "raid", "mode": "raid"},
 	"gem": {"name": "보석", "icon": "res://assets/ui/res_gem.png",
@@ -2527,7 +2779,7 @@ func _build_dialogs() -> void:
 			184.0 + float(row) * 158.0)
 		cell.size = Vector2(160.0, 148.0)
 		_outfit_view.add_child(cell)
-		var icon := Ui.icon("res://assets/anim/%s_idle/0.png" % id2,
+		var icon := Ui.icon(Foe.portrait_path(id2, "res://assets/anim/%s_idle/0.png" % id2),
 			Vector2(32.0, 4.0), 96.0)
 		icon.flip_h = true      # 소스는 왼쪽 보기 — 화면 규칙은 오른쪽
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2623,6 +2875,10 @@ func _dlg_label(parent: Control, pos: Vector2, size: int, col: Color,
 var _clear_view: Control
 var _clear_title: Label
 var _clear_sub: Label
+var _clear_card: Control
+var _clear_plate: NinePatchRect
+var _clear_crest: TextureRect
+var _clear_tween: Tween
 
 
 func _build_clear_view() -> void:
@@ -2632,30 +2888,60 @@ func _build_clear_view() -> void:
 	_clear_view.z_index = 80
 	_clear_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_clear_view)
-	_clear_title = _dlg_label(_clear_view, Vector2(0.0, 330.0), Type.SIZE_TITLE,
-		Color(1.0, 0.90, 0.55), float(Grid.BG.x), 48.0)
-	_shop_outline(_clear_title, 10)
-	_clear_sub = _dlg_label(_clear_view, Vector2(0.0, 386.0), Type.SIZE_BODY,
-		Color(0.94, 0.90, 0.94), float(Grid.BG.x), 30.0)
-	_shop_outline(_clear_sub, 6)
+	_clear_card = Control.new()
+	_clear_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_clear_view.add_child(_clear_card)
+	# 이미 쓰는 원본 띠와 문장 장식을 재사용한다. UI 원화·도트 폰트는 유지한다.
+	_clear_plate = Ui._slice("res://assets/ui/band_power.png", 18, 12)
+	_clear_plate.position = Vector2(0.0, 28.0)
+	_clear_card.add_child(_clear_plate)
+	var crest := Assets.tex("res://assets/ui/reward_crest.png")
+	var crest_size := crest.get_size() * 2.0
+	_clear_crest = Ui.image("res://assets/ui/reward_crest.png",
+		Vector2((496.0 - crest_size.x) * 0.5, 0.0), crest_size)
+	_clear_card.add_child(_clear_crest)
+	_clear_title = _dlg_label(_clear_card, Vector2(24.0, 66.0), Type.SIZE_TITLE,
+		Color(1.0, 0.88, 0.55), 448.0, 48.0)
+	_clear_title.clip_text = true
+	_clear_sub = _dlg_label(_clear_card, Vector2(28.0, 120.0), Type.SIZE_MID,
+		Color(0.95, 0.91, 0.84), 440.0, 26.0)
+	_clear_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_clear_sub.add_theme_constant_override("line_spacing", 5)
+	_clear_sub.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 
 
 func _show_clear(title: String, sub: String) -> void:
 	if _clear_view == null or not is_inside_tree():
 		return
+	if _clear_tween != null and _clear_tween.is_valid():
+		_clear_tween.kill()
 	_clear_title.text = title
+	# 긴 제목은 원본 폰트의 다음 정수 배수로 줄인다.
+	_clear_title.add_theme_font_size_override("font_size", Type.SIZE_TITLE if
+		Type.font().get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, Type.SIZE_TITLE).x <= 448.0
+		else Type.SIZE_BODY)
 	_clear_sub.text = sub
+	_clear_sub.size = Vector2(440.0, 0.0)
+	var body_h := maxf(26.0, _clear_sub.get_minimum_size().y)
+	_clear_sub.size.y = body_h
+	_clear_card.size = Vector2(496.0, 144.0 + body_h)
+	_clear_card.position = Vector2(40.0, maxf(148.0, 350.0 - _clear_card.size.y * 0.5))
+	_clear_plate.size = Vector2(496.0, _clear_card.size.y - 28.0)
+	_clear_card.pivot_offset = _clear_card.size * 0.5
 	_front(_clear_view)
 	_clear_view.visible = true
-	_clear_view.modulate.a = 0.0
-	_clear_view.pivot_offset = Vector2(Grid.BG) * 0.5
-	_clear_view.scale = Vector2(0.82, 0.82)
-	var tw := create_tween()
-	tw.tween_property(_clear_view, "modulate:a", 1.0, 0.12)
-	tw.parallel().tween_property(_clear_view, "scale", Vector2.ONE, 0.26) 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_interval(CLEAR_HOLD - 0.62)
-	tw.tween_property(_clear_view, "modulate:a", 0.0, 0.24)
-	tw.tween_callback(func() -> void: _clear_view.visible = false)
+	_clear_card.modulate.a = 0.0
+	_clear_card.scale = Vector2(0.96, 0.96)
+	# 문장이 길면 표시만 더 유지한다. 전투의 기존 CLEAR_HOLD/보상 시점은 바꾸지 않는다.
+	var hold := maxf(CLEAR_HOLD, minf(4.0, 1.5 + float(_clear_sub.get_line_count()) * 0.4))
+	_clear_tween = _clear_card.create_tween()
+	_clear_tween.tween_property(_clear_card, "modulate:a", 1.0, 0.18)
+	_clear_tween.parallel().tween_property(_clear_card, "scale", Vector2.ONE, 0.18) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_clear_tween.tween_interval(hold - 0.4)
+	_clear_tween.tween_property(_clear_card, "modulate:a", 0.0, 0.22)
+	_clear_tween.tween_callback(func() -> void: _clear_view.visible = false)
+	Ui.pulse(_clear_crest, Color(1.3, 1.18, 0.9))
 
 
 # 제목·확인 문구를 열어 뒀다 — 재화 안내가 이 창을 그대로 빌려 쓴다(2026-09-02).
@@ -2695,6 +2981,7 @@ func _show_reward(title: String, entries: Array) -> void:
 	var reward_h := 56.0 + float(rows) * REWARD_CELL.y + float(rows - 1) * 8.0 + 16.0
 	_reward_panel.size = Vector2(DLG_W, reward_h)
 	_reward_hint.position.y = 320.0 + reward_h + 12.0
+	_reward_hint.text = "빈 곳을 눌러 닫기"
 	for i in entries.size():
 		var e: Dictionary = entries[i]
 		var r := floori(float(i) / float(per))
@@ -2730,6 +3017,7 @@ func _show_reward(title: String, entries: Array) -> void:
 			sub.text = str(e["sub"])
 			sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_reward_row.add_child(cell)
+		Ui.pulse(cell.get_child(0) as Control, Color(1.3, 1.18, 0.88))
 	_front(_reward_view)
 	_reward_view.visible = true
 
@@ -2739,7 +3027,7 @@ func _mk_label(pos: Vector2, size: int, col: Color) -> Label:
 	l.position = pos
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
-	l.add_theme_constant_override("outline_size", 4)
+	l.add_theme_constant_override("outline_size", 2 if size >= Type.SIZE_BODY else 1)
 	l.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.05, 0.95))
 	_hud_root.add_child(l)
 	return l
@@ -2804,7 +3092,7 @@ func _panel_label(parent: Control, pos: Vector2, size: int, col: Color,
 	l.position = pos
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
-	l.add_theme_constant_override("outline_size", 4)
+	l.add_theme_constant_override("outline_size", 2 if size >= Type.SIZE_BODY else 1)
 	l.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.05, 0.95))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if width > 0.0:
@@ -3707,7 +3995,7 @@ func _build_skill_view(root: Control) -> void:
 	var bw := (CONTENT_W - 36.0) / 4.0
 	var by := CONTENT_BOTTOM - 38.0
 	# 프리셋은 전용 화면이다 — 버튼 하나만 둔다(사장님: 인라인 줄은 불친절).
-	var preset_btn := Ui.button("프리셋", Vector2(PAD, by - 42.0),
+	var preset_btn := Ui.button("추천 편성 · 프리셋", Vector2(PAD, by - 42.0),
 		Vector2(CONTENT_W, 34.0), Type.SIZE_SMALL)
 	preset_btn.pressed.connect(_open_presets)
 	_skill_view.add_child(preset_btn)
@@ -3769,6 +4057,12 @@ func _stat_row(key: String, disp: String, icon: String) -> Control:
 	row.custom_minimum_size = Vector2(CONTENT_W - Ui.SCROLL_W, ROW_H)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var w := CONTENT_W - Ui.SCROLL_W
+	var divider := ColorRect.new()
+	divider.color = Color(0.24, 0.26, 0.32, 0.65)
+	divider.position = Vector2(0.0, ROW_H - 1.0)
+	divider.size = Vector2(w, 1.0)
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(divider)
 
 	var ic := Ui.icon("res://assets/ui/%s.png" % icon, Vector2(0, (ROW_H - 56.0) * 0.5), 56.0)
 	row.add_child(ic)
@@ -3854,13 +4148,13 @@ func _skill_unknown_card(rarity: Dictionary, shape := "") -> Control:
 	nm.text = "%s · 미획득" % str(rarity["name"])
 	# **잠김은 신화뿐이다**(2026-09-01 사장님 — 형태별 천장은 하루 만에 폐기).
 	# 커먼~레전더리 미획득 칸은 전부 "뽑으면 나온다"가 맞는 말이 됐다.
-	# 문구는 뭘 세는지 그대로: "격 레벨합 87/200". "숙련" 같은 은어는 금지 —
+	# 문구는 뭘 세는지 그대로: "격 레전더리 8/10". "숙련" 같은 은어는 금지 —
 	# 실제로 사장님이 못 알아들었다.
 	if str(rarity["key"]) == "mythic" and shape != "":
-		var now := SkillDefs.shape_mastery(shape, skill_owned)
+		var mp := SkillDefs.mythic_progress(shape, skill_owned)
 		q.text = "잠김"
-		nm.text = "%s 레벨합 %d/%d" % [str(SkillDefs.SHAPES[shape]["name"]),
-			now, SkillDefs.MYTHIC_NEED]
+		nm.text = "%s 레전더리 %d/%d" % [str(SkillDefs.SHAPES[shape]["name"]),
+			int(mp[0]), int(mp[1])]
 		# 누르면 안내 줄이 풀어 말한다 — 칸이 좁아 문장은 여기 못 싣는다.
 		var why := Button.new()
 		why.flat = true
@@ -3869,9 +4163,9 @@ func _skill_unknown_card(rarity: Dictionary, shape := "") -> Control:
 		var shape_name := str(SkillDefs.SHAPES[shape]["name"])
 		var mythic_name := SkillDefs.name_of(SkillDefs.mythic_key(shape))
 		why.pressed.connect(func() -> void:
-			_skill_info.text = "%s 스킬들의 레벨 합이 %d이 되면 신화 %s을 얻는다 — 지금 %d" \
-				% [shape_name, SkillDefs.MYTHIC_NEED, mythic_name,
-				SkillDefs.shape_mastery(shape, skill_owned)])
+			var p2 := SkillDefs.mythic_progress(shape, skill_owned)
+			_skill_info.text = "%s 레전더리를 만렙(%d)까지 올리면 신화 %s을 얻는다 — 지금 %d" \
+				% [shape_name, int(p2[1]), mythic_name, int(p2[0])])
 		cell.add_child(why)
 		cell.mouse_filter = Control.MOUSE_FILTER_STOP
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -3903,13 +4197,13 @@ func _skill_card(key: String) -> Control:
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var owned_key := "skill:" + key
 	var shards := int(gacha_shards.get(owned_key, 0))
-	var maxed := lv >= SkillDefs.MAX_LV
+	var maxed := lv >= SkillDefs.max_lv(key)
 	var cost := SkillDefs.shard_cost(lv)
 	var sh := _panel_label(cell, Vector2(0.0, 72.0), Type.SIZE_SMALL,
 		Color(0.98, 0.86, 0.56) if maxed
 		else (Color(0.98, 0.82, 0.42) if shards >= cost else Color(0.62, 0.62, 0.68)),
 		SK_CARD.x, 16.0)
-	sh.text = ("만렙 %d" % SkillDefs.MAX_LV) if maxed \
+	sh.text = ("만렙 %d" % SkillDefs.max_lv(key)) if maxed \
 		else "조각 %d / %d" % [shards, cost]
 	sh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 장착 중인 건 어둡게. 목록에서 "이미 낀 것"이 곧바로 걸러져야 한다.
@@ -4017,7 +4311,7 @@ func _skill_levelable() -> Array[String]:
 	var out: Array[String] = []
 	for key in skill_owned:
 		var lv := int(skill_owned[key])
-		if lv >= SkillDefs.MAX_LV:
+		if lv >= SkillDefs.max_lv(str(key)):
 			continue
 		if int(gacha_shards.get("skill:" + str(key), 0)) >= SkillDefs.shard_cost(lv):
 			out.append(str(key))
@@ -4108,6 +4402,7 @@ func _refresh_growth() -> void:
 		row["name"].add_theme_color_override("font_color",
 			Color(0.95, 0.90, 0.88) if open else Color(0.55, 0.53, 0.58))
 		row["lv"].visible = open
+		row["btn"].tooltip_text = ""
 		if not open:
 			continue
 		if stat_lv(key) >= _stat_cap(key):
@@ -4130,11 +4425,17 @@ func _refresh_growth() -> void:
 				Ui.cost_icon(row["btn"], "res://assets/ui/badge_promo.png")
 			row["btn"].disabled = true
 			continue
-		var cost := _buy_cost(key, _step_for(key))
+		var steps := _step_for(key)
+		# MAX가 0단계이면 다음 1레벨의 실제 가격을 안내한다.
+		var cost := _buy_cost(key, maxi(1, steps))
 		# 상한이 풀리면 아이콘도 돌아와야 한다 — 만렙 분기가 null 로 지운다.
 		Ui.cost_icon(row["btn"], "res://assets/ui/res_blood.png")
-		row["btn"].text = "혈액  %s" % _n(cost, true)
-		row["btn"].disabled = gold < cost
+		row["btn"].text = ("+%s레벨\n%s" % [_comma(steps), _n(cost, true)]) \
+			if steps > 0 else ("혈액 부족\n%s" % _n(cost, true))
+		row["btn"].tooltip_text = "혈액 %s 필요" % _n(cost, true)
+		if gold < cost:
+			row["btn"].tooltip_text += "\n%s 부족" % _n(cost - gold, true)
+		row["btn"].disabled = steps <= 0 or gold < cost
 
 
 # 레벨이 아니라 "그래서 뭐가 되는데"를 보여 준다.
@@ -4456,6 +4757,13 @@ func _bulk_candidates() -> Array[String]:
 				>= GachaDefs.RARITIES.size() - 1:
 			continue
 		if int(gacha_shards.get("gear:" + str(key), 0)) < GearDefs.FUSE_SHARDS:
+			continue
+		# **만렙을 요구하는 등급은 만렙일 때만 후보다**(사장님 2026-09-09:
+		# "장비는 레전더리 조합이 안 되는 버그"). 조각 수만 보고 목록에 올렸더니
+		# 눌러도 _synthesize 가 _fuse_needs_max 에서 빈손으로 돌아와 **아무 일도
+		# 안 일어났다** — 조각도 안 줄고 문구도 없었다. _fuse_needs_max 주석이
+		# 경고하던 바로 그 사고("버튼은 눌리는데 아무 일도 안 일어난다")다.
+		if _fuse_needs_max(item):
 			continue
 		if _bulk_tab != "all" and str(item.get("rarity", "common")) != _bulk_tab:
 			continue
@@ -4938,6 +5246,10 @@ func _refresh_gear_detail() -> void:
 	if item.is_empty():
 		_gear_detail.visible = false
 		return
+	var capped := GearDefs.is_max_lv(item)
+	var next_item := item.duplicate(true)
+	if not capped:
+		next_item["lv"] = int(item.get("lv", 0)) + 1
 	for child in _gear_detail.get_children():
 		child.queue_free()
 	_gear_detail.visible = true
@@ -4966,16 +5278,19 @@ func _refresh_gear_detail() -> void:
 	name.text = str(item["name"])
 	var info := _panel_label(_gear_detail, Vector2(234.0, 58.0), Type.SIZE_SMALL,
 		Color(0.82, 0.80, 0.86), 306.0, 20.0)
-	info.text = "%s · 레벨 %d · 보유 %d개" % [rarity["name"], int(item.get("lv", 0)),
-		int(item.get("copies", 1))]
+	info.text = "%s · 레벨 %d/%d" % [rarity["name"], int(item.get("lv", 0)), GearDefs.max_lv(item)]
 	var stat := str(item.get("stat", "damage"))
-	var effect := _panel_label(_gear_detail, Vector2(234.0, 86.0), Type.SIZE_MID,
+	var effect := _panel_label(_gear_detail, Vector2(234.0, 86.0), Type.SIZE_SMALL,
 		Color(0.96, 0.82, 0.56), 306.0, 24.0)
-	effect.text = "장착  %s +%s" % [GearDefs.STAT_NAME[stat], _n(GearDefs.power(item))]
-	var owned := _panel_label(_gear_detail, Vector2(234.0, 114.0), Type.SIZE_MID,
+	effect.text = "장착  " + _gear_gain_line(item)
+	if not capped and GearDefs.power(item) > 0.0:
+		effect.text += " · 다음 +%.2f%%" % ((GearDefs.power(next_item) / GearDefs.power(item) - 1.0) * 100.0)
+	var owned := _panel_label(_gear_detail, Vector2(234.0, 114.0), Type.SIZE_SMALL,
 		Color(0.62, 0.88, 0.70), 306.0, 24.0)
-	owned.text = "보유  %s +%.1f%%" % [GearDefs.STAT_NAME[stat],
+	owned.text = "보유  %s +%.2f%%" % [GearDefs.STAT_NAME[stat],
 		GearDefs.collection_rate(item) * 100.0]
+	if not capped:
+		owned.text += " → +%.2f%%" % (GearDefs.collection_rate(next_item) * 100.0)
 	# 무기 특성 — 스킬의 rule_text 와 같은 이유로 적는다: 안 적으면 없는 규칙이다.
 	# **아래 전폭 줄에 적는다**(사장님 2026-09-04 스크린샷). 오른쪽 칸(y 18~228)은
 	# 자원 다섯 칸이 146~220 을 이미 다 쓰고 있어서, 142 에 끼워 넣은 특성 줄이
@@ -4988,15 +5303,18 @@ func _refresh_gear_detail() -> void:
 	var pity_left := maxi(1, GearDefs.fuse_pity(item)
 		- int(fuse_pity.get(str(item.get("rarity", "common")), 0)))
 	var up_cost0 := GearDefs.upgrade_cost(item)
+	var up_shards := GearDefs.upgrade_shards(item) if not capped else 0
 	var resource_values := [
-		["조각 %d/%d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
+		[("조각 %d개" % shards) if highest else "조각 %d/%d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
 		["-" if highest else "성공 %d%%" % int(GearDefs.fuse_rate(item) * 100.0),
 			Color(0.68, 0.82, 1.0)],
 		["-" if highest else "확정까지 %d회" % pity_left, Color(0.82, 0.80, 0.86)],
-		["최고 등급" if highest else "조합 가능" if shards >= GearDefs.FUSE_SHARDS \
-			else "조합 대기", Color(rarity["col"])],
-		["연마석 %s / %s" % [_n(whet), _n(up_cost0, true)],
+		["최고 등급" if highest else "만렙 후 조합" if _fuse_needs_max(item) \
+			else "조합 가능" if _gear_can_fuse(_gear_selected_key) else "조합 대기", Color(rarity["col"])],
+		["강화 완료" if capped else "연마석%s/%s" % [_n_int(whet), _n(up_cost0, true)],
 			Color(0.68, 0.86, 0.72) if whet >= up_cost0 else Color(0.86, 0.62, 0.58)],
+		["강화 조각 %d/%d" % [shards, up_shards] if up_shards > 0 else "조각 소모 없음",
+			Color(0.86, 0.62, 0.58) if shards < up_shards else Color(0.72, 0.72, 0.78)],
 	]
 	for i in resource_values.size():
 		var row := i / 2
@@ -5023,33 +5341,29 @@ func _refresh_gear_detail() -> void:
 	_gear_detail.add_child(equip_button)
 	# 조합은 **전체 화면 조합 창**에서만 한다(사장님 2026-08-25) — 자리가
 	# 둘이면 어느 쪽이 진짜인지 흐려진다. 여기는 레벨업이다.
-	var synth_button := Ui.button("레벨업",
+	var synth_button := Ui.button("최대 레벨" if capped else "레벨업",
 		Vector2(130.0, 264.0), Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	Ui.cost_icon(synth_button, "res://assets/items/gem.png", 16)
-	synth_button.disabled = whet < up_cost0
+	synth_button.name = "GearUpgradeButton"
+	synth_button.disabled = not _gear_can_level(_gear_selected_key)
 	synth_button.pressed.connect(_level_up_selected)
 	_gear_detail.add_child(synth_button)
-	# 재련 — 무기만. 줄(특성)을 다음으로 한 칸 돌린다. 되돌릴 수 없으니 묻는다.
-	var nspec: Array = GearDefs.next_lane_spec(item)
-	if not nspec.is_empty():
-		var rcost := GearDefs.reforge_cost(item)
-		var reforge := Ui.button("재련", Vector2(238.0, 264.0),
-			Vector2(100.0, 44.0), Type.SIZE_SMALL)
-		Ui.cost_icon(reforge, "res://assets/items/gem.png", 16)
-		reforge.disabled = whet < rcost
-		var cur_t := GearDefs.trait_text(GearDefs.trait_of(item))
-		var nxt_t := GearDefs.trait_text(GearDefs.trait_of(
-			{"slot": "weapon", "rarity": str(item.get("rarity", "common")),
-			"icon": str(nspec[0])}))
-		reforge.pressed.connect(func() -> void:
-			_ask("%s → %s\n\n%s\n→ %s\n\n연마석 %s · 등급·레벨·조각은 그대로"
-				% [str(item["name"]), str(nspec[1]), cur_t, nxt_t, _n(rcost, true)],
-				_reforge_selected, "재련", "재련"))
-		_gear_detail.add_child(reforge)
 	var close := Ui.button("닫기", Vector2(454.0, 264.0),
 		Vector2(100.0, 44.0), Type.SIZE_SMALL)
 	close.pressed.connect(func() -> void: _gear_detail.visible = false)
 	_gear_detail.add_child(close)
+	var upgrade_hint := _panel_label(_gear_detail, Vector2(22.0, 318.0), Type.SIZE_SMALL,
+		Color(0.72, 0.82, 0.76), 532.0, 24.0)
+	upgrade_hint.name = "GearUpgradeHint"
+	upgrade_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if capped:
+		upgrade_hint.text = "최대 레벨 · 조합으로 다음 등급에 도전" if not highest else "최대 레벨 · 강화 완료"
+	elif shards < up_shards:
+		upgrade_hint.text = "강화 조각 %d개 부족 · 같은 장비를 소환하면 조각을 얻습니다" % (up_shards - shards)
+	elif whet < up_cost0:
+		upgrade_hint.text = "연마석 %s 부족 · 제련의 성소에서 획득" % _n(up_cost0 - whet, true)
+	else:
+		upgrade_hint.text = "%d → %d레벨 · 장착·보유 효과가 함께 상승" % [int(item.get("lv", 0)), int(next_item["lv"])]
 
 
 # 장착 중인 장비는 분해하지 않는다 — 지금 입고 있는 걸 녹이면 전투력이 말없이 떨어진다.
@@ -5085,55 +5399,6 @@ func _level_up_selected() -> void:
 		eq["inventory_key"] = _gear_selected_key
 		equipped[slot] = eq
 	_apply_hp_growth(old_max)
-	_refresh_gear_slots()
-	_refresh_gear_inventory()
-	_refresh_gear_detail()
-	_refresh_hud()
-	_save_game()
-
-
-# 재련 — 고른 무기의 줄을 다음 줄로. 등급·레벨·조각·장착은 그대로 따라간다.
-# 보관함 키가 icon 이라 **키가 바뀐다** — 승급(_synthesize_selected)이 이미
-# 하는 옮기기를 그대로 한다. 다만 승급과 달리 옛 종을 남기지 않는다: 이건
-# 새 등급이 생기는 게 아니라 같은 무기가 모양을 바꾸는 것이다.
-func _reforge_selected() -> void:
-	var old_key := _gear_selected_key
-	var item: Dictionary = gear_inventory.get(old_key, {})
-	var spec: Array = GearDefs.next_lane_spec(item)
-	if spec.is_empty():
-		return
-	var cost := GearDefs.reforge_cost(item)
-	if whet < cost:
-		return
-	var new_key := str(spec[0])
-	if new_key == old_key:
-		return
-	whet -= cost
-	gear_inventory.erase(old_key)
-	item["icon"] = new_key
-	item["name"] = str(spec[1])
-	var slot := str(item["slot"])
-	var was_equipped := str(equipped.get(slot, {}).get("inventory_key", "")) == old_key
-	# 조각도 따라간다 — 조각은 "이 무기의 것"이지 "이 줄의 것"이 아니다.
-	var old_sh := "gear:" + old_key
-	var new_sh := "gear:" + new_key
-	var sh := int(gacha_shards.get(old_sh, 0))
-	gacha_shards.erase(old_sh)
-	if gear_inventory.has(new_key):
-		# 그 줄을 이미 갖고 있으면 한 묶음으로 합친다(승급과 같은 규칙).
-		var existing: Dictionary = gear_inventory[new_key]
-		existing["copies"] = int(existing.get("copies", 1)) + int(item.get("copies", 1))
-		existing["lv"] = maxi(int(existing.get("lv", 0)), int(item.get("lv", 0)))
-		item = existing
-	else:
-		gear_inventory[new_key] = item
-	gacha_shards[new_sh] = int(gacha_shards.get(new_sh, 0)) + sh
-	gacha_owned[new_sh] = true
-	if was_equipped:
-		var eq := item.duplicate(true)
-		eq["inventory_key"] = new_key
-		equipped[slot] = eq
-	_gear_selected_key = new_key
 	_refresh_gear_slots()
 	_refresh_gear_inventory()
 	_refresh_gear_detail()
@@ -5703,6 +5968,7 @@ func _receive_gacha_gear(rarity_key: String, slot_in := "") -> Dictionary:
 	var owned_key := "gear:" + str(item["icon"])
 	var inventory_key := str(item["icon"])
 	var stored: Dictionary = gear_inventory.get(inventory_key, {})
+	var is_new := stored.is_empty()
 	if not stored.is_empty():
 		gacha_shards[owned_key] = int(gacha_shards.get(owned_key, 0)) + 1
 		var copies := int(stored.get("copies", 1)) + 1
@@ -5716,7 +5982,14 @@ func _receive_gacha_gear(rarity_key: String, slot_in := "") -> Dictionary:
 		stored = item.duplicate(true)
 	gear_inventory[inventory_key] = stored
 	_apply_hp_growth(old_max)
-	return item
+	# Receipt belongs to this pull, not the save: repeated cards retain their own progress.
+	var out := stored.duplicate(true)
+	out["kind"] = "gear"
+	out["receipt"] = {"new": is_new, "shard_gain": 0 if is_new else 1,
+		"shards": int(gacha_shards.get(owned_key, 0)), "fuse_ready": _gear_can_fuse(inventory_key),
+		"can_fuse": GachaDefs.rarity_index(str(stored["rarity"])) < GachaDefs.RARITIES.size() - 1,
+		"needs_max": _fuse_needs_max(stored)}
+	return out
 
 
 # 굴린 등급 안에서 **형태만** 랜덤이다. 등급은 소환 확률이 이미 정했고, 그 안에서
@@ -5762,7 +6035,8 @@ func _receive_gacha_skill(rarity_key: String) -> Dictionary:
 	var shape: String = SkillDefs.SHAPE_ORDER[randi() % SkillDefs.SHAPE_ORDER.size()]
 	var key := SkillDefs.key_of(shape, rarity_key)
 	var owned_key := "skill:" + key
-	if skill_owned.has(key):
+	var is_new := not skill_owned.has(key)
+	if not is_new:
 		# 중복은 조각. 장비와 같은 규칙이라 따로 배울 게 없다.
 		gacha_shards[owned_key] = int(gacha_shards.get(owned_key, 0)) + 1
 	else:
@@ -5770,8 +6044,13 @@ func _receive_gacha_skill(rarity_key: String) -> Dictionary:
 		gacha_owned[owned_key] = true
 		if skill_auto_equip:
 			_auto_equip_skills()
+	var shards := int(gacha_shards.get(owned_key, 0))
+	var can_fuse := not SkillDefs.promote_key(key).is_empty()
 	return {"kind": "skill", "key": key, "name": SkillDefs.name_of(key),
-		"rarity": rarity_key, "icon": SkillDefs.icon_path(key)}
+		"rarity": rarity_key, "icon": SkillDefs.icon_path(key), "lv": int(skill_owned[key]),
+		"receipt": {"new": is_new, "shard_gain": 0 if is_new else 1, "shards": shards,
+			"can_fuse": can_fuse, "fuse_ready": can_fuse and shards >= GearDefs.FUSE_SHARDS,
+			"needs_max": false}}
 
 
 # ── 스킬 상세보기 ──────────────────────────────────────────────────────────
@@ -5863,7 +6142,7 @@ func _refresh_skill_detail() -> void:
 	var cost := SkillDefs.shard_cost(lv)
 	var next := SkillDefs.promote_key(key)
 	var rows := [
-		[("만렙 %d" % SkillDefs.MAX_LV) if lv >= SkillDefs.MAX_LV
+		[("만렙 %d" % SkillDefs.max_lv(key)) if lv >= SkillDefs.max_lv(key)
 			else "조각 %d / %d" % [shards, cost], Color(0.82, 0.80, 0.86)],
 		["장착 중" if skill_equipped.has(key) else "미장착", col],
 		["조합 %d / %d" % [shards, GearDefs.FUSE_SHARDS], Color(0.72, 0.72, 0.78)],
@@ -5961,7 +6240,8 @@ func _refresh_chest() -> void:
 	# 상자 아래 글자는 뺐다 — 얼마인지는 눌러서 받을 때 알림으로 뜬다.
 	# 전면 판 탭에서는 안 보인다 — 전투 화면 소품이라 판 위에 떠 버린다(실측).
 	# 레이드 중에도 안 보인다 — 그 화면은 보스 정보만 남는다(레퍼런스).
-	_chest_btn.visible = chest_gold > 0.0 and _tab not in FULL_TABS and not _in_raid()
+	_chest_btn.visible = (chest_gold > 0.0 or chest_exp > 0.0 or chest_crystal > 0.0) \
+		and _tab not in FULL_TABS and not _in_raid()
 
 
 # 방치 보상은 **팝업으로 편다** (사장님 + 레퍼런스 "방치 보상" 창): 한 줄
@@ -5972,34 +6252,64 @@ func _refresh_chest() -> void:
 # 경험치·혈정은 그 시간의 시세로 같이 친다. 없는 재화는 줄을 안 만든다 —
 # 빈 칸이 늘어선 창은 "많이 받았다"가 아니라 "뭘 못 받았다"로 읽힌다.
 func _claim_chest() -> void:
-	if chest_gold <= 0.0:
+	if chest_gold <= 0.0 and chest_exp <= 0.0 and chest_crystal <= 0.0:
 		return
 	_quest_bump("chest")
-	var hours := chest_minutes / 60.0
+	var old_level := hero_lv
 	# 키는 **"label"** 이다(_show_reward). "text" 로 넣었더니 숫자가 통째로
 	# 안 뜨고 아이콘만 셋 남았다(실측).
-	var entries := [{"icon": "res://assets/ui/res_blood.png",
-		"label": _n(chest_gold), "sub": "혈액"}]
+	var entries: Array = []
+	if chest_gold > 0.0:
+		entries.append({"icon": "res://assets/ui/res_blood.png",
+			"label": _n(chest_gold), "sub": "혈액"})
 	gold += chest_gold
 	# 경험치 — 방치 동안 잡은 몫. 접속 중과 같은 시세에 방치 효율(IDLE_EFF).
-	var xp := _offline_exp(chest_minutes)
+	var xp := chest_exp
 	if xp > 0.0:
 		_gain_exp(xp)
 		entries.append({"icon": "res://assets/items/gem.png",
 			"label": _n(xp), "sub": "경험치"})
 	# 혈정은 _grant_offline 이 이미 지갑에 넣었다 — 여기서는 **보여만 준다**.
 	# 두 번 주면 소탕이 두 배가 된다.
-	if dungeon_best > 0 and hours > 0.0:
+	if chest_crystal > 0.0:
 		entries.append({"icon": "res://assets/ui/res_crystal.png",
-			"label": _n(hours * _sweep_per_hour() * 0.5), "sub": "혈정"})
+			"label": _n(chest_crystal), "sub": "혈정 · 지급됨"})
 	_show_reward("방치 보상 — %d분" % int(chest_minutes), entries)
+	if _reward_hint:
+		var summary: Array[String] = []
+		if chest_stages > 0:
+			summary.append("진행 +%d구간" % chest_stages)
+		if hero_lv > old_level:
+			summary.append("레벨 +%d" % (hero_lv - old_level))
+		summary.append("빈 곳을 눌러 닫기")
+		_reward_hint.text = " · ".join(summary)
+		# 성장 요약은 방치 보상창의 바닥에 담아 뒤 강화 행의 글자와 겹치지 않게 한다.
+		_reward_panel.size.y += 32.0
+		_reward_hint.position.y = _reward_panel.position.y + _reward_panel.size.y - 28.0
 	# 상자가 열리는 순간을 눈으로 잡아 준다 — 사라지기만 하면 눌렀는지 모른다.
-	_anim_fx("fx_hit", _chest_btn.position + Vector2(CHEST_BOX * 0.5, CHEST_BOX * 0.5),
-		16.0, 2.0)
+	if _chest_btn:
+		_anim_fx("fx_hit", _chest_btn.position + Vector2(CHEST_BOX * 0.5, CHEST_BOX * 0.5),
+			16.0, 2.0)
 	chest_gold = 0.0
 	chest_minutes = 0.0
+	chest_exp = 0.0
+	chest_crystal = 0.0
+	chest_stages = 0
 	_refresh_chest()
 	_save_game()
+
+
+# 방치와 시간 왜곡은 같은 적립 경로를 쓴다. 혈정은 기존대로 즉시 지급한다.
+func _accrue_chest(minutes: float) -> void:
+	if minutes <= 0.0:
+		return
+	chest_gold += blood_per_sec() * minutes * 60.0
+	chest_minutes += minutes
+	chest_exp += _offline_exp(minutes)
+	if dungeon_best > 0:
+		var earned := minutes / 60.0 * _sweep_per_hour() * 0.5
+		crystal += earned
+		chest_crystal += earned
 
 
 # 자리를 비운 동안의 경험치. 처치 수 x 마리당 경험치 — 혈액과 같은 모델이다.
@@ -6120,11 +6430,10 @@ func _build_goal_widget() -> void:
 	_goal_widget.add_child(_goal_dot)
 
 
-# 카드를 눌렀을 때. **깼을 때만 반응한다** — 받고, 보상 창을 띄우고, 다음 가이드가
-# 그 자리에 올라온다. 아직이면 아무 일도 없다(예전엔 목록 창이 열렸는데 그 창이
-# 지워 달라던 바로 그 창이다).
+# 완료하면 하나씩 수령하고, 진행 중이면 목표를 수행할 기존 화면으로 이동한다.
 func _on_goal_card_pressed() -> void:
 	if not _goal_ready():
+		_go_to_goal()
 		return
 	var q := GoalDefs.quest(goal_index)
 	var got := _claim_goal()
@@ -6132,6 +6441,22 @@ func _on_goal_card_pressed() -> void:
 		_show_reward("보상 획득", [{"icon": "res://assets/ui/res_gem.png",
 			"label": "보석 +%s" % _n(got),
 			"sub": GoalDefs.label(str(q["kind"]), int(q["step"]))}])
+
+
+func _go_to_goal() -> void:
+	match str(GoalDefs.quest(goal_index)["kind"]):
+		"damage_lv":
+			_select_tab("growth")
+			_set_growth_mode("stat")
+		"pulls":
+			_select_tab("summon")
+		"knowledge":
+			_boss_cut_clear()
+			_front(_codex_view)
+			_codex_view.visible = true
+			_codex_set_mode("foe")
+		_:
+			_select_tab("home")
 
 
 func _refresh_goal_widget() -> void:
@@ -6162,6 +6487,8 @@ func _refresh_goal_widget() -> void:
 	_goal_widget_fill.size.x = _goal_bar_width \
 		* clampf(float(now) / maxf(1.0, float(need)), 0.0, 1.0)
 	_goal_dot.visible = done
+	_goal_widget.tooltip_text = "눌러서 보상 받기" if done \
+		else "눌러서 목표 화면으로 이동 · 사냥 목표는 전투로 진행"
 
 
 # ── 성장 가이드 ────────────────────────────────────────────────────────────
@@ -6220,16 +6547,16 @@ func _claim_goal() -> float:
 
 # 조각으로 스킬 레벨을 올린다. 장비 강화가 정수를 쓰듯 스킬은 조각을 쓴다 —
 # 재화를 새로 만들지 않는다.
-# 신화 지급 — 형태 레벨합이 문턱에 닿는 순간 완성형으로 준다.
+# 신화 지급 — 그 형태의 레전더리가 만렙이 되는 순간 완성형으로 준다.
 # 호출처는 레벨이 오르는 자리(레벨업)와 로드(옛 저장본 소급) 둘이다.
 func _check_mythic() -> void:
 	for shape in SkillDefs.SHAPE_ORDER:
 		var mk := SkillDefs.mythic_key(str(shape))
 		if skill_owned.has(mk):
 			continue
-		if SkillDefs.shape_mastery(str(shape), skill_owned) < SkillDefs.MYTHIC_NEED:
+		if not SkillDefs.mythic_ready(str(shape), skill_owned):
 			continue
-		skill_owned[mk] = SkillDefs.MAX_LV
+		skill_owned[mk] = SkillDefs.max_lv(mk)
 		gacha_owned["skill:" + mk] = true
 		if skill_auto_equip:
 			_auto_equip_skills()
@@ -6243,7 +6570,7 @@ func _level_up_skill(key: String) -> bool:
 		return false
 	var owned_key := "skill:" + key
 	var lv := int(skill_owned[key])
-	if lv >= SkillDefs.MAX_LV:
+	if lv >= SkillDefs.max_lv(key):
 		return false
 	var cost := SkillDefs.shard_cost(lv)
 	if int(gacha_shards.get(owned_key, 0)) < cost:
@@ -6320,6 +6647,23 @@ func _price_bit(row: Control, icon_path: String, txt: String) -> void:
 		lb.text = txt
 
 
+func _gacha_gain_lines(item: Dictionary) -> Array[String]:
+	var receipt: Dictionary = item.get("receipt", {})
+	if receipt.is_empty():
+		return []
+	if bool(receipt["new"]):
+		return ["신규 획득", "보유 +%s%%" % ("%.1f" % (GearDefs.collection_rate(item) * 100.0)).trim_suffix(".0")
+			if item.get("kind", "") == "gear" else "스킬 해금"]
+	var progress := "보유 %s개" % _n_int(float(receipt["shards"]))
+	if bool(receipt["fuse_ready"]):
+		progress = "조합 가능"
+	elif bool(receipt["needs_max"]):
+		progress = "만렙 후 조합"
+	elif bool(receipt["can_fuse"]):
+		progress = "조합 %s/%d" % [_n_int(float(receipt["shards"])), GearDefs.FUSE_SHARDS]
+	return ["조각 +%d" % int(receipt["shard_gain"]), progress]
+
+
 func _show_gacha_results(items: Array[Dictionary]) -> void:
 	if not _gacha_reveal:
 		return
@@ -6340,6 +6684,7 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# 30·50연은 카드가 판을 넘는다 — 여럿이면 스크롤 통에 담는다(사장님 2026-08-25).
 	var grid2: Control = null
+	var card_step := 148.0 if _gacha_kind in GearDefs.SLOTS or _gacha_kind == "skill" else 100.0
 	if items.size() > 1:
 		var scroll2 := ScrollContainer.new()
 		scroll2.position = Vector2(0.0, 48.0)
@@ -6348,7 +6693,7 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 		_gacha_reveal.add_child(scroll2)
 		grid2 = Control.new()
 		grid2.custom_minimum_size = Vector2(PANEL_W - 16.0,
-			float((items.size() + 4) / 5) * 100.0 + 8.0)
+			float((items.size() + 4) / 5) * card_step + 8.0)
 		scroll2.add_child(grid2)
 	var cards: Array[Control] = []
 	for i in items.size():
@@ -6358,8 +6703,8 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 		var one := items.size() == 1
 		var card := Control.new()
 		card.position = Vector2(232.0, 56.0) if one else \
-			Vector2(48.0 + float(i % 5) * 100.0, 6.0 + float(i / 5) * 100.0)
-		card.size = Vector2(112.0, 160.0) if one else Vector2(80.0, 96.0)
+			Vector2(48.0 + float(i % 5) * 100.0, 6.0 + float(i / 5) * card_step)
+		card.size = Vector2(112.0, 212.0) if one else Vector2(80.0, card_step - 4.0)
 		if one:
 			_gacha_reveal.add_child(card)
 		else:
@@ -6403,6 +6748,14 @@ func _show_gacha_results(items: Array[Dictionary]) -> void:
 				Color(rarity["col"]), 80.0, 20.0)
 			label.text = str(rarity["name"])
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var gain_lines := _gacha_gain_lines(item)
+		for line in gain_lines.size():
+			var gain := _panel_label(card,
+				Vector2(-24.0 if one else -8.0, (158.0 if one else 96.0) + float(line) * 24.0),
+				Type.SIZE_SMALL, Color(0.72, 0.94, 0.76), 160.0 if one else 96.0, 24.0)
+			gain.name = "Gain%d" % line
+			gain.text = gain_lines[line]
+			gain.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cards.append(card)
 	# **버튼 둘이다** (사장님 2026-08-13): 예전엔 장비 소환에 "보관함 확인" 하나뿐이라
 	# 연달아 뽑으려면 보관함에 들렀다가 되돌아와야 했다. 창을 닫기만 하는 "확인"과
@@ -7121,7 +7474,7 @@ func _codex_row(key: String) -> Control:
 	mark.position = Vector2(0, 2.0)
 	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(mark)
-	var ic := Ui.icon(FoeTiers.sprite_of(key), Vector2(6.0, 4.0 + _sprite_drop(key)),
+	var ic := Ui.icon(Foe.portrait_path(key, FoeTiers.sprite_of(key)), Vector2(6.0, 4.0 + _sprite_drop(key)),
 		CODEX_ICON)
 	row.add_child(ic)
 	# 두 줄(숙련 / 처치 수)을 아이콘 오른쪽에 **세로 가운데로 모은다.** 6/32 로
@@ -7149,7 +7502,7 @@ func _select_codex(key: String) -> void:
 # 그대로 가운데 정렬하면 글자와의 간격이 칸마다 달라 보인다. 실제 그림의 아래끝을
 # 한 줄에 맞추려고 그만큼 내린다. 22장뿐이라 시작할 때 한 번 재면 된다.
 func _sprite_drop(key: String) -> float:
-	var tex := Assets.tex(FoeTiers.sprite_of(key))
+	var tex := Assets.tex(Foe.portrait_path(key, FoeTiers.sprite_of(key)))
 	if tex == null:
 		return 0.0
 	var used := tex.get_image().get_used_rect()
@@ -7197,7 +7550,7 @@ func _refresh_codex_detail() -> void:
 	var seen := n > 0
 	var tier := FoeTiers.get_tier(key)
 	_codex_detail["name"].text = str(tier["name"]) if seen else "???"
-	_codex_detail["big"].texture = Assets.tex(FoeTiers.sprite_of(key))
+	_codex_detail["big"].texture = Assets.tex(Foe.portrait_path(key, FoeTiers.sprite_of(key)))
 	_codex_detail["big"].modulate = Color(1, 1, 1) if seen else Color(0, 0, 0, 0.55)
 	var level := FoeTiers.codex_level(n)
 	# "지식"은 도감 합계(전역 보상)의 말이고, 종별 단계는 참고작처럼 "숙련"이다 —
@@ -7356,6 +7709,13 @@ func _build_tabbar() -> void:
 	# 배경·테두리는 장비 탭과 동일하게(사장님 2026-08-18) — 표준 판 텍스처.
 	_board.add_child(Ui.panel(Vector2(0.0, VIEW_BOTTOM),
 		Vector2(Grid.BG.x, Grid.BG.y - VIEW_BOTTOM)))
+	var heading := _panel_label(_board, Vector2(PAD, 424.0), Type.SIZE_SMALL,
+		Color("edf0f7"), 240.0, 22.0)
+	heading.text = "장착 스킬"
+	var auto_hint := _panel_label(_board, Vector2(312.0, 424.0), Type.SIZE_SMALL,
+		Color("9cc5ba"), 238.0, 22.0)
+	auto_hint.text = "자동 시전 · 남은 재사용 시간"
+	auto_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	# 스킬 줄 — 7칸(기본 6 + 군림이 여는 7번째). 자동 시전이라 누르는 게 아니라
 	# **도는 게 보이는** 줄이다: 쿨다운은 위에서 내려오는 어둠, 시전은 금빛 번쩍.
 	var bcell := 64.0
@@ -7389,6 +7749,24 @@ func _build_tabbar() -> void:
 		pl.focus_mode = Control.FOCUS_NONE
 		_board.add_child(pl)
 		_board_pills.append(pl)
+	_board_goal = _panel_label(_board, Vector2(PAD, 597.0), Type.SIZE_SMALL,
+		Color(1.0, 0.86, 0.55), CONTENT_W, 22.0)
+	_board_goal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_board_tactic = _panel_label(_board, Vector2(PAD, 621.0), Type.SIZE_SMALL,
+		Color(0.82, 0.83, 0.88), CONTENT_W, 44.0)
+	_board_tactic.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var build_btn := Ui.button("편성 바꾸기", Vector2(PAD, 668.0),
+		Vector2((CONTENT_W - 12.0) * 0.5, 34.0), Type.SIZE_SMALL)
+	build_btn.pressed.connect(_open_presets)
+	_board.add_child(build_btn)
+	_board_build_btn = build_btn
+	var grow_btn := Ui.button("성장하기", Vector2(PAD + (CONTENT_W + 12.0) * 0.5, 668.0),
+		Vector2((CONTENT_W - 12.0) * 0.5, 34.0), Type.SIZE_SMALL)
+	grow_btn.pressed.connect(func() -> void:
+		_select_tab("growth")
+		_set_growth_mode("stat"))
+	_board.add_child(grow_btn)
+	_board_growth_btn = grow_btn
 	# 큰 버튼 — 던전에서는 중단, 홈에서는 방치 상자. 장비 탭과 같은 Ui.button.
 	_board_btn = Ui.button("", Vector2((Grid.BG.x - 240.0) * 0.5, 716.0),
 		Vector2(240.0, 56.0), Type.SIZE_MID)
@@ -8123,7 +8501,9 @@ func _refresh_trial() -> void:
 	var n := trial_stage + 1
 	var done := n > TrialDefs.max_stage()
 	var show_n := mini(n, TrialDefs.max_stage())
-	_trial_ui["art"].texture = Assets.tex("res://assets/ui/boss_warden.png")
+	_trial_ui["art"].texture = Assets.tex(Foe.portrait_path("ruin_warden",
+		"res://assets/ui/boss_warden.png"))
+	_trial_ui["art"].stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	# "시련"은 탭이 이미 말한다 — 붙이면 이름이 잘렸다(실측 폭 268).
 	_trial_ui["name"].text = "완주" if done \
 		else "%d단계  ·  유적의 파수꾼" % show_n
@@ -8198,11 +8578,12 @@ func _refresh_rush() -> void:
 	if _rush_ui.is_empty():
 		return
 	# 얼굴은 **다음에 만날 보스** — 도는 중엔 지금 층, 밖에선 최고층 다음(거기서
-	# 막혔다). 본편 보스는 전용 초상이 없어 걷기 첫 장을 빌린다.
+	# 막혔다). 전투에서 쓰는 해당 보스의 새 도트 초상과 일치시킨다.
 	var fl := rush_floor if raid_on == "rush" else rush_best + 1
 	var act: Dictionary = StageDefs.ACTS[(maxi(1, fl) - 1) % StageDefs.ACTS.size()]
-	_rush_ui["art"].texture = Assets.tex(
-		"res://assets/anim/%s_walk/0.png" % str(act["boss_anim"]))
+	_rush_ui["art"].texture = Assets.tex(Foe.portrait_path(str(act["boss_anim"]),
+		"res://assets/anim/%s_walk/0.png" % str(act["boss_anim"])))
+	_rush_ui["art"].stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_rush_ui["name"].text = "%d층  ·  %s" % [fl, str(act["boss_name"])]
 	_rush_ui["best"].text = "최고 %d층" % rush_best
 	var used := rush_date == Time.get_date_string_from_system()
@@ -8447,7 +8828,8 @@ func _refresh_boss() -> void:
 		return
 	_boss_roll()
 	var eb := EventDefs.boss_of(_boss_week_index())
-	_boss_art.texture = Assets.tex(EventDefs.art_path(eb))
+	_boss_art.texture = Assets.tex(Foe.portrait_path(str(eb["anim"]), EventDefs.art_path(eb)))
+	_boss_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_boss_name.text = "%s  ·  %d단계" % [str(eb["name"]), boss_tier]
 	_boss_dmg_lbl.text = "누적 피해 %s" % _n(boss_dmg)
 	# 폭 316px 이라 긴 문장은 잘린다(실측: "넷을 다 받으면 다"). 짧게 쓴다.
@@ -9226,7 +9608,7 @@ func _shop_scroll_view(root: Control) -> Control:
 # 그림 위에 얹는 글자는 전부 이걸 거친다 — 박쥐 문양·별 무늬 위에서 맨 글자가
 # 뭉개졌다(사장님 실측 지적). 외곽선 문법은 수량 라벨과 같다.
 func _shop_outline(l: Label, size := 5) -> void:
-	l.add_theme_constant_override("outline_size", size)
+	l.add_theme_constant_override("outline_size", mini(size, 2 if l.get_theme_font_size("font_size") >= Type.SIZE_BODY else 1))
 	l.add_theme_color_override("font_outline_color", Color(0.08, 0.02, 0.04))
 
 
@@ -9427,7 +9809,7 @@ func _build_shop_wear(view: Control) -> void:
 	for sk in SkinDefs.SKINS:
 		var id := str(sk["id"])
 		var card := _shop_wcard(view, y, str(sk["name"]),
-			"res://assets/anim/%s_idle/0.png" % id, 0)
+			Foe.portrait_path(id, "res://assets/anim/%s_idle/0.png" % id), 0)
 		card["icon"].flip_h = true
 		card["sub"].text = str(sk["desc"])
 		card["btn"].pressed.connect(_wear_click.bind(id))
@@ -9460,7 +9842,7 @@ func _wear_click(id: String) -> void:
 		return
 	gem -= float(sk["price"])
 	skins_owned[id] = true
-	_show_reward("의상 구매", [{"icon": "res://assets/anim/%s_idle/0.png" % id,
+	_show_reward("의상 구매", [{"icon": Foe.portrait_path(id, "res://assets/anim/%s_idle/0.png" % id),
 		"label": str(sk["name"]), "sub": str(sk["desc"])}])
 	_refresh_wear()
 	_refresh_hud()
@@ -10138,10 +10520,7 @@ func _shop_buy(id: String) -> void:
 			# 방치 적립과 **같은 식**(blood_per_sec + 소탕 절반) — 요율이 다르면
 			# 이 상품이 방치의 시세표를 거짓말로 만든다. 지갑이 아니라 상자에
 			# 담는 것도 같은 이유: 눌러 여는 게 방치 보상의 보상이다.
-			chest_gold += blood_per_sec() * ShopDefs.WARP_HOURS * 3600.0
-			chest_minutes += ShopDefs.WARP_HOURS * 60.0
-			if dungeon_best > 0:
-				crystal += ShopDefs.WARP_HOURS * _sweep_per_hour() * 0.5
+			_accrue_chest(ShopDefs.WARP_HOURS * 60.0)
 			_refresh_chest()
 	# 산 것을 보상창으로 편다 — 지갑 숫자만 바뀌면 눌렀는지 모른다(방치 보상과 같은 길).
 	var big := "+1판" if id == "ticket" \
@@ -10698,12 +11077,17 @@ func _select_tab(name: String) -> void:
 	# 원위치는 meta 에 한 번 적어 둔다 — 연타로 트윈이 겹쳐도 늘 제자리로 수렴한다.
 	if switched and _panels.has(name):
 		var p: Control = _panels[name]
+		if p.has_meta("tab_tween"):
+			var previous: Tween = p.get_meta("tab_tween")
+			if previous.is_valid():
+				previous.kill()
 		if not p.has_meta("base_y"):
 			p.set_meta("base_y", p.position.y)
 		var base_y: float = p.get_meta("base_y")
 		p.modulate.a = 0.0
 		p.position.y = base_y + 12.0
 		var tw := create_tween().set_parallel()
+		p.set_meta("tab_tween", tw)
 		tw.tween_property(p, "modulate:a", 1.0, 0.12)
 		tw.tween_property(p, "position:y", base_y, 0.12) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -10711,9 +11095,9 @@ func _select_tab(name: String) -> void:
 		# 선택 안 된 탭은 어둡게. 아이콘이 4개뿐이라 밝기만으로 충분히 읽힌다.
 		# 고른 탭은 살짝 커진다 — 밝기와 크기, 신호 둘이면 곁눈으로도 읽힌다.
 		var m: Control = _tab_btns[key]
-		m.modulate = Color(1, 1, 1) if key == name else Color(0.5, 0.5, 0.55)
+		m.modulate = Color.WHITE if key == name else Color(0.82, 0.84, 0.90)
 		m.pivot_offset = m.size * 0.5
-		m.scale = Vector2(1.06, 1.06) if key == name else Vector2.ONE
+		m.scale = Vector2.ONE
 	if name == "pet":
 		_refresh_pet()
 	elif name == "summon":
@@ -10801,13 +11185,15 @@ func _growth_mode_todo(mode: String) -> bool:
 			var major := StageDefs.major_stage(stage)
 			for st in StatDefs.STATS:
 				var k := str(st["key"])
-				if StatDefs.is_open(k, major, lv) and stat_lv(k) < _stat_cap(k) 				and gold >= _buy_cost(k, _step_for(k)):
+				var steps := _step_for(k)
+				if StatDefs.is_open(k, major, lv) and steps > 0 \
+						and gold >= _buy_cost(k, steps):
 					return true
 		"skill":
 			# 조각이 모인 스킬 — 성장 탭 조건이다. 예전엔 소환 탭 점이 봤는데
 			# 스킬 화면이 성장 탭으로 이사한 뒤로는 엉뚱한 탭을 켜고 있었다.
 			for key in skill_owned:
-				if int(skill_owned[key]) >= SkillDefs.MAX_LV:
+				if int(skill_owned[key]) >= SkillDefs.max_lv(str(key)):
 					continue
 				if int(gacha_shards.get("skill:" + str(key), 0)) \
 						>= SkillDefs.shard_cost(int(skill_owned[key])):
@@ -10982,7 +11368,7 @@ func _stat_cap(key: String) -> int:
 
 # 이번 구매의 실제 단계 수 — 상한 앞에서는 닿을 만큼만.
 func _step_for(key: String) -> int:
-	var room := _stat_cap(key) - stat_lv(key)
+	var room := maxi(0, _stat_cap(key) - stat_lv(key))
 	if buy_step >= 0:
 		return mini(buy_step, room)
 	# MAX — 지갑이 닿는 데까지, 단 상한을 넘지 않는다. **음수는 절대 안 돌려준다**:
@@ -11000,12 +11386,17 @@ func _buy(key: String) -> void:
 	# 상한에서 잘랐다 — 묶음이 상한을 걸치면 바가지였다. 값과 단계 수를 같은
 	# n 으로 묶는다(표시 가격도 _step_for 를 쓴다 — 다른 n 을 쓰면 가격 거짓말).
 	var n := _step_for(key)
+	if n <= 0:
+		return
 	var cost := _buy_cost(key, n)
 	if gold < cost:
 		return
 	var old_max := max_hp()
 	gold -= cost
 	lv[key] = stat_lv(key) + n
+	if _stat_rows.has(key):
+		Ui.pulse(_stat_rows[key]["btn"] as Button,
+			Color(1.12, 1.22, 1.08))
 	_apply_hp_growth(old_max)
 	_quest_bump("train")
 	_save_game()
@@ -11253,16 +11644,13 @@ func _process(delta: float) -> void:
 			# 예전엔 보스를 hero_x+170 에, 사거리를 190 으로 놓고 그려서 캡처가
 			# 실전과 딴판이었다 — 그 그림을 보고 판단하면 틀린다.
 			var demo_boss := hero_x + 59.0
-			_slam_wave(_slam_at_x(str(FoeTiers.slam_theme(_slam_demo)[0]), demo_boss),
+			_slam_wave(demo_boss,
 				412.0, _slam_demo, 1.0)
 	_tick_hero_state(delta)
-	var visual_frozen := _visual_hitstop_t > 0.0
-	_visual_hitstop_t = maxf(0.0, _visual_hitstop_t - delta)
-	_hitstop_cd = maxf(0.0, _hitstop_cd - delta)
 	_immortal_cd = maxf(0.0, _immortal_cd - delta)
 	_shake_cd = maxf(0.0, _shake_cd - delta)
 	var _pf := Time.get_ticks_usec()
-	_tick_motion(0.0 if visual_frozen else delta)
+	_tick_motion(delta)
 	_perf_mark("모션", _pf)
 	queue_redraw()   # 그림자는 몹이 움직일 때마다 다시 그려야 한다
 	_boss_pan_t = maxf(0.0, _boss_pan_t - delta)
@@ -11302,7 +11690,6 @@ func _process(delta: float) -> void:
 	_perf_mark("교전", _pc)
 	for f in foes:
 		if is_instance_valid(f):
-			f.set_visual_frozen(visual_frozen)
 			f.set_combat_active(_phase == "fight" and not _hero_dead)
 			f.engaged = f == _engaged
 			# 영웅 위치를 넘겨 **닿을 때만 휘두르게** 한다. 예전엔 사거리와 무관하게
@@ -11316,6 +11703,7 @@ func _process(delta: float) -> void:
 	_tick_hero_attack(delta, foes)
 	_perf_mark("평타", _pe)
 	_tick_dash(delta)
+	_tick_hero_trail(delta, false)
 	_refresh_hud()
 	# [개발 도구] --gaps : 영웅과 몹이 겹치는 순간만 골라 찍는다.
 	# **눈으로는 "겹쳐 보이네"까지밖에 못 간다.** 얼마나, 어떤 몹과, 걸어오는 중인지
@@ -11411,12 +11799,17 @@ func _mastery_cleave(hit_already: Foe) -> void:
 	if rest.is_empty():
 		return
 	var mid := 0.0
+	var span := 96.0
 	for f in rest:
 		f.take_damage(_combat_damage(f))
 		mid += f.position.x
+		span = maxf(span, absf(f.position.x - hero_x) + f.body_half())
 	mid /= float(rest.size())
-	_anim_fx("fx_cleave_wave", Vector2(mid, ground_y - float(Grid.SPRITE)),
-		16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
+	if Foe.pixel_pilot_ready(skin):
+		_skill_vfx("sweep", Vector2(hero_x, ground_y - 30.0), span)
+	else:
+		_anim_fx("fx_cleave_wave", Vector2(mid, ground_y - float(Grid.SPRITE)),
+			16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
 
 
 # 낀 무기의 특성. 빈 문자열이면 없다. _oath_val 과 같은 문법.
@@ -11445,14 +11838,19 @@ func _cleave_swing(hit_already: Foe) -> void:
 			return a.position.x < b.position.x)
 		rest = rest.slice(0, wcap)
 	var mid := 0.0
+	var span := 96.0
 	for f in rest:
 		f.take_damage(_combat_damage(f))
 		mid += f.position.x
+		span = maxf(span, absf(f.position.x - hero_x) + f.body_half())
 	mid /= float(rest.size())
-	_anim_fx(_summon_cleave if _summon_t > 0.0 and not _summon_cleave.is_empty() \
-		else "fx_cleave_wave",
-		Vector2(mid, ground_y - float(Grid.SPRITE)),
-		16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
+	if Foe.pixel_pilot_ready(skin):
+		_skill_vfx("sweep", Vector2(hero_x, ground_y - 30.0), span)
+	else:
+		_anim_fx(_summon_cleave if _summon_t > 0.0 and not _summon_cleave.is_empty() \
+			else "fx_cleave_wave",
+			Vector2(mid, ground_y - float(Grid.SPRITE)),
+			16.0, 1.6, "sweep", 0, 1.0, hero_face, 1.0)
 
 
 # 평타가 꽂힌 직후 무기 특성이 하는 일. cleave 는 _cleave_swing 이 맡는다.
@@ -11491,9 +11889,10 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 		if _hero_hit_t <= 0.0:
 			_hero_hit_t = -1.0
 			if _can_hit_foe(_pending_target):
+				_pin_hero_impact(_pending_motion)
 				_pending_target.take_damage(_combat_damage(_pending_target))
 				_weapon_on_hit(_pending_target)
-				_anim_fx("fx_cleave", _pending_target.position + Vector2(0, -28), 18.0, 2.0)
+				_combo_fx(_pending_target, _pending_motion)
 				_cleave_swing(_pending_target)
 				# 군림 III — 3연격 마무리는 불멸의 심장과 같은 검기로 광역이 된다.
 				# 새 기계 없음: 버프 광역(_cleave_swing)의 기준을 잠깐 세워 재사용한다.
@@ -11566,6 +11965,7 @@ func _tick_hero_attack(delta: float, foes: Array) -> void:
 	# **임팩트는 그 연격의 그림에서 잰다.** "attack" 으로 고정하면 2·3연격의 뻗는
 	# 순간과 피해 시점이 어긋난다 — 모션마다 뻗는 프레임이 다르다.
 	var swing := _attack_motion()
+	_pending_motion = swing
 	_hero_hit_t = _impact_time(swing, _attack_swing())
 	_pending_target = target
 	# 군림 III(파도베기) — 이 스윙이 3연격 마무리인지 **시작할 때** 기억한다.
@@ -11628,6 +12028,8 @@ func _tick_dash(delta: float) -> void:
 	if fighting and _motion == "dash" and is_equal_approx(hero_x, was):
 		_play("idle")
 	_hero.position.x = hero_x
+	if is_instance_valid(_ward_aura):
+		_ward_aura.position = Vector2(hero_x, ground_y + _ward_aura_y)
 	_pet_follow(delta)
 	# **배경은 영웅이 실제로 움직인 만큼만 흐른다**(PARALLAX 주석 참고). 전투 중에는
 	# 안 흘린다 — 결투의 앞뒤 발놀림까지 따라가면 배경이 좌우로 흔들린다.
@@ -11645,17 +12047,21 @@ func _tick_dash(delta: float) -> void:
 # 그 모션에서 피해가 들어갈 프레임. 그림에서 가장 멀리 뻗은 프레임을 쓴다 —
 # 이유는 Assets.reach_peak_frame 주석에 있다. 그림이 없으면 옛 고정 비율로 떨어진다.
 func _impact_frame(motion: String) -> int:
-	var dir := "res://assets/anim/%s_%s" % [skin, motion]
+	var dir := _hero_motion_dir(motion)
 	var n := Assets.frames(dir).size()
 	if n <= 0:
 		return 0
+	var source := str({"sweep": "attack", "heavy": "attack2", "cast": "attack3"}.get(motion, motion))
+	var combo_index := COMBO_MOTIONS.find(source)
+	if n == 9 and combo_index >= 0 and HERO_CONTACT.has(skin):
+		return int(HERO_CONTACT[skin][combo_index])
 	return Assets.reach_peak_frame(dir, true)
 
 
 # 임팩트 프레임이 화면에 떠 있는 **동안**의 시각. 프레임 f 는
 # [f/n, (f+1)/n) x 길이 구간에 보이므로 그 가운데를 잡는다.
 func _impact_time(motion: String, dur: float) -> float:
-	var dir := "res://assets/anim/%s_%s" % [skin, motion]
+	var dir := _hero_motion_dir(motion)
 	var n := Assets.frames(dir).size()
 	if n <= 0:
 		return dur * IMPACT_RATIO
@@ -11675,7 +12081,9 @@ func _impact_time(motion: String, dur: float) -> float:
 # 기준이라 64 에서 그대로 맞는다.
 func _motion_reach(motion: String) -> float:
 	var dir := "res://assets/anim/%s_%s" % [skin, motion]
-	return Assets.frame_reach(dir, _impact_frame(motion), HERO_DRAW_SCALE, true)
+	# Range remains the authored swing's full envelope. Contact markers change
+	# when damage lands, not the existing stand/reach/collision rules.
+	return Assets.frame_reach(dir, Assets.reach_peak_frame(dir, true), HERO_DRAW_SCALE, true)
 
 
 # 근접 사거리는 **쓰는 근접 모션 중 가장 짧은 것**에 맞춘다. 긴 쪽에 맞추면
@@ -11730,7 +12138,9 @@ const GAP_MAX := 8.0
 # 그 몹을 치려면 서야 할 자리 — 몹 몸통 바로 바깥이다.
 func _strike_spot(foe: Foe) -> float:
 	var gap := foe.body_half() + BODY_HALF
-	return _clear_spot(foe.position.x + (-gap if foe.position.x > hero_x else gap), foe)
+	# Do not chase a boss into its backswing or under its airborne body.
+	var center := foe.special_center_x() if foe._dash_pose or foe._airborne else foe.position.x
+	return _clear_spot(center + (-gap if center > hero_x else gap), foe)
 
 
 # 표적 **아닌** 몹의 몸통 안에는 안 선다. _strike_spot 은 표적 한 마리와의 거리만
@@ -11807,6 +12217,8 @@ func _advance_world(dx: float) -> void:
 
 # 전열에 들어온 놈이 있는가. 전진을 멈추고 싸울 근거이자, 다시 달릴 근거다.
 func _foe_at_front(foes: Array) -> bool:
+	if is_instance_valid(_engaged) and not _engaged.dying and _engaged.pattern_active():
+		return true
 	for f in foes:
 		if is_instance_valid(f) and not f.dying and f.position.x <= FRONT_X + 1.0:
 			return true
@@ -11849,6 +12261,8 @@ func _tick_hero_state(delta: float) -> void:
 	# `modulate` 를 쓴다 — 피격 번쩍임은 `self_modulate` 라 서로 안 덮는다(둘은 곱해진다).
 	var was_buffed := _summon_t > 0.0
 	_summon_t = maxf(0.0, _summon_t - delta)
+	if _summon_t <= 0.0 and is_instance_valid(_ward_aura):
+		_ward_aura.queue_free()
 	if _summon_tint > 0.0 and _hero != null:
 		if _summon_t > 0.0:
 			var g := 1.0 - _summon_tint
@@ -12106,6 +12520,7 @@ func _tick_skills(delta: float, foes: Array) -> void:
 	_skill_impact_sent = false
 	_skill_cd[_skill_action] = float(skill["cooldown"])
 	_skill_target = target
+	_face_toward(target)
 	_play(str(skill["motion"]), SKILL_DUR)
 
 
@@ -12172,6 +12587,58 @@ var _field_reach := FIELD_REACH
 # 안 밀고 그림도 월드 그룹에 안 들어간다 — 둘 중 하나만 하면 그림과 판정이 갈린다.
 var _field_fixed := false
 var _field_gen := 0        # 구간이 바뀌면 올라간다. 지난 구간의 틱을 끊는 표
+
+
+func _skill_vfx(kind: String, at: Vector2, reach := 90.0, keep_for := 0.0,
+		world := true, face := 0) -> Node2D:
+	var effect := _combat_vfx(kind, at, hero_face if face == 0 else face, reach / 90.0)
+	if effect == null:
+		return null
+	if keep_for > 0.0:
+		effect.set("_life", keep_for)
+	if kind in ["field", "ward", "wave", "vortex", "eruption", "rain"]:
+		effect.z_index = 0  # Background is -20; actors start at 1. Keep bodies readable.
+	if not world:
+		effect.remove_from_group(WORLD_FX_GROUP)
+	return effect
+
+
+# Display only: the caller has already selected targets and applied this hit.
+func _pilot_wave_fx(skill: Dictionary, targets: Array[Foe]) -> void:
+	var key := str(skill["key"])
+	var rule := SkillDefs.rule_of(key)
+	var near_x := hero_x + float(hero_face) * (_motion_reach("attack") + 48.0)
+	var nearest := INF
+	var far := 96.0
+	for f in targets:
+		if not is_instance_valid(f):
+			continue
+		if absf(f.position.x - hero_x) < nearest:
+			near_x = f.position.x
+			nearest = absf(f.position.x - hero_x)
+		far = maxf(far, absf(f.position.x - hero_x) + f.body_half())
+	if key == "wave_rare":
+		if targets.is_empty():
+			_skill_vfx("rain", Vector2(near_x, ground_y), 40.0)
+		for f in targets:
+			if is_instance_valid(f):
+				_skill_vfx("rain", Vector2(f.position.x, ground_y), f.body_half() + 12.0)
+	elif bool(rule.get("pit_kill", false)) or key == "wave_legend":
+		var center := near_x + float(rule.get("push", 0.0)) * float(hero_face)
+		var radius := 70.0
+		for f in targets:
+			if is_instance_valid(f):
+				radius = maxf(radius, absf(f.position.x - center) + f.body_half())
+		_skill_vfx("eruption" if bool(rule.get("pit_kill", false)) else "vortex",
+			Vector2(center, ground_y), radius)
+	else:
+		var pierce := bool(rule.get("pierce", false))
+		var origin := Vector2(hero_x, ground_y - 30.0 if pierce else ground_y)
+		var ticks := SkillDefs.ticks_of(key)
+		var effect := _skill_vfx("sweep" if pierce else "wave", origin, far,
+			0.48 + float(ticks - 1) * 0.12 if ticks > 1 else 0.0)
+		if effect != null:
+			effect.set("repeats", ticks)
 
 
 func _start_field(fx: String, fps: float, scale: float, style: String, echo: int,
@@ -12262,8 +12729,13 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 	var spots := _field_targets()
 	# 틱마다 붉게 맥동시킬 문양. 하나짜리일 때만 잡는다 — 여러 장이면 어느 것을
 	# 흔들지 정할 수 없고, 여러 장이 동시에 번쩍이면 그게 곧 화면을 가린다.
-	var beat: AnimatedSprite2D = null
-	if puddle > 0.0 or screen or aura or spots.is_empty():
+	var beat: Node2D = null
+	if Foe.pixel_pilot_ready(skin):
+		var kind := "eye" if screen else ("crown" if aura else "field")
+		var pilot_y := ground_y - 124.0 if screen else (ground_y - 80.0 if aura else ground_y)
+		beat = _skill_vfx(kind, Vector2(_field_x, pilot_y), _field_reach,
+			gap * float(ticks), not _field_fixed)
+	elif puddle > 0.0 or screen or aura or spots.is_empty():
 		beat = _anim_fx(fx, Vector2(_field_x, cy), fps, draw,
 			style, echo, 1.0, hero_face, skew, not _field_fixed)
 	else:
@@ -12347,9 +12819,14 @@ func _start_field(fx: String, fps: float, scale: float, style: String, echo: int
 					# 같은 그림이라 뜻은 이어지되, 이쪽은 **하얗게 타오른다** —
 					# 3초 내내 떠 있는 오오라와 달리 0.45초짜리 선고라 튀어야 한다.
 					# 새 자산을 안 뽑는다: `modulate` 한 줄이면 된다.
-					var mark := _anim_fx("fx_exec_crown",
-						Vector2(f.position.x, f.head_y() - 12.0),
-						2.2, 1.3, "burst", 0, 1.0, 1, 0.0)
+					var mark: Node2D
+					if Foe.pixel_pilot_ready(skin):
+						mark = _skill_vfx("crown", Vector2(f.position.x, f.head_y() - 12.0),
+							90.0, 1.0 / 2.2)
+					else:
+						mark = _anim_fx("fx_exec_crown",
+							Vector2(f.position.x, f.head_y() - 12.0),
+							2.2, 1.3, "burst", 0, 1.0, 1, 0.0)
 					if mark != null:
 						mark.modulate = Color(2.6, 2.3, 2.1)
 					f.take_damage(f.hp)
@@ -12411,10 +12888,13 @@ func _strike_once(who: Foe, dmg: float, skill: Dictionary, fx: String, fx_y: flo
 	# 스킬 흡혈(피해의 20%)은 뺐다 — 혈액은 배급으로만 들어온다(요구 4).
 	# 처치 혈액의 0.02~0.6% 라 곡선 영향은 없었지만, 남겨 두면 "전투가 돈을 준다"
 	# 는 예외가 하나 남아 규칙이 흐려진다.
-	_anim_fx(fx, Vector2(who.position.x,
-		_fx_anchor_y(fx_style, fx, fx_scale, who.body_mid_y(), fx_y)),
-		fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew,
-		false, fx_flip, fx_flip_v, fx_rot)
+	if Foe.pixel_pilot_ready(skin):
+		_skill_vfx("heavy", Vector2(hero_x, ground_y - 30.0))
+	else:
+		_anim_fx(fx, Vector2(who.position.x,
+			_fx_anchor_y(fx_style, fx, fx_scale, who.body_mid_y(), fx_y)),
+			fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew,
+			false, fx_flip, fx_flip_v, fx_rot)
 	_skill_hit_fx(skill, who)
 
 
@@ -12458,6 +12938,7 @@ func _resolve_skill(key: String) -> void:
 	var skill := _skill_data(key)
 	if skill.is_empty():
 		return
+	_pin_hero_impact(str(skill["motion"]))
 	# 이펙트는 원본 64px 을 **1배**로 그린다. 2배로 그렸더니 캐릭터보다 커서
 	# 그 뒤 몹이 통째로 가려졌다(2026-08-04 화면에서 확인).
 	var p: Dictionary = SkillDefs.fx_profile(key)
@@ -12584,7 +13065,9 @@ func _resolve_skill(key: String) -> void:
 			# 이 규칙이 장판 쪽에만 있어서 갈라진 대지를 파로 옮기자 못 쓰게 됐다 —
 			# `as` 로 옮길 수 있는 규칙은 두 길에 다 있어야 한다.
 			var wpud := float(SkillDefs.rule_of(key).get("puddle", 0.0))
-			if bool(SkillDefs.rule_of(key).get("pierce", false)) or struck.is_empty():
+			if Foe.pixel_pilot_ready(skin):
+				_pilot_wave_fx(skill, struck)
+			elif bool(SkillDefs.rule_of(key).get("pierce", false)) or struck.is_empty():
 				var ahead := hero_x \
 					+ float(hero_face) * (_motion_reach("attack") + 48.0)
 				_anim_fx(fx, Vector2(ahead,
@@ -12627,10 +13110,19 @@ func _resolve_skill(key: String) -> void:
 			_summon_cleave = str(SkillDefs.rule_of(key).get("cleave", ""))
 			if _summon_tint <= 0.0 and _hero != null:
 				_hero.modulate = Color.WHITE
-			_anim_fx(fx, Vector2(hero_x,
-				_fx_anchor_y(fx_style, fx, fx_scale,
-					ground_y - float(Grid.SPRITE), fx_y)),
-				fx_fps, fx_scale, fx_style, fx_echo, 1.0, hero_face, fx_skew, false, fx_flip, fx_flip_v)
+			if is_instance_valid(_ward_aura):
+				_ward_aura.queue_free()
+			if Foe.pixel_pilot_ready(skin):
+				_ward_aura_y = -32.0
+				_ward_aura = _skill_vfx("ward", Vector2(hero_x, ground_y + _ward_aura_y),
+					90.0, _summon_t, false)
+			else:
+				_ward_aura_y = _fx_anchor_y(fx_style, fx, fx_scale,
+					ground_y - float(Grid.SPRITE), fx_y) - ground_y
+				_ward_aura = _anim_fx(fx, Vector2(hero_x,
+					ground_y + _ward_aura_y),
+					fx_fps, fx_scale, fx_style, 0, 0.65, hero_face, fx_skew, false,
+					fx_flip, fx_flip_v, fx_rot, _summon_t)
 
 
 # 튀는 피의 튕김 간격. 이펙트 수명(0.56초)보다 짧아야 앞 타격의 그림이 남아 있는
@@ -12673,18 +13165,24 @@ func _bounce_hit(skill: Dictionary, hit: float, state: Dictionary, p: Dictionary
 	# 튕길 곳이 없으면 조용히 끝난다 — 표창이 떨어진 것이다.
 	if target == null:
 		return
+	var previous_x := float(state["from"])
 	state["struck"][target.get_instance_id()] = true
 	state["from"] = target.position.x
 	_defer_stage_advance = true
 	target.take_damage(hit)
 	_skill_hit_fx(skill, target)
 	_defer_stage_advance = false
-	_anim_fx(str(p["fx"]), Vector2(target.position.x,
-		_fx_anchor_y(str(p["style"]), str(p["fx"]), float(p["scale"]),
-			target.body_mid_y(), float(p["y"]))),
-		float(p["fps"]), float(p["scale"]), str(p["style"]), 0, 1.0,
-		hero_face, float(p["skew"]), false,
-		int(signf(float(p["flip"]))), int(signf(float(p["flip_v"]))))
+	if Foe.pixel_pilot_ready(skin):
+		_skill_vfx("bounce", Vector2(previous_x, target.body_mid_y()),
+			absf(target.position.x - previous_x), 0.0, true,
+			int(signf(target.position.x - previous_x)))
+	else:
+		_anim_fx(str(p["fx"]), Vector2(target.position.x,
+			_fx_anchor_y(str(p["style"]), str(p["fx"]), float(p["scale"]),
+				target.body_mid_y(), float(p["y"]))),
+			float(p["fps"]), float(p["scale"]), str(p["style"]), 0, 1.0,
+			hero_face, float(p["skew"]), false,
+			int(signf(float(p["flip"]))), int(signf(float(p["flip_v"]))))
 	if _c_kill_clear():
 		_advance_stage()
 
@@ -12695,24 +13193,17 @@ func _skill_hit_fx(skill: Dictionary, foe: Foe) -> void:
 	var hit_fx := str(skill.get("hit_fx", ""))
 	if hit_fx.is_empty() or not is_instance_valid(foe):
 		return
-	_anim_fx(hit_fx, foe.position + Vector2(0, -30.0), 18.0, 1.5)
+	if Foe.pixel_pilot_ready(skin):
+		_skill_vfx("impact", Vector2(foe.position.x, foe.body_mid_y()), 60.0)
+	else:
+		_anim_fx(hit_fx, foe.position + Vector2(0, -30.0), 18.0, 1.5)
 
 
-# 히트스톱은 **띄엄띄엄 걸려야 효과가 있다.**
-#
-# 예전엔 맞은 몹마다 이 함수가 불려서 두 가지가 겹쳤다:
-#   1. 피의 파도가 5마리를 때리면 흔들림이 **5겹**으로 쌓였다
-#   2. 공속이 오르면 0.035초 정지가 끊임없이 들어가 화면이 계속 얼어붙었다
-# 둘 다 "타격감"이 아니라 **뚝뚝 끊김**으로 보인다. 한 프레임에 한 번, 그리고
-# 최소 간격을 두고만 건다.
-const HITSTOP_MIN_GAP := 0.14
-# 흔들림은 히트스톱보다 **자주** 돈다. 예전엔 둘이 같은 관문을 써서, 히트스톱을
-# 아끼려고 건 0.14초 간격에 흔들림까지 묶여 타격 대부분이 아무 반응이 없었다.
-# 히트스톱은 게임을 실제로 멈추니까 아껴야 하지만, 흔들림은 아낄 이유가 없다.
-const SHAKE_MIN_GAP := 0.055
-const HIT_SHAKE := 5.5      # 기본 타격. 2.0 은 "밀렸다" 정도라 맞은 느낌이 없었다
+# Routine hits keep actors moving. A small camera response and target recoil
+# carry the impact; freezing every actor skips their in-between poses.
+const SHAKE_MIN_GAP := 0.20
+const HIT_SHAKE := 1.25
 var _shake_cd := 0.0
-var _hitstop_cd := 0.0
 var _hitstop_frame := -1
 
 # ── 일일 수집물 "핏방울" ───────────────────────────────────────────────────
@@ -12854,7 +13345,9 @@ func _pop_damage(foe: Foe, damage: float) -> void:
 # 절대값이 아니라 "얼마나 아팠나"고, 한 방에 반이 날아가면 그건 커야 한다.
 func _set_hero_flash(v: float) -> void:
 	if _hero and _hero.material is ShaderMaterial:
-		(_hero.material as ShaderMaterial).set_shader_parameter("flash", v)
+		# Keep the new pose readable when an Orc lands during the sword impact.
+		(_hero.material as ShaderMaterial).set_shader_parameter("flash",
+			minf(v, 0.35) if skin == "valentino_1" else v)
 
 
 func _pop_hero_damage(damage: float) -> void:
@@ -12916,18 +13409,10 @@ func on_foe_hit(_foe: Foe, _damage: float) -> void:
 	if frame == _hitstop_frame:
 		return          # 같은 프레임의 광역 타격은 한 번으로 친다
 	_hitstop_frame = frame
-	# 흔들림 먼저. 히트스톱이 쉬는 동안에도 타격은 손에 잡혀야 한다.
+	# 한 번의 광역 타격에는 카메라도 한 번만 반응한다.
 	if _shake_cd <= 0.0:
 		_shake_cd = SHAKE_MIN_GAP
 		_shake_combat(HIT_SHAKE)
-	if _hitstop_cd > 0.0:
-		return          # 너무 잦으면 건너뛴다
-	_hitstop_cd = HITSTOP_MIN_GAP
-	_visual_hitstop_t = maxf(_visual_hitstop_t, HITSTOP_DUR)
-	if is_inside_tree():
-		for f in get_tree().get_nodes_in_group("foes"):
-			if is_instance_valid(f):
-				f.set_visual_frozen(true)
 
 
 # Foe가 자기 attack 애니의 네 번째 프레임에 호출한다.
@@ -12935,11 +13420,12 @@ func on_foe_hit(_foe: Foe, _damage: float) -> void:
 # 이미 때리는 중이어도 막지 않는다 — 그래야 좌우에서 동시에 얻어맞는 난전이 된다.
 # 대신 닿는지는 **임팩트 순간에** 본다. 대시로 빠져나갔으면 헛친다.
 func on_foe_attack(_foe: Foe) -> void:
-	if _hero_dead or _phase != "fight":
+	if _hero_dead or _phase != "fight" or not is_instance_valid(_foe) or _foe.dying:
 		return
 	if _foe.special_swing:
 		_foe_slam_fx(_foe)
-	if absf(_foe.position.x - hero_x) > _foe.reach():
+	var center := _foe.special_center_x() if _foe.special_swing else _foe.position.x
+	if absf(center - hero_x) > _foe.reach():
 		return
 	# 특수 패턴은 훨씬 아프다. 대신 예고 원 밖으로 나가면(대시) 위 사거리 검사에서
 	# 통째로 빗나가므로, 예고를 보고 빠지는 것이 곧 회피다.
@@ -12955,7 +13441,9 @@ func on_foe_attack(_foe: Foe) -> void:
 	_pop_hero_damage(incoming)
 	_hero_flash_t = 0.10
 	_set_hero_flash(Foe.FLASH_MOB)
-	_play("hurt", 0.10)
+	# 연격·시전의 예약 피해는 계속되므로 피격도 그 자세를 끊지 않는다.
+	if not _hero_action_live():
+		_play("hurt", 0.10)
 	# **때린 놈 반대쪽으로 민다.** 피가 줄고 몸이 붉게 번쩍이는 것만으로는 맞았다는 게
 	# 잘 안 읽힌다 — 자리가 움직여야 몸으로 읽힌다. 대시가 곧 다시 파고들므로
 	# 밀렸다 돌아오는 왕복이 된다.
@@ -12980,17 +13468,36 @@ var _slam_demo_t := 0.0
 # 타격점에 뜨는 구조(검기·피보라·X참격·촉수)는 몹 발밑이 아니라 **영웅 쪽**에
 # 그린다 — 원거리 촉수가 보스 발밑에서 터지면 "누가 맞았는지"가 안 보인다.
 func _foe_slam_fx(f: Foe) -> void:
-	_slam_wave(_slam_at_x(str(FoeTiers.slam_theme(f.key)[0]), f.position.x),
-		f.reach(), f.key, signf(f.position.x - hero_x))
+	_boss_impact_fx(f.special_center_x(), f.reach(), f.key, f.face, f._size() * 0.34)
 
 
-# 착지 그림이 뜨는 자리. **--slam 데모와 실전이 같은 함수를 본다** — 갈라져
-# 있던 동안 데모가 보스를 hero_x+170 에 놓고 그려서, 실전(간격 59px)보다
-# 훨씬 벌어진 그림을 보고 판단할 뻔했다.
-func _slam_at_x(style: String, boss_x: float) -> float:
-	if style in ["lash", "spray", "cross", "arc"]:
-		return hero_x + (boss_x - hero_x) * 0.25
-	return boss_x
+# One bounded native effect, centered on the real attack radius. Directional ink
+# faces the target; its sparse floor pulse still marks the full affected span.
+func _boss_impact_fx(at_x: float, radius: float, key: String, face: int, contact := 0.0) -> void:
+	var theme := FoeTiers.slam_theme(key)
+	var art_key := key if FoeTiers.SPECIAL_KIND.has(key) else "rock"
+	var sprite := _anim_fx("boss_vfx/" + art_key, Vector2(at_x, ground_y),
+		30.0, 2.0, "", 0, 1.0, face, 1.0, true)
+	var effect: Node2D
+	if sprite != null:
+		# 128x64 source canvas, grounded at source pixel (64, 48).
+		sprite.offset = Vector2(0, -16)
+		sprite.z_index = 4
+		effect = _combat_vfx("boss_floor", Vector2(at_x, ground_y), face, radius / 90.0)
+		if effect != null:
+			effect.z_index = 0
+	else:
+		effect = _combat_vfx("slam" if key == "orc" else "foe_special",
+			Vector2(at_x, ground_y), face, radius / 90.0)
+		if effect != null:
+			effect.z_index = 4
+			effect.set("impact_x", contact)
+			effect.set("ice_slam", key == "frost_golem")
+	if effect != null:
+		effect.set("foe_theme", str(theme[0]))
+		effect.set("foe_core", theme[1])
+		effect.set("foe_edge", theme[2])
+	_shake_combat(4.0)
 
 
 # **보스 사망 — 제 픽셀로 흩어진다.** 몸 그림을 격자로 쪼개 칸마다 그 색의
@@ -13016,8 +13523,9 @@ const SHATTER_GRAV := 300.0
 func _shatter(f: Foe) -> void:
 	if not is_instance_valid(f) or f._walk_frames.is_empty():
 		return
-	var img := (f._walk_frames[0] as Texture2D).get_image()
-	var sz: float = f._size()
+	var tex := f._pixel_pilot_texture(f._walk_frames[0], "walk", 0, f._walk_frames.size())
+	var img := tex.get_image()
+	var sz: float = f._size() * f._art_ratio(tex)
 	var n := SHATTER_CELLS
 	var cell := sz / float(n)
 	# [시작 오프셋, 속도, 색] — 빈 칸은 아예 안 담는다.
@@ -13037,7 +13545,8 @@ func _shatter(f: Foe) -> void:
 	if bits.is_empty():
 		return
 	var node := Node2D.new()
-	node.position = Vector2(f.position.x, ground_y - sz * 0.5)
+	var pilot_gap := f._display_bottom_gap(tex) * sz / tex.get_height() if Foe.is_pixel_pilot_texture(tex) else 0.0
+	node.position = Vector2(f.position.x, ground_y - sz * 0.5 + pilot_gap)
 	node.z_index = 3
 	add_child(node)
 	# 세상이 흐르면 같이 밀린다 — 장판·시체와 같은 길.
@@ -13060,220 +13569,61 @@ func _shatter(f: Foe) -> void:
 	tw.tween_callback(node.queue_free)
 
 
-# 대시 잔상 — 지나온 자리에 반투명 몸이 남았다 사라진다. 텍스처는 걷기 첫
-# 프레임(몸의 기본형)이고 색은 그 보스의 파동 심 색이다.
+# 대시 잔상은 방금 보인 자세와 발 높이를 복사한다.
 func _dash_ghost(f: Foe) -> void:
-	if not is_instance_valid(f) or f._walk_frames.is_empty():
+	if not is_instance_valid(f):
 		return
-	var tex: Texture2D = f._walk_frames[0]
+	var tex := f._pose_texture()
+	if tex == null:
+		return
 	var g := Sprite2D.new()
 	g.texture = tex
 	g.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	var sz := f._size()
-	# centered 라 반전은 scale 부호 하나로 끝난다 — 원점 보정이 필요 없다.
-	g.scale = Vector2(-float(f.face) * sz / float(tex.get_width()),
-		sz / float(tex.get_height()))
-	g.position = Vector2(f.position.x, ground_y - sz * 0.5)
+	var sz := f._size() * f._art_ratio(tex)
+	g.scale = Vector2(sz / float(tex.get_width()), sz / float(tex.get_height()))
+	g.flip_h = f.face > 0
+	g.position = (f.position + f._motion_offset() + Vector2(0,
+		-sz * 0.5 + f._display_bottom_gap(tex) * g.scale.y)).round()
+	var mat := ShaderMaterial.new()
+	mat.shader = ACTION_TRAIL_SHADER
+	g.material = mat
 	var c: Color = FoeTiers.slam_theme(f.key)[1]
-	g.modulate = Color(c.r, c.g, c.b, 0.45)
+	g.modulate = Color(c.r, c.g, c.b, 0.32)
 	g.z_index = 1
 	add_child(g)
+	g.add_to_group(WORLD_FX_GROUP)
 	var tw := g.create_tween()
-	tw.tween_property(g, "modulate:a", 0.0, 0.30)
+	tw.tween_property(g, "modulate:a", 0.0, 0.20)
 	tw.tween_callback(g.queue_free)
 
 
 # 메테오(가고일) — 캐스팅이 끝나면 **그 순간의 영웅 자리**에 화염구가 떨어진다.
 # 낙하 0.6초가 곧 회피 창이다: 떨어지는 동안 영웅이 대시로 빠지면 빗나간다.
 # 착탄 판정은 발사 때 박아 둔 자리 기준 — 유도탄이면 회피 창이 거짓말이 된다.
-func on_foe_meteor(f: Foe) -> void:
-	if _hero_dead or _phase != "fight":
-		return
-	var tx := hero_x
-	var ball := _anim_fx(FoeTiers.meteor_art(f.key),
-		Vector2(tx + 40.0, ground_y - 380.0), 12.0, 1.6, "burst")
-	if ball == null:
-		return
-	ball.rotation_degrees = 115.0   # 낙하 방향으로 눕힌다 — 원본이 옆을 본다
-	var tw := ball.create_tween()
-	tw.tween_property(ball, "position",
-		Vector2(tx, ground_y - 16.0), 0.6) \
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tw.tween_callback(func() -> void:
-		if is_instance_valid(ball):
-			ball.queue_free()
-		if _hero_dead or _phase != "fight" or not is_instance_valid(f):
-			return
-		_slam_wave(tx, f.reach(), f.key)
-		_shake_combat(4.0)
-		if absf(hero_x - tx) > f.reach():
-			return   # 낙하 중에 빠져나갔다 — 그게 회피다
-		var incoming := Balance.foe_damage(_c_enemy_power()) * f.attack_mult() \
-			* _trait_mult("guard") \
-			* (1.0 - clampf(_oath_val("armor"), 0.0, 0.9))
-		hero_hp = maxf(0.0, hero_hp - incoming)
-		_pop_hero_damage(incoming)
-		_hero_flash_t = 0.10
-		_set_hero_flash(Foe.FLASH_MOB)
-		_play("hurt", 0.10)
-		if hero_hp <= 0.0:
-			_kill_hero())
+func on_foe_meteor(f: Foe) -> Node2D:
+	if _hero_dead or _phase != "fight" or f.dying:
+		return null
+	var name := FoeTiers.meteor_art(f.key)
+	var textures := Assets.frames("res://assets/anim/%s" % name)
+	if textures.is_empty():
+		return null # Damage still resolves on Foe's flight clock.
+	var ball := AnimatedSprite2D.new()
+	ball.sprite_frames = _vfx_sprite_frames(name, textures, 12.0, "burst", true)
+	ball.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ball.position = Vector2(f.special_center_x() + 40.0, ground_y - 270.0)
+	ball.scale = Vector2.ONE * 1.25
+	ball.rotation_degrees = 115.0
+	ball.z_index = 4
+	add_child(ball)
+	ball.play("play")
+	# Ownership survives a short source clip but ends immediately with the caster.
+	f.tree_exiting.connect(ball.queue_free, CONNECT_ONE_SHOT)
+	return ball
 
 
-# 착지 이펙트 3차 (2026-08-20, 사장님: "vfx 디자인 참고해서 다시").
-# 코드 도트 두 판의 교훈: draw_rect 로는 이펙트의 형태 언어(큰 실루엣·방사형
-# 광선·밝기 그라데이션)가 안 나온다 — 픽셀 뿌리기로 보였다. **그림은 창고의
-# 전문 이펙트(vfx_*)가 그리고, 코드는 조합·배치·시차·틴트만 맡는다.**
-#
-# [애니 폴더, x오프셋, y오프셋(지면 기준), 배율, fps, 틴트(null=원색), 시차 초]
-# 시차가 조합을 "연출"로 만든다 — 폭발이 먼저, 파편·불기둥이 반 박자 뒤.
-const SLAM_FX := {
-	"wraith_knight": [
-		["fx_slam_wraith_knight", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"gargoyle": [
-		["fx_slam_gargoyle", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"sanctum_guardian": [
-		["fx_slam_sanctum_guardian", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"frost_golem": [
-		["fx_slam_frost_golem", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"eye_mass": [
-		["fx_slam_eye_mass", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"dark_knight": [
-		["fx_slam_dark_knight", 0.0, 0.0, 2.2, 18.0, null, 0.0]],
-	"blood_queen": [
-		["fx_slam_blood_queen", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"bone_choir": [
-		["fx_slam_bone_choir", 0.0, -12.0, 2.2, 18.0, null, 0.0]],
-	"butcher": [
-		["fx_slam_butcher", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"plague_hag": [
-		["fx_slam_plague_hag", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-	"ruin_warden": [
-		["fx_slam_ruin_warden", 0.0, 0.0, 2.0, 18.0, null, 0.0]],
-}
-# 표에 없는 보스·중간보스 — 중립 파편 + 충격파.
-const SLAM_FX_DEFAULT := [
-	["vfx_boom_05", 0.0, -18.0, 1.5, 14.0, null, 0.0],
-	["fx_rocks", 0.0, -8.0, 1.1, 12.0, null, 0.06]]
-
-
-# `dir` 은 보스가 있는 쪽(+1 = 오른쪽). 기본 +1 은 보스가 대개 오른쪽이라
-# 그렇고, --slam 데모도 그 자리에서 쏜다.
+# The developer impact preview uses the same route as live boss contacts.
 func _slam_wave(at_x: float, r: float, key: String, dir := 1.0) -> void:
-	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
-	for e in recipe:
-		var delay: float = float(e[6])
-		if delay <= 0.0:
-			_slam_fx_one(at_x, e)
-		else:
-			# 값만 바인드한다 — 노드 참조가 없어서 몹이 먼저 죽어도 안전하다.
-			var t := create_tween()
-			t.tween_interval(delay)
-			t.tween_callback(_slam_fx_one.bind(at_x, e))
-	_slam_echo(at_x, key, dir)
-	_reach_trail(at_x, r, key, dir)
-	_shake_combat(4.0)
-
-
-# **착지는 한 박자가 아니다.** 같은 그림을 반 박자 뒤에 작게 한 번 더 얹으면
-# "터짐이 한꺼번에 오지 않아서" 폭발로 읽힌다 — Penusbmic 의 방법이 정확히
-# 이것이다(작은 원소를 시차·위치로 어긋나게 복사한다,
-# docs/ATTACK_FX_RECIPE.md 8장). 레시피의 시차 칸이 그 자리인데 열한 보스 중
-# 열이 한 줄짜리라 원리를 적어만 두고 안 쓰고 있었다.
-#
-# **하나만 얹는다.** 촉수에서 둘을 세웠다가 바닥이 너무 차서 하나로 줄였다
-# (2026-08-27 사장님) — 같은 자로 여기도 하나다.
-const SLAM_ECHO_DELAY := 0.07
-const SLAM_ECHO_SCALE := 0.62
-const SLAM_ECHO_DX := 26.0
-
-
-func _slam_echo(at_x: float, key: String, dir: float) -> void:
-	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
-	if recipe.is_empty():
-		return
-	var head: Array = recipe[0]
-	# 뒤엣것이라 작고 늦다. 틴트는 안 건다 — 그림이 이미 제 색을 갖고 있고
-	# 곱하면 계조가 눌린다(같은 문서 4장).
-	var e := [head[0], float(head[1]) + dir * SLAM_ECHO_DX, float(head[2]) - 6.0,
-		float(head[3]) * SLAM_ECHO_SCALE, head[4], null, 0.0]
-	var t := create_tween()
-	t.tween_interval(SLAM_ECHO_DELAY)
-	t.tween_callback(_slam_fx_one.bind(at_x, e))
-
-
-# **사거리를 그림이 말하게 한다.**
-#
-# `SPECIAL_KIND` 의 사거리 배수는 보스마다 1.7~3.2 로 갈리는데 착지 그림은
-# 전부 같은 크기였다(이 함수 전까지 `_slam_wave` 의 `r` 은 서명에만 있고 본문에서
-# 안 쓰는 죽은 인자였다). 촉수는 2.8 배라 그림보다 훨씬 멀리까지 때린다 —
-# 플레이어는 얼마나 위험한지 볼 방법이 없었다.
-#
-# **덩치로 말하면 안 된다.** 2.8 배로 키우면 전투 화면을 덮는다(우리 원칙).
-# 사거리는 **가로로 뻗어서** 읽혀야 한다 — 같은 크기의 덩굴을 보스 쪽으로
-# 몇 개 더 세운다. "저 사이가 전부 위험하다"가 곧 사거리다.
-# (docs/ATTACK_FX_RECIPE.md 1장 — 그림이 히트박스를 덮는다)
-#
-# 뒤로 갈수록 작고 어둡고 늦다: 등급 색표의 테두리 색(`SLAM_THEME` 셋째)을
-# 써서 심-테두리 두 톤을 만든다. 한 색이면 그냥 복사본으로 보인다(같은 문서 4장).
-#
-# **어느 쪽으로 뻗는지는 스타일이 정한다.** 값은 `dir`(보스가 있는 쪽)에 곱하는
-# 부호다. 표에 없는 스타일은 안 탄다.
-#   lash  촉수 — 영웅 발밑에서 터져 **보스 쪽 지면**까지 덩굴이 이어진다 (+)
-#
-# **음파(sonic)는 넣었다가 뺐다**(2026-08-27). 영웅 쪽(-)으로 뻗게 했더니
-# 영웅을 덮었다. 원인은 전제가 틀렸던 것이다: `reach()` 는 **맞는 반경**이지
-# 떨어져서 때리는 거리가 아니다. 실측하면 영웅-보스 간격은 중간값 **59px**
-# 인데(표본 716) 특수 사거리는 412~464px 다 — 배수가 큰 건 "멀리서 때린다"가
-# 아니라 **"물러나도 못 피한다"** 는 뜻이다. 그래서 음파는 지금도 이미
-# 영웅에게 닿아 있고, 더 뻗으면 지나쳐 가릴 뿐 새로 말해 주는 게 없다.
-const REACH_TRAIL := {"lash": 1.0}
-const LASH_TRAIL_SPAN := 0.60   # 사거리의 몇 할까지 늘어놓나
-const LASH_TRAIL_MAX := 150.0   # ponytail: 화면을 못 덮게 박은 천장. 사거리가
-								# 더 늘면 칸을 늘리는 게 아니라 이 값을 다시 잰다.
-
-
-func _reach_trail(at_x: float, r: float, key: String, dir: float) -> void:
-	var theme: Array = FoeTiers.slam_theme(key)
-	var sign_: float = float(REACH_TRAIL.get(str(theme[0]), 0.0))
-	if sign_ == 0.0:
-		return
-	dir *= sign_
-	var recipe: Array = SLAM_FX.get(key, SLAM_FX_DEFAULT)
-	if recipe.is_empty():
-		return
-	var span: float = minf(r * LASH_TRAIL_SPAN, LASH_TRAIL_MAX)
-	var head: Array = recipe[0]
-	# **하나만 세운다**(2026-08-27 사장님: "덩굴 하나로 줄여줘"). 둘이면 바닥이
-	# 너무 찬다 — 사거리를 말하는 데는 하나로 족하고, 적을수록 안 가린다.
-	# 끝점에 놓는다: 작고 반 박자 늦어서 "저 끝까지"가 읽힌다.
-	#
-	# **틴트는 안 건다**(null = 원본 색). 처음엔 테두리 색을 곱해 어둡게 했는데,
-	# 촉수 그림은 이미 거의 새까맣다(밝기 중앙 3 · 최대 61, 실측) — 거기에
-	# 0.22 를 곱하면 안이 안 보이는 검은 실루엣이 된다. 그림이 이미 두 톤을
-	# 갖고 있으므로 곱하는 순간 그 부피가 사라진다(ATTACK_FX_RECIPE 4장).
-	# 뒤엣것이라는 건 크기와 박자로 말한다.
-	var e := [head[0], float(head[1]) + dir * span, head[2],
-		float(head[3]) * 0.72, head[4], null, 0.0]
-	var t := create_tween()
-	t.tween_interval(0.045)
-	t.tween_callback(_slam_fx_one.bind(at_x, e))
-
-
-func _slam_fx_one(at_x: float, e: Array) -> void:
-	var n := _anim_fx(str(e[0]), Vector2(at_x + float(e[1]),
-		ground_y + float(e[2])), float(e[4]), float(e[3]), "burst")
-	if n == null:
-		return
-	# **원점을 잉크 아래끝에 앉힌다** — 가운데 원점이면 burst 가 크기를
-	# 키웠다 줄일 때마다 밑단이 오르내려서, 잉크가 아래쪽에 몰린 그림(촉수)
-	# 은 지면을 뚫었다(사장님이 빨간 줄로 잡았다). offset 은 로컬 좌표라
-	# 스케일이 뭘 하든 밑단은 ground_y 에 박힌다 — _anim_fx 의 rise/fall
-	# 이 쓰는 그 문법이다.
-	n.offset = Vector2(0.0, -32.0
-		+ Assets.bottom_pad("res://assets/anim/%s" % str(e[0])))
-	if e[5] != null:
-		n.modulate = e[5]
+	_boss_impact_fx(at_x, r, key, -1 if dir >= 0.0 else 1)
 
 
 # 영겁의 성혈의 내부 쿨(초). 저장 안 한다 — 세션마다 새로 차는 것으로 충분하고,
@@ -13291,7 +13641,10 @@ func _kill_hero() -> void:
 		hero_hp = max_hp()
 		_show_clear("영겁의 성혈", "죽음을 한 번 물렀다 — 완전 회복")
 		return
+	_record_boss_attempt("쓰러짐")
 	_hero_dead = true
+	if is_instance_valid(_ward_aura):
+		_ward_aura.queue_free()
 	_revive_t = REVIVE_TIME
 	hero_hp = 0.0
 	kills = 0
@@ -13326,6 +13679,8 @@ func _kill_hero() -> void:
 #
 # **암전 뒤에서 부른다** — 그래야 자리 이동이 순간이동으로 안 보인다.
 func _begin_stage_pose() -> void:
+	if int(_boss_attempt.get("stage", stage)) != stage:
+		_boss_attempt.clear()
 	# 지난 구간에 깔린 장판의 틱을 끊는다. 구간이 바뀌면 그 땅은 없어진 것이다 —
 	# 안 끊으면 새 구간의 몹이 이전 구간 문양에 맞는다(`_start_field` 의 gen 검사).
 	_field_gen += 1
@@ -15331,11 +15686,11 @@ func _trial_enter() -> void:
 	_refresh_dungeon()
 
 
-func _trial_exit(reason: String) -> void:
+func _trial_exit(reason: String, cleared := false) -> void:
 	if raid_on != "trial" or _fade_t > 0.0:
 		return
 	raid_on = ""
-	_show_clear("클리어!", reason)
+	_show_clear("시련 돌파" if cleared else "도전 종료", reason)
 	# **여운** — 재화 던전·미궁과 같은 규칙(사장님 2026-08-25:
 	# "유적도 클리어시 너무 빨리 화면을 돌아옴"). 쓰러지는 그림과
 	# 방금 뜬 배너를 볼 시간이다.
@@ -15466,19 +15821,16 @@ func _nav_hover(btn: BaseButton, art: Control) -> void:
 		art.pivot_offset = art.size * 0.5
 	btn.mouse_entered.connect(func() -> void:
 		if not btn.disabled and is_inside_tree():
-			create_tween().tween_property(art, "scale",
-				Vector2(1.06, 1.06), 0.08))
+			Ui._pop_to(art, Ui.HOVER_SCALE))
 	btn.mouse_exited.connect(func() -> void:
 		if is_inside_tree():
-			create_tween().tween_property(art, "scale", Vector2.ONE, 0.08))
+			Ui._pop_to(art, 1.0))
 	btn.button_down.connect(func() -> void:
 		if is_inside_tree():
-			create_tween().tween_property(art, "scale",
-				Vector2(0.94, 0.94), 0.05))
+			Ui._pop_to(art, 0.97))
 	btn.button_up.connect(func() -> void:
 		if is_inside_tree():
-			create_tween().tween_property(art, "scale",
-				Vector2(1.06, 1.06), 0.08))
+			Ui._pop_to(art, Ui.HOVER_SCALE if art.get_global_rect().has_point(art.get_global_mouse_position()) else 1.0))
 
 
 func _battle_only(on: bool) -> void:
@@ -15524,7 +15876,7 @@ func _refresh_board() -> void:
 			c["key"] = key
 			(c["frame"] as CanvasItem).modulate = rc
 		var cd := float(_skill_cd.get(key, 0.0))
-		var total := maxf(1.0, float(SkillDefs.shape_of(key).get("cooldown", 1.0)))
+		var total := maxf(1.0, SkillDefs.cooldown(key, int(skill_owned.get(key, 0))))
 		(c["shade"] as ColorRect).size.y = 54.0 * clampf(cd / total, 0.0, 1.0)
 		(c["num"] as Label).text = str(int(ceil(cd))) if cd > 0.4 else ""
 		# 시전 감지 — 쿨다운이 만땅으로 튀는 순간 금빛 번쩍. 하단과 전투가 이어진다.
@@ -15535,6 +15887,8 @@ func _refresh_board() -> void:
 			create_tween().tween_property(fr, "modulate", rc, 0.45)
 		_board_prev_cd[key] = cd
 	var gate := _in_raid() or dungeon_on
+	_board_growth_btn.visible = not gate
+	_board_build_btn.position.x = (float(Grid.BG.x) - _board_build_btn.size.x) * 0.5 if gate else PAD
 	_board_pills[0].text = "피해  %s /초" % _n(dps())
 	if dungeon_on:
 		_board_pills[1].text = "혈정 +%s" % _n(DungeonDefs.first_clear_reward(
@@ -15561,6 +15915,49 @@ func _refresh_board() -> void:
 			max_hp(), regen_per_sec()))
 	_board_btn.text = "중단" if gate \
 		else ("방치 상자  %s" % _n(chest_gold) if chest_gold > 0.0 else "방치 상자")
+	_board_goal.text = "현재 도전 · 편성을 바꾸며 공략해 보세요" if gate else _next_boss_reward_text()
+	_board_tactic.text = _boss_attempt_text() if not gate \
+		else "무리 사냥은 광역, 강한 한 대상은 보스 편성\n획득한 스킬로 새 조합을 시험해 보세요"
+
+
+func _next_boss_reward_text() -> String:
+	var next_boss := (int((maxi(stage, best_stage) - 1) / 10) + 1) * 10
+	# 마지막 구간은 현재 지급 규칙상 다음 단계가 없어 첫 보상을 지급하지 않는다.
+	if next_boss >= StageDefs.total_stages():
+		return "최종 사냥터 · 수집과 성장을 이어가세요"
+	var prize := StageDefs.boss_first_reward(next_boss)
+	return "다음 목표 %s · 보석 %d + %s %d장" % [StageDefs.label(next_boss),
+		int(prize["gem"]), TicketDefs.short_of(str(prize["kind"])), int(prize["n"])]
+
+
+func _record_boss_attempt(reason: String) -> void:
+	if not is_inside_tree() or dungeon_on or raid_on != "" \
+			or not (StageDefs.is_boss_stage(stage) or StageDefs.is_midboss_stage(stage)):
+		return
+	var foe := _lone_foe()
+	if not is_instance_valid(foe) or foe.dying:
+		return
+	var remaining := clampf(foe.hp / maxf(0.001, foe.max_hp) * 100.0, 0.0, 100.0)
+	if int(_boss_attempt.get("stage", -1)) != stage:
+		_boss_attempt = {"stage": stage, "best": remaining, "last": remaining, "count": 0}
+	_boss_attempt["previous"] = float(_boss_attempt["last"])
+	_boss_attempt["last"] = remaining
+	_boss_attempt["best"] = minf(float(_boss_attempt["best"]), remaining)
+	_boss_attempt["count"] = int(_boss_attempt["count"]) + 1
+	_boss_attempt["reason"] = reason
+
+
+func _boss_attempt_text() -> String:
+	if int(_boss_attempt.get("stage", -1)) != stage:
+		return "무리 사냥은 광역, 보스는 집중 공격\n추천 편성에서 보유 스킬을 비교해 보세요"
+	var line := "%s · 남은 체력 %.0f%% · 최고 %.0f%%" % [str(_boss_attempt["reason"]),
+		ceilf(float(_boss_attempt["last"]) - 0.000001), ceilf(float(_boss_attempt["best"]) - 0.000001)]
+	if int(_boss_attempt["count"]) > 1:
+		line = "%s · 지난 %.0f%% → 이번 %.0f%% 남음" % [str(_boss_attempt["reason"]),
+			ceilf(float(_boss_attempt["previous"]) - 0.000001), ceilf(float(_boss_attempt["last"]) - 0.000001)]
+	return line + ("\n보스 편성·공격력 강화로 다시 도전해 보세요" \
+		if str(_boss_attempt["reason"]) == "시간 초과" \
+		else "\n체력 강화·방어구 교체로 더 오래 버텨보세요")
 
 
 # 액자 초상 한 벌 — 어두운 속바탕 + 넘치게 그린 초상(창이 잘라냄) + 액자.
@@ -15916,7 +16313,6 @@ func _shake_combat(amount: float) -> void:
 		return
 	if _combat_shake and _combat_shake.is_valid():
 		_combat_shake.kill()
-	position = Vector2.ZERO
 	_combat_shake = create_tween()
 	var steps := [
 		Vector2(-amount, amount * 0.42),
@@ -15996,7 +16392,7 @@ func _advance_stage() -> void:
 		trial_stage += 1
 		_apply_hp_growth(old_max)
 		_trial_exit("시련 %d단계 격파 — 공격·체력 +%d%%" % [trial_stage,
-			int(round(TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))])
+			int(round(TrialDefs.BONUS_PER * 100.0 * float(trial_stage)))], true)
 		return
 	# ── 혈전: 층 보상을 즉시 주고 다음 보스를 세운다 ───────────────────────
 	if raid_on == "rush":
@@ -16017,7 +16413,7 @@ func _advance_stage() -> void:
 			# (재화 던전 "표는 격파할 때만 깎인다"와 같은 규칙).
 			rush_date = Time.get_date_string_from_system()
 		rush_best = maxi(rush_best, fl)
-		_show_clear("클리어!", line)
+		_show_clear("혈전 돌파", line)
 		# 미궁과 같은 여운 — 쓰러지는 그림과 보상 배너를 볼 시간이다.
 		var finish_rush := func() -> void: _fade(func() -> void:
 			kills = 0
@@ -16052,10 +16448,10 @@ func _advance_stage() -> void:
 			"pact": sigil += amount
 			"hunt": feed += amount
 			"forge": whet += amount
-		_show_clear("클리어!", "%s  ·  %s +%s%s"
+		_show_clear("던전 클리어", "%s\n%s +%s%s"
 			% [RaidDefs.label(kind, n),
 			str(RaidDefs.RAIDS[kind]["currency"]), _n(amount),
-			("  (처치 %d · +%d%%)" % [kills, int(round(bonus * 100.0))])
+			("\n처치 %d · 추가 보상 +%d%%" % [kills, int(round(bonus * 100.0))])
 				if bonus > 0.0 else ""])
 		raid_on = ""
 		_quest_bump("raid")   # 주간 임무(재화 던전 격파)가 센다
@@ -16095,7 +16491,7 @@ func _advance_stage() -> void:
 	# ── 미궁: 층을 하나 오른다. 본편(stage)은 안 건드린다 ──────────────────
 	if dungeon_on:
 		# 재화 던전과 같은 여운 — 쓰러지는 그림과 클리어 연출을 볼 시간이다.
-		_show_clear("클리어!", "%s 돌파" % DungeonDefs.label(dungeon_floor))
+		_show_clear("미궁 돌파", "%s 격파" % DungeonDefs.label(dungeon_floor))
 		var finish_maze := func() -> void: _fade(func() -> void:
 			kills = 0
 			# **새 판은 늘 만피로 시작한다**(사장님 2026-08-12). 죽지 않고 넘어온 판이라도
@@ -16210,6 +16606,7 @@ func _tick_boss_timer(delta: float) -> bool:
 		else:
 			_raid_exit("시간 초과 — 빈손")
 		return true
+	_record_boss_attempt("시간 초과")
 	_restart_stage("시간 초과")
 	return true
 
@@ -16297,7 +16694,7 @@ func _apply_stage_bg() -> void:
 	var bg_top := VIEW_BOTTOM - float(Grid.BG_SRC.y) * 2.0
 	_bg.position.y = bg_top
 	_bg2.position.y = bg_top
-	ground_y = bg_top + float(StageDefs.GROUND_ROW) * 2.0
+	ground_y = bg_top + float(StageDefs.GROUND_ROW) * 2.0 + FOOTING_DEPTH
 	_hero.position.y = ground_y - float(Grid.SPRITE)
 	for f in get_tree().get_nodes_in_group("foes"):
 		f.position.y = ground_y
@@ -16410,6 +16807,59 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 	return body_mid + nudge
 
 
+var _vfx_frames := {}
+
+
+# 짧은 타격, 긴 소멸. 재생 총 길이는 유지해 장판 틱과 수명이 어긋나지 않는다.
+# 반복 공격마다 SpriteFrames 를 다시 만들지 않고 같은 타이밍의 프레임을 공유한다.
+func _vfx_sprite_frames(name: String, textures: Array, fps: float, style: String,
+		looped := false) -> SpriteFrames:
+	var fast := style == "burst" or style == "sweep"
+	var key := "%s:%s:%s:%s" % [name, str(fps), str(fast), str(looped)]
+	if _vfx_frames.has(key):
+		return _vfx_frames[key]
+	var frames := SpriteFrames.new()
+	frames.add_animation("play")
+	frames.set_animation_loop("play", looped)
+	frames.set_animation_speed("play", maxf(0.01, fps))
+	var weights: Array[float] = []
+	var total := 0.0
+	for i in textures.size():
+		var progress := float(i) / maxf(1.0, float(textures.size() - 1))
+		var weight := lerpf(0.55, 1.45, progress) if fast else 1.0
+		weights.append(weight)
+		total += weight
+	for i in textures.size():
+		frames.add_frame("play", textures[i], weights[i] * float(textures.size()) / total)
+	_vfx_frames[key] = frames
+	return frames
+
+
+# 잔상은 지난 자세 한 장이다. 애니 전체를 다시 시작하면 칼이 복제되어 보인다.
+func _vfx_afterimage(source: AnimatedSprite2D, strength: float, step: int,
+		face: int, in_world: bool) -> void:
+	if not is_instance_valid(source) or not source.is_inside_tree():
+		return
+	var ghost := Sprite2D.new()
+	ghost.name = "VfxAfterimage"
+	ghost.texture = source.sprite_frames.get_frame_texture(source.animation, source.frame)
+	ghost.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ghost.offset = source.offset
+	ghost.transform = source.transform
+	ghost.position.x -= float(signi(face)) * float(5 + step * 5)
+	ghost.scale.y *= 0.82
+	ghost.modulate = source.modulate
+	ghost.modulate.a *= strength
+	ghost.z_index = source.z_index - 1
+	add_child(ghost)
+	if in_world:
+		ghost.add_to_group(WORLD_FX_GROUP)
+	var fade := ghost.create_tween().set_parallel(true)
+	fade.tween_property(ghost, "modulate:a", 0.0, 0.17)
+	fade.tween_property(ghost, "scale", ghost.scale * Vector2(1.16, 0.45), 0.17)
+	fade.chain().tween_callback(ghost.queue_free)
+
+
 # in_world = 바닥에 놓이는 것. `_advance_world` 가 영웅 전진량만큼 같이 밀어 준다 —
 # 안 밀면 세상이 흐르는데 그림만 화면에 붙어 지면 위를 미끄러진다.
 # `face` 는 **나아가는 쪽**(영웅이 보는 방향), `art_flip` 은 **그림이 그려진 쪽**이다.
@@ -16418,27 +16868,12 @@ func _fx_anchor_y(style: String, fx_name: String, draw_scale: float,
 func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 		style := "burst", echo := 0, alpha := 1.0, face := 1, skew_mul := 1.0,
 		in_world := false, art_flip := 1, art_flip_v := 1,
-		rot_deg := 0.0) -> AnimatedSprite2D:
+		rot_deg := 0.0, keep_for := 0.0) -> AnimatedSprite2D:
 	# 만든 노드를 돌려준다 — 부르는 쪽이 나중에 손댈 일이 있을 때만 쓴다
 	# (왕좌: 틱마다 붉게 맥동). 대부분의 호출부는 값을 안 받는다.
-	# 잔상: 같은 이펙트를 조금 늦게·작게·흐리게 다시 띄운다. 앞의 것이 아직 남아
-	# 있는 동안 뒤엣것이 뜨므로 "빠르게 지나갔다"가 된다. 새 자산이 필요 없다.
-	#
-	# **바닥에 놓이는 것(hold·rise·fall)은 잔상을 안 띄운다**(2026-08-10). 잔상은
-	# 같은 중심에 0.87배로 뜨므로 아래끝이 ~8px **떠서**, 본체가 사라진 마지막
-	# 0.045초 동안 그 뜬 복사본만 남는다 — 화면에서는 "끝 프레임에 이펙트가
-	# 올라간다"로 보였다(사장님이 잡았다). 서 있는 물건의 잔상은 유령 분신으로도
-	# 읽힌다(왕좌 잔상 4개 = 왕좌 5개). 등급은 크기·흔들림으로 이미 읽힌다.
-	if style == "hold" or style == "rise" or style == "fall":
+	# 바닥과 가호는 제 형태를 유지한다. 지나가는 타격만 한 장씩 잔상을 남긴다.
+	if style != "burst" and style != "sweep":
 		echo = 0
-	for i in echo:
-		var delay := 0.045 * float(i + 1)
-		var shrink := 1.0 - 0.13 * float(i + 1)
-		get_tree().create_timer(delay).timeout.connect(func() -> void:
-			if is_inside_tree():
-				_anim_fx(name, at, fps, draw_scale * shrink, style, 0,
-					alpha * (0.55 - 0.1 * float(i)), face, skew_mul,
-						false, art_flip, art_flip_v, rot_deg))
 	# 정지 아이콘이 아니라 보유한 프레임 전체를 재생한다. 기본공격과 사망 모두
 	# 같은 작은 도우미를 써서 프레임 수가 달라도 마지막에 정확히 정리된다.
 	var textures := Assets.frames("res://assets/anim/%s" % name)
@@ -16448,15 +16883,9 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	# 세로 반전(내리꽂는 창)도 부호 하나로 — full 이 이 값을 그대로 쓰므로 곡선이 따라온다.
 	var draw_y := _ground_scale_y(name, draw_scale) if style == "hold" else draw_scale
 	draw_y *= float(signi(art_flip_v))
-	var sprite_frames := SpriteFrames.new()
-	sprite_frames.add_animation("play")
-	sprite_frames.set_animation_loop("play", false)
-	sprite_frames.set_animation_speed("play", fps)
-	for texture in textures:
-		sprite_frames.add_frame("play", texture)
 	var fx := AnimatedSprite2D.new()
 	fx.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	fx.sprite_frames = sprite_frames
+	fx.sprite_frames = _vfx_sprite_frames(name, textures, fps, style, keep_for > 0.0)
 	# **바닥에 서는 것은 원점을 잉크 아래끝에 둔다** (2026-08-10 사장님: "뜨지 않게").
 	#
 	# 가운데 원점이면 밑단이 `중심 + 높이/2` 라 **크기가 변할 때마다 밑단이 움직인다.**
@@ -16503,44 +16932,62 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 	add_child(fx)
 	if in_world:
 		fx.add_to_group(WORLD_FX_GROUP)
-	fx.animation_finished.connect(fx.queue_free)
+	if keep_for > 0.0:
+		# 가호는 버프가 살아 있는 동안 원래 fps 로 돈다. 프레임을 늘려 느리게 하지 않는다.
+		var end := fx.create_tween()
+		end.tween_interval(keep_for)
+		end.tween_callback(fx.queue_free)
+	else:
+		fx.animation_finished.connect(fx.queue_free)
 	fx.play("play")
+	var echo_source: WeakRef = weakref(fx)
+	for i in clampi(echo, 0, 4):
+		get_tree().create_timer(0.028 * float(i + 1)).timeout.connect(func() -> void:
+			# 노드를 직접 캡처하면 콜백 진입 전에 freed-capture 오류가 난다.
+			var source := echo_source.get_ref() as AnimatedSprite2D
+			if source != null:
+				_vfx_afterimage(source, 0.42 - float(i) * 0.065, i, face, in_world))
 	if style.is_empty() or not fx.is_inside_tree():
 		return fx
-	var life := float(textures.size()) / maxf(1.0, fps)
+	var life := keep_for if keep_for > 0.0 else float(textures.size()) / maxf(0.01, fps)
 	var full := Vector2(draw_scale * float(signi(face) * signi(art_flip)), draw_y)
 	# 사라지는 꼬리는 어느 방식이든 공통이다. 마지막 프레임에서 뚝 끊기면
 	# "끝났다"가 아니라 "버그"로 보인다.
+	var sustained := style == "hold" or style == "orbit" or style == "pulse"
+	var fade_start := 0.86 if sustained else 0.52
 	var fade := fx.create_tween()
-	fade.tween_interval(life * 0.6)
-	fade.tween_property(fx, "modulate:a", 0.0, life * 0.4)
+	fade.tween_interval(life * fade_start)
+	fade.tween_property(fx, "modulate:a", 0.0, life * (1.0 - fade_start))
 	var keep_a := alpha
 	var t := fx.create_tween()
 	match style:
 		"burst":
-			# 아주 작게 시작해 **크게 넘겼다가** 제자리로. 넘기는 폭이 작으면
-			# 곡선이 있어도 그냥 뜬 것처럼 보인다 — 과할 만큼 키워야 타격으로 읽힌다.
+			# 첫 박자에 넓게 벤 뒤 제자리에서 가늘어진다. 큰 덩어리로 부풀지 않는다.
 			fx.skew = deg_to_rad(SKEW_BURST * skew_mul * float(signi(face)))
 			full.y *= lerpf(1.0, SQUASH_TILT, clampf(skew_mul, 0.0, 1.0))
-			fx.scale = full * 0.30
-			t.tween_property(fx, "scale", full * 1.55, life * 0.20) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			t.tween_property(fx, "scale", full, life * 0.22) \
-				.set_trans(Tween.TRANS_QUAD)
+			fx.scale = full * Vector2(0.70, 0.65)
+			t.tween_property(fx, "scale", full * Vector2(1.38, 1.06), life * 0.12) \
+				.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+			t.tween_property(fx, "scale", full * Vector2(1.14, 0.90), life * 0.22) \
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			t.tween_property(fx, "scale", full * Vector2(1.28, 0.52), life * 0.64) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 		"sweep":
-			# 앞으로 날아가며 늘어난다. 제자리에서 터지면 "쓸었다"가 안 읽힌다.
-			# **나아가는 쪽도 영웅이 보는 쪽이다.** 예전엔 +190 고정이라 왼쪽을 볼 때
-			# 등 뒤로 쓸고 갔다.
+			# 표적을 첫 박자에 관통한다. 뒤쪽은 이동보다 얇아지는 꼬리에 시간을 쓴다.
 			var dir := float(signi(face))
 			fx.skew = deg_to_rad(SKEW_SWEEP * skew_mul * dir)
 			full.y *= lerpf(1.0, SQUASH_TILT, clampf(skew_mul, 0.0, 1.0))
-			fx.scale = Vector2(full.x * 0.45, full.y * 0.85)
-			fx.position.x -= 66.0 * dir
-			t.tween_property(fx, "position:x", fx.position.x + 190.0 * dir, life * 0.7) \
-				.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+			fx.scale = Vector2(full.x * 0.72, full.y * 0.80)
+			fx.position.x -= 42.0 * dir
+			t.tween_property(fx, "position:x", fx.position.x + 154.0 * dir, life * 0.22) \
+				.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
 			t.parallel().tween_property(fx, "scale",
-				Vector2(full.x * 1.6, full.y * 1.15), life * 0.45) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				Vector2(full.x * 1.70, full.y), life * 0.22) \
+				.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+			t.tween_property(fx, "position:x", at.x + 148.0 * dir, life * 0.76) \
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			t.parallel().tween_property(fx, "scale",
+				Vector2(full.x * 1.95, full.y * 0.62), life * 0.76)
 		"hold":
 			# **바닥에서 열린다.** 지면에 눌린 한 줄에서 시작해 타원으로 벌어진다 —
 			# 처음부터 세로가 반쯤 서 있으면 "바닥이 갈라졌다"가 아니라 "그림이 떴다"로
@@ -16553,18 +17000,19 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			# **넘겼다 돌아오는 건 가로만.** 세로는 길 폭에 맞춰 둔 값이라 12% 라도
 			# 넘기면 그 순간 균열이 나무 구역으로 올라간다. 바닥에 퍼지는 그림은
 			# 옆으로 벌어지는 것만으로 튕김이 읽힌다.
-			t.tween_property(fx, "scale", Vector2(full.x * 1.12, full.y), life * 0.38) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			t.parallel().tween_property(fx, "modulate:a", keep_a, life * 0.22)
-			t.tween_property(fx, "scale", full, life * 0.3)
+			t.tween_property(fx, "scale", Vector2(full.x * 1.12, full.y), minf(0.16, life * 0.20)) \
+				.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+			t.parallel().tween_property(fx, "modulate:a", keep_a, minf(0.10, life * 0.15))
+			t.tween_property(fx, "scale", full, life * 0.20)
 		"orbit":
-			# 가호는 감싸는 것이라 돈다. 한 바퀴로는 느려 보여서 한 바퀴 반.
-			fx.scale = full * 0.25
-			t.tween_property(fx, "scale", full * 1.35, life * 0.28) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			t.parallel().tween_property(fx, "rotation", TAU * 1.5, life) \
-				.set_trans(Tween.TRANS_LINEAR)
-			t.tween_property(fx, "scale", full, life * 0.3)
+			# 회전과 크기는 독립적이다. life 길이의 회전에 묶으면 복귀가 죽은 뒤 시작된다.
+			fx.scale = full * 0.58
+			t.tween_property(fx, "scale", full * 1.12, minf(0.12, life * 0.18)) \
+				.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+			t.tween_property(fx, "scale", full, life * 0.28) \
+				.set_trans(Tween.TRANS_SINE)
+			var turn := fx.create_tween()
+			turn.tween_property(fx, "rotation", TAU * 1.5, life)
 		"rise":
 			# **땅에서 밀고 올라온다**(제단·왕좌·갈라진 대지). 원점이 잉크 아래끝이라
 			# (`_anim_fx` 위쪽 offset) **위치를 아예 안 건드린다** — 세로로만 자라면
@@ -16574,8 +17022,9 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			# 어긋날 때마다 그림이 떴다(높이를 32로 박음 -> BACK 이징이 지나침 ->
 			# 잔상이 작게 떠서 남음). 보정을 없애니 뜰 방법이 사라진다.
 			fx.scale = Vector2(full.x * 0.75, full.y * 0.2)
-			t.tween_property(fx, "scale", full, life * 0.42) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			t.tween_property(fx, "scale", Vector2(full.x * 1.06, full.y), minf(0.14, life * 0.28)) \
+				.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+			t.tween_property(fx, "scale", full, life * 0.24)
 		"fall":
 			# 위에서 내려온다. 비(혈우)처럼 **하늘에서 떨어지는** 것에 쓴다.
 			# 시작 위치를 위로 올려 두고 내린다 — 제자리에서 커지면 비가 아니다.
@@ -16585,16 +17034,16 @@ func _anim_fx(name: String, at: Vector2, fps: float, draw_scale: float,
 			const FALL_DROP := 54.0
 			fx.position.y -= FALL_DROP
 			fx.scale = Vector2(full.x * 0.9, full.y * 0.6)
-			t.tween_property(fx, "position:y", fx.position.y + FALL_DROP, life * 0.75) \
+			t.tween_property(fx, "position:y", fx.position.y + FALL_DROP, life * 0.34) \
 				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-			t.parallel().tween_property(fx, "scale", full, life * 0.4) \
+			t.parallel().tween_property(fx, "scale", full, life * 0.34) \
 				.set_trans(Tween.TRANS_QUAD)
 		"pulse":
 			# 제자리에서 커졌다 작아진다. **안 돌린다** — 방패·성배·심장처럼
 			# 서 있는 물건은 돌리면 뒤집혀서 무엇인지 안 읽힌다.
-			fx.scale = full * 0.55
-			t.tween_property(fx, "scale", full * 1.18, life * 0.32) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			fx.scale = full * 0.65
+			t.tween_property(fx, "scale", full * 1.12, minf(0.12, life * 0.18)) \
+				.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 			t.tween_property(fx, "scale", full * 0.98, life * 0.34) \
 				.set_trans(Tween.TRANS_SINE)
 			t.tween_property(fx, "scale", full, life * 0.3) \
@@ -16884,6 +17333,12 @@ func _refresh_hud() -> void:
 			_tick_skill_slots()
 	elif _tab == "summon":
 		_refresh_gacha()
+	# 장착/저장 불러오기 뒤 HUD도 같은 투구를 쓴다. 매 프레임 다시 로드하지 않는다.
+	if _hud_portrait != null and _hud_portrait_skin != skin:
+		_hud_portrait_skin = skin
+		var avatar := "res://assets/anim/pixel_pilot/%s/avatar.png" % skin
+		_hud_portrait.texture = Assets.tex(avatar if Foe.pixel_pilot_ready(skin)
+			and ResourceLoader.exists(avatar) else "res://assets/ui/portrait_hero.png")
 
 
 # ── 저장 / 오프라인 보상 ───────────────────────────────────────────────────
@@ -17033,8 +17488,7 @@ func _save_game_inner() -> void:
 	cfg.set_value("skill", "preset_names", preset_names)
 	cfg.set_value("codex", "kills", codex)
 	cfg.set_value("goal", "index", goal_index)
-	cfg.set_value("chest", "gold", chest_gold)
-	cfg.set_value("chest", "minutes", chest_minutes)
+	_save_chest(cfg)
 	cfg.set_value("meta", "left_at", Time.get_unix_time_from_system())
 	cfg.save(SAVE_PATH)
 
@@ -17309,21 +17763,41 @@ func _load_game() -> void:
 		if old is Dictionary:
 			for k in old:
 				goal_index += int(old[k])
-	chest_gold = float(cfg.get_value("chest", "gold", 0.0))
-	if not blood15:
-		chest_gold *= Balance.BLOOD_UNIT   # 상자도 같은 눈금
-	chest_minutes = float(cfg.get_value("chest", "minutes", 0.0))
 	codex_found = 0
 	codex_knowledge = 0
 	for k in codex:
 		if int(codex[k]) > 0:
 			codex_found += 1
 		codex_knowledge += FoeTiers.codex_level(int(codex[k]))
+	_load_chest(cfg, blood15)
 	hero_hp = clampf(float(cfg.get_value("run", "hero_hp", max_hp())), 0.0, max_hp())
 	if hero_hp <= 0.0:
 		hero_hp = max_hp()
 	_refresh_gear_slots()
 	_grant_offline(float(cfg.get_value("meta", "left_at", 0.0)))
+
+
+func _save_chest(cfg: ConfigFile) -> void:
+	cfg.set_value("chest", "gold", chest_gold)
+	cfg.set_value("chest", "minutes", chest_minutes)
+	cfg.set_value("chest", "exp", chest_exp)
+	cfg.set_value("chest", "crystal", chest_crystal)
+	cfg.set_value("chest", "stages", chest_stages)
+
+
+func _load_chest(cfg: ConfigFile, blood15 := true) -> void:
+	chest_gold = maxf(0.0, float(cfg.get_value("chest", "gold", 0.0)))
+	if not blood15:
+		chest_gold *= Balance.BLOOD_UNIT
+	chest_minutes = maxf(0.0, float(cfg.get_value("chest", "minutes", 0.0)))
+	# 과거 시세는 복원할 수 없다. 키가 없는 구세이브만 기존 수령식으로 한 번 환산한다.
+	# 저장된 0은 실제 0이므로 재계산하지 않는다. 이미 지급한 혈정은 지갑에 더하지 않는다.
+	chest_exp = maxf(0.0, float(cfg.get_value("chest", "exp", 0.0))) \
+		if cfg.has_section_key("chest", "exp") else _offline_exp(chest_minutes)
+	chest_crystal = maxf(0.0, float(cfg.get_value("chest", "crystal", 0.0))) \
+		if cfg.has_section_key("chest", "crystal") else (chest_minutes / 60.0 \
+			* _sweep_per_hour() * 0.5 if dungeon_best > 0 else 0.0)
+	chest_stages = maxi(0, int(cfg.get_value("chest", "stages", 0)))
 
 
 # 오프라인 적 무리는 실제 스폰의 무작위 몹 대신 로스터 평균을 쓴다. 같은 저장본과
@@ -17418,15 +17892,12 @@ func _grant_offline(left_at: float) -> void:
 	# 접속 배급(blood_per_sec)과 **같은 식**을 쓴다 — 요율이 같아야 "방치가 이득"
 	# 도 "접속이 이득"도 아니게 된다(2026-08-20). 옛 0.5 는 접속이 1.0 이던 시절의
 	# 균형추였고, 지금은 양쪽 다 5/9 다.
-	var earned := blood_per_sec() * away
 	# **지갑이 아니라 상자에 담는다.** 눌러서 여는 게 방치 보상의 보상이다.
-	chest_gold += earned
-	chest_minutes += away / 60.0
+	_accrue_chest(away / 60.0)
+	chest_stages += climbed
 	# 소탕도 같은 원칙으로 절반 효율 — 방치가 접속보다 이득이면 게임을 안 켠다.
 	# 혈정은 상자에 안 담는다: 상자는 혈액 그릇이고, 혈정은 미궁 기록의 배당이라
 	# 조용히 지갑에 쌓이는 쪽이 맞다(접속 중 소탕과 같은 길).
-	if dungeon_best > 0:
-		crystal += (away / 3600.0) * _sweep_per_hour() * 0.5
 	hero_hp = max_hp()
 	_refresh_chest()
 

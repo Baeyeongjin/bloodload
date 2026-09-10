@@ -8,7 +8,7 @@ extends SceneTree
 #   1) 뽑기 — 등급 보존 + 형태 4종 전부 나옴 (천장이 사라졌다는 증거)
 #   2) 뽑기·조합에서 신화가 절대 안 나온다
 #   3) 문턱 전 미지급 · 문턱 도달 시 완성형(만렙) 지급 + 배너
-#   4) 잠긴 카드 문구 — "격 레벨합 N/200" (은어 금지, 사장님이 못 알아들었다)
+#   4) 잠긴 카드 문구 — "격 레전더리 N/10" (은어 금지, 사장님이 못 알아들었다)
 #
 # 씬 테스트다 — 반드시 APPDATA 격리로 돌린다(docs/CHECKS.md).
 
@@ -58,17 +58,24 @@ func _init() -> void:
 	assert(not seen_mythic, "뽑기에서 신화가 나왔다")
 
 	# ── 3) 문턱 전 미지급 · 도달 시 완성형 지급 ───────────────────────────
+	# 문턱은 **그 형태의 레전더리 만렙**이다(2026-09-09). 아래 등급을 전부
+	# 만렙 찍어도 안 준다 — 조각이 등급마다 따로 나오므로 커먼을 올린 헌신은
+	# 신화와 상관이 없었다.
+	var leg_max := SkillDefs.max_lv("strike_legend")
 	scene.skill_owned = {"strike_common": 50, "strike_uncommon": 50,
-		"strike_rare": 50, "strike_epic": 49}   # 합 199 — 한 끗 모자란다
+		"strike_rare": 50, "strike_epic": 50,
+		"strike_legend": leg_max - 1}           # 한 끗 모자란다
 	scene.gacha_shards = {}
 	scene._check_mythic()
 	assert(not scene.skill_owned.has("strike_mythic"),
-		"합 199 인데 신화가 지급됐다 (문턱 %d)" % SkillDefs.MYTHIC_NEED)
-	scene.skill_owned["strike_epic"] = 50       # 합 200
+		"레전더리가 만렙 한 끗 전인데 신화가 지급됐다")
+	scene.skill_owned["strike_legend"] = leg_max
 	scene._clear_view.visible = false
 	scene._check_mythic()
-	assert(scene.skill_owned.has("strike_mythic"), "합 200 인데 신화가 안 왔다")
-	assert(int(scene.skill_owned["strike_mythic"]) == SkillDefs.MAX_LV,
+	assert(scene.skill_owned.has("strike_mythic"),
+		"레전더리 만렙인데 신화가 안 왔다")
+	assert(int(scene.skill_owned["strike_mythic"])
+		== SkillDefs.max_lv("strike_mythic"),
 		"신화가 완성형이 아니다: %d" % int(scene.skill_owned["strike_mythic"]))
 	# 배너 — 조용히 주면 없는 기능이다.
 	assert(scene._clear_view.visible and "신화" in scene._clear_title.text,
@@ -77,24 +84,25 @@ func _init() -> void:
 	assert(not scene.skill_owned.has("wave_mythic"), "안 부은 형태의 신화가 왔다")
 	# 두 번 부르면 두 번 안 준다.
 	scene._check_mythic()
-	assert(int(scene.skill_owned["strike_mythic"]) == SkillDefs.MAX_LV, "재지급됐다")
+	assert(int(scene.skill_owned["strike_mythic"])
+		== SkillDefs.max_lv("strike_mythic"), "재지급됐다")
 
 	# ── 4) 잠긴 카드 문구 ─────────────────────────────────────────────────
-	scene.skill_owned = {"strike_common": 7}
+	scene.skill_owned = {"strike_legend": 7}
 	var lock_card: Control = scene._skill_unknown_card(
 		GachaDefs.rarity("mythic"), "strike")
 	var lock_txt := ""
 	for c in lock_card.get_children():
-		if c is Label and "레벨합" in (c as Label).text:
+		if c is Label and "레전더리" in (c as Label).text:
 			lock_txt = (c as Label).text
-	assert(lock_txt == "격 레벨합 7/%d" % SkillDefs.MYTHIC_NEED,
+	assert(lock_txt == "격 레전더리 7/%d" % SkillDefs.max_lv("strike_legend"),
 		"잠긴 카드 문구가 다르다: %s" % lock_txt)
 	# 커먼~레전더리 미획득 칸에는 잠김이 없다 — "뽑으면 나온다"가 맞는 말이다.
 	var open_card: Control = scene._skill_unknown_card(
 		GachaDefs.rarity("uncommon"), "strike")
 	for c in open_card.get_children():
 		if c is Label:
-			assert(not ("레벨합" in (c as Label).text),
+			assert(not ("레전더리 " in (c as Label).text),
 				"커먼~레전더리 칸에 잠김 문구가 남았다: %s" % (c as Label).text)
 
 	# ── 5) 신화 고유 규칙 (2026-09-02) — 넷 다 "피해로는 못 만드는 결과" ──
@@ -111,7 +119,7 @@ func _init() -> void:
 
 	# 부활 — 치명상을 한 번 무르고, 쿨이 도는 동안엔 죽는다.
 	var six: Array[String] = ["ward_mythic"]
-	scene.skill_owned = {"ward_mythic": SkillDefs.MAX_LV}
+	scene.skill_owned = {"ward_mythic": SkillDefs.max_lv("ward_mythic")}
 	scene.skill_equipped = six
 	scene._immortal_cd = 0.0
 	scene._hero_dead = false
@@ -135,7 +143,7 @@ func _init() -> void:
 	assert(not foes.is_empty(), "몹이 안 스폰됐다")
 	var prey: Foe = foes[0]
 	prey.hp = 0.5                        # 한 입 거리
-	scene.skill_owned["strike_mythic"] = SkillDefs.MAX_LV
+	scene.skill_owned["strike_mythic"] = SkillDefs.max_lv("strike_mythic")
 	scene._skill_cd["strike_mythic"] = 99.0
 	var sd: Dictionary = scene._skill_data("strike_mythic")
 	scene._strike_once(prey, 10.0, sd, "", 0.0, 10.0, "burst", 1.0, 0, 0.0, 1, 1, 0.0)
@@ -160,7 +168,7 @@ func _init() -> void:
 
 	# 진 — 흡혈. 장판을 실제로 깔고 틱이 체력을 물어오는지 본다(훅이 장판
 	# 람다 안이라 표 검사만으로는 그 줄이 도는지 모른다).
-	scene.skill_owned["field_mythic"] = SkillDefs.MAX_LV
+	scene.skill_owned["field_mythic"] = SkillDefs.max_lv("field_mythic")
 	scene.hero_hp = 1.0
 	var hp0: float = scene.hero_hp
 	scene._phase = "fight"

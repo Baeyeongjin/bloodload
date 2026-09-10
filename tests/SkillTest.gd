@@ -108,10 +108,25 @@ func _init() -> void:
 			"승급했는데 안 세다: " + key)
 		assert(keys.has(next), "승급 결과가 표에 없다: " + next)
 
-	# 조각 비용은 레벨마다 무거워진다.
-	for l in 8:
-		assert(SkillDefs.shard_cost(l + 1) > SkillDefs.shard_cost(l),
-			"조각 비용이 안 오른다: Lv%d" % l)
+	# 조각 1개당 1레벨 (사장님 2026-09-09). 레벨이 올라도 안 무거워진다 —
+	# **만렙이 곧 필요한 조각 수**다.
+	for l in 12:
+		assert(SkillDefs.shard_cost(l) == 1,
+			"조각 비용이 1이 아니다: Lv%d -> %d" % [l, SkillDefs.shard_cost(l)])
+	# 등급별 만렙. 레전더리 조각은 레전더리 중복 뽑기에서만 나와서 10 이다.
+	assert(SkillDefs.max_lv("strike_epic") == 50, "에픽 만렙이 50 이 아니다")
+	assert(SkillDefs.max_lv("strike_legend") == 10, "레전더리 만렙이 10 이 아니다")
+	# **만렙 배수는 등급이 달라도 같다.** 레벨당 증가율을 등급마다 안 나누면
+	# 레전더리 만렙(10)이 에픽 만렙(50)보다 약해져 사다리가 뒤집힌다.
+	for rk in ["common", "epic", "legend"]:
+		var k9 := SkillDefs.key_of("strike", str(rk))
+		var ratio := SkillDefs.power(k9, SkillDefs.max_lv(k9)) \
+			/ SkillDefs.power(k9, 0)
+		assert(is_equal_approx(ratio, 4.0),
+			"%s 만렙 배수가 x%.2f — x4 여야 한다" % [rk, ratio])
+	assert(SkillDefs.power("strike_legend", SkillDefs.max_lv("strike_legend"))
+		> SkillDefs.power("strike_epic", SkillDefs.max_lv("strike_epic")),
+		"레전더리 만렙이 에픽 만렙보다 약하다 — 사다리가 뒤집혔다")
 
 	# ── 아이콘이 **화면에서** 이름과 맞는가 ────────────────────────────────────
 	# 2026-08-10: 사장님 화면에서 "피의 제단"에 감시의 눈 아이콘이 떴다. 파일도 코드도

@@ -360,17 +360,32 @@ static func ticks_of(key: String) -> int:
 
 
 const SLOTS := 6            # 장착 칸
-# 스킬 만렙은 **등급 무관 50 고정**이다(사장님 2026-08-26). 장비와 달리
-# 레벨 재화가 조각이고, 조각은 같은 스킬 중복 뽑기에서만 나온다 — 소환권이
-# 이미 브레이크라 등급으로 또 조일 이유가 없다. lv50 = 조각 3,825 개다.
-const MAX_LV := 50
-const LV_POWER := 0.06      # 레벨당 위력 +6% — 만렙(50)에서 x4, 장비와 같은 예산
+# 스킬 만렙은 **등급마다 다르다**(사장님 2026-09-09: "에픽까지는 50 만렙,
+# 레전더리는 10 만렙"). 조각 1개당 1레벨이므로 **만렙이 곧 필요한 조각 수**다.
+# 레전더리 조각은 레전더리 중복 뽑기에서만 나와서 50 개는 평생 안 모인다 —
+# 옛 규칙(등급 무관 50 + 비용 3N)은 만렙까지 3,825 개였다.
+const MAX_LV_BY_RARITY := [50, 50, 50, 50, 10, 10]
+#                          커먼 언커먼 레어 에픽 레전더리 신화
+const LV_GAIN := 3.0        # 만렙에서 위력 x4 — 등급이 달라도 만렙 배수는 같다
 const LV_CD_STEPS := [5, 10]   # 이 레벨에 도달할 때마다 쿨다운 -8%
 const LV_CD_CUT := 0.08
 const CD_FLOOR := 0.45      # 쿨다운 하한 배수. 이게 없으면 후반에 스킬이 상시 발동이 된다
-const SHARD_PER_LV := 3     # N -> N+1 레벨에 조각 3N 개
 # 조합 비용은 **GearDefs.FUSE_SHARDS** 하나가 말한다(2026-08-25 통합).
 # 여기 있던 SYNTH_SHARDS(5)는 화면만 읽고 실제 지불은 3 이라 거짓말이 됐다.
+
+
+# 이 스킬의 만렙. 등급 하나가 정한다.
+static func max_lv(key: String) -> int:
+	var i := GachaDefs.rarity_index(str(split(key)[1]))
+	return int(MAX_LV_BY_RARITY[clampi(i, 0, MAX_LV_BY_RARITY.size() - 1)])
+
+
+# 레벨당 위력. **만렙이 등급마다 다르면 증가율도 달라야 한다** — 같은 값을 쓰면
+# 레전더리 만렙(10)이 에픽 만렙(50)보다 약해져 사다리가 뒤집힌다
+# (5.5 x 1.6 = 8.8 < 3.2 x 4 = 12.8). 장비가 이미 쓰는 문법이다(GearDefs
+# MAX_LV 주석: "값은 3/만렙 — 곱연산 예산의 자물쇠").
+static func lv_power(key: String) -> float:
+	return LV_GAIN / float(maxi(1, max_lv(key)))
 
 
 # ── 신화 스킬 (2026-09-01 사장님: "잠김을 없애고 신화 스킬을 추가") ────────
@@ -380,22 +395,27 @@ const SHARD_PER_LV := 3     # N -> N+1 레벨에 조각 3N 개
 # 뽑기는 처음부터 4형태 x 커먼~레전더리 전부다(SKILL_TOP_INDEX 가 이미
 # 레전더리라 뽑기·조합은 손대지 않아도 거기서 멈춘다).
 #
-# 잠김은 **신화에만** 남는다. 형태당 하나, 그 형태 스킬들의 레벨 합이
-# MYTHIC_NEED 에 닿으면 **완성형(만렙)으로 지급**된다:
+# 잠김은 **신화에만** 남는다. 형태당 하나, 그 형태의 **레전더리가 만렙**이 되면
+# **완성형(만렙)으로 지급**된다:
 #   - 뽑기 밖 등급이라 중복 조각이 원천적으로 없다 — 레벨업 경로를 새로
 #     만드느니 완성형이 맞다. 위력 9.0 x 만렙 4배 = 36배로 레전더리
 #     만렙(5.5 x 4 = 22배) 위에 선다
-#   - 문턱 200 = 형태 만렙합 250 의 80%. 다섯 중 넷을 만렙까지 키운 헌신이다
-const MYTHIC_NEED := 200
+#   - 문턱은 **레벨합 200 이었다**(사장님 2026-09-09: "너무 가혹해"). 레벨합은
+#     다섯 등급을 고루 키우라는 말이었는데, 조각이 등급마다 따로 나오므로
+#     커먼을 만렙 찍는 헌신이 신화와 아무 상관이 없었다. 이제 한 줄로 읽힌다 —
+#     **그 형태의 끝을 봤는가.**
 
 
-# 이 형태에 부은 레벨 합. 신화 지급 문턱이 이걸 본다.
-static func shape_mastery(shape: String, owned: Dictionary) -> int:
-	var sum := 0
-	for k in owned.keys():
-		if str(split(str(k))[0]) == shape:
-			sum += int(owned[k])
-	return sum
+# 화면이 적을 "지금 / 문턱". 조건과 문구가 **같은 자**를 쓰게 하나로 둔다 —
+# 갈리면 "10/10 인데 잠김"이 나온다.
+static func mythic_progress(shape: String, owned: Dictionary) -> Array:
+	var lk := key_of(shape, "legend")
+	return [int(owned.get(lk, 0)), max_lv(lk)]
+
+
+static func mythic_ready(shape: String, owned: Dictionary) -> bool:
+	var p := mythic_progress(shape, owned)
+	return int(p[0]) >= int(p[1])
 
 
 static func mythic_key(shape: String) -> String:
@@ -560,7 +580,7 @@ const FX_OVERRIDE := {
 	# `pulse` 는 제자리에서 커졌다 작아진다. 지면 보정을 안 받으므로 머리 위에 뜬다.
 	"field_legend": {"style": "pulse", "fx": "fx_exec_crown",
 		"fps": 0.34, "scale": 0.62, "skew": 0.0},
-	"ward_common": {"style": "pulse"},                 # 피의 결계 — 돔은 안 돈다
+	"ward_common": {"style": "pulse", "scale": 1.35},  # 빈 고리가 영웅 바깥으로 보여야 한다
 	"ward_uncommon": {"style": "pulse"},               # 진홍 방패 — 세워져 있어야 한다
 	"ward_rare": {"style": "pulse"},                   # 붉은 성배 — 세워져 있어야 한다
 	"ward_legend": {"style": "pulse"},                 # 불멸의 심장 — 뛰지, 돌지 않는다
@@ -610,7 +630,7 @@ static func rarity_of(key: String) -> Dictionary:
 static func power(key: String, lv: int) -> float:
 	return float(rule_of(key).get("power", shape_of(key)["power"])) \
 		* float(rarity_of(key)["power"]) \
-		* (1.0 + LV_POWER * float(clampi(lv, 0, MAX_LV)))
+		* (1.0 + lv_power(key) * float(clampi(lv, 0, max_lv(key))))
 
 
 # 화면에 적는 역할(단일/광역/버프)은 **동작**을 따른다. 형태 표를 그대로 읽으면
@@ -627,7 +647,8 @@ static func rank(key: String, lv: int) -> float:
 	var p := power(key, lv)
 	if p > 0.0:
 		return p
-	return float(rarity_of(key)["power"]) * (1.0 + LV_POWER * float(maxi(0, lv)))
+	return float(rarity_of(key)["power"]) \
+		* (1.0 + lv_power(key) * float(maxi(0, lv)))
 
 
 # 쿨다운은 **레벨마다 깎지 않는다.** 매 레벨 깎으면 후반에 스킬이 상시 발동이 되고
@@ -674,9 +695,11 @@ static func ward_duration(key: String, lv: int) -> float:
 		shape_of(key).get("duration", 0.0))) + WARD_LV_DURATION * float(maxi(0, lv))
 
 
-# 다음 레벨에 드는 조각. 레벨이 오를수록 무거워진다.
-static func shard_cost(lv: int) -> int:
-	return SHARD_PER_LV * (maxi(0, lv) + 1)
+# 다음 레벨에 드는 조각 — **1개다**(사장님 2026-09-09: "같은 스킬 조각 1개당
+# 1레벨업"). 예전엔 3N 개라 만렙까지 3,825 개였는데, 조각은 같은 스킬 중복
+# 뽑기에서만 나와서 그 수는 평생 안 모인다. 이제 만렙이 곧 조각 수다.
+static func shard_cost(_lv: int) -> int:
+	return 1
 
 
 # 승급 결과 키. **형태는 그대로, 등급만 한 칸 위.** 최고 등급이면 빈 문자열.
@@ -716,3 +739,100 @@ static func combo_spread(keys: Array) -> float:
 	for k in keys:
 		seen[str(split(str(k))[0])] = true
 	return COMBO_ALL_SHAPES if seen.size() >= SHAPE_ORDER.size() else 0.0
+
+
+# Explicit suggestions only: never equip or change owned levels here.
+# A bounded heuristic for three nearby foes / one boss, not exact DPS or an optimum.
+static func recommend(owned: Dictionary, cap: int, mode: String) -> Array[String]:
+	var picked: Array[String] = []
+	if mode not in ["hunt", "boss"] or cap <= 0:
+		return picked
+	var catalog := all_keys()
+	for shape in SHAPE_ORDER:
+		catalog.append(mythic_key(str(shape)))
+	var candidates: Array[String] = []
+	var levels := {}
+	for key in catalog: # Canonical order also breaks ties independently of dictionary order.
+		var value: Variant = owned.get(key)
+		if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(value)):
+			continue
+		levels[key] = int(clampf(float(value), 0.0, float(max_lv(str(key)))))
+		candidates.append(key)
+	var slots := mini(clampi(cap, 0, SLOTS + 1), candidates.size())
+	var targets := 3 if mode == "hunt" else 1
+	var need_damage := candidates.any(_recommend_damage)
+	while picked.size() < slots:
+		var best := ""
+		var best_score := -INF
+		for key in candidates:
+			if picked.has(key) or (picked.is_empty() and need_damage and not _recommend_damage(key)):
+				continue
+			var trial: Array[String] = picked.duplicate()
+			trial.append(key)
+			var score := _recommend_score(trial, levels, targets)
+			if score > best_score + 0.000001:
+				best_score = score
+				best = key
+		picked.append(best)
+	# One best exchange can complete a shape combo missed by the greedy additions.
+	var improved: Array[String] = picked.duplicate()
+	var best_score := _recommend_score(picked, levels, targets)
+	for slot in picked.size():
+		for key in candidates:
+			if picked.has(key):
+				continue
+			var trial: Array[String] = picked.duplicate()
+			trial[slot] = key
+			if need_damage and not trial.any(_recommend_damage):
+				continue
+			var score := _recommend_score(trial, levels, targets)
+			if score > best_score + 0.000001:
+				best_score = score
+				improved = trial
+	return improved
+
+
+static func _recommend_damage(key: String) -> bool:
+	return behavior_of(key) != "ward" and not bool(rule_of(key).get("passive", false)) \
+		and power(key, 0) > 0.0
+
+
+static func _recommend_score(keys: Array[String], levels: Dictionary, targets: int) -> float:
+	var same := combo_power(keys)
+	var spread := combo_spread(keys)
+	var skill_rate := 0.0
+	var passive_bonus := 0.0
+	var active_wards: Array[String] = []
+	for key in keys:
+		var lv := int(levels[key])
+		var rule := rule_of(key)
+		var cd := maxf(0.001, cooldown(key, lv))
+		if behavior_of(key) == "ward":
+			if bool(rule.get("passive", false)):
+				passive_bonus += ward_bonus(key) * clampf(ward_duration(key, lv) / cd, 0.0, 1.0)
+			else:
+				active_wards.append(key)
+			continue
+		if not _recommend_damage(key):
+			continue
+		var count := 1 if behavior_of(key) == "strike" else targets
+		for limit in [int(rule.get("max_targets", 0)), int(rule.get("bounce", 0))]:
+			if limit > 0:
+				count = mini(count, limit)
+		var bonus := float(same.get(split(key)[0], 0.0)) + spread
+		# Hits/ticks divide this total; they never multiply it. One replaced basic hit.
+		skill_rate += maxf(0.0, power(key, lv) / POWER_NORM * (1.0 + bonus) * count - 1.0) / cd
+	# Reference: one basic hit/second. Passive wards stack; active wards overwrite.
+	# Conservatively value the strongest active ward, including its cleave and cast loss.
+	# Enemy HP, kill resets, healing/revive value and cast scheduling are not modeled.
+	var active_gain := 0.0
+	for key in active_wards:
+		var lv := int(levels[key])
+		var cd := maxf(0.001, cooldown(key, lv))
+		var uptime := clampf(ward_duration(key, lv) / cd, 0.0, 1.0)
+		var bonus := ward_bonus(key)
+		var gain := (1.0 + skill_rate) * bonus * uptime - 1.0 / cd
+		if not str(rule_of(key).get("cleave", "")).is_empty():
+			gain += float(targets - 1) * (1.0 + bonus) * uptime
+		active_gain = maxf(active_gain, gain)
+	return (1.0 + skill_rate + active_gain) * (1.0 + passive_bonus)

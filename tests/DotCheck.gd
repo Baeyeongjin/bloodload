@@ -111,6 +111,25 @@ func _init() -> void:
 	scene.gacha_shards = {"gear:" + ckey: GearDefs.FUSE_SHARDS}
 	assert(scene._gear_can_fuse(ckey), "커먼이 만렙이 아니라고 조합을 막는다")
 
+	# 조합 창 후보와 실제 조합이 **같은 자**를 쓰는가 (사장님 2026-09-09:
+	# "장비는 레전더리 조합이 안 되는 버그"). 후보가 조각 수만 보면 만렙이
+	# 아닌 레전더리가 목록에 떠서, 눌러도 _synthesize 가 빈손으로 돌아와
+	# **아무 일도 안 일어난다** — 조각도 안 줄고 문구도 없다.
+	var nlg: Dictionary = GearDefs.make("weapon", 1, GachaDefs.rarity("legend"))
+	var nkey := str(nlg["icon"])
+	nlg["lv"] = 0
+	scene.gear_inventory = {nkey: nlg}
+	scene.gacha_shards = {"gear:" + nkey: GearDefs.FUSE_SHARDS}
+	scene._bulk_kind = "gear"
+	scene._bulk_tab = "all"
+	assert(not scene._bulk_candidates().has(nkey),
+		"만렙이 아닌 레전더리가 조합 후보에 떴다 — 눌러도 아무 일이 안 난다")
+	assert(scene._synthesize(nkey).is_empty(),
+		"준비가 틀렸다 — 만렙 아닌 레전더리는 조합이 안 돼야 한다")
+	nlg["lv"] = GearDefs.max_lv(nlg)
+	assert(scene._bulk_candidates().has(nkey),
+		"레전더리 만렙인데 조합 후보에 없다")
+
 	# ── 4) 던전 — 안 뚫은 미궁 층이 열려 있으면 켜진다 ────────────────────
 	_broke(scene)
 	scene.best_stage = DungeonDefs.OPEN_STAGE + 40
