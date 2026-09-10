@@ -4115,17 +4115,48 @@ func _unequip_skill(slot: int) -> void:
 	_save_game()
 
 
+# 장착 자리의 정체 — **형태 + 부류(일반/신화)**. 같은 자리는 하나만 낀다
+# (사장님 2026-09-10: "같은 종류 업그레이드 스킬이랑 기존 스킬 둘 다 착용
+# 가능한데 하나만"). 등급만 다른 두 종은 같은 스킬을 두 벌 낀 것으로 읽힌다.
+# **신화는 딴 부류다** — 형태당 일반 1 + 신화 1 이라 여섯 칸이 그대로 살고,
+# 조합 버프(같은 형태 2개 +15%)도 그 짝으로 성립한다.
+func _skill_slot_key(key: String) -> String:
+	var sr := SkillDefs.split(key)
+	return "%s|%s" % [str(sr[0]),
+		"mythic" if str(sr[1]) == "mythic" else "base"]
+
+
+# 같은 자리로 이미 낀 칸. 없으면 -1.
+func _skill_same_slot(key: String) -> int:
+	var want := _skill_slot_key(key)
+	for i in skill_equipped.size():
+		if _skill_slot_key(str(skill_equipped[i])) == want:
+			return i
+	return -1
+
+
 func _toggle_skill(key: String) -> void:
 	skill_auto_equip = false
+	var swapped := ""
 	if skill_equipped.has(key):
 		skill_equipped.erase(key)
-	elif skill_equipped.size() < _equip_cap():
-		skill_equipped.append(key)
 	else:
-		# 칸이 다 찼으면 **맨 뒤를 밀어낸다.** 순서가 발동 우선순위라 뒤가 제일 덜 급하다.
-		skill_equipped[_equip_cap() - 1] = key
+		# 같은 자리가 이미 차 있으면 **그 자리를 갈아 낀다.** 뒤에 덧붙이면
+		# 같은 스킬이 두 벌이 되고, 맨 뒤를 밀어내면 엉뚱한 형태가 빠진다.
+		var dup := _skill_same_slot(key)
+		if dup >= 0:
+			swapped = str(skill_equipped[dup])
+			skill_equipped[dup] = key
+		elif skill_equipped.size() < _equip_cap():
+			skill_equipped.append(key)
+		else:
+			# 칸이 다 찼으면 **맨 뒤를 밀어낸다.** 순서가 발동 우선순위라 뒤가 제일 덜 급하다.
+			skill_equipped[_equip_cap() - 1] = key
 	var lv := int(skill_owned.get(key, 0))
-	_skill_info.text = "%s  ·  %s  ·  %d레벨" % [SkillDefs.name_of(key),
+	# 갈아 낀 것은 화면이 말해야 한다 — 조용히 빠지면 "왜 저게 없어졌지"가 된다.
+	_skill_info.text = ("%s 를 빼고 %s 를 꼈다"
+		% [SkillDefs.name_of(swapped), SkillDefs.name_of(key)]) if swapped != "" \
+		else "%s  ·  %s  ·  %d레벨" % [SkillDefs.name_of(key),
 		SkillDefs.role_of(key), lv]
 	_refresh_skills(false)
 	_save_game()
@@ -12553,19 +12584,26 @@ func _auto_equip_skills() -> void:
 			> SkillDefs.rank(str(b), int(skill_owned[b])))
 	var picked: Array[String] = []
 	var used_shape := {}
+	var used_slot := {}
 	# 1순위: 형태마다 가장 센 것 하나씩. 버프만 여섯 개 끼면 몹이 안 죽는다.
 	for key in owned:
 		var shape := str(SkillDefs.split(str(key))[0])
 		if used_shape.has(shape):
 			continue
 		used_shape[shape] = true
+		used_slot[_skill_slot_key(str(key))] = true
 		picked.append(str(key))
-	# 2순위: 남은 칸은 그냥 센 것부터.
+	# 2순위: 남은 칸은 센 것부터 — **같은 자리는 두 번 안 채운다**(사장님
+	# 2026-09-10). 예전엔 여기서 같은 형태의 아래 등급을 그대로 얹어서,
+	# 자동 장착이 스스로 "같은 스킬 두 벌"을 만들고 있었다.
 	for key in owned:
 		if picked.size() >= _equip_cap():
 			break
-		if not picked.has(str(key)):
-			picked.append(str(key))
+		var slot_key := _skill_slot_key(str(key))
+		if used_slot.has(slot_key):
+			continue
+		used_slot[slot_key] = true
+		picked.append(str(key))
 	skill_equipped = picked.slice(0, mini(picked.size(), _equip_cap()))
 
 

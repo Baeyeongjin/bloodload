@@ -214,6 +214,40 @@ func _init() -> void:
 	assert(str(back[0]["key"]) == "strike_mythic",
 		"양보가 한 번을 넘는다: %s" % str(back[0]["key"]))
 
+	# ── 같은 형태의 같은 부류는 하나만 (사장님 2026-09-10) ────────────────
+	# 등급만 다른 두 종을 같이 끼면 같은 스킬을 두 벌 낀 것으로 읽힌다.
+	# **신화는 딴 부류다** — 형태당 일반 1 + 신화 1 이라 여섯 칸이 산다.
+	scene.skill_owned = {"strike_common": 5, "strike_rare": 5,
+		"strike_mythic": SkillDefs.max_lv("strike_mythic"),
+		"wave_common": 5, "wave_epic": 5, "field_common": 5, "ward_common": 5}
+	var none: Array[String] = []
+	scene.skill_equipped = none
+	scene._toggle_skill("strike_common")
+	scene._toggle_skill("strike_rare")
+	assert(scene.skill_equipped.size() == 1,
+		"같은 형태 두 종이 같이 꼈다: %s" % str(scene.skill_equipped))
+	assert(str(scene.skill_equipped[0]) == "strike_rare",
+		"갈아 낀 자리에 새 스킬이 안 들어갔다: %s" % str(scene.skill_equipped[0]))
+	# 신화는 같이 낀다.
+	scene._toggle_skill("strike_mythic")
+	assert(scene.skill_equipped.size() == 2,
+		"신화가 일반 자리를 밀어냈다: %s" % str(scene.skill_equipped))
+	# 갈아 낀 자리는 **순서를 지킨다** — 순서가 곧 발동 우선순위다.
+	scene._toggle_skill("strike_common")
+	assert(str(scene.skill_equipped[0]) == "strike_common",
+		"갈아 끼면서 자리가 밀렸다: %s" % str(scene.skill_equipped))
+
+	# 자동 장착도 같은 자를 쓴다 — 예전엔 2순위가 아래 등급을 그대로 얹었다.
+	scene.skill_auto_equip = true
+	scene._auto_equip_skills()
+	var seen_slot := {}
+	for k8 in scene.skill_equipped:
+		var sk8: String = scene._skill_slot_key(str(k8))
+		assert(not seen_slot.has(sk8),
+			"자동 장착이 같은 자리를 두 번 채웠다: %s (%s)"
+			% [sk8, str(scene.skill_equipped)])
+		seen_slot[sk8] = true
+
 	# ── 게시판 스킬 칸이 등급을 보이는가 (2026-09-02) ─────────────────────
 	# 사장님: "스킬 등급 표시해주면 좋을듯". 성장 화면 칸은 이미 등급 색 틀을
 	# 쓰는데 게시판만 전부 같은 돌 틀이었다 — 정작 전투를 보는 화면에서 무엇이
