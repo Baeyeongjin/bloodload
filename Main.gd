@@ -9381,8 +9381,12 @@ func _claim_attend() -> void:
 	attend_got += 1
 	_grant_reward(str(a["reward"]), float(a["amount"]))
 	_pass_add(PassDefs.POINT_QUEST)
+	# **경로를 붙인다.** `_reward_icon` 은 `res_gem` 같은 **이름만** 돌려주는데
+	# `_show_reward` 는 `Ui.icon` 에 그대로 넘긴다 — 이름만 주면 텍스처가 조용히
+	# null 이 되어 보상 창에 그림이 안 뜬다(사장님 2026-09-11 캡처). 다른 호출부
+	# 열 곳은 전부 붙이고 있었고 여기만 빠져 있었다.
 	_show_reward("%d일차 출석" % int(a["day"]),
-		[{"icon": _reward_icon(str(a["reward"])),
+		[{"icon": "res://assets/ui/%s.png" % _reward_icon(str(a["reward"])),
 		"label": "%s +%d" % [_reward_name(str(a["reward"])), int(a["amount"])]}])
 	_refresh_currency_visibility()
 	_save_game()
@@ -9424,17 +9428,22 @@ const OATH_PANEL := Rect2(20.0, 108.0, 536.0, 664.0)
 const OATH_INK := Color(0.98, 0.94, 0.92)
 const OATH_DIM := Color(0.80, 0.72, 0.72)
 const OATH_RED := Color(0.98, 0.46, 0.44)
-# **흰 글씨 + 검은 테두리**(사장님 2026-08-18). 짙은 갈색 잉크는 판과 대비가
-# 맞는데도 안 읽혔다 — 11px 도트 폰트는 획이 얇아서 색 대비만으로는 부족하고,
-# 검은 테두리가 글자를 배경에서 떼어 내야 보인다. 판이 밝든 어둡든 같은 규칙이다.
-# **양피지 위에는 잉크색이다**(사장님 2026-09-10: "가독성이 너무 떨어진다").
-# 흰색(0.99)이었는데 판 재질이 밝은 양피지라 글자가 바탕에 묻혔다 — 어두운
-# 배경을 전제로 고른 값이 아트가 바뀐 뒤에도 남아 있었다.
-# `_panel_label` 의 어두운 외곽선은 그대로 둔다: 같은 계열이라 글자가 살짝
-# 굵어질 뿐이고, 밝은 바탕에서는 그 굵기가 오히려 도움이 된다.
-const DUTY_INK := Color(0.16, 0.11, 0.08)      # 본문 — 짙은 잉크
-const DUTY_DIM := Color(0.42, 0.34, 0.28)      # 보조 — 흐린 잉크
-const DUTY_RED := Color(0.68, 0.13, 0.13)      # 강조 — 짙은 핏빛
+# **흰 글씨 + 검은 테두리로 되돌렸다**(사장님 2026-09-11: "검은색만 보이는 게
+# 별로"). 이 값은 세 번 뒤집혔고 그 이력이 곧 판단 근거다:
+#
+#   08-18  흰색 + 검은 테두리   11px 도트는 획이 얇아 색 대비만으로는 안 읽힌다
+#   09-10  짙은 잉크            "가독성이 너무 떨어진다" — 양피지가 밝아 흰 글씨가 묻힘
+#   09-11  다시 흰색            잉크색은 읽히긴 하나 **검은 글자만 가득해 보인다**
+#
+# 09-10 의 진단이 틀린 게 아니라 **처방이 절반이었다.** 흰 글씨가 묻힌 진짜 이유는
+# 색이 아니라 외곽선이 1px 이라 밝은 바탕에서 글자를 못 떼어 낸 것이다. 색을
+# 어둡게 하는 대신 **외곽선을 2px 로 키워** 둘 다 얻는다 — 흰 글씨가 살고
+# 가독성도 09-10 보다 낫다.
+#
+# 되돌릴 때는 색만 만지지 말 것: `_duty_ink` 의 외곽선과 짝이다.
+const DUTY_INK := Color(0.99, 0.97, 0.94)      # 본문 — 흰 글씨
+const DUTY_DIM := Color(0.82, 0.76, 0.70)      # 보조 — 흐린 흰빛
+const DUTY_RED := Color(1.00, 0.52, 0.48)      # 강조 — 밝은 핏빛
 # 진행 바 채움은 **어두운 홈 위에** 올라간다 — 글씨와 반대라 밝아야 한다.
 # 둘이 한 상수를 나눠 쓰다가 글씨를 어둡게 하니 바까지 칙칙해졌다.
 const DUTY_BAR := Color(0.98, 0.42, 0.40)
@@ -9559,8 +9568,8 @@ func _build_quests() -> void:
 	var cbx := Vector2(x + w - 88.0, QUEST_PANEL.position.y + 12.0)
 	var close_art := Ui.set_button(DUTY, cbx, Vector2(88.0, 34.0))
 	_quest_view.add_child(close_art)
-	var clbl := _panel_label(_quest_view, Vector2(cbx.x, cbx.y + 9.0),
-		Type.SIZE_SMALL, DUTY_INK, 88.0, 20.0)
+	var clbl := _duty_ink(_panel_label(_quest_view, Vector2(cbx.x, cbx.y + 9.0),
+		Type.SIZE_SMALL, DUTY_INK, 88.0, 20.0))
 	clbl.text = "닫기"
 	clbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var close := Ui.button("", cbx, Vector2(88.0, 34.0), Type.SIZE_SMALL)
@@ -9586,8 +9595,8 @@ func _build_quests() -> void:
 		var off := Ui.set_tab(DUTY, false, tp, Vector2(tw, 36.0))
 		_quest_view.add_child(off)
 		_quest_view.add_child(on)
-		var lbl := _panel_label(_quest_view, Vector2(tp.x, tp.y + 10.0),
-			Type.SIZE_SMALL, DUTY_INK, tw, 20.0)
+		var lbl := _duty_ink(_panel_label(_quest_view, Vector2(tp.x, tp.y + 10.0),
+			Type.SIZE_SMALL, DUTY_INK, tw, 20.0))
 		lbl.text = str(tabs[i][1])
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var mb := Ui.button("", tp, Vector2(tw, 36.0), Type.SIZE_SMALL)
@@ -9634,8 +9643,8 @@ func _build_quests() -> void:
 		QUEST_PANEL.position.y + QUEST_PANEL.size.y - 56.0)
 	var cap_art := Ui.set_row(DUTY, cap, Vector2(200.0, 42.0))
 	_quest_view.add_child(cap_art)
-	var cap_lbl := _panel_label(_quest_view, Vector2(cap.x, cap.y + 12.0),
-		Type.SIZE_MID, DUTY_INK, 200.0, 20.0)
+	var cap_lbl := _duty_ink(_panel_label(_quest_view, Vector2(cap.x, cap.y + 12.0),
+		Type.SIZE_MID, DUTY_INK, 200.0, 20.0))
 	cap_lbl.text = "일괄 받기"
 	cap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_quest_claim_all = Ui.button("", cap, Vector2(200.0, 42.0), Type.SIZE_MID)
@@ -10858,6 +10867,16 @@ func _refresh_shop() -> void:
 # 줄이 12개(일일)·9개(주간)로 늘면서 판 밖으로 넘쳤다 — **스크롤로 감싼다**
 # (2026-08-20). 예전 7줄도 사실 마지막 줄이 "자정에 새로 온다"를 덮고 있었다.
 # 스크롤 안은 지역 좌표라 줄을 0 부터 쌓는다.
+# 양피지 위 글자. **흰 글씨는 외곽선이 1px 이면 밝은 바탕에 묻힌다** — 09-10 에
+# "가독성이 떨어진다"고 나온 것이 이것이고, 그때는 색을 어둡게 해서 피했다.
+# 2px 로 키우면 흰 글씨를 지키면서 읽힌다. `_panel_label` 기본값(작은 글씨 1px)은
+# 어두운 판 전제라 그대로 두고, 양피지 세트만 여기를 거친다.
+func _duty_ink(l: Label) -> Label:
+	l.add_theme_constant_override("outline_size", 2)
+	l.add_theme_color_override("font_outline_color", Color(0.04, 0.03, 0.02))
+	return l
+
+
 func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dictionary]:
 	# 오른쪽 22 는 판 여백, 16 은 **두루마리 장식 폭**이다 — 그만큼 안 비우면
 	# 스크롤바가 장식 위에 그려진다(실측 캡처).
@@ -10877,8 +10896,8 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		inner.add_child(Ui.set_row(DUTY, Vector2(x, y), Vector2(w, 50.0)))
 		inner.add_child(Ui.icon("res://assets/ui/%s.png" % str(q["icon"]),
 			Vector2(x + 10.0, y + 11.0), 28.0))
-		var nm := _panel_label(inner, Vector2(x + 48.0, y + 6.0),
-			Type.SIZE_SMALL, DUTY_INK, w - 170.0, 16.0)
+		var nm := _duty_ink(_panel_label(inner, Vector2(x + 48.0, y + 6.0),
+			Type.SIZE_SMALL, DUTY_INK, w - 170.0, 16.0))
 		nm.text = str(q["name"])
 		var track := ColorRect.new()
 		track.color = Color(0.10, 0.09, 0.12)
@@ -10895,16 +10914,16 @@ func _quest_build_rows(root: Control, table: Array, weekly: bool) -> Array[Dicti
 		var prx := x + 48.0 + QUEST_BAR_W + 8.0
 		var qid := str(q["id"])
 		var bp := Vector2(x + w - 108.0, y + 9.0)
-		var pr := _panel_label(inner, Vector2(prx, y + 24.0), Type.SIZE_SMALL,
-			DUTY_DIM, bp.x - prx - 6.0, 20.0)
+		var pr := _duty_ink(_panel_label(inner, Vector2(prx, y + 24.0), Type.SIZE_SMALL,
+			DUTY_DIM, bp.x - prx - 6.0, 20.0))
 		var pill_art := Ui.set_row(DUTY, bp, Vector2(100.0, 32.0))
 		inner.add_child(pill_art)
 		var ricon := Ui.icon("res://assets/ui/%s.png"
 			% _reward_icon(str(q["reward"])), Vector2(bp.x + 12.0, bp.y + 8.0), 16.0)
 		inner.add_child(ricon)
 		_art_set_base(pill_art, Color.WHITE)   # 호버가 이 색을 지우지 않게
-		var rw := _panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
-			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0)
+		var rw := _duty_ink(_panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
+			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0))
 		rw.text = "+%d" % int(q["amount"])
 		var b := Ui.button("", bp, Vector2(100.0, 32.0), Type.SIZE_SMALL)
 		b.modulate = Color(1, 1, 1, 0)      # 양피지 줄이 이미 버튼이다
@@ -10942,15 +10961,15 @@ func _attend_build(root: Control) -> void:
 			else Ui.set_row(DUTY, Vector2(cx, cy),
 				Vector2(ATTEND_CELL, ATTEND_CELL))
 		root.add_child(frame)
-		var day := _panel_label(root, Vector2(cx, cy + 4.0), Type.SIZE_SMALL,
-			DUTY_DIM, ATTEND_CELL, 14.0)
+		var day := _duty_ink(_panel_label(root, Vector2(cx, cy + 4.0), Type.SIZE_SMALL,
+			DUTY_DIM, ATTEND_CELL, 14.0))
 		day.text = "%d일" % int(a["day"])
 		day.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var ico := Ui.icon("res://assets/ui/%s.png" % _reward_icon(str(a["reward"])),
 			Vector2(cx + (ATTEND_CELL - 26.0) * 0.5, cy + 22.0), 26.0)
 		root.add_child(ico)
-		var amt := _panel_label(root, Vector2(cx, cy + 52.0), Type.SIZE_SMALL,
-			DUTY_INK, ATTEND_CELL, 14.0)
+		var amt := _duty_ink(_panel_label(root, Vector2(cx, cy + 52.0), Type.SIZE_SMALL,
+			DUTY_INK, ATTEND_CELL, 14.0))
 		amt.text = "x%d" % int(a["amount"])
 		amt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		# 받은 칸 표시. **어둠막만으로는 구분이 안 된다** — 카드가 이미 어두워서
@@ -10963,8 +10982,8 @@ func _attend_build(root: Control) -> void:
 		done.visible = false
 		done.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(done)
-		var mark := _panel_label(root, Vector2(cx, cy + 24.0), Type.NATIVE * 2,
-			DUTY_RED, ATTEND_CELL, 26.0)
+		var mark := _duty_ink(_panel_label(root, Vector2(cx, cy + 24.0), Type.NATIVE * 2,
+			DUTY_RED, ATTEND_CELL, 26.0))
 		mark.text = "O"
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		mark.visible = false
@@ -10976,8 +10995,8 @@ func _attend_build(root: Control) -> void:
 	var ap_art := Ui.set_row(DUTY, ap, Vector2(200.0, 42.0))
 	root.add_child(ap_art)
 	_attend_btn_art = ap_art
-	_attend_lbl = _panel_label(root, Vector2(ap.x, ap.y + 12.0),
-		Type.SIZE_MID, DUTY_INK, 200.0, 20.0)
+	_attend_lbl = _duty_ink(_panel_label(root, Vector2(ap.x, ap.y + 12.0),
+		Type.SIZE_MID, DUTY_INK, 200.0, 20.0))
 	_attend_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_attend_btn = Ui.button("", ap, Vector2(200.0, 42.0), Type.SIZE_MID)
 	_pet_hover(_attend_btn, ap_art)
@@ -11024,11 +11043,11 @@ func _boon_build(root: Control) -> void:
 	var w := QUEST_PANEL.size.x - 44.0
 	var y := QUEST_PANEL.position.y + 104.0
 	root.add_child(Ui.set_card(DUTY, Vector2(x, y), Vector2(w, 150.0)))
-	var now := _panel_label(root, Vector2(x, y + 22.0), Type.NATIVE * 2,
-		DUTY_RED, w, 30.0)
+	var now := _duty_ink(_panel_label(root, Vector2(x, y + 22.0), Type.NATIVE * 2,
+		DUTY_RED, w, 30.0))
 	now.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var now_text := _panel_label(root, Vector2(x, y + 70.0), Type.SIZE_BODY,
-		DUTY_INK, w, 26.0)
+	var now_text := _duty_ink(_panel_label(root, Vector2(x, y + 70.0), Type.SIZE_BODY,
+		DUTY_INK, w, 26.0))
 	now_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# **여섯 종을 다 늘어놓는다.** 다음 주 하나만 예고하면 "언제 그게 오나"를
 	# 못 세는데, 차례가 보이면 기다릴 주를 고를 수 있다. 긴 설명이 큰 글씨로는
@@ -11037,8 +11056,8 @@ func _boon_build(root: Control) -> void:
 	for i in BoonDefs.BOONS.size():
 		var ry := y + 180.0 + float(i) * 38.0
 		root.add_child(Ui.set_pill(DUTY, Vector2(x, ry), Vector2(w, 32.0)))
-		var l := _panel_label(root, Vector2(x + 14.0, ry + 8.0), Type.SIZE_SMALL,
-			DUTY_DIM, w - 28.0, 16.0)
+		var l := _duty_ink(_panel_label(root, Vector2(x + 14.0, ry + 8.0), Type.SIZE_SMALL,
+			DUTY_DIM, w - 28.0, 16.0))
 		rows.append(l)
 	_boon_labels = {"now": now, "text": now_text, "rows": rows}
 
@@ -11082,8 +11101,8 @@ func _achieve_build_rows(root: Control) -> Array[Dictionary]:
 		inner.add_child(Ui.set_row(DUTY, Vector2(0.0, y), Vector2(w, 50.0)))
 		inner.add_child(Ui.icon("res://assets/ui/%s.png" % str(t["icon"]),
 			Vector2(10.0, y + 11.0), 28.0))
-		var nm := _panel_label(inner, Vector2(48.0, y + 6.0),
-			Type.SIZE_SMALL, DUTY_INK, w - 170.0, 16.0)
+		var nm := _duty_ink(_panel_label(inner, Vector2(48.0, y + 6.0),
+			Type.SIZE_SMALL, DUTY_INK, w - 170.0, 16.0))
 		var bar := ColorRect.new()
 		bar.color = Color(0.10, 0.09, 0.12)
 		bar.position = Vector2(48.0, y + 30.0)
@@ -11096,8 +11115,8 @@ func _achieve_build_rows(root: Control) -> Array[Dictionary]:
 		fill.size = Vector2(0.0, 8.0)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		inner.add_child(fill)
-		var pr := _panel_label(inner, Vector2(48.0 + QUEST_BAR_W + 8.0, y + 24.0),
-			Type.SIZE_SMALL, DUTY_DIM, 90.0, 20.0)
+		var pr := _duty_ink(_panel_label(inner, Vector2(48.0 + QUEST_BAR_W + 8.0, y + 24.0),
+			Type.SIZE_SMALL, DUTY_DIM, 90.0, 20.0))
 		var bp := Vector2(w - 108.0, y + 9.0)
 		var pill_art := Ui.set_row(DUTY, bp, Vector2(100.0, 32.0))
 		inner.add_child(pill_art)
@@ -11105,8 +11124,8 @@ func _achieve_build_rows(root: Control) -> Array[Dictionary]:
 			Vector2(bp.x + 12.0, bp.y + 8.0), 16.0)
 		inner.add_child(ricon)
 		_art_set_base(pill_art, Color.WHITE)   # 호버가 이 색을 지우지 않게
-		var rw := _panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
-			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0)
+		var rw := _duty_ink(_panel_label(inner, Vector2(bp.x + 34.0, bp.y + 8.0),
+			Type.SIZE_SMALL, DUTY_INK, 58.0, 16.0))
 		var b := Ui.button("", bp, Vector2(100.0, 32.0), Type.SIZE_SMALL)
 		b.modulate = Color(1, 1, 1, 0)
 		_pet_hover(b, pill_art)
